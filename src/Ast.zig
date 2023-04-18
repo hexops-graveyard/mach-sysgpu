@@ -115,6 +115,33 @@ pub fn nodeRHS(tree: Ast, i: Index) Index {
     return tree.nodes.items(.rhs)[i];
 }
 
+pub fn nodeLoc(tree: Ast, i: Index) Token.Loc {
+    var loc = tree.tokenLoc(tree.nodeToken(i));
+    switch (tree.nodeTag(i)) {
+        .deref, .addr_of => {
+            const lhs_loc = tree.tokenLoc(tree.nodeToken(tree.nodeLHS(i)));
+            loc.end = lhs_loc.end;
+        },
+        else => {},
+    }
+    return loc;
+}
+
+pub fn declNameLoc(tree: Ast, node: Ast.Index) ?Token.Loc {
+    const token = switch (tree.nodeTag(node)) {
+        .global_variable => tree.extraData(Node.GlobalVarDecl, tree.nodeLHS(node)).name,
+        .struct_decl,
+        .fn_decl,
+        .global_constant,
+        .override,
+        .type_alias,
+        => tree.nodeToken(node) + 1,
+        .struct_member => tree.nodeToken(node),
+        else => return null,
+    };
+    return tree.tokenLoc(token);
+}
+
 pub const Index = u32;
 pub const null_index: Index = 0;
 pub const Node = struct {

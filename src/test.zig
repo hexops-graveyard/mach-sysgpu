@@ -1,18 +1,13 @@
 const std = @import("std");
-const dusk = @import("dusk");
+const IR = @import("IR.zig");
+const Ast = @import("Ast.zig");
+const ErrorList = @import("ErrorList.zig");
+const printIR = @import("print_ir.zig").printIR;
 const expect = std.testing.expect;
 const allocator = std.testing.allocator;
 
-fn sdkPath(comptime suffix: []const u8) []const u8 {
-    if (suffix[0] != '/') @compileError("suffix must be an absolute path");
-    return comptime blk: {
-        const root_dir = std.fs.path.dirname(@src().file) orelse ".";
-        break :blk root_dir ++ suffix;
-    };
-}
-
-fn expectIR(source: [:0]const u8) !dusk.IR {
-    var tree = try dusk.Ast.parse(allocator, source);
+fn expectIR(source: [:0]const u8) !IR {
+    var tree = try Ast.parse(allocator, source);
     defer tree.deinit(allocator);
 
     if (tree.errors.list.items.len > 0) {
@@ -20,7 +15,7 @@ fn expectIR(source: [:0]const u8) !dusk.IR {
         return error.Parsing;
     }
 
-    var ir = try dusk.IR.generate(allocator, &tree);
+    var ir = try IR.generate(allocator, &tree);
     errdefer ir.deinit();
 
     if (ir.errors.list.items.len > 0) {
@@ -31,16 +26,16 @@ fn expectIR(source: [:0]const u8) !dusk.IR {
     return ir;
 }
 
-fn expectError(source: [:0]const u8, err: dusk.ErrorList.ErrorMsg) !void {
-    var tree = try dusk.Ast.parse(allocator, source);
+fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
+    var tree = try Ast.parse(allocator, source);
     defer tree.deinit(allocator);
     var err_list = tree.errors;
 
-    var ir: ?dusk.IR = null;
+    var ir: ?IR = null;
     defer if (ir != null) ir.?.deinit();
 
     if (err_list.list.items.len == 0) {
-        ir = try dusk.IR.generate(allocator, &tree);
+        ir = try IR.generate(allocator, &tree);
 
         err_list = ir.?.errors;
         if (err_list.list.items.len == 0) {
@@ -91,23 +86,39 @@ fn expectError(source: [:0]const u8, err: dusk.ErrorList.ErrorMsg) !void {
     }
 }
 
+test {
+    std.testing.refAllDecls(@import("Ast.zig"));
+    std.testing.refAllDecls(@import("AstGen.zig"));
+    std.testing.refAllDecls(@import("ErrorList.zig"));
+    std.testing.refAllDecls(@import("IR.zig"));
+    std.testing.refAllDecls(@import("Parser.zig"));
+    std.testing.refAllDecls(@import("print_ir.zig"));
+    std.testing.refAllDecls(@import("Token.zig"));
+    std.testing.refAllDecls(@import("Tokenizer.zig"));
+}
+
 test "empty" {
     const source = "";
     var ir = try expectIR(source);
     defer ir.deinit();
 }
 
-test "boids" {
-    const source = @embedFile("boids.wgsl");
-    var ir = try expectIR(source);
+test "gkurve" {
+    var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
-    // try dusk.printIR(ir, std.io.getStdOut().writer());
+    // try printIR(ir, std.io.getStdOut().writer());
 }
 
-test "gkurve" {
-    const source = @embedFile("gkurve.wgsl");
-    var ir = try expectIR(source);
-    defer ir.deinit();
+test "must pass" {
+    {
+        const source =
+            \\var v0 = 2;
+            \\var v1 = *v0 + 5;
+            \\var v2 = v1 * 4;
+        ;
+        var ir = try expectIR(source);
+        ir.deinit();
+    }
 }
 
 test "must error" {
@@ -179,6 +190,16 @@ test "must error" {
             .msg = "invalid sampled texture component type",
             .loc = .{ .start = 40, .end = 42 },
             .note = .{ .msg = "must be 'i32', 'u32' or 'f32'" },
+        });
+    }
+    {
+        const source =
+            \\var v0 = 2;
+            \\var v1 = &v0 + 5;
+        ;
+        try expectError(source, .{
+            .msg = "invalid operation with '&v0'",
+            .loc = .{ .start = 21, .end = 24 },
         });
     }
 }

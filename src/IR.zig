@@ -91,8 +91,9 @@ pub const Inst = struct {
         }
 
         pub fn is(self: Ref, list: List, comptime expected: []const Inst.Tag) bool {
+            const inst = list.items[self.toIndex() orelse return false];
             inline for (expected) |e| {
-                if (list.items[self.toIndex().?].tag == e) return true;
+                if (inst.tag == e) return true;
             }
             return false;
         }

@@ -13,13 +13,3 @@ pub const Extension = enum {
 
     pub const Array = std.enums.EnumArray(Extension, bool);
 };
-
-test {
-    std.testing.refAllDecls(IR);
-    std.testing.refAllDecls(@import("print_ir.zig"));
-    std.testing.refAllDecls(Ast);
-    std.testing.refAllDecls(Parser);
-    std.testing.refAllDecls(Token);
-    std.testing.refAllDecls(Tokenizer);
-    std.testing.refAllDecls(ErrorList);
-}
