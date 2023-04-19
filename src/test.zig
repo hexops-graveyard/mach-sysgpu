@@ -112,7 +112,7 @@ test "gkurve" {
 test "must pass" {
     {
         const source =
-            \\var v0 = 2;
+            \\var v0: ptr<storage, u32> = 2;
             \\var v1 = *v0 + 5;
             \\var v2 = v1 * 4;
         ;
@@ -200,6 +200,15 @@ test "must error" {
         try expectError(source, .{
             .msg = "invalid operation with '&v0'",
             .loc = .{ .start = 21, .end = 24 },
+        });
+    }
+    {
+        const source =
+            \\var v1 = *4 + 5;
+        ;
+        try expectError(source, .{
+            .msg = "cannot dereference '4'",
+            .loc = .{ .start = 10, .end = 11 },
         });
     }
 }

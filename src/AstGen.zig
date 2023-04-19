@@ -310,7 +310,31 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
         .number_literal => .{ .tag = .integer_literal, .data = .{ .integer_literal = 1 } },
         .not => .{ .tag = .not, .data = .{ .ref = try self.genExpr(scope, node_lhs) } },
         .negate => .{ .tag = .negate, .data = .{ .ref = try self.genExpr(scope, node_lhs) } },
-        .deref => .{ .tag = .deref, .data = .{ .ref = try self.genExpr(scope, node_lhs) } },
+        .deref => blk: {
+            const lhs = try self.genExpr(scope, node_lhs);
+            if (!lhs.is(self.instructions, &.{.var_ref})) {
+                try self.errors.add(
+                    node_lhs_loc,
+                    "cannot dereference '{s}'",
+                    .{node_lhs_loc.slice(self.tree.source)},
+                    null,
+                );
+                return error.AnalysisFail;
+            }
+
+            const lhs_res = try self.resolve(lhs);
+            if (lhs_res == null or lhs_res.? != .ptr) {
+                try self.errors.add(
+                    node_lhs_loc,
+                    "cannot dereference non-pointer value '{s}'",
+                    .{node_lhs_loc.slice(self.tree.source)},
+                    null,
+                );
+                return error.AnalysisFail;
+            }
+
+            break :blk .{ .tag = .deref, .data = .{ .ref = lhs } };
+        },
         .addr_of => .{ .tag = .addr_of, .data = .{ .ref = try self.genExpr(scope, node_lhs) } },
 
         .mul,
@@ -452,6 +476,7 @@ pub fn genType(self: *AstGen, scope: *Scope, node: Ast.Index) error{ AnalysisFai
         .matrix_type => try self.genMatrixType(scope, node),
         .atomic_type => try self.genAtomicType(scope, node),
         .array_type => try self.genArrayType(scope, node),
+        .ptr_type => try self.genPtrType(scope, node),
         .ident_expr => {
             const node_loc = self.tree.nodeLoc(node);
             const decl_ref = try self.declRef(scope, node);
@@ -1082,7 +1107,86 @@ pub fn genArrayType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref 
     return IR.Inst.toRef(inst);
 }
 
-const Scalar = enum {
+pub fn genPtrType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
+    std.debug.assert(self.tree.nodeTag(node) == .ptr_type);
+
+    const inst = try self.reserveInst();
+    const component_type_node = self.tree.nodeLHS(node);
+    const component_type_ref = try self.genType(scope, component_type_node);
+
+    switch (component_type_ref) {
+        .bool_type,
+        .i32_type,
+        .u32_type,
+        .f32_type,
+        .f16_type,
+        .sampler_type,
+        .comparison_sampler_type,
+        .external_sampled_texture_type,
+        => {},
+        .none, .true_literal, .false_literal => unreachable,
+        _ => switch (self.instructions.items[component_type_ref.toIndex().?].tag) {
+            .vector_type,
+            .matrix_type,
+            .atomic_type,
+            .struct_decl,
+            .array_type,
+            .sampled_texture_type,
+            .multisampled_texture_type,
+            .storage_texture_type,
+            .depth_texture_type,
+            => {},
+            .ptr_type => {
+                try self.errors.add(
+                    self.tree.nodeLoc(component_type_node),
+                    "invalid array component type",
+                    .{},
+                    null,
+                );
+                return error.AnalysisFail;
+            },
+            else => unreachable,
+        },
+    }
+
+    const gv = self.tree.extraData(Ast.Node.PtrType, self.tree.nodeRHS(node));
+
+    const addr_space_loc = self.tree.tokenLoc(gv.addr_space);
+    const ast_addr_space = std.meta.stringToEnum(Ast.AddressSpace, addr_space_loc.slice(self.tree.source)).?;
+    const addr_space: IR.Inst.PointerType.AddressSpace = switch (ast_addr_space) {
+        .function => .function,
+        .private => .private,
+        .workgroup => .workgroup,
+        .uniform => .uniform,
+        .storage => .storage,
+    };
+
+    var access_mode: IR.Inst.PointerType.AccessMode = .none;
+    if (gv.access_mode != Ast.null_index) {
+        const access_mode_loc = self.tree.tokenLoc(gv.access_mode);
+        const ast_access_mode = std.meta.stringToEnum(Ast.AccessMode, access_mode_loc.slice(self.tree.source)).?;
+        access_mode = switch (ast_access_mode) {
+            .read => .read,
+            .write => .write,
+            .read_write => .read_write,
+        };
+    }
+
+    self.instructions.items[inst] = .{
+        .tag = .ptr_type,
+        .data = .{
+            .ptr_type = .{
+                .component_type = component_type_ref,
+                .addr_space = addr_space,
+                .access_mode = access_mode,
+            },
+        },
+    };
+
+    return IR.Inst.toRef(inst);
+}
+
+const Resolved = enum {
     abstract_int,
     abstract_float,
     bool,
@@ -1090,9 +1194,10 @@ const Scalar = enum {
     u32,
     f16,
     f32,
+    ptr,
 };
 
-pub fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Scalar {
+pub fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Resolved {
     var is_decl = false;
     var r = ref;
 
@@ -1114,6 +1219,8 @@ pub fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Scalar {
                 .f32_type => .f32,
                 else => unreachable,
             };
+        } else if (is_decl and r.is(self.instructions, &.{.ptr_type})) {
+            return .ptr;
         } else if (r.is(self.instructions, &.{
             .circuit_and,
             .circuit_or,
