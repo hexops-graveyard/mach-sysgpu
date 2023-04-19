@@ -516,6 +516,7 @@ pub const Inst = struct {
         };
 
         pub const AccessMode = enum {
+            none,
             read,
             write,
             read_write,
