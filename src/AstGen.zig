@@ -11,6 +11,7 @@ instructions: IR.Inst.List = .{},
 refs: std.ArrayListUnmanaged(IR.Inst.Ref) = .{},
 strings: std.ArrayListUnmanaged(u8) = .{},
 scratch: std.ArrayListUnmanaged(IR.Inst.Ref) = .{},
+resolved_vars: std.AutoHashMapUnmanaged(IR.Inst.Ref, IR.Inst.Ref) = .{},
 errors: ErrorList,
 scope_pool: std.heap.MemoryPool(Scope),
 
@@ -322,21 +323,20 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                 return error.AnalysisFail;
             }
 
-            const lhs_res = try self.resolve(lhs);
-            if (lhs_res == null or lhs_res.? != .ptr) {
-                try self.errors.add(
-                    node_lhs_loc,
-                    "cannot dereference non-pointer value '{s}'",
-                    .{node_lhs_loc.slice(self.tree.source)},
-                    null,
-                );
-                return error.AnalysisFail;
+            const lhs_res = try self.resolveVarTypeOrValue(lhs);
+            if (lhs_res.is(self.instructions, &.{.ptr_type})) {
+                break :blk .{ .tag = .deref, .data = .{ .ref = lhs } };
             }
 
-            break :blk .{ .tag = .deref, .data = .{ .ref = lhs } };
+            try self.errors.add(
+                node_lhs_loc,
+                "cannot dereference non-pointer variable '{s}'",
+                .{node_lhs_loc.slice(self.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
         },
         .addr_of => .{ .tag = .addr_of, .data = .{ .ref = try self.genExpr(scope, node_lhs) } },
-
         .mul,
         .div,
         .mod,
@@ -421,7 +421,6 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                 .data = .{ .binary = .{ .lhs = lhs, .rhs = rhs } },
             };
         },
-
         .index_access => .{ .tag = .index, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genExpr(scope, node_rhs) } } },
         .component_access => .{ .tag = .member_access, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genExpr(scope, node_rhs) } } },
         .bitcast => .{ .tag = .bitcast, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genType(scope, node_rhs) } } },
@@ -434,7 +433,6 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                 },
             },
         },
-
         else => unreachable,
     };
 
@@ -1091,7 +1089,7 @@ pub fn genArrayType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref 
     const size_node = self.tree.nodeRHS(node);
     var size_ref = IR.Inst.Ref.none;
     if (size_node != Ast.null_index) {
-        // TODO
+        size_ref = try self.genExpr(scope, size_node);
     }
 
     self.instructions.items[inst] = .{
@@ -1187,40 +1185,29 @@ pub fn genPtrType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
 }
 
 const Resolved = enum {
-    abstract_int,
-    abstract_float,
+    int,
+    float,
     bool,
-    i32,
-    u32,
-    f16,
-    f32,
-    ptr,
 };
-
-pub fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Resolved {
-    var is_decl = false;
+fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Resolved {
+    var in_deref = false;
+    var in_decl = false;
     var r = ref;
 
     while (true) {
-        if (r.isNumberLiteral(self.instructions)) {
+        if (in_decl and r.isNumberType()) {
+            return switch (r) {
+                .i32_type, .u32_type => .int,
+                .f16_type, .f32_type => .float,
+                else => unreachable,
+            };
+        } else if (r.isNumberLiteral(self.instructions)) {
             const inst = self.instructions.items[r.toIndex().?];
             return switch (inst.tag) {
-                .integer_literal => .abstract_int,
-                .float_literal => .abstract_float,
+                .integer_literal => .int,
+                .float_literal => .float,
                 else => unreachable,
             };
-        } else if (r.isBoolLiteral() or r == .bool_type) {
-            return .bool;
-        } else if (is_decl and r.isNumberType()) {
-            return switch (r) {
-                .i32_type => .i32,
-                .u32_type => .u32,
-                .f16_type => .f16,
-                .f32_type => .f32,
-                else => unreachable,
-            };
-        } else if (is_decl and r.is(self.instructions, &.{.ptr_type})) {
-            return .ptr;
         } else if (r.is(self.instructions, &.{
             .circuit_and,
             .circuit_or,
@@ -1230,7 +1217,11 @@ pub fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Resolved {
             .less_equal,
             .greater,
             .greater_equal,
-        })) {
+        }) or
+            r.is(self.instructions, &.{.not}) or
+            r.isBoolLiteral() or
+            (in_decl and r == .bool_type))
+        {
             return .bool;
         } else if (r.is(self.instructions, &.{
             .mul,
@@ -1246,32 +1237,47 @@ pub fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Resolved {
         })) {
             const inst = self.instructions.items[r.toIndex().?];
             r = inst.data.binary.lhs; // TODO
-        } else if (r.is(self.instructions, &.{.not})) {
-            return .bool;
         } else if (r.is(self.instructions, &.{.negate})) {
             const inst = self.instructions.items[r.toIndex().?];
             r = inst.data.ref;
         } else if (r.is(self.instructions, &.{.deref})) {
+            in_deref = true;
             const inst = self.instructions.items[r.toIndex().?];
-            is_decl = true;
             r = inst.data.ref;
         } else if (r.is(self.instructions, &.{.var_ref})) {
-            const inst = self.instructions.items[r.toIndex().?];
-            const var_inst = self.instructions.items[inst.data.var_ref.variable.toIndex().?];
-            is_decl = true;
-            switch (var_inst.tag) {
-                .global_variable_decl => {
-                    const decl_type = var_inst.data.global_variable_decl.type;
-                    if (decl_type == .none) {
-                        r = var_inst.data.global_variable_decl.expr;
-                    } else {
-                        r = decl_type;
-                    }
-                },
-                else => unreachable,
+            in_decl = true;
+            r = try self.resolveVarTypeOrValue(r);
+            if (in_deref) {
+                r = self.instructions.items[r.toIndex().?].data.ptr_type.component_type;
             }
         } else {
             return null;
         }
     }
+}
+
+fn resolveVarTypeOrValue(self: *AstGen, ref: IR.Inst.Ref) !IR.Inst.Ref {
+    var r = ref;
+    const inst = self.instructions.items[r.toIndex().?];
+    const resolved_var = try self.resolved_vars.getOrPut(self.allocator, inst.data.var_ref.variable);
+    if (resolved_var.found_existing) return resolved_var.value_ptr.*;
+
+    const var_inst = self.instructions.items[inst.data.var_ref.variable.toIndex().?];
+    switch (var_inst.tag) {
+        .global_variable_decl => {
+            const decl_type = var_inst.data.global_variable_decl.type;
+            if (decl_type != .none) {
+                r = decl_type;
+            } else {
+                r = var_inst.data.global_variable_decl.expr;
+                if (r.is(self.instructions, &.{.var_ref})) {
+                    r = try self.resolveVarTypeOrValue(r);
+                }
+            }
+        },
+        else => unreachable,
+    }
+
+    resolved_var.value_ptr.* = r;
+    return r;
 }

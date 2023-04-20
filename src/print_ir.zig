@@ -30,7 +30,7 @@ fn Printer(comptime Writer: type) type {
                 .true_literal,
                 .false_literal,
                 => {
-                    try self.writer.print("{s}()", .{@tagName(ref)});
+                    try self.writer.print("{s}", .{@tagName(ref)});
                 },
                 _ => {
                     const index = ref.toIndex().?;
@@ -91,6 +91,20 @@ fn Printer(comptime Writer: type) type {
 
             try self.instBlockStart(index);
             defer self.instBlockEnd(indent) catch unreachable;
+
+            try self.printField(indent + 1, "name");
+            try self.printStr(inst.data.global_variable_decl.name);
+            try self.writer.writeAll(",\n");
+
+            if (inst.data.global_variable_decl.addr_space != .none) {
+                try self.printField(indent + 1, "addr_space");
+                try self.writer.print("{s},\n", .{@tagName(inst.data.global_variable_decl.addr_space)});
+            }
+
+            if (inst.data.global_variable_decl.access_mode != .none) {
+                try self.printField(indent + 1, "access_mode");
+                try self.writer.print("{s},\n", .{@tagName(inst.data.global_variable_decl.access_mode)});
+            }
 
             try self.printField(indent + 1, "type");
             try self.printInst(indent + 2, inst.data.global_variable_decl.type, true);

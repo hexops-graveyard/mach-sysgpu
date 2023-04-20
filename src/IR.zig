@@ -29,6 +29,7 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemor
     defer {
         astgen.scope_pool.deinit();
         astgen.scratch.deinit(allocator);
+        astgen.resolved_vars.deinit(allocator);
     }
     errdefer {
         astgen.instructions.deinit(allocator);
@@ -90,10 +91,11 @@ pub const Inst = struct {
             }
         }
 
-        pub fn is(self: Ref, list: List, comptime expected: []const Inst.Tag) bool {
-            const inst = list.items[self.toIndex() orelse return false];
-            inline for (expected) |e| {
-                if (inst.tag == e) return true;
+        pub fn is(self: Ref, list: List, expected: []const Tag) bool {
+            const indx = self.toIndex() orelse return false;
+            const tag = list.items[indx].tag;
+            for (expected) |t| {
+                if (tag == t) return true;
             }
             return false;
         }

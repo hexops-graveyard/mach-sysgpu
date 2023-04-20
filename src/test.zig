@@ -106,7 +106,7 @@ test "empty" {
 test "gkurve" {
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
-    // try printIR(ir, std.io.getStdOut().writer());
+    try printIR(ir, std.io.getStdOut().writer());
 }
 
 test "must pass" {
@@ -115,6 +115,13 @@ test "must pass" {
             \\var v0: ptr<storage, u32> = 2;
             \\var v1 = *v0 + 5;
             \\var v2 = v1 * 4;
+        ;
+        var ir = try expectIR(source);
+        ir.deinit();
+    }
+    {
+        const source =
+            \\var v0: array<u32, 4> = 2;
         ;
         var ir = try expectIR(source);
         ir.deinit();
@@ -204,11 +211,21 @@ test "must error" {
     }
     {
         const source =
-            \\var v1 = *4 + 5;
+            \\var v0 = *4 + 5;
         ;
         try expectError(source, .{
             .msg = "cannot dereference '4'",
             .loc = .{ .start = 10, .end = 11 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = 1;
+            \\var v1 = *v0 + 5;
+        ;
+        try expectError(source, .{
+            .msg = "cannot dereference non-pointer variable 'v0'",
+            .loc = .{ .start = 22, .end = 24 },
         });
     }
 }
