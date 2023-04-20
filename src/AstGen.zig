@@ -309,8 +309,44 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
     const inst_index = try self.reserveInst();
     const inst: IR.Inst = switch (node_tag) {
         .number_literal => .{ .tag = .integer_literal, .data = .{ .integer_literal = 1 } },
-        .not => .{ .tag = .not, .data = .{ .ref = try self.genExpr(scope, node_lhs) } },
-        .negate => .{ .tag = .negate, .data = .{ .ref = try self.genExpr(scope, node_lhs) } },
+        .not => blk: {
+            const lhs = try self.genExpr(scope, node_lhs);
+            const lhs_res = try self.resolve(lhs);
+
+            if (lhs_res) |r| switch (r) {
+                .bool => {
+                    break :blk .{ .tag = .not, .data = .{ .ref = lhs } };
+                },
+                else => {},
+            };
+
+            try self.errors.add(
+                node_lhs_loc,
+                "cannot operate not (!) on '{s}'",
+                .{node_lhs_loc.slice(self.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
+        .negate => blk: {
+            const lhs = try self.genExpr(scope, node_lhs);
+            const lhs_res = try self.resolve(lhs);
+
+            if (lhs_res) |r| switch (r) {
+                .int, .float => {
+                    break :blk .{ .tag = .negate, .data = .{ .ref = lhs } };
+                },
+                else => {},
+            };
+
+            try self.errors.add(
+                node_lhs_loc,
+                "cannot negate '{s}'",
+                .{node_lhs_loc.slice(self.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
         .deref => blk: {
             const lhs = try self.genExpr(scope, node_lhs);
             if (!lhs.is(self.instructions, &.{.var_ref})) {

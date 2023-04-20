@@ -106,7 +106,6 @@ test "empty" {
 test "gkurve" {
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
-    try printIR(ir, std.io.getStdOut().writer());
 }
 
 test "must pass" {
@@ -226,6 +225,24 @@ test "must error" {
         try expectError(source, .{
             .msg = "cannot dereference non-pointer variable 'v0'",
             .loc = .{ .start = 22, .end = 24 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = -false;
+        ;
+        try expectError(source, .{
+            .msg = "cannot negate 'false'",
+            .loc = .{ .start = 10, .end = 15 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = !5;
+        ;
+        try expectError(source, .{
+            .msg = "cannot operate not (!) on '5'",
+            .loc = .{ .start = 10, .end = 11 },
         });
     }
 }
