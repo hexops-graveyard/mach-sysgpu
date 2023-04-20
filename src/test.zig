@@ -125,6 +125,14 @@ test "must pass" {
         var ir = try expectIR(source);
         ir.deinit();
     }
+    {
+        const source =
+            \\var v0: array<u32>;
+            \\var v1 = v0[0];
+        ;
+        var ir = try expectIR(source);
+        ir.deinit();
+    }
 }
 
 test "must error" {
@@ -243,6 +251,26 @@ test "must error" {
         try expectError(source, .{
             .msg = "cannot operate not (!) on '5'",
             .loc = .{ .start = 10, .end = 11 },
+        });
+    }
+    {
+        const source =
+            \\var v0: array<u32>;
+            \\var v1 = 5[0];
+        ;
+        try expectError(source, .{
+            .msg = "expected array type, found '5'",
+            .loc = .{ .start = 29, .end = 30 },
+        });
+    }
+    {
+        const source =
+            \\var v0: u32;
+            \\var v1 = v0[0];
+        ;
+        try expectError(source, .{
+            .msg = "cannot access index of a non-array variable",
+            .loc = .{ .start = 22, .end = 24 },
         });
     }
 }

@@ -349,24 +349,24 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
         },
         .deref => blk: {
             const lhs = try self.genExpr(scope, node_lhs);
-            if (!lhs.is(self.instructions, &.{.var_ref})) {
-                try self.errors.add(
-                    node_lhs_loc,
-                    "cannot dereference '{s}'",
-                    .{node_lhs_loc.slice(self.tree.source)},
-                    null,
-                );
-                return error.AnalysisFail;
-            }
-
-            const lhs_res = try self.resolveVarTypeOrValue(lhs);
-            if (lhs_res.is(self.instructions, &.{.ptr_type})) {
-                break :blk .{ .tag = .deref, .data = .{ .ref = lhs } };
+            if (lhs.is(self.instructions, &.{.var_ref})) {
+                const lhs_res = try self.resolveVarTypeOrValue(lhs);
+                if (lhs_res.is(self.instructions, &.{.ptr_type})) {
+                    break :blk .{ .tag = .deref, .data = .{ .ref = lhs } };
+                } else {
+                    try self.errors.add(
+                        node_lhs_loc,
+                        "cannot dereference non-pointer variable '{s}'",
+                        .{node_lhs_loc.slice(self.tree.source)},
+                        null,
+                    );
+                    return error.AnalysisFail;
+                }
             }
 
             try self.errors.add(
                 node_lhs_loc,
-                "cannot dereference non-pointer variable '{s}'",
+                "cannot dereference '{s}'",
                 .{node_lhs_loc.slice(self.tree.source)},
                 null,
             );
@@ -457,7 +457,35 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                 .data = .{ .binary = .{ .lhs = lhs, .rhs = rhs } },
             };
         },
-        .index_access => .{ .tag = .index, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genExpr(scope, node_rhs) } } },
+        .index_access => blk: {
+            const lhs = try self.genExpr(scope, node_lhs);
+            const rhs = try self.genExpr(scope, node_rhs);
+            if (lhs.is(self.instructions, &.{.var_ref})) {
+                const lhs_res = try self.resolveVarTypeOrValue(lhs);
+                if (lhs_res.is(self.instructions, &.{.array_type})) {
+                    break :blk .{
+                        .tag = .index,
+                        .data = .{
+                            .binary = .{
+                                .lhs = lhs,
+                                .rhs = rhs,
+                            },
+                        },
+                    };
+                } else {
+                    try self.errors.add(node_lhs_loc, "cannot access index of a non-array variable", .{}, null);
+                    return error.AnalysisFail;
+                }
+            }
+
+            try self.errors.add(
+                node_lhs_loc,
+                "expected array type, found '{s}'",
+                .{node_lhs_loc.slice(self.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
         .component_access => .{ .tag = .member_access, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genExpr(scope, node_rhs) } } },
         .bitcast => .{ .tag = .bitcast, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genType(scope, node_rhs) } } },
         .ident_expr => .{
