@@ -334,8 +334,11 @@ pub const Inst = struct {
         /// data is binary (lhs is expr, rhs is type)
         bitcast,
 
-        /// data is var_ref
+        /// data is ref
         var_ref,
+
+        /// data is ref
+        struct_ref,
 
         pub fn isDecl(self: Tag) bool {
             return switch (self) {
@@ -347,7 +350,6 @@ pub const Inst = struct {
 
     pub const Data = union {
         ref: Ref,
-        var_ref: VarRef,
         global_variable_decl: GlobalVariableDecl,
         struct_decl: StructDecl,
         struct_member: StructMember,
@@ -375,12 +377,6 @@ pub const Inst = struct {
         /// meaning of LHS and RHS depends on the corresponding Tag.
         binary: BinaryExpr,
         member_access: MemberAccess,
-    };
-
-    pub const VarRef = struct {
-        /// index to zero-terminated string in `strings`
-        name: u32,
-        variable: Ref,
     };
 
     pub const GlobalVariableDecl = struct {

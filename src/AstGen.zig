@@ -232,7 +232,7 @@ pub fn genStruct(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             },
             .none, .true_literal, .false_literal => unreachable,
             _ => switch (self.instructions.items[member_type_ref.toIndex().?].tag) {
-                .vector_type, .matrix_type, .atomic_type, .struct_decl => {},
+                .vector_type, .matrix_type, .atomic_type, .struct_ref => {},
                 .array_type => {
                     if (self.instructions.items[member_type_ref.toIndex().?].data.array_type.size == .none and i + 1 != member_list.len) {
                         try self.errors.add(
@@ -496,9 +496,10 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             if (lhs.is(self.instructions, &.{.var_ref})) {
                 const lhs_res = try self.resolveVarTypeOrValue(lhs);
                 // TODO: call expr
-                if (lhs_res.is(self.instructions, &.{.struct_decl})) {
+                if (lhs_res.is(self.instructions, &.{.struct_ref})) {
+                    const inst = self.instructions.items[self.instructions.items[lhs_res.toIndex().?].data.ref.toIndex().?];
                     const component_name = node_loc.slice(self.tree.source);
-                    const members_index = self.instructions.items[lhs_res.toIndex().?].data.struct_decl.members;
+                    const members_index = inst.data.struct_decl.members;
                     const members = std.mem.sliceTo(self.refs.items[members_index..], .none);
                     for (members) |member_index| {
                         const member = self.instructions.items[member_index.toIndex().?].data.struct_member;
@@ -520,7 +521,7 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                         node_loc,
                         "struct '{s}' has no member named '{s}'",
                         .{
-                            std.mem.sliceTo(self.strings.items[self.instructions.items[lhs_res.toIndex().?].data.struct_decl.name..], 0),
+                            std.mem.sliceTo(self.strings.items[inst.data.struct_decl.name..], 0),
                             component_name,
                         },
                         null,
@@ -539,15 +540,7 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
         },
         // TODO: call expr
         .bitcast => .{ .tag = .bitcast, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genType(scope, node_rhs) } } },
-        .ident_expr => .{
-            .tag = .var_ref,
-            .data = .{
-                .var_ref = .{
-                    .name = try self.addString(self.tree.nodeLoc(node).slice(self.tree.source)),
-                    .variable = try self.declRef(scope, node),
-                },
-            },
-        },
+        .ident_expr => .{ .tag = .var_ref, .data = .{ .ref = try self.declRef(scope, node) } },
         else => unreachable,
     };
 
@@ -614,8 +607,8 @@ pub fn genType(self: *AstGen, scope: *Scope, node: Ast.Index) error{ AnalysisFai
                     .multisampled_texture_type,
                     .storage_texture_type,
                     .depth_texture_type,
-                    .struct_decl,
                     => return decl_ref,
+                    .struct_decl => return IR.Inst.toRef(try self.addInst(.{ .tag = .struct_ref, .data = .{ .ref = decl_ref } })),
                     .global_variable_decl => {
                         try self.errors.add(
                             node_loc,
@@ -680,7 +673,7 @@ pub fn genSampledTextureType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.
             .multisampled_texture_type,
             .storage_texture_type,
             .depth_texture_type,
-            .struct_decl,
+            .struct_ref,
             => {
                 try self.errors.add(
                     self.tree.nodeLoc(component_type_node),
@@ -760,7 +753,7 @@ pub fn genMultigenSampledTextureType(self: *AstGen, scope: *Scope, node: Ast.Ind
             .multisampled_texture_type,
             .storage_texture_type,
             .depth_texture_type,
-            .struct_decl,
+            .struct_ref,
             => {
                 try self.errors.add(
                     self.tree.nodeLoc(component_type_node),
@@ -951,7 +944,7 @@ pub fn genVectorType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref
             .multisampled_texture_type,
             .storage_texture_type,
             .depth_texture_type,
-            .struct_decl,
+            .struct_ref,
             => {
                 try self.errors.add(
                     self.tree.nodeLoc(component_type_node),
@@ -1029,7 +1022,7 @@ pub fn genMatrixType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref
             .multisampled_texture_type,
             .storage_texture_type,
             .depth_texture_type,
-            .struct_decl,
+            .struct_ref,
             => {
                 try self.errors.add(
                     self.tree.nodeLoc(component_type_node),
@@ -1113,7 +1106,7 @@ pub fn genAtomicType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref
             .multisampled_texture_type,
             .storage_texture_type,
             .depth_texture_type,
-            .struct_decl,
+            .struct_ref,
             => {
                 try self.errors.add(
                     self.tree.nodeLoc(component_type_node),
@@ -1170,7 +1163,7 @@ pub fn genArrayType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref 
             .vector_type,
             .matrix_type,
             .atomic_type,
-            .struct_decl,
+            .struct_ref,
             => {},
             .array_type => {
                 if (self.instructions.items[component_type_ref.toIndex().?].data.array_type.size == .none) {
@@ -1242,7 +1235,7 @@ pub fn genPtrType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             .vector_type,
             .matrix_type,
             .atomic_type,
-            .struct_decl,
+            .struct_ref,
             .array_type,
             .sampled_texture_type,
             .multisampled_texture_type,
@@ -1374,10 +1367,11 @@ fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Resolved {
 fn resolveVarTypeOrValue(self: *AstGen, ref: IR.Inst.Ref) !IR.Inst.Ref {
     var r = ref;
     const inst = self.instructions.items[r.toIndex().?];
-    const resolved_var = try self.resolved_vars.getOrPut(self.allocator, inst.data.var_ref.variable);
+    const var_inst = self.instructions.items[inst.data.ref.toIndex().?];
+
+    const resolved_var = try self.resolved_vars.getOrPut(self.allocator, inst.data.ref);
     if (resolved_var.found_existing) return resolved_var.value_ptr.*;
 
-    const var_inst = self.instructions.items[inst.data.var_ref.variable.toIndex().?];
     switch (var_inst.tag) {
         .global_variable_decl => {
             const decl_type = var_inst.data.global_variable_decl.type;
