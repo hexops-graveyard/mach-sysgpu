@@ -378,13 +378,13 @@ pub const Inst = struct {
     };
 
     pub const VarRef = struct {
-        /// index to null-terminated string in `strings`
+        /// index to zero-terminated string in `strings`
         name: u32,
         variable: Ref,
     };
 
     pub const GlobalVariableDecl = struct {
-        /// index to null-terminated string in `strings`
+        /// index to zero-terminated string in `strings`
         name: u32,
         type: Ref = .none,
         addr_space: AddressSpace,
@@ -411,14 +411,14 @@ pub const Inst = struct {
     };
 
     pub const StructDecl = struct {
-        /// index to null-terminated string in `strings`
+        /// index to zero-terminated string in `strings`
         name: u32,
-        /// length of the member Ref's which comes after this
+        /// index to zero-terminated members Ref in `refs`
         members: u32,
     };
 
     pub const StructMember = struct {
-        /// index to null-terminated string in `strings`
+        /// index to zero-terminated string in `strings`
         name: u32,
         type: Ref,
         @"align": u29, // 0 means null
@@ -596,7 +596,7 @@ pub const Inst = struct {
 
     pub const MemberAccess = struct {
         base: Ref,
-        /// index to null-terminated string in `strings`
+        /// index to zero-terminated string in `strings`
         name: u32,
     };
 
