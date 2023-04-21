@@ -463,19 +463,24 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             if (lhs.is(self.instructions, &.{.var_ref})) {
                 const lhs_res = try self.resolveVarTypeOrValue(lhs);
                 if (lhs_res.is(self.instructions, &.{.array_type})) {
-                    break :blk .{
-                        .tag = .index,
-                        .data = .{
-                            .binary = .{
-                                .lhs = lhs,
-                                .rhs = rhs,
+                    const rhs_res = try self.resolve(rhs);
+                    if (rhs_res != null and rhs_res.? == .int) {
+                        break :blk .{
+                            .tag = .index,
+                            .data = .{
+                                .binary = .{
+                                    .lhs = lhs,
+                                    .rhs = rhs,
+                                },
                             },
-                        },
-                    };
-                } else {
-                    try self.errors.add(node_lhs_loc, "cannot access index of a non-array variable", .{}, null);
+                        };
+                    }
+                    try self.errors.add(node_rhs_loc, "index must be an integer", .{}, null);
                     return error.AnalysisFail;
                 }
+
+                try self.errors.add(node_lhs_loc, "cannot access index of a non-array variable", .{}, null);
+                return error.AnalysisFail;
             }
 
             try self.errors.add(
@@ -486,7 +491,53 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             );
             return error.AnalysisFail;
         },
-        .component_access => .{ .tag = .member_access, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genExpr(scope, node_rhs) } } },
+        .component_access => blk: {
+            const lhs = try self.genExpr(scope, node_lhs);
+            if (lhs.is(self.instructions, &.{.var_ref})) {
+                const lhs_res = try self.resolveVarTypeOrValue(lhs);
+                // TODO: call expr
+                if (lhs_res.is(self.instructions, &.{.struct_decl})) {
+                    const component_name = node_loc.slice(self.tree.source);
+                    const members_index = self.instructions.items[lhs_res.toIndex().?].data.struct_decl.members;
+                    const members = std.mem.sliceTo(self.refs.items[members_index..], .none);
+                    for (members) |member_index| {
+                        const member = self.instructions.items[member_index.toIndex().?].data.struct_member;
+                        const member_name = std.mem.sliceTo(self.strings.items[member.name..], 0);
+                        if (std.mem.eql(u8, component_name, member_name)) {
+                            break :blk .{
+                                .tag = .member_access,
+                                .data = .{
+                                    .member_access = .{
+                                        .base = lhs,
+                                        .name = member.name,
+                                    },
+                                },
+                            };
+                        }
+                    }
+
+                    try self.errors.add(
+                        node_loc,
+                        "struct '{s}' has no member named '{s}'",
+                        .{
+                            std.mem.sliceTo(self.strings.items[self.instructions.items[lhs_res.toIndex().?].data.struct_decl.name..], 0),
+                            component_name,
+                        },
+                        null,
+                    );
+                    return error.AnalysisFail;
+                }
+            }
+
+            try self.errors.add(
+                node_lhs_loc,
+                "expected struct type, found '{s}'",
+                .{node_lhs_loc.slice(self.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
+        // TODO: call expr
         .bitcast => .{ .tag = .bitcast, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genType(scope, node_rhs) } } },
         .ident_expr => .{
             .tag = .var_ref,

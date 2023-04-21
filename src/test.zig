@@ -133,6 +133,15 @@ test "must pass" {
         var ir = try expectIR(source);
         ir.deinit();
     }
+    {
+        const source =
+            \\struct S { f: u32 }
+            \\var v0: S;
+            \\var v1 = v0.f;
+        ;
+        var ir = try expectIR(source);
+        ir.deinit();
+    }
 }
 
 test "must error" {
@@ -255,6 +264,16 @@ test "must error" {
     }
     {
         const source =
+            \\var v0: u32;
+            \\var v1 = v0[0];
+        ;
+        try expectError(source, .{
+            .msg = "cannot access index of a non-array variable",
+            .loc = .{ .start = 22, .end = 24 },
+        });
+    }
+    {
+        const source =
             \\var v0: array<u32>;
             \\var v1 = 5[0];
         ;
@@ -265,12 +284,23 @@ test "must error" {
     }
     {
         const source =
-            \\var v0: u32;
-            \\var v1 = v0[0];
+            \\var v0: array<u32>;
+            \\var v1 = v0[true];
         ;
         try expectError(source, .{
-            .msg = "cannot access index of a non-array variable",
-            .loc = .{ .start = 22, .end = 24 },
+            .msg = "index must be an integer",
+            .loc = .{ .start = 32, .end = 36 },
+        });
+    }
+    {
+        const source =
+            \\struct S { f: u32 }
+            \\var v0: S;
+            \\var v1 = v0.d;
+        ;
+        try expectError(source, .{
+            .msg = "struct 'S' has no member named 'd'",
+            .loc = .{ .start = 43, .end = 44 },
         });
     }
 }
