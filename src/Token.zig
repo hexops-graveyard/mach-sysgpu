@@ -279,6 +279,11 @@ pub const Tag = enum {
     /// 'while'
     k_while,
 
+    /// Template left '<'
+    tmpl_left,
+    /// Template right '>'
+    tmpl_right,
+
     pub fn symbol(self: Tag) []const u8 {
         return switch (self) {
             .eof => "EOF",
@@ -397,6 +402,8 @@ pub const Tag = enum {
             .k_vec3 => "vec3",
             .k_vec4 => "vec4",
             .k_while => "while",
+            .tmpl_left => "<",
+            .tmpl_right => ">",
         };
     }
 };

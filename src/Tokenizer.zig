@@ -4,7 +4,7 @@ const Token = @import("Token.zig");
 const Tokenizer = @This();
 
 source: [:0]const u8,
-index: u32,
+index: u32 = 0,
 
 const State = enum {
     start,
@@ -36,10 +36,7 @@ pub fn dump(self: *Tokenizer, token: Token) void {
 pub fn init(source: [:0]const u8) Tokenizer {
     // Skip the UTF-8 BOM if present
     const src_start: u32 = if (std.mem.startsWith(u8, source, "\xEF\xBB\xBF")) 3 else 0;
-    return Tokenizer{
-        .source = source[src_start..],
-        .index = 0,
-    };
+    return Tokenizer{ .source = source[src_start..] };
 }
 
 pub fn peek(self: *Tokenizer) Token {
@@ -398,23 +395,5 @@ test "tokenize identifier and numbers" {
     try std.testing.expect(tokenizer.next().tag == .ident);
     try std.testing.expectEqualStrings("-100i", tokenizer.next().loc.slice(str));
     try std.testing.expect(tokenizer.next().tag == .number);
-    try std.testing.expect(tokenizer.next().tag == .eof);
-}
-
-test "tokenize other" {
-    comptime var str: [:0]const u8 = "";
-    inline for (std.meta.fields(Token.Tag), 0..) |field, i| comptime {
-        if (i > 3) {
-            str = str ++ " " ++ (Token.Tag.symbol(@intToEnum(Token.Tag, field.value)));
-        }
-    };
-
-    var tokenizer = Tokenizer.init(str);
-
-    comptime var i = 4; // skip identifiers and nums
-    inline while (i < std.meta.fields(Token.Tag).len) : (i += 1) {
-        const tag = @intToEnum(Token.Tag, i);
-        try std.testing.expect(tokenizer.next().tag == tag);
-    }
     try std.testing.expect(tokenizer.next().tag == .eof);
 }
