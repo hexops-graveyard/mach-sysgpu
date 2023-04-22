@@ -313,12 +313,9 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             const lhs = try self.genExpr(scope, node_lhs);
             const lhs_res = try self.resolve(lhs);
 
-            if (lhs_res) |r| switch (r) {
-                .bool => {
-                    break :blk .{ .tag = .not, .data = .{ .ref = lhs } };
-                },
-                else => {},
-            };
+            if (lhs_res != null and lhs_res.?.isBool()) {
+                break :blk .{ .tag = .not, .data = .{ .ref = lhs } };
+            }
 
             try self.errors.add(
                 node_lhs_loc,
@@ -332,12 +329,9 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             const lhs = try self.genExpr(scope, node_lhs);
             const lhs_res = try self.resolve(lhs);
 
-            if (lhs_res) |r| switch (r) {
-                .int, .float => {
-                    break :blk .{ .tag = .negate, .data = .{ .ref = lhs } };
-                },
-                else => {},
-            };
+            if (lhs_res != null and lhs_res.?.isNumber(self.instructions)) {
+                break :blk .{ .tag = .negate, .data = .{ .ref = lhs } };
+            }
 
             try self.errors.add(
                 node_lhs_loc,
@@ -435,12 +429,12 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                 return error.AnalysisFail;
             };
 
-            if (lhs_res == .bool or rhs_res == .bool) {
-                switch (inst_tag) {
-                    .circuit_and,
-                    .circuit_or,
-                    => {},
-                    else => {
+            switch (inst_tag) {
+                .circuit_and,
+                .circuit_or,
+                => {},
+                else => {
+                    if (lhs_res.isBool() or rhs_res.isBool()) {
                         try self.errors.add(
                             node_loc,
                             "'{s}' operation with boolean",
@@ -448,8 +442,8 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                             null,
                         );
                         return error.AnalysisFail;
-                    },
-                }
+                    }
+                },
             }
 
             break :blk .{
@@ -464,7 +458,7 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                 const lhs_res = try self.resolveVarTypeOrValue(lhs);
                 if (lhs_res.is(self.instructions, &.{.array_type})) {
                     const rhs_res = try self.resolve(rhs);
-                    if (rhs_res != null and rhs_res.? == .int) {
+                    if (rhs_res != null and rhs_res.?.isInteger(self.instructions)) {
                         break :blk .{
                             .tag = .index,
                             .data = .{
@@ -539,7 +533,93 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             return error.AnalysisFail;
         },
         // TODO: call expr
-        .bitcast => .{ .tag = .bitcast, .data = .{ .binary = .{ .lhs = try self.genExpr(scope, node_lhs), .rhs = try self.genType(scope, node_rhs) } } },
+        .bitcast => blk: {
+            const lhs = try self.genType(scope, node_lhs);
+            const rhs = try self.genExpr(scope, node_rhs);
+            const rhs_res = try self.resolve(rhs) orelse unreachable;
+            var result_type: ?IR.Inst.Ref = null;
+
+            // bitcast<T>(T) -> T
+            if (lhs.isNumberType() and lhs == rhs_res) {
+                result_type = lhs;
+            } else if (lhs.is32BitNumberType()) {
+                // bitcast<T>(S) -> T
+                if (rhs_res.is32BitNumberType() and lhs != rhs_res) {
+                    result_type = lhs;
+                }
+                // bitcast<T>(vec2<f16>) -> T
+                else if (rhs_res.is(self.instructions, &.{.vector_type})) {
+                    const rhs_inst = self.instructions.items[rhs_res.toIndex().?];
+
+                    if (rhs_inst.data.vector_type.size == .two and
+                        rhs_inst.data.vector_type.component_type == .f16_type)
+                    {
+                        result_type = lhs;
+                    }
+                }
+            } else if (lhs.is(self.instructions, &.{.vector_type})) {
+                const lhs_inst = self.instructions.items[lhs.toIndex().?];
+
+                // bitcast<vec2<f16>>(T) -> vec2<f16>
+                if (lhs_inst.data.vector_type.size == .two and
+                    lhs_inst.data.vector_type.component_type == .f16_type and
+                    rhs_res.is32BitNumberType())
+                {
+                    result_type = lhs;
+                } else if (rhs_res.is(self.instructions, &.{.vector_type})) {
+                    const rhs_inst = self.instructions.items[rhs_res.toIndex().?];
+
+                    if (lhs_inst.data.vector_type.size == rhs_inst.data.vector_type.size and
+                        lhs_inst.data.vector_type.component_type.is32BitNumberType() and
+                        rhs_inst.data.vector_type.component_type.is32BitNumberType())
+                    {
+                        // bitcast<vecN<T>>(vecN<T>) -> vecN<T>
+                        if (lhs_inst.data.vector_type.component_type == rhs_inst.data.vector_type.component_type) {
+                            result_type = lhs;
+                        }
+                        // bitcast<vecN<T>>(vecN<S>) -> T
+                        else {
+                            result_type = lhs_inst.data.vector_type.component_type;
+                        }
+                    }
+                    // bitcast<vec2<T>>(vec4<f16>) -> vec2<T>
+                    else if (lhs_inst.data.vector_type.size == .two and
+                        lhs_inst.data.vector_type.component_type.is32BitNumberType() and
+                        rhs_inst.data.vector_type.size == .four and
+                        rhs_inst.data.vector_type.component_type == .f16_type)
+                    {
+                        result_type = lhs;
+                    }
+                    // bitcast<vec4<f16>>(vec2<T>) -> vec4<f16>
+                    else if (rhs_inst.data.vector_type.size == .two and
+                        rhs_inst.data.vector_type.component_type.is32BitNumberType() and
+                        lhs_inst.data.vector_type.size == .four and
+                        lhs_inst.data.vector_type.component_type == .f16_type)
+                    {
+                        result_type = lhs;
+                    }
+                }
+            }
+
+            if (result_type) |rt| break :blk .{
+                .tag = .bitcast,
+                .data = .{
+                    .bitcast = .{
+                        .type = lhs,
+                        .expr = rhs,
+                        .result_type = rt,
+                    },
+                },
+            };
+
+            try self.errors.add(
+                node_rhs_loc,
+                "cannot cast '{s}' into '{s}'",
+                .{ node_rhs_loc.slice(self.tree.source), node_lhs_loc.slice(self.tree.source) },
+                null,
+            );
+            return error.AnalysisFail;
+        },
         .ident_expr => .{ .tag = .var_ref, .data = .{ .ref = try self.declRef(scope, node) } },
         else => unreachable,
     };
@@ -1292,30 +1372,16 @@ pub fn genPtrType(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
     return IR.Inst.toRef(inst);
 }
 
-const Resolved = enum {
-    int,
-    float,
-    bool,
-};
-fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Resolved {
+fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?IR.Inst.Ref {
     var in_deref = false;
     var in_decl = false;
     var r = ref;
 
     while (true) {
-        if (in_decl and r.isNumberType()) {
-            return switch (r) {
-                .i32_type, .u32_type => .int,
-                .f16_type, .f32_type => .float,
-                else => unreachable,
-            };
-        } else if (r.isNumberLiteral(self.instructions)) {
-            const inst = self.instructions.items[r.toIndex().?];
-            return switch (inst.tag) {
-                .integer_literal => .int,
-                .float_literal => .float,
-                else => unreachable,
-            };
+        if (in_decl and r.isType(self.instructions)) {
+            return r;
+        } else if (r.isLiteral(self.instructions)) {
+            return r;
         } else if (r.is(self.instructions, &.{
             .circuit_and,
             .circuit_or,
@@ -1325,12 +1391,9 @@ fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?Resolved {
             .less_equal,
             .greater,
             .greater_equal,
-        }) or
-            r.is(self.instructions, &.{.not}) or
-            r.isBoolLiteral() or
-            (in_decl and r == .bool_type))
-        {
-            return .bool;
+            .not,
+        })) {
+            return .bool_type;
         } else if (r.is(self.instructions, &.{
             .mul,
             .div,
