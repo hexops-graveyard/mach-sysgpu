@@ -111,6 +111,13 @@ test "gkurve" {
 test "must pass" {
     {
         const source =
+            \\var v0: array<array<vec2<u32>, 5>>;
+        ;
+        var ir = try expectIR(source);
+        ir.deinit();
+    }
+    {
+        const source =
             \\var v0: ptr<storage, u32>;
             \\var v1 = *v0 + 5;
             \\var v2 = v1 * 4;
@@ -150,22 +157,14 @@ test "must pass" {
         var ir = try expectIR(source);
         ir.deinit();
     }
-    // {
-    //     const source =
-    //         \\var v0: vec2<f16>;
-    //         \\var v1 = bitcast<vec2<f16>>(v0);
-    //     ;
-    //     var ir = try expectIR(source);
-    //     ir.deinit();
-    // }
-    // {
-    //     const source =
-    //         \\var v0: vec2<u32>;
-    //         \\var v1 = bitcast<vec2<u32>>(v0);
-    //     ;
-    //     var ir = try expectIR(source);
-    //     ir.deinit();
-    // }
+    {
+        const source =
+            \\var v0: vec2<u32>;
+            \\var v1 = bitcast<vec2<u32>>(v0);
+        ;
+        var ir = try expectIR(source);
+        ir.deinit();
+    }
 }
 
 test "must error" {

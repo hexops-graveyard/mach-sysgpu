@@ -18,6 +18,8 @@ errors: ErrorList,
 extensions: Extension.Array,
 
 pub fn translationUnit(p: *Parser) !void {
+    try p.parameterizeTemplates();
+
     const root = try p.addNode(.{ .tag = .span, .main_token = undefined });
 
     while (try p.globalDirectiveRecoverable()) |ext| {
@@ -32,6 +34,100 @@ pub fn translationUnit(p: *Parser) !void {
     try p.extra.appendSlice(p.allocator, p.scratch.items);
     p.nodes.items(.lhs)[root] = @intCast(Ast.Index, p.extra.items.len - p.scratch.items.len);
     p.nodes.items(.rhs)[root] = @intCast(Ast.Index, p.extra.items.len);
+}
+
+// Based on https://gpuweb.github.io/gpuweb/wgsl/#template-lists-sec
+pub fn parameterizeTemplates(p: *Parser) !void {
+    const UnclosedCandidate = struct {
+        token_tag: *Token.Tag,
+        depth: u32,
+    };
+    var discovered_tmpls = std.BoundedArray(UnclosedCandidate, 16).init(0) catch unreachable;
+    var depth: u32 = 0;
+
+    var i: u32 = 0;
+    while (i < p.tokens.len) : (i += 1) {
+        switch (p.tokens.items(.tag)[i]) {
+            .ident,
+            .k_var,
+            .k_bitcast,
+            .k_array,
+            .k_atomic,
+            .k_ptr,
+            .k_vec2,
+            .k_vec3,
+            .k_vec4,
+            .k_mat2x2,
+            .k_mat2x3,
+            .k_mat2x4,
+            .k_mat3x2,
+            .k_mat3x3,
+            .k_mat3x4,
+            .k_mat4x2,
+            .k_mat4x3,
+            .k_mat4x4,
+            .k_texture_sampled_1d,
+            .k_texture_sampled_2d,
+            .k_texture_sampled_2d_array,
+            .k_texture_sampled_3d,
+            .k_texture_sampled_cube,
+            .k_texture_sampled_cube_array,
+            .k_texture_storage_1d,
+            .k_texture_storage_2d,
+            .k_texture_storage_2d_array,
+            .k_texture_storage_3d,
+            => if (p.tokens.items(.tag)[i + 1] == .less_than) {
+                discovered_tmpls.append(.{
+                    .token_tag = &p.tokens.items(.tag)[i + 1],
+                    .depth = depth,
+                }) catch unreachable; // TODO
+                i += 1;
+            },
+            .greater_than => {
+                if (discovered_tmpls.len > 0 and discovered_tmpls.get(discovered_tmpls.len - 1).depth == depth) {
+                    discovered_tmpls.pop().token_tag.* = .tmpl_left;
+                    p.tokens.items(.tag)[i] = .tmpl_right;
+                }
+            },
+            .shift_right => {
+                if (discovered_tmpls.len > 0 and discovered_tmpls.get(discovered_tmpls.len - 1).depth == depth) {
+                    discovered_tmpls.pop().token_tag.* = .tmpl_left;
+                    discovered_tmpls.pop().token_tag.* = .tmpl_left;
+
+                    p.tokens.items(.tag)[i] = .tmpl_right;
+                    try p.tokens.insert(p.allocator, i, Token{
+                        .tag = .tmpl_right,
+                        .loc = .{
+                            .start = p.tokens.items(.loc)[i].start + 1,
+                            .end = p.tokens.items(.loc)[i].end + 1,
+                        },
+                    });
+                }
+            },
+            .paren_left, .bracket_left => {
+                depth += 1;
+            },
+            .paren_right, .bracket_right => {
+                while (discovered_tmpls.len > 0 and discovered_tmpls.get(discovered_tmpls.len - 1).depth == depth) {
+                    _ = discovered_tmpls.pop();
+                }
+
+                if (depth > 0) {
+                    depth -= 1;
+                }
+            },
+            .semicolon, .colon, .brace_left => {
+                depth = 0;
+                discovered_tmpls.resize(0) catch unreachable;
+            },
+            .or_or, .and_and => {
+                while (discovered_tmpls.len > 0 and discovered_tmpls.get(discovered_tmpls.len - 1).depth == depth) {
+                    _ = discovered_tmpls.pop();
+                }
+            },
+            else => {},
+        }
+    }
 }
 
 pub fn globalDirectiveRecoverable(p: *Parser) !?Extension {
@@ -276,13 +372,13 @@ pub fn globalVarDecl(p: *Parser, attrs: ?Ast.Index) !?Ast.Index {
     // qualifier
     var addr_space = Ast.null_index;
     var access_mode = Ast.null_index;
-    if (p.eatToken(.less_than)) |_| {
+    if (p.eatToken(.tmpl_left)) |_| {
         addr_space = try p.expectAddressSpace();
         access_mode = if (p.eatToken(.comma)) |_|
             try p.expectAccessMode()
         else
             Ast.null_index;
-        _ = try p.expectToken(.greater_than);
+        _ = try p.expectToken(.tmpl_right);
     }
 
     // name, type
@@ -876,13 +972,13 @@ pub fn varStatement(p: *Parser) !?Ast.Index {
     if (p.eatToken(.k_var)) |var_token| {
         var addr_space = Ast.null_index;
         var access_mode = Ast.null_index;
-        if (p.eatToken(.less_than)) |_| {
+        if (p.eatToken(.tmpl_left)) |_| {
             addr_space = try p.expectAddressSpace();
             access_mode = if (p.eatToken(.comma)) |_|
                 try p.expectAccessMode()
             else
                 Ast.null_index;
-            _ = try p.expectToken(.greater_than);
+            _ = try p.expectToken(.tmpl_right);
         }
 
         const name_token = try p.expectToken(.ident);
@@ -1061,9 +1157,9 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
     if (p.isVectorPrefix()) {
         const main_token = p.advanceToken();
 
-        _ = try p.expectToken(.less_than);
+        _ = try p.expectToken(.tmpl_left);
         const elem_type = try p.expectTypeSpecifier();
-        _ = try p.expectToken(.greater_than);
+        _ = try p.expectToken(.tmpl_right);
 
         return try p.addNode(.{
             .tag = .vector_type,
@@ -1075,9 +1171,9 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
     if (p.isMatrixPrefix()) {
         const main_token = p.advanceToken();
 
-        _ = try p.expectToken(.less_than);
+        _ = try p.expectToken(.tmpl_left);
         const elem_type = try p.expectTypeSpecifier();
-        _ = try p.expectToken(.greater_than);
+        _ = try p.expectToken(.tmpl_right);
 
         return try p.addNode(.{
             .tag = .matrix_type,
@@ -1106,9 +1202,9 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
         },
         .k_atomic => {
             _ = p.advanceToken();
-            _ = try p.expectToken(.less_than);
+            _ = try p.expectToken(.tmpl_left);
             const elem_type = try p.expectTypeSpecifier();
-            _ = try p.expectToken(.greater_than);
+            _ = try p.expectToken(.tmpl_right);
             return try p.addNode(.{
                 .tag = .atomic_type,
                 .main_token = main_token,
@@ -1117,7 +1213,7 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
         },
         .k_array => {
             _ = p.advanceToken();
-            _ = try p.expectToken(.less_than);
+            _ = try p.expectToken(.tmpl_left);
             const elem_type = try p.expectTypeSpecifier();
             var size = Ast.null_index;
             if (p.eatToken(.comma)) |_| {
@@ -1131,7 +1227,7 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
                     return error.Parsing;
                 };
             }
-            _ = try p.expectToken(.greater_than);
+            _ = try p.expectToken(.tmpl_right);
             return try p.addNode(.{
                 .tag = .array_type,
                 .main_token = main_token,
@@ -1141,7 +1237,7 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
         },
         .k_ptr => {
             _ = p.advanceToken();
-            _ = try p.expectToken(.less_than);
+            _ = try p.expectToken(.tmpl_left);
 
             const addr_space = try p.expectAddressSpace();
             _ = try p.expectToken(.comma);
@@ -1150,7 +1246,7 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
             if (p.eatToken(.comma)) |_| {
                 access_mode = try p.expectAccessMode();
             }
-            _ = try p.expectToken(.greater_than);
+            _ = try p.expectToken(.tmpl_right);
 
             const extra = try p.addExtra(Ast.Node.PtrType{
                 .addr_space = addr_space,
@@ -1171,9 +1267,9 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
         .k_texture_sampled_cube_array,
         => {
             _ = p.advanceToken();
-            _ = try p.expectToken(.less_than);
+            _ = try p.expectToken(.tmpl_left);
             const elem_type = try p.expectTypeSpecifier();
-            _ = try p.expectToken(.greater_than);
+            _ = try p.expectToken(.tmpl_right);
             return try p.addNode(.{
                 .tag = .sampled_texture_type,
                 .main_token = main_token,
@@ -1209,11 +1305,11 @@ pub fn typeSpecifierWithoutIdent(p: *Parser) !?Ast.Index {
         .k_texture_storage_3d,
         => {
             _ = p.advanceToken();
-            _ = try p.expectToken(.less_than);
+            _ = try p.expectToken(.tmpl_left);
             const texel_format = try p.expectTexelFormat();
             _ = try p.expectToken(.comma);
             const access_mode = try p.expectAccessMode();
-            _ = try p.expectToken(.greater_than);
+            _ = try p.expectToken(.tmpl_right);
             return try p.addNode(.{
                 .tag = .storage_texture_type,
                 .main_token = main_token,
@@ -1335,7 +1431,7 @@ pub fn callExpr(p: *Parser) !?Ast.Index {
         _ = p.advanceToken();
     }
     // without template args ('vec2', 'array', etc)
-    else if (p.peekToken(.tag, 1) != .less_than and
+    else if (p.peekToken(.tag, 1) != .tmpl_left and
         (p.isVectorPrefix() or
         p.isMatrixPrefix() or
         p.peekToken(.tag, 0) == .k_array))
@@ -1476,9 +1572,9 @@ pub fn primaryExpr(p: *Parser) !?Ast.Index {
         },
         .k_bitcast => {
             _ = p.advanceToken();
-            _ = try p.expectToken(.less_than);
+            _ = try p.expectToken(.tmpl_left);
             const dest_type = try p.expectTypeSpecifier();
-            _ = try p.expectToken(.greater_than);
+            _ = try p.expectToken(.tmpl_right);
             const expr = try p.expectParenExpr();
             return try p.addNode(.{
                 .tag = .bitcast,
