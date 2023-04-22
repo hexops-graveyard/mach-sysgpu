@@ -132,12 +132,100 @@ pub const Inst = struct {
             };
         }
 
+        pub fn isNumber(self: Ref, list: List) bool {
+            return switch (self) {
+                .none,
+                .true_literal,
+                .false_literal,
+                .bool_type,
+                .sampler_type,
+                .comparison_sampler_type,
+                .external_sampled_texture_type,
+                => false,
+                .i32_type,
+                .u32_type,
+                .f32_type,
+                .f16_type,
+                => true,
+                _ => switch (list.items[self.toIndex().?].tag) {
+                    .integer_literal,
+                    .float_literal,
+                    => true,
+                    else => false,
+                },
+            };
+        }
+
+        pub fn isInteger(self: Ref, list: List) bool {
+            return switch (self) {
+                .none,
+                .true_literal,
+                .false_literal,
+                .bool_type,
+                .f32_type,
+                .f16_type,
+                .sampler_type,
+                .comparison_sampler_type,
+                .external_sampled_texture_type,
+                => false,
+                .i32_type,
+                .u32_type,
+                => true,
+                _ => switch (list.items[self.toIndex().?].tag) {
+                    .integer_literal => true,
+                    else => false,
+                },
+            };
+        }
+
+        pub fn isFloat(self: Ref, list: List) bool {
+            return switch (self) {
+                .none,
+                .true_literal,
+                .false_literal,
+                .bool_type,
+                .i32_type,
+                .u32_type,
+                .sampler_type,
+                .comparison_sampler_type,
+                .external_sampled_texture_type,
+                => false,
+                .f32_type,
+                .f16_type,
+                => true,
+                _ => switch (list.items[self.toIndex().?].tag) {
+                    .float_literal => true,
+                    else => false,
+                },
+            };
+        }
+
+        pub fn isBool(self: Ref) bool {
+            return switch (self) {
+                .bool_type,
+                .true_literal,
+                .false_literal,
+                => true,
+                else => false,
+            };
+        }
+
         pub fn isNumberType(self: Ref) bool {
             return switch (self) {
                 .i32_type,
                 .u32_type,
                 .f32_type,
                 .f16_type,
+                => true,
+                else => false,
+            };
+        }
+
+        pub fn is32BitNumberType(self: Ref) bool {
+            return switch (self) {
+                .i32_type,
+                .u32_type,
+                .f32_type,
                 => true,
                 else => false,
             };
@@ -331,7 +419,7 @@ pub const Inst = struct {
         index,
         /// data is member_access
         member_access,
-        /// data is binary (lhs is expr, rhs is type)
+        /// data is bitcast
         bitcast,
 
         /// data is ref
@@ -377,6 +465,7 @@ pub const Inst = struct {
         /// meaning of LHS and RHS depends on the corresponding Tag.
         binary: BinaryExpr,
         member_access: MemberAccess,
+        bitcast: Bitcast,
     };
 
     pub const GlobalVariableDecl = struct {
@@ -594,6 +683,12 @@ pub const Inst = struct {
         base: Ref,
         /// index to zero-terminated string in `strings`
         name: u32,
+    };
+
+    pub const Bitcast = struct {
+        type: Ref,
+        expr: Ref,
+        result_type: Ref,
     };
 
     comptime {
