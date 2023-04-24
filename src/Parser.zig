@@ -18,7 +18,10 @@ errors: ErrorList,
 extensions: Extension.Array,
 
 pub fn translationUnit(p: *Parser) !void {
-    try p.parameterizeTemplates();
+    p.parameterizeTemplates() catch |err| switch (err) {
+        error.Parsing => return,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
 
     const root = try p.addNode(.{ .tag = .span, .main_token = undefined });
 
@@ -80,7 +83,10 @@ pub fn parameterizeTemplates(p: *Parser) !void {
                 discovered_tmpls.append(.{
                     .token_tag = &p.tokens.items(.tag)[i + 1],
                     .depth = depth,
-                }) catch unreachable; // TODO
+                }) catch {
+                    try p.errors.add(p.tokens.items(.loc)[i + 1], "too deep template", .{}, null);
+                    return error.Parsing;
+                };
                 i += 1;
             },
             .greater_than => {
