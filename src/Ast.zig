@@ -61,9 +61,8 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
         p.errors.deinit();
     }
 
-    // TODO: make sure tokens:nodes ratio is right
-    const estimated_node_count = (p.tokens.len + 2) / 2;
-    try p.nodes.ensureTotalCapacity(allocator, estimated_node_count);
+    const estimated_nodes = p.tokens.len / 2 + 1;
+    try p.nodes.ensureTotalCapacity(allocator, estimated_nodes);
 
     try p.translationUnit();
 
