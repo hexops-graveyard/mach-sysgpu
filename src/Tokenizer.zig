@@ -22,6 +22,7 @@ const State = enum {
     shift_left,
     minus,
     mod,
+    period,
     pipe,
     plus,
     slash,
@@ -51,7 +52,7 @@ pub fn peek(self: *Tokenizer) Token {
     };
 
     while (true) : (index += 1) {
-        const c = self.source[index];
+        var c = self.source[index];
         switch (state) {
             .start => switch (c) {
                 0 => {
@@ -75,6 +76,7 @@ pub fn peek(self: *Tokenizer) Token {
                 '<' => state = .less,
                 '-' => state = .minus,
                 '%' => state = .mod,
+                '.' => state = .period,
                 '|' => state = .pipe,
                 '+' => state = .plus,
                 '/' => state = .slash,
@@ -127,11 +129,6 @@ pub fn peek(self: *Tokenizer) Token {
                     index += 1;
                     break;
                 },
-                '.' => {
-                    result.tag = .period;
-                    index += 1;
-                    break;
-                },
                 ';' => {
                     result.tag = .semicolon;
                     index += 1;
@@ -168,12 +165,46 @@ pub fn peek(self: *Tokenizer) Token {
                 },
             },
 
-            .number => switch (c) {
-                '0'...'9', '.', 'i', 'u', 'f', 'h', 'e' => {},
-                else => {
-                    result.tag = .number;
-                    break;
-                },
+            .number => {
+                result.tag = .number;
+
+                var hex = false;
+                var leading_sign = false;
+                var period = false;
+                while (true) : (index += 1) {
+                    c = self.source[index];
+                    switch (c) {
+                        '0'...'9' => {},
+                        'a'...'d', 'A'...'D' => if (!hex) break,
+                        'x', 'X' => hex = true,
+                        '.' => {
+                            if (period) break;
+                            period = true;
+                        },
+                        '+', '-' => {
+                            if (!leading_sign) break;
+                            leading_sign = false;
+                            hex = false;
+                        },
+                        'e', 'E' => if (!hex) {
+                            leading_sign = true;
+                        },
+                        'p', 'P' => if (hex) {
+                            leading_sign = true;
+                        },
+                        'i', 'u' => {
+                            index += 1;
+                            break;
+                        },
+                        'f', 'h' => if (!hex) {
+                            index += 1;
+                            break;
+                        },
+                        else => break,
+                    }
+                }
+
+                break;
             },
 
             .block_comment => switch (c) {
@@ -315,6 +346,13 @@ pub fn peek(self: *Tokenizer) Token {
                 },
                 else => {
                     result.tag = .@"or";
+                    break;
+                },
+            },
+            .period => switch (c) {
+                '0'...'9' => state = .number,
+                else => {
+                    result.tag = .period;
                     break;
                 },
             },

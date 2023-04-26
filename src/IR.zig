@@ -460,8 +460,8 @@ pub const Inst = struct {
         multisampled_texture_type: MultisampledTextureType,
         storage_texture_type: StorageTextureType,
         depth_texture_type: DepthTextureType,
-        integer_literal: i64,
-        float_literal: f64,
+        integer_literal: IntegerLiteral,
+        float_literal: FloatLiteral,
         /// meaning of LHS and RHS depends on the corresponding Tag.
         binary: BinaryExpr,
         member_access: MemberAccess,
@@ -689,6 +689,18 @@ pub const Inst = struct {
         type: Ref,
         expr: Ref,
         result_type: Ref,
+    };
+
+    pub const IntegerLiteral = struct {
+        value: i64,
+        base: u8,
+        tag: enum { none, i, u },
+    };
+
+    pub const FloatLiteral = struct {
+        value: f64,
+        base: u8,
+        tag: enum { none, f, h },
     };
 
     comptime {

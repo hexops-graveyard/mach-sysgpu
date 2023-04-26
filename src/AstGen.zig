@@ -301,6 +301,7 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
     const node_rhs_loc = self.tree.nodeLoc(node_rhs);
 
     switch (node_tag) {
+        .number_literal => return self.genNumber(node),
         .bool_true => return .true_literal,
         .bool_false => return .false_literal,
         else => {},
@@ -308,7 +309,6 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
 
     const inst_index = try self.reserveInst();
     const inst: IR.Inst = switch (node_tag) {
-        .number_literal => .{ .tag = .integer_literal, .data = .{ .integer_literal = 1 } },
         .not => blk: {
             const lhs = try self.genExpr(scope, node_lhs);
             const lhs_res = try self.resolve(lhs);
@@ -626,6 +626,124 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
 
     self.instructions.items[inst_index] = inst;
     return IR.Inst.toRef(inst_index);
+}
+
+fn genNumber(self: *AstGen, node: Ast.Index) !IR.Inst.Ref {
+    const node_loc = self.tree.nodeLoc(node);
+    const bytes = node_loc.slice(self.tree.source);
+
+    var i: usize = 0;
+    var suffix: u8 = 0;
+    var base: u8 = 10;
+    var exponent = false;
+    var period = false;
+
+    if (bytes.len >= 2 and bytes[0] == '0') switch (bytes[1]) {
+        '0'...'9' => {
+            try self.errors.add(node_loc, "leading zero disallowed", .{}, null);
+            return error.AnalysisFail;
+        },
+        'x', 'X' => {
+            i = 2;
+            base = 16;
+        },
+        else => {},
+    };
+
+    while (i < bytes.len) : (i += 1) {
+        const c = bytes[i];
+        switch (c) {
+            'f', 'h' => suffix = c,
+            'i', 'u' => {
+                if (period or suffix == 'f' or suffix == 'h' or exponent) {
+                    try self.errors.add(node_loc, "suffix '{c}' on float literal", .{c}, null);
+                    return error.AnalysisFail;
+                }
+
+                suffix = c;
+            },
+            'e', 'E', 'p', 'P' => {
+                if (exponent) {
+                    try self.errors.add(node_loc, "duplicate exponent '{c}'", .{c}, null);
+                    return error.AnalysisFail;
+                }
+
+                exponent = true;
+            },
+            '.' => period = true,
+            else => {},
+        }
+    }
+
+    var inst: IR.Inst = undefined;
+    if (period or exponent or suffix == 'f' or suffix == 'h') {
+        if (base == 16) {
+            // TODO
+            try self.errors.add(node_loc, "hexadecimal float literals not implemented", .{}, null);
+            return error.AnalysisFail;
+        }
+
+        const value = std.fmt.parseFloat(f64, bytes[0 .. bytes.len - @boolToInt(suffix != 0)]) catch |err| {
+            try self.errors.add(
+                node_loc,
+                "cannot parse float literal ({s})",
+                .{@errorName(err)},
+                try self.errors.createNote(
+                    null,
+                    "this is a bug in dusk. please report it",
+                    .{},
+                ),
+            );
+            return error.AnalysisFail;
+        };
+
+        inst = .{
+            .tag = .float_literal,
+            .data = .{
+                .float_literal = .{
+                    .value = value,
+                    .base = base,
+                    .tag = switch (suffix) {
+                        0 => .none,
+                        'f' => .f,
+                        'h' => .h,
+                        else => unreachable,
+                    },
+                },
+            },
+        };
+    } else {
+        const value = std.fmt.parseInt(i64, bytes[0 .. bytes.len - @boolToInt(suffix != 0)], 0) catch |err| {
+            try self.errors.add(
+                node_loc,
+                "cannot parse integer literal ({s})",
+                .{@errorName(err)},
+                try self.errors.createNote(
+                    null,
+                    "this is a bug in dusk. please report it",
+                    .{},
+                ),
+            );
+            return error.AnalysisFail;
+        };
+
+        inst = .{
+            .tag = .integer_literal,
+            .data = .{
+                .integer_literal = .{
+                    .value = value,
+                    .base = base,
+                    .tag = switch (suffix) {
+                        0 => .none,
+                        'i' => .i,
+                        'u' => .u,
+                        else => unreachable,
+                    },
+                },
+            },
+        };
+    }
+    return IR.Inst.toRef(try self.addInst(inst));
 }
 
 pub fn addString(self: *AstGen, str: []const u8) error{OutOfMemory}!u32 {
