@@ -4,6 +4,7 @@ const Ast = @import("Ast.zig");
 const ErrorList = @import("ErrorList.zig");
 const printIR = @import("print_ir.zig").printIR;
 const expect = std.testing.expect;
+const expectEqual = std.testing.expectEqual;
 const allocator = std.testing.allocator;
 
 fn expectIR(source: [:0]const u8) !IR {
@@ -167,6 +168,55 @@ test "must pass" {
     }
 }
 
+test "integer/float literals" {
+    const source =
+        \\var a = 1u;
+        \\var b = +123;
+        \\var c = 0;
+        \\var d = 0i;
+        \\
+        \\var e = 0x123;
+        \\var f = 0X123u;
+        \\//var g = 0x3f;
+        \\
+        \\var h = 0.e+4f;
+        \\var i = .01;
+        \\var j = 12.34;
+        \\var k = .0f;
+        \\var l = 0h;
+        \\var m = 1e-3;
+        \\
+        \\//var n = 0xa.fp+2;
+        \\//var o = 0x1P+4f;
+        \\//var p = 0X.3;
+        \\//var q = 0x3p+2h;
+        \\//var r = 0X1.fp-4;
+        \\//var s = 0x3.2p+2h;
+    ;
+    var ir = try expectIR(source);
+    defer ir.deinit();
+
+    const toInst = struct {
+        fn toInst(_ir: IR, i: IR.Inst.Ref) IR.Inst {
+            return _ir.instructions[_ir.instructions[i.toIndex().?].data.global_variable_decl.expr.toIndex().?];
+        }
+    }.toInst;
+
+    const vars = std.mem.sliceTo(ir.refs[ir.globals_index..], .none);
+    try expectEqual(toInst(ir, vars[0]).data.integer_literal, .{ .value = 1, .base = 10, .tag = .u });
+    try expectEqual(toInst(ir, vars[1]).data.integer_literal, .{ .value = 123, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[2]).data.integer_literal, .{ .value = 0, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[3]).data.integer_literal, .{ .value = 0, .base = 10, .tag = .i });
+    try expectEqual(toInst(ir, vars[4]).data.integer_literal, .{ .value = 0x123, .base = 16, .tag = .none });
+    try expectEqual(toInst(ir, vars[5]).data.integer_literal, .{ .value = 0x123, .base = 16, .tag = .u });
+    try expectEqual(toInst(ir, vars[6]).data.float_literal, .{ .value = 0.e+4, .base = 10, .tag = .f });
+    try expectEqual(toInst(ir, vars[7]).data.float_literal, .{ .value = 0.01, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[8]).data.float_literal, .{ .value = 12.34, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[9]).data.float_literal, .{ .value = 0.0, .base = 10, .tag = .f });
+    try expectEqual(toInst(ir, vars[10]).data.float_literal, .{ .value = 0, .base = 10, .tag = .h });
+    try expectEqual(toInst(ir, vars[11]).data.float_literal, .{ .value = 1e-3, .base = 10, .tag = .none });
+}
+
 test "must error" {
     {
         const source = "^";
@@ -324,6 +374,33 @@ test "must error" {
         try expectError(source, .{
             .msg = "struct 'S' has no member named 'd'",
             .loc = .{ .start = 43, .end = 44 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = 01;
+        ;
+        try expectError(source, .{
+            .msg = "leading zero disallowed",
+            .loc = .{ .start = 9, .end = 11 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = 1ee;
+        ;
+        try expectError(source, .{
+            .msg = "duplicate exponent 'e'",
+            .loc = .{ .start = 9, .end = 12 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = 1.0u;
+        ;
+        try expectError(source, .{
+            .msg = "suffix 'u' on float literal",
+            .loc = .{ .start = 9, .end = 13 },
         });
     }
 }

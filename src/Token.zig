@@ -50,7 +50,6 @@ pub const Tag = enum {
     invalid,
 
     ident,
-    /// any number literal
     number,
 
     /// '&'
