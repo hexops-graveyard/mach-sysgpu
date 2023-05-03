@@ -148,14 +148,29 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
     const inst = try self.reserveInst();
     const rhs = self.tree.nodeRHS(node);
     const gv = self.tree.extraData(Ast.Node.GlobalVarDecl, self.tree.nodeLHS(node));
+    const name_loc = self.tree.declNameLoc(node).?;
+
+    var is_resource = false;
 
     var var_type = IR.Inst.Ref.none;
     if (gv.type != Ast.null_index) {
         var_type = try self.genType(scope, gv.type);
     }
 
+    if (var_type == .sampler_type or
+        var_type == .comparison_sampler_type or
+        var_type == .external_sampled_texture_type or
+        var_type.is(self.instructions, &.{
+        .sampled_texture_type,
+        .multisampled_texture_type,
+        .storage_texture_type,
+        .depth_texture_type,
+    })) {
+        is_resource = true;
+    }
+
     var addr_space: IR.Inst.GlobalVariableDecl.AddressSpace = .none;
-    if (gv.access_mode != Ast.null_index) {
+    if (gv.addr_space != Ast.null_index) {
         const addr_space_loc = self.tree.tokenLoc(gv.addr_space);
         const ast_addr_space = std.meta.stringToEnum(Ast.AddressSpace, addr_space_loc.slice(self.tree.source)).?;
         addr_space = switch (ast_addr_space) {
@@ -165,6 +180,10 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
             .uniform => .uniform,
             .storage => .storage,
         };
+    }
+
+    if (addr_space == .uniform or addr_space == .storage) {
+        is_resource = true;
     }
 
     var access_mode: IR.Inst.GlobalVariableDecl.AccessMode = .none;
@@ -183,7 +202,113 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
         expr = try self.genExpr(scope, rhs);
     }
 
-    const name_index = try self.addString(self.tree.declNameLoc(node).?.slice(self.tree.source));
+    var binding = IR.Inst.Ref.none;
+    var group = IR.Inst.Ref.none;
+    if (gv.attrs != Ast.null_index) {
+        for (self.tree.spanToList(gv.attrs)) |attr| {
+            const attr_lhs = self.tree.nodeLHS(attr);
+
+            if (self.tree.nodeTag(attr) != .attr_one_arg) {
+                try self.errors.add(
+                    self.tree.nodeLoc(attr),
+                    "unexpected attribute '{s}'",
+                    .{self.tree.nodeLoc(attr).slice(self.tree.source)},
+                    null,
+                );
+                return error.AnalysisFail;
+            }
+
+            const attr_name = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
+            const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name.slice(self.tree.source)).?;
+            switch (attr_tag) {
+                .binding => {
+                    if (!is_resource) {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr),
+                            "variable '{s}' is not a resource",
+                            .{name_loc.slice(self.tree.source)},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    }
+
+                    // TODO: resolve const-expressions
+                    binding = try self.genExpr(scope, attr_lhs);
+                    if (!binding.is(self.instructions, &.{.integer_literal})) {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr_lhs),
+                            "expected const-expressions, found '{s}'",
+                            .{self.tree.nodeLoc(attr_lhs).slice(self.tree.source)},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    }
+                    if (self.instructions.items[binding.toIndex().?].data.integer_literal.value < 0) {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr_lhs),
+                            "binding value must not be a negative",
+                            .{},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    }
+                },
+                .group => {
+                    if (!is_resource) {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr),
+                            "variable '{s}' is not a resource",
+                            .{name_loc.slice(self.tree.source)},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    }
+
+                    // TODO: resolve const-expressions
+                    group = try self.genExpr(scope, attr_lhs);
+                    if (!group.is(self.instructions, &.{.integer_literal})) {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr_lhs),
+                            "expected const-expressions, found '{s}'",
+                            .{self.tree.nodeLoc(attr_lhs).slice(self.tree.source)},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    }
+                    if (self.instructions.items[group.toIndex().?].data.integer_literal.value < 0) {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr_lhs),
+                            "group value must not be a negative",
+                            .{},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    }
+                },
+                else => {
+                    try self.errors.add(
+                        self.tree.nodeLoc(attr),
+                        "unexpected attribute '{s}'",
+                        .{self.tree.nodeLoc(attr).slice(self.tree.source)},
+                        null,
+                    );
+                    return error.AnalysisFail;
+                },
+            }
+        }
+    }
+
+    if (is_resource and (binding == .none or group == .none)) {
+        try self.errors.add(
+            self.tree.nodeLoc(node),
+            "resource variable must specify binding and group",
+            .{},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    const name_index = try self.addString(name_loc.slice(self.tree.source));
     self.instructions.items[inst] = .{
         .tag = .global_variable_decl,
         .data = .{
@@ -192,7 +317,8 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
                 .type = var_type,
                 .addr_space = addr_space,
                 .access_mode = access_mode,
-                .attrs = 0, // TODO
+                .binding = binding,
+                .group = group,
                 .expr = expr,
             },
         },

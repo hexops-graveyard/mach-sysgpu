@@ -210,13 +210,13 @@ pub fn attributeList(p: *Parser) !?Ast.Index {
 
 pub fn attribute(p: *Parser) !?Ast.Index {
     const attr_token = p.eatToken(.attr) orelse return null;
-    const ident_tok = try p.expectToken(.ident);
-    const str = p.getToken(.loc, ident_tok).slice(p.source);
+    const ident_token = try p.expectToken(.ident);
+    const str = p.getToken(.loc, ident_token).slice(p.source);
     const tag = std.meta.stringToEnum(Ast.Attribute, str) orelse {
         try p.errors.add(
-            p.getToken(.loc, ident_tok),
+            p.getToken(.loc, ident_token),
             "unknown attribute '{s}'",
-            .{p.getToken(.loc, ident_tok).slice(p.source)},
+            .{p.getToken(.loc, ident_token).slice(p.source)},
             try p.errors.createNote(
                 null,
                 "valid options are [{s}]",
