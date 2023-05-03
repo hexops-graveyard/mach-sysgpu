@@ -577,7 +577,7 @@ pub const Node = struct {
         attrs: Index = null_index,
         /// Token(ident)
         name: Index,
-        /// Token(AddrSpace)?
+        /// Token(AddressSpace)?
         addr_space: Index = null_index,
         /// Token(AccessMode)?
         access_mode: Index = null_index,
@@ -588,7 +588,7 @@ pub const Node = struct {
     pub const VarDecl = struct {
         /// Token(ident)
         name: Index,
-        /// Token(AddrSpace)?
+        /// Token(AddressSpace)?
         addr_space: Index = null_index,
         /// Token(AccessMode)?
         access_mode: Index = null_index,
@@ -604,7 +604,7 @@ pub const Node = struct {
     };
 
     pub const PtrType = struct {
-        /// Token(AddrSpace)
+        /// Token(AddressSpace)
         addr_space: Index,
         /// Token(AccessMode)?
         access_mode: Index = null_index,

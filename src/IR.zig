@@ -474,8 +474,8 @@ pub const Inst = struct {
         type: Ref = .none,
         addr_space: AddressSpace,
         access_mode: AccessMode,
-        /// length of attributes
-        attrs: u4 = 0,
+        binding: Ref = .none,
+        group: Ref = .none,
         expr: Ref = .none,
 
         pub const AddressSpace = enum {
@@ -704,6 +704,6 @@ pub const Inst = struct {
     };
 
     comptime {
-        std.debug.assert(@sizeOf(Inst) <= 32);
+        std.debug.assert(@sizeOf(Inst) <= 64);
     }
 };
