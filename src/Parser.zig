@@ -249,7 +249,7 @@ pub fn attribute(p: *Parser) !?Ast.Index {
                 node.tag = .attr_builtin;
                 node.lhs = try p.expectBuiltinValue();
             } else {
-                node.tag = .attr_one_arg;
+                node.tag = .attr_expr;
                 node.lhs = try p.expression() orelse {
                     try p.errors.add(
                         p.peekToken(.loc, 0),

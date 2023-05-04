@@ -331,21 +331,15 @@ pub const Inst = struct {
         /// data is const_decl
         global_const_decl,
 
+        /// data is fn_decl
+        fn_decl,
+        /// data is fn_arg
+        fn_arg,
+
         /// data is struct_decl
         struct_decl,
         /// data is struct_member
         struct_member,
-
-        /// data is attr_simple
-        attr_simple,
-        /// data is attr_expr
-        attr_expr,
-        /// data is attr_builtin
-        attr_builtin,
-        /// data is attr_workgroup
-        attr_workgroup,
-        /// data is attr_interpolate
-        attr_interpolate,
 
         /// data is vector_type
         vector_type,
@@ -442,18 +436,10 @@ pub const Inst = struct {
         ref: Ref,
         global_variable_decl: GlobalVariableDecl,
         global_const_decl: GlobalConstDecl,
+        fn_decl: FnDecl,
+        fn_arg: FnArg,
         struct_decl: StructDecl,
         struct_member: StructMember,
-        /// attributes with no argument.
-        attr_simple: AttrSimple,
-        /// attributes with an expression argument.
-        attr_expr: AttrExpr,
-        /// @builtin attribute which accepts a BuiltinValue argument.
-        attr_builtin: BuiltinValue,
-        /// @workgroup attribute. accepts at laest 1 argument.
-        attr_workgroup: AttrWorkgroup,
-        /// @interpolate attribute. accepts 2 arguments.
-        attr_interpolate: AttrInterpolate,
         vector_type: VectorType,
         matrix_type: MatrixType,
         atomic_type: AtomicType,
@@ -505,6 +491,65 @@ pub const Inst = struct {
         expr: Ref,
     };
 
+    pub const FnDecl = struct {
+        /// index to zero-terminated string in `strings`
+        name: u32,
+        /// index to zero-terminated args Ref in `refs`
+        args: u32,
+        /// index to zero-terminated statements Ref in `refs`
+        statements: Ref,
+        fragment: bool,
+    };
+
+    pub const FnArg = struct {
+        /// index to zero-terminated string in `strings`
+        name: u32,
+        type: Ref,
+        /// nullable
+        builtin: BuiltinValue,
+        /// nullable
+        location: Ref,
+        /// nullable
+        interpolate: ?Interpolate,
+        /// nullable
+        invariant: bool,
+
+        pub const BuiltinValue = enum {
+            none,
+            vertex_index,
+            instance_index,
+            position,
+            front_facing,
+            frag_depth,
+            local_invocation_id,
+            local_invocation_index,
+            global_invocation_id,
+            workgroup_id,
+            num_workgroups,
+            sample_index,
+            sample_mask,
+        };
+
+        pub const Interpolate = struct {
+            type: Type,
+            /// nullable
+            sample: Sample,
+
+            pub const Type = enum {
+                perspective,
+                linear,
+                flat,
+            };
+
+            pub const Sample = enum {
+                none,
+                center,
+                centroid,
+                sample,
+            };
+        };
+    };
+
     pub const StructDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
@@ -517,21 +562,6 @@ pub const Inst = struct {
         name: u32,
         type: Ref,
         @"align": u29, // 0 means null
-    };
-
-    pub const BuiltinValue = enum {
-        vertex_index,
-        instance_index,
-        position,
-        front_facing,
-        frag_depth,
-        local_invocation_id,
-        local_invocation_index,
-        global_invocation_id,
-        workgroup_id,
-        num_workgroups,
-        sample_index,
-        sample_mask,
     };
 
     pub const AttrSimple = enum {
@@ -560,23 +590,6 @@ pub const Inst = struct {
         expr0: Ref,
         expr1: Ref = .none,
         expr2: Ref = .none,
-    };
-
-    pub const AttrInterpolate = struct {
-        type: InterpolationType,
-        sample: InterpolationSample,
-
-        pub const InterpolationType = enum {
-            perspective,
-            linear,
-            flat,
-        };
-
-        pub const InterpolationSample = enum {
-            center,
-            centroid,
-            sample,
-        };
     };
 
     pub const VectorType = struct {
