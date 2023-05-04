@@ -64,6 +64,7 @@ pub fn genDecl(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
 
     const decl = switch (self.tree.nodeTag(node)) {
         .global_variable => try self.genGlobalVariable(scope, node),
+        .global_constant => try self.genGlobalConstDecl(scope, node),
         .type_alias => try self.genTypeAlias(scope, node),
         .struct_decl => try self.genStruct(scope, node),
         else => return error.AnalysisFail, // TODO: make this unreachable
@@ -142,11 +143,55 @@ pub fn genTypeAlias(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref 
     return self.genType(scope, self.tree.nodeLHS(node));
 }
 
+pub fn genGlobalConstDecl(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
+    std.debug.assert(self.tree.nodeTag(node) == .global_constant);
+
+    const inst = try self.reserveInst();
+    const node_lhs = self.tree.nodeLHS(node);
+    const node_rhs = self.tree.nodeRHS(node);
+    const name_loc = self.tree.declNameLoc(node).?;
+
+    var var_type = IR.Inst.Ref.none;
+    if (node_lhs != Ast.null_index) {
+        var_type = try self.genType(scope, node_lhs);
+    }
+
+    const expr = try self.genExpr(scope, node_rhs);
+    if (!self.isConstExpr(expr)) {
+        try self.errors.add(
+            name_loc,
+            "value of '{s}' must be a const-expression",
+            .{name_loc.slice(self.tree.source)},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    const name_index = try self.addString(name_loc.slice(self.tree.source));
+    self.instructions.items[inst] = .{
+        .tag = .global_const_decl,
+        .data = .{
+            .global_const_decl = .{
+                .name = name_index,
+                .type = var_type,
+                .expr = expr,
+            },
+        },
+    };
+    return IR.Inst.toRef(inst);
+}
+
+fn isConstExpr(self: *AstGen, expr: IR.Inst.Ref) bool {
+    _ = self;
+    _ = expr;
+    return true;
+}
+
 pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
     std.debug.assert(self.tree.nodeTag(node) == .global_variable);
 
     const inst = try self.reserveInst();
-    const rhs = self.tree.nodeRHS(node);
+    const node_rhs = self.tree.nodeRHS(node);
     const gv = self.tree.extraData(Ast.Node.GlobalVarDecl, self.tree.nodeLHS(node));
     const name_loc = self.tree.declNameLoc(node).?;
 
@@ -195,11 +240,6 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
             .write => .write,
             .read_write => .read_write,
         };
-    }
-
-    var expr = IR.Inst.Ref.none;
-    if (rhs != Ast.null_index) {
-        expr = try self.genExpr(scope, rhs);
     }
 
     var binding = IR.Inst.Ref.none;
@@ -306,6 +346,11 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
             null,
         );
         return error.AnalysisFail;
+    }
+
+    var expr = IR.Inst.Ref.none;
+    if (node_rhs != Ast.null_index) {
+        expr = try self.genExpr(scope, node_rhs);
     }
 
     const name_index = try self.addString(name_loc.slice(self.tree.source));
@@ -933,7 +978,7 @@ pub fn genType(self: *AstGen, scope: *Scope, node: Ast.Index) error{ AnalysisFai
                     .depth_texture_type,
                     => return decl_ref,
                     .struct_decl => return IR.Inst.toRef(try self.addInst(.{ .tag = .struct_ref, .data = .{ .ref = decl_ref } })),
-                    .global_variable_decl => {
+                    .global_variable_decl, .global_const_decl => {
                         try self.errors.add(
                             node_loc,
                             "'{s}' is not a type",
@@ -1686,6 +1731,17 @@ fn resolveVarTypeOrValue(self: *AstGen, ref: IR.Inst.Ref) !IR.Inst.Ref {
                 r = decl_type;
             } else {
                 r = var_inst.data.global_variable_decl.expr;
+                if (r.is(self.instructions, &.{.var_ref})) {
+                    r = try self.resolveVarTypeOrValue(r);
+                }
+            }
+        },
+        .global_const_decl => {
+            const decl_type = var_inst.data.global_const_decl.type;
+            if (decl_type != .none) {
+                r = decl_type;
+            } else {
+                r = var_inst.data.global_const_decl.expr;
                 if (r.is(self.instructions, &.{.var_ref})) {
                     r = try self.resolveVarTypeOrValue(r);
                 }
