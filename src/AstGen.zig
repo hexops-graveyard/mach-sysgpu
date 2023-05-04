@@ -65,6 +65,7 @@ pub fn genDecl(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
     const decl = switch (self.tree.nodeTag(node)) {
         .global_variable => try self.genGlobalVariable(scope, node),
         .global_constant => try self.genGlobalConstDecl(scope, node),
+        .fn_decl => try self.genFnDecl(scope, node),
         .type_alias => try self.genTypeAlias(scope, node),
         .struct_decl => try self.genStruct(scope, node),
         else => return error.AnalysisFail, // TODO: make this unreachable
@@ -181,6 +182,7 @@ pub fn genGlobalConstDecl(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Ins
     return IR.Inst.toRef(inst);
 }
 
+// TODO
 fn isConstExpr(self: *AstGen, expr: IR.Inst.Ref) bool {
     _ = self;
     _ = expr;
@@ -247,16 +249,6 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
     if (gv.attrs != Ast.null_index) {
         for (self.tree.spanToList(gv.attrs)) |attr| {
             const attr_lhs = self.tree.nodeLHS(attr);
-
-            if (self.tree.nodeTag(attr) != .attr_one_arg) {
-                try self.errors.add(
-                    self.tree.nodeLoc(attr),
-                    "unexpected attribute '{s}'",
-                    .{self.tree.nodeLoc(attr).slice(self.tree.source)},
-                    null,
-                );
-                return error.AnalysisFail;
-            }
 
             const attr_name = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
             const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name.slice(self.tree.source)).?;
@@ -379,10 +371,10 @@ pub fn genStruct(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
     const scratch_top = self.scratch.items.len;
     defer self.scratch.shrinkRetainingCapacity(scratch_top);
 
-    const member_list = self.tree.spanToList(self.tree.nodeLHS(node));
-    for (member_list, 0..) |member_node, i| {
+    const member_nodes_list = self.tree.spanToList(self.tree.nodeLHS(node));
+    for (member_nodes_list, 0..) |member_node, i| {
         const member_inst = try self.reserveInst();
-        const member_loc = self.tree.nodeLoc(member_node);
+        const member_name_loc = self.tree.tokenLoc(self.tree.nodeToken(member_node));
         const member_type_node = self.tree.nodeRHS(member_node);
         const member_type_loc = self.tree.nodeLoc(member_type_node);
         const member_type_ref = self.genType(scope, member_type_node) catch |err| switch (err) {
@@ -394,7 +386,7 @@ pub fn genStruct(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             .bool_type, .i32_type, .u32_type, .f32_type, .f16_type => {},
             .sampler_type, .comparison_sampler_type, .external_sampled_texture_type => {
                 try self.errors.add(
-                    member_loc,
+                    member_name_loc,
                     "invalid struct member type '{s}'",
                     .{member_type_loc.slice(self.tree.source)},
                     null,
@@ -405,9 +397,9 @@ pub fn genStruct(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             _ => switch (self.instructions.items[member_type_ref.toIndex().?].tag) {
                 .vector_type, .matrix_type, .atomic_type, .struct_ref => {},
                 .array_type => {
-                    if (self.instructions.items[member_type_ref.toIndex().?].data.array_type.size == .none and i + 1 != member_list.len) {
+                    if (self.instructions.items[member_type_ref.toIndex().?].data.array_type.size == .none and i + 1 != member_nodes_list.len) {
                         try self.errors.add(
-                            member_loc,
+                            member_name_loc,
                             "struct member with runtime-sized array type, must be the last member of the structure",
                             .{},
                             null,
@@ -422,7 +414,7 @@ pub fn genStruct(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                 .depth_texture_type,
                 => {
                     try self.errors.add(
-                        member_loc,
+                        member_name_loc,
                         "invalid struct member type '{s}'",
                         .{member_type_loc.slice(self.tree.source)},
                         null,
@@ -433,7 +425,7 @@ pub fn genStruct(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
             },
         }
 
-        const name_index = try self.addString(member_loc.slice(self.tree.source));
+        const name_index = try self.addString(member_name_loc.slice(self.tree.source));
         self.instructions.items[member_inst] = .{
             .tag = .struct_member,
             .data = .{
@@ -449,14 +441,146 @@ pub fn genStruct(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
 
     const name = self.tree.declNameLoc(node).?.slice(self.tree.source);
     const name_index = try self.addString(name);
-    const list = try self.addRefList(self.scratch.items[scratch_top..]);
+    const member_list = try self.addRefList(self.scratch.items[scratch_top..]);
 
     self.instructions.items[inst] = .{
         .tag = .struct_decl,
         .data = .{
             .struct_decl = .{
                 .name = name_index,
-                .members = list,
+                .members = member_list,
+            },
+        },
+    };
+    return IR.Inst.toRef(inst);
+}
+
+pub fn genFnDecl(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
+    std.debug.assert(self.tree.nodeTag(node) == .fn_decl);
+
+    const inst = try self.reserveInst();
+    const fn_proto = self.tree.extraData(Ast.Node.FnProto, self.tree.nodeLHS(node));
+
+    const scratch_top = self.scratch.items.len;
+    defer self.scratch.shrinkRetainingCapacity(scratch_top);
+
+    for (self.tree.spanToList(fn_proto.params)) |arg_node| {
+        const arg_inst = try self.reserveInst();
+        const arg_name_loc = self.tree.tokenLoc(self.tree.nodeToken(arg_node));
+        const arg_type_node = self.tree.nodeRHS(arg_node);
+        const arg_type_ref = self.genType(scope, arg_type_node) catch |err| switch (err) {
+            error.AnalysisFail => continue,
+            error.OutOfMemory => return error.OutOfMemory,
+        };
+
+        var builtin = IR.Inst.FnArg.BuiltinValue.none;
+        var inter: ?IR.Inst.FnArg.Interpolate = null;
+        var location = IR.Inst.Ref.none;
+        var invariant = false;
+
+        if (self.tree.nodeLHS(arg_node) != Ast.null_index) {
+            for (self.tree.spanToList(self.tree.nodeLHS(arg_node))) |attr| {
+                switch (self.tree.nodeTag(attr)) {
+                    .attr => {
+                        const attr_name_loc = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
+                        const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name_loc.slice(self.tree.source)).?;
+                        invariant = attr_tag == .invariant;
+                    },
+                    .attr_expr => {
+                        const attr_name_loc = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
+                        const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name_loc.slice(self.tree.source)).?;
+                        switch (attr_tag) {
+                            .location => {
+                                // TODO: scope?
+                                location = try self.genExpr(scope, self.tree.nodeLHS(attr));
+                            },
+                            else => unreachable,
+                        }
+                    },
+                    .attr_builtin => {
+                        const builtin_loc = self.tree.tokenLoc(self.tree.nodeLHS(attr));
+                        const builtin_ast = std.meta.stringToEnum(Ast.BuiltinValue, builtin_loc.slice(self.tree.source)).?;
+                        builtin = switch (builtin_ast) {
+                            .vertex_index => .vertex_index,
+                            .instance_index => .instance_index,
+                            .position => .position,
+                            .front_facing => .front_facing,
+                            .frag_depth => .frag_depth,
+                            .local_invocation_id => .local_invocation_id,
+                            .local_invocation_index => .local_invocation_index,
+                            .global_invocation_id => .global_invocation_id,
+                            .workgroup_id => .workgroup_id,
+                            .num_workgroups => .num_workgroups,
+                            .sample_index => .sample_index,
+                            .sample_mask => .sample_mask,
+                        };
+                    },
+                    .attr_interpolate => {
+                        const inter_type_loc = self.tree.tokenLoc(self.tree.nodeLHS(attr));
+                        const inter_type_ast = std.meta.stringToEnum(Ast.InterpolationType, inter_type_loc.slice(self.tree.source)).?;
+                        inter = .{
+                            .type = switch (inter_type_ast) {
+                                .perspective => .perspective,
+                                .linear => .linear,
+                                .flat => .flat,
+                            },
+                            .sample = .none,
+                        };
+
+                        if (self.tree.nodeRHS(attr) != Ast.null_index) {
+                            const inter_sample_loc = self.tree.tokenLoc(self.tree.nodeRHS(attr));
+                            const inter_sample_ast = std.meta.stringToEnum(Ast.InterpolationSample, inter_sample_loc.slice(self.tree.source)).?;
+                            inter.?.sample = switch (inter_sample_ast) {
+                                .center => .center,
+                                .centroid => .centroid,
+                                .sample => .sample,
+                            };
+                        }
+                    },
+                    else => unreachable,
+                }
+
+                // const attr_name = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
+                // const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name.slice(self.tree.source)).?;
+
+                // switch (attr_tag) {
+                //     .builtin => {
+
+                //     },
+                //     else => unreachable,
+                // }
+            }
+        }
+
+        const name_index = try self.addString(arg_name_loc.slice(self.tree.source));
+        self.instructions.items[arg_inst] = .{
+            .tag = .fn_arg,
+            .data = .{
+                .fn_arg = .{
+                    .name = name_index,
+                    .type = arg_type_ref,
+                    .builtin = builtin,
+                    .interpolate = inter,
+                    .location = location,
+                    .invariant = invariant,
+                },
+            },
+        };
+        try self.scratch.append(self.allocator, IR.Inst.toRef(arg_inst));
+    }
+
+    const arg_list = try self.addRefList(self.scratch.items[scratch_top..]);
+
+    const name = self.tree.declNameLoc(node).?.slice(self.tree.source);
+    const name_index = try self.addString(name);
+    self.instructions.items[inst] = .{
+        .tag = .fn_decl,
+        .data = .{
+            .fn_decl = .{
+                .name = name_index,
+                .args = arg_list,
+                .statements = undefined,
+                .fragment = undefined,
             },
         },
     };

@@ -44,15 +44,24 @@ fn Printer(comptime Writer: type) type {
                     switch (inst.tag) {
                         .global_variable_decl => {
                             try self.printGlobalVariable(indent, index);
-                            self.writer.writeAll(",\n") catch unreachable;
+                            try self.writer.writeAll(",\n");
                         },
                         .global_const_decl => {
                             try self.printConstDecl(indent, index);
-                            self.writer.writeAll(",\n") catch unreachable;
+                            try self.writer.writeAll(",\n");
                         },
                         .struct_decl => {
                             try self.printStructDecl(indent, index);
-                            self.writer.writeAll(",\n") catch unreachable;
+                            try self.writer.writeAll(",\n");
+                        },
+                        .fn_decl => {
+                            try self.instStart(index);
+                            defer {
+                                self.instEnd() catch unreachable;
+                                self.writer.writeAll(",\n") catch unreachable;
+                            }
+
+                            try self.writer.writeAll("TODO");
                         },
                         .struct_member => try self.printStructMember(indent, index),
                         .integer_literal, .float_literal => try self.printNumberLiteral(indent, index),

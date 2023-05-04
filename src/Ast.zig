@@ -396,7 +396,7 @@ pub const Node = struct {
         /// TOK : attr
         /// LHS : Expr
         /// RHS : --
-        attr_one_arg,
+        attr_expr,
 
         /// TOK : attr
         /// LHS : Index(Token(BuiltinValue))
@@ -410,7 +410,7 @@ pub const Node = struct {
 
         /// TOK : attr
         /// LHS : Index(Token(InterpolationType))
-        /// RHS : Index(Token(InterpolationSample))
+        /// RHS : Index(Token(InterpolationSample))?
         attr_interpolate,
 
         // ####### Expr #######
