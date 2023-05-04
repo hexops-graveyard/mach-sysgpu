@@ -107,6 +107,7 @@ test "empty" {
 test "gkurve" {
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
+    try printIR(ir, std.io.getStdOut().writer());
 }
 
 test "must pass" {

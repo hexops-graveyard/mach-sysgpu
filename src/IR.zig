@@ -328,6 +328,8 @@ pub const Inst = struct {
     pub const Tag = enum(u6) {
         /// data is global_variable_decl
         global_variable_decl,
+        /// data is const_decl
+        global_const_decl,
 
         /// data is struct_decl
         struct_decl,
@@ -439,6 +441,7 @@ pub const Inst = struct {
     pub const Data = union {
         ref: Ref,
         global_variable_decl: GlobalVariableDecl,
+        global_const_decl: GlobalConstDecl,
         struct_decl: StructDecl,
         struct_member: StructMember,
         /// attributes with no argument.
@@ -493,6 +496,13 @@ pub const Inst = struct {
             write,
             read_write,
         };
+    };
+
+    pub const GlobalConstDecl = struct {
+        /// index to zero-terminated string in `strings`
+        name: u32,
+        type: Ref = .none,
+        expr: Ref,
     };
 
     pub const StructDecl = struct {

@@ -42,15 +42,20 @@ fn Printer(comptime Writer: type) type {
                     }
 
                     switch (inst.tag) {
-                        .global_variable_decl => try self.printGlobalVariable(indent, index),
-                        .struct_decl => try self.printStructDecl(indent, index),
+                        .global_variable_decl => {
+                            try self.printGlobalVariable(indent, index);
+                            self.writer.writeAll(",\n") catch unreachable;
+                        },
+                        .global_const_decl => {
+                            try self.printConstDecl(indent, index);
+                            self.writer.writeAll(",\n") catch unreachable;
+                        },
+                        .struct_decl => {
+                            try self.printStructDecl(indent, index);
+                            self.writer.writeAll(",\n") catch unreachable;
+                        },
                         .struct_member => try self.printStructMember(indent, index),
-                        .integer_literal => {
-                            try self.writer.print("int({d})", .{inst.data.integer_literal});
-                        },
-                        .float_literal => {
-                            try self.writer.print("float({d})", .{inst.data.float_literal});
-                        },
+                        .integer_literal, .float_literal => try self.printNumberLiteral(indent, index),
                         .mul,
                         .div,
                         .mod,
@@ -107,11 +112,30 @@ fn Printer(comptime Writer: type) type {
             }
 
             try self.printField(indent + 1, "type");
-            try self.printInst(indent + 2, inst.data.global_variable_decl.type, true);
+            try self.printInst(indent + 1, inst.data.global_variable_decl.type, true);
             try self.writer.writeAll(",\n");
 
             try self.printField(indent + 1, "value");
-            try self.printInst(indent + 2, inst.data.global_variable_decl.expr, true);
+            try self.printInst(indent + 1, inst.data.global_variable_decl.expr, true);
+            try self.writer.writeAll(",\n");
+        }
+
+        fn printConstDecl(self: @This(), indent: u16, index: IR.Inst.Index) anyerror!void {
+            const inst = self.ir.instructions[index];
+
+            try self.instBlockStart(index);
+            defer self.instBlockEnd(indent) catch unreachable;
+
+            try self.printField(indent + 1, "name");
+            try self.printStr(inst.data.global_const_decl.name);
+            try self.writer.writeAll(",\n");
+
+            try self.printField(indent + 1, "type");
+            try self.printInst(indent + 1, inst.data.global_const_decl.type, true);
+            try self.writer.writeAll(",\n");
+
+            try self.printField(indent + 1, "value");
+            try self.printInst(indent + 1, inst.data.global_const_decl.expr, true);
             try self.writer.writeAll(",\n");
         }
 
@@ -131,8 +155,10 @@ fn Printer(comptime Writer: type) type {
             for (members) |member| {
                 try self.printIndent(indent + 2);
                 try self.printStructMember(indent + 2, member.toIndex().?);
+                try self.writer.writeAll(",\n");
             }
             try self.listEnd(indent + 1);
+            try self.writer.writeAll(",\n");
         }
 
         fn printStructMember(self: @This(), indent: u16, index: IR.Inst.Index) anyerror!void {
@@ -147,6 +173,37 @@ fn Printer(comptime Writer: type) type {
 
             try self.printField(indent + 1, "type");
             try self.printInst(indent + 2, inst.data.struct_member.type, true);
+            try self.writer.writeAll(",\n");
+        }
+
+        fn printNumberLiteral(self: @This(), indent: u16, index: IR.Inst.Index) anyerror!void {
+            const inst = self.ir.instructions[index];
+
+            try self.instBlockStart(index);
+            defer self.instBlockEnd(indent) catch unreachable;
+
+            try self.printField(indent + 1, "value");
+            switch (inst.tag) {
+                .integer_literal => try self.writer.print("{d}", .{inst.data.integer_literal.value}),
+                .float_literal => try self.writer.print("{d}", .{inst.data.float_literal.value}),
+                else => unreachable,
+            }
+            try self.writer.writeAll(",\n");
+
+            try self.printField(indent + 1, "base");
+            switch (inst.tag) {
+                .integer_literal => try self.writer.print("{d}", .{inst.data.integer_literal.base}),
+                .float_literal => try self.writer.print("{d}", .{inst.data.float_literal.base}),
+                else => unreachable,
+            }
+            try self.writer.writeAll(",\n");
+
+            try self.printField(indent + 1, "tag");
+            switch (inst.tag) {
+                .integer_literal => try self.writer.print("{s}", .{@tagName(inst.data.integer_literal.tag)}),
+                .float_literal => try self.writer.print("{s}", .{@tagName(inst.data.float_literal.tag)}),
+                else => unreachable,
+            }
             try self.writer.writeAll(",\n");
         }
 
@@ -166,7 +223,7 @@ fn Printer(comptime Writer: type) type {
 
         fn instBlockEnd(self: @This(), indent: u16) !void {
             try self.printIndent(indent);
-            try self.writer.writeAll("},\n");
+            try self.writer.writeAll("}");
         }
 
         fn listStart(self: @This()) !void {
@@ -175,7 +232,7 @@ fn Printer(comptime Writer: type) type {
 
         fn listEnd(self: @This(), indent: u16) !void {
             try self.printIndent(indent);
-            try self.writer.writeAll("},\n");
+            try self.writer.writeAll("}");
         }
 
         fn printField(self: @This(), indent: u16, name: []const u8) !void {
