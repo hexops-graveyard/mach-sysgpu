@@ -390,13 +390,53 @@ pub const Node = struct {
 
         // ####### Attribute #######
 
-        // TOK : attr
-        attr,
+        /// TOK : attr
+        attr_const,
+
+        /// TOK : attr
+        attr_invariant,
+
+        /// TOK : attr
+        attr_must_use,
+
+        /// TOK : attr
+        attr_vertex,
+
+        /// TOK : attr
+        attr_fragment,
+
+        /// TOK : attr
+        attr_compute,
 
         /// TOK : attr
         /// LHS : Expr
         /// RHS : --
-        attr_expr,
+        attr_align,
+
+        /// TOK : attr
+        /// LHS : Expr
+        /// RHS : --
+        attr_binding,
+
+        /// TOK : attr
+        /// LHS : Expr
+        /// RHS : --
+        attr_group,
+
+        /// TOK : attr
+        /// LHS : Expr
+        /// RHS : --
+        attr_id,
+
+        /// TOK : attr
+        /// LHS : Expr
+        /// RHS : --
+        attr_location,
+
+        /// TOK : attr
+        /// LHS : Expr
+        /// RHS : --
+        attr_size,
 
         /// TOK : attr
         /// LHS : Index(Token(BuiltinValue))
@@ -691,6 +731,7 @@ pub const AccessMode = enum {
 pub const Attribute = enum {
     invariant,
     @"const",
+    must_use,
     vertex,
     fragment,
     compute,

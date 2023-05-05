@@ -249,11 +249,8 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
     if (gv.attrs != Ast.null_index) {
         for (self.tree.spanToList(gv.attrs)) |attr| {
             const attr_lhs = self.tree.nodeLHS(attr);
-
-            const attr_name = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
-            const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name.slice(self.tree.source)).?;
-            switch (attr_tag) {
-                .binding => {
+            switch (self.tree.nodeTag(attr)) {
+                .attr_binding => {
                     if (!is_resource) {
                         try self.errors.add(
                             self.tree.nodeLoc(attr),
@@ -264,9 +261,8 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
                         return error.AnalysisFail;
                     }
 
-                    // TODO: resolve const-expressions
                     binding = try self.genExpr(scope, attr_lhs);
-                    if (!binding.is(self.instructions, &.{.integer_literal})) {
+                    if (!self.isConstExpr(binding)) {
                         try self.errors.add(
                             self.tree.nodeLoc(attr_lhs),
                             "expected const-expressions, found '{s}'",
@@ -285,7 +281,7 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
                         return error.AnalysisFail;
                     }
                 },
-                .group => {
+                .attr_group => {
                     if (!is_resource) {
                         try self.errors.add(
                             self.tree.nodeLoc(attr),
@@ -296,9 +292,8 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst
                         return error.AnalysisFail;
                     }
 
-                    // TODO: resolve const-expressions
                     group = try self.genExpr(scope, attr_lhs);
-                    if (!group.is(self.instructions, &.{.integer_literal})) {
+                    if (!self.isConstExpr(group)) {
                         try self.errors.add(
                             self.tree.nodeLoc(attr_lhs),
                             "expected const-expressions, found '{s}'",
@@ -481,22 +476,8 @@ pub fn genFnDecl(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
         if (self.tree.nodeLHS(arg_node) != Ast.null_index) {
             for (self.tree.spanToList(self.tree.nodeLHS(arg_node))) |attr| {
                 switch (self.tree.nodeTag(attr)) {
-                    .attr => {
-                        const attr_name_loc = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
-                        const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name_loc.slice(self.tree.source)).?;
-                        invariant = attr_tag == .invariant;
-                    },
-                    .attr_expr => {
-                        const attr_name_loc = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
-                        const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name_loc.slice(self.tree.source)).?;
-                        switch (attr_tag) {
-                            .location => {
-                                // TODO: scope?
-                                location = try self.genExpr(scope, self.tree.nodeLHS(attr));
-                            },
-                            else => unreachable,
-                        }
-                    },
+                    .attr_invariant => invariant = true,
+                    .attr_location => location = try self.genExpr(scope, self.tree.nodeLHS(attr)),
                     .attr_builtin => {
                         const builtin_loc = self.tree.tokenLoc(self.tree.nodeLHS(attr));
                         const builtin_ast = std.meta.stringToEnum(Ast.BuiltinValue, builtin_loc.slice(self.tree.source)).?;
@@ -537,18 +518,16 @@ pub fn genFnDecl(self: *AstGen, scope: *Scope, node: Ast.Index) !IR.Inst.Ref {
                             };
                         }
                     },
-                    else => unreachable,
+                    else => {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr),
+                            "unexpected attribute '{s}'",
+                            .{self.tree.nodeLoc(attr).slice(self.tree.source)},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    },
                 }
-
-                // const attr_name = self.tree.tokenLoc(self.tree.nodeToken(attr) + 1);
-                // const attr_tag = std.meta.stringToEnum(Ast.Attribute, attr_name.slice(self.tree.source)).?;
-
-                // switch (attr_tag) {
-                //     .builtin => {
-
-                //     },
-                //     else => unreachable,
-                // }
             }
         }
 
