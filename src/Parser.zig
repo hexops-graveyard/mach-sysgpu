@@ -217,55 +217,122 @@ pub fn attribute(p: *Parser) !?Ast.Index {
             p.getToken(.loc, ident_token),
             "unknown attribute '{s}'",
             .{p.getToken(.loc, ident_token).slice(p.source)},
-            try p.errors.createNote(
-                null,
-                "valid options are [{s}]",
-                .{fieldNames(Ast.Attribute)},
-            ),
+            null,
         );
         return error.Parsing;
     };
+
     var node = Ast.Node{
         .tag = undefined,
         .main_token = attr_token,
     };
+
     switch (tag) {
-        .invariant,
-        .@"const",
-        .vertex,
-        .fragment,
-        .compute,
-        => node.tag = .attr,
-        .@"align",
-        .binding,
-        .group,
-        .id,
-        .location,
-        .size,
-        .builtin,
-        => {
+        .invariant => node.tag = .attr_invariant,
+        .@"const" => node.tag = .attr_const,
+        .must_use => node.tag = .attr_must_use,
+        .vertex => node.tag = .attr_vertex,
+        .fragment => node.tag = .attr_fragment,
+        .compute => node.tag = .attr_compute,
+        .@"align" => {
             _ = try p.expectToken(.paren_left);
-            if (tag == .builtin) {
-                node.tag = .attr_builtin;
-                node.lhs = try p.expectBuiltinValue();
-            } else {
-                node.tag = .attr_expr;
-                node.lhs = try p.expression() orelse {
-                    try p.errors.add(
-                        p.peekToken(.loc, 0),
-                        "expected expression, but found '{s}'",
-                        .{p.peekToken(.tag, 0).symbol()},
-                        null,
-                    );
-                    return error.Parsing;
-                };
-            }
+            node.tag = .attr_align;
+            node.lhs = try p.expression() orelse {
+                try p.errors.add(
+                    p.peekToken(.loc, 0),
+                    "expected expression, but found '{s}'",
+                    .{p.peekToken(.tag, 0).symbol()},
+                    null,
+                );
+                return error.Parsing;
+            };
+            _ = p.eatToken(.comma);
+            _ = try p.expectToken(.paren_right);
+        },
+        .binding => {
+            _ = try p.expectToken(.paren_left);
+            node.tag = .attr_binding;
+            node.lhs = try p.expression() orelse {
+                try p.errors.add(
+                    p.peekToken(.loc, 0),
+                    "expected expression, but found '{s}'",
+                    .{p.peekToken(.tag, 0).symbol()},
+                    null,
+                );
+                return error.Parsing;
+            };
+            _ = p.eatToken(.comma);
+            _ = try p.expectToken(.paren_right);
+        },
+        .group => {
+            _ = try p.expectToken(.paren_left);
+            node.tag = .attr_group;
+            node.lhs = try p.expression() orelse {
+                try p.errors.add(
+                    p.peekToken(.loc, 0),
+                    "expected expression, but found '{s}'",
+                    .{p.peekToken(.tag, 0).symbol()},
+                    null,
+                );
+                return error.Parsing;
+            };
+            _ = p.eatToken(.comma);
+            _ = try p.expectToken(.paren_right);
+        },
+        .id => {
+            _ = try p.expectToken(.paren_left);
+            node.tag = .attr_id;
+            node.lhs = try p.expression() orelse {
+                try p.errors.add(
+                    p.peekToken(.loc, 0),
+                    "expected expression, but found '{s}'",
+                    .{p.peekToken(.tag, 0).symbol()},
+                    null,
+                );
+                return error.Parsing;
+            };
+            _ = p.eatToken(.comma);
+            _ = try p.expectToken(.paren_right);
+        },
+        .location => {
+            _ = try p.expectToken(.paren_left);
+            node.tag = .attr_location;
+            node.lhs = try p.expression() orelse {
+                try p.errors.add(
+                    p.peekToken(.loc, 0),
+                    "expected expression, but found '{s}'",
+                    .{p.peekToken(.tag, 0).symbol()},
+                    null,
+                );
+                return error.Parsing;
+            };
+            _ = p.eatToken(.comma);
+            _ = try p.expectToken(.paren_right);
+        },
+        .size => {
+            _ = try p.expectToken(.paren_left);
+            node.tag = .attr_size;
+            node.lhs = try p.expression() orelse {
+                try p.errors.add(
+                    p.peekToken(.loc, 0),
+                    "expected expression, but found '{s}'",
+                    .{p.peekToken(.tag, 0).symbol()},
+                    null,
+                );
+                return error.Parsing;
+            };
+            _ = p.eatToken(.comma);
+            _ = try p.expectToken(.paren_right);
+        },
+        .builtin => {
+            _ = try p.expectToken(.paren_left);
+            node.tag = .attr_builtin;
+            node.lhs = try p.expectBuiltinValue();
             _ = p.eatToken(.comma);
             _ = try p.expectToken(.paren_right);
         },
         .workgroup_size => {
             _ = try p.expectToken(.paren_left);
-
             node.tag = .attr_workgroup_size;
             var workgroup_size = Ast.Node.WorkgroupSize{
                 .x = try p.expression() orelse {
@@ -273,7 +340,6 @@ pub fn attribute(p: *Parser) !?Ast.Index {
                     return error.Parsing;
                 },
             };
-
             if (p.eatToken(.comma) != null and p.peekToken(.tag, 0) != .paren_right) {
                 workgroup_size.y = try p.expression() orelse {
                     try p.errors.add(p.peekToken(.loc, 0), "expected workgroup_size y parameter", .{}, null);
@@ -289,22 +355,17 @@ pub fn attribute(p: *Parser) !?Ast.Index {
                     _ = p.eatToken(.comma);
                 }
             }
-
-            node.lhs = try p.addExtra(workgroup_size);
             _ = try p.expectToken(.paren_right);
+            node.lhs = try p.addExtra(workgroup_size);
         },
         .interpolate => {
             _ = try p.expectToken(.paren_left);
-
             node.tag = .attr_interpolate;
             node.lhs = try p.expectInterpolationType();
-
             if (p.eatToken(.comma) != null and p.peekToken(.tag, 0) != .paren_right) {
                 node.rhs = try p.expectInterpolationSample();
                 _ = p.eatToken(.comma);
-                _ = try p.expectToken(.paren_right);
             }
-
             _ = try p.expectToken(.paren_right);
         },
     }
@@ -323,11 +384,7 @@ pub fn expectBuiltinValue(p: *Parser) !Ast.Index {
         p.getToken(.loc, token),
         "unknown builtin value name '{s}'",
         .{p.getToken(.loc, token).slice(p.source)},
-        try p.errors.createNote(
-            null,
-            "valid options are [{s}]",
-            .{fieldNames(Ast.BuiltinValue)},
-        ),
+        null,
     );
     return error.Parsing;
 }
@@ -343,11 +400,7 @@ pub fn expectInterpolationType(p: *Parser) !Ast.Index {
         p.getToken(.loc, token),
         "unknown interpolation type name '{s}'",
         .{p.getToken(.loc, token).slice(p.source)},
-        try p.errors.createNote(
-            null,
-            "valid options are [{s}]",
-            .{fieldNames(Ast.InterpolationType)},
-        ),
+        null,
     );
     return error.Parsing;
 }
@@ -363,11 +416,7 @@ pub fn expectInterpolationSample(p: *Parser) !Ast.Index {
         p.getToken(.loc, token),
         "unknown interpolation sample name '{s}'",
         .{p.getToken(.loc, token).slice(p.source)},
-        try p.errors.createNote(
-            null,
-            "valid options are [{s}]",
-            .{fieldNames(Ast.InterpolationSample)},
-        ),
+        null,
     );
     return error.Parsing;
 }
@@ -1364,11 +1413,7 @@ pub fn expectAddressSpace(p: *Parser) !Ast.Index {
         p.getToken(.loc, token),
         "unknown address space '{s}'",
         .{p.getToken(.loc, token).slice(p.source)},
-        try p.errors.createNote(
-            null,
-            "valid options are [{s}]",
-            .{fieldNames(Ast.AddressSpace)},
-        ),
+        null,
     );
     return error.Parsing;
 }
@@ -1384,11 +1429,7 @@ pub fn expectAccessMode(p: *Parser) !Ast.Index {
         p.getToken(.loc, token),
         "unknown access mode '{s}'",
         .{p.getToken(.loc, token).slice(p.source)},
-        try p.errors.createNote(
-            null,
-            "valid options are [{s}]",
-            .{fieldNames(Ast.AccessMode)},
-        ),
+        null,
     );
     return error.Parsing;
 }
@@ -1404,11 +1445,7 @@ pub fn expectTexelFormat(p: *Parser) !Ast.Index {
         p.getToken(.loc, token),
         "unknown address space '{s}'",
         .{p.getToken(.loc, token).slice(p.source)},
-        try p.errors.createNote(
-            null,
-            "valid options are [{s}]",
-            .{fieldNames(Ast.TexelFormat)},
-        ),
+        null,
     );
     return error.Parsing;
 }
