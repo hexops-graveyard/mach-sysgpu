@@ -58,7 +58,6 @@ pub fn peek(self: *Tokenizer) Token {
                 0 => {
                     if (index != self.source.len) {
                         result.tag = .invalid;
-                        result.loc.start = index;
                         index += 1;
                         result.loc.end = index;
                         return result;
@@ -316,7 +315,13 @@ pub fn peek(self: *Tokenizer) Token {
                     index += 1;
                     break;
                 },
-                '0'...'9' => state = .number,
+                '0'...'9' => {
+                    if (index >= 2 and std.ascii.isAlphanumeric(self.source[index - 2])) {
+                        result.tag = .minus;
+                        break;
+                    }
+                    state = .number;
+                },
                 else => {
                     result.tag = .minus;
                     break;
@@ -367,7 +372,13 @@ pub fn peek(self: *Tokenizer) Token {
                     index += 1;
                     break;
                 },
-                '0'...'9' => state = .number,
+                '0'...'9' => {
+                    if (index >= 2 and std.ascii.isAlphanumeric(self.source[index - 2])) {
+                        result.tag = .plus;
+                        break;
+                    }
+                    state = .number;
+                },
                 else => {
                     result.tag = .plus;
                     break;
