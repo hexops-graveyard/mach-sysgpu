@@ -316,7 +316,10 @@ pub fn peek(self: *Tokenizer) Token {
                     break;
                 },
                 '0'...'9' => {
-                    if (index >= 2 and std.ascii.isAlphanumeric(self.source[index - 2])) {
+                    // workaround for x-1 being tokenized as [x] [-1]
+                    // TODO: maybe it's user fault? :^)
+                    // duplicated at .plus too
+                    if (index >= 2 and std.ascii.isAlphabetic(self.source[index - 2])) {
                         result.tag = .minus;
                         break;
                     }
@@ -373,7 +376,7 @@ pub fn peek(self: *Tokenizer) Token {
                     break;
                 },
                 '0'...'9' => {
-                    if (index >= 2 and std.ascii.isAlphanumeric(self.source[index - 2])) {
+                    if (index >= 2 and std.ascii.isAlphabetic(self.source[index - 2])) {
                         result.tag = .plus;
                         break;
                     }
