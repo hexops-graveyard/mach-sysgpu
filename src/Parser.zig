@@ -1864,12 +1864,13 @@ pub fn expectMultiplicativeExpr(p: *Parser, lhs_unary: Ast.Index) !Ast.Index {
 pub fn componentOrSwizzleSpecifier(p: *Parser, prefix: Ast.Index) !Ast.Index {
     var prefix_result = prefix;
     while (true) {
-        if (p.eatToken(.period)) |_| {
+        if (p.eatToken(.period)) |period_token| {
             const member_token = try p.expectToken(.ident);
             prefix_result = try p.addNode(.{
-                .tag = .component_access,
-                .main_token = member_token,
+                .tag = .field_access,
+                .main_token = period_token,
                 .lhs = prefix_result,
+                .rhs = member_token,
             });
         } else if (p.eatToken(.bracket_left)) |bracket_left_token| {
             const index_expr = try p.expression() orelse {

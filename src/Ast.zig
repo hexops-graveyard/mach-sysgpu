@@ -121,6 +121,10 @@ pub fn nodeLoc(tree: Ast, i: Index) Token.Loc {
             const lhs_loc = tree.tokenLoc(tree.nodeToken(tree.nodeLHS(i)));
             loc.end = lhs_loc.end;
         },
+        .field_access => {
+            const component_loc = tree.tokenLoc(tree.nodeToken(i) + 1);
+            loc.end = component_loc.end;
+        },
         else => {},
     }
     return loc;
@@ -194,7 +198,7 @@ pub const Node = struct {
 
         /// TOK : k_fn
         /// LHS : FnProto
-        /// RHS : block
+        /// RHS : span(Statement)
         fn_decl,
         /// TOK : ident
         /// LHS : ?span(Attribute)
@@ -202,8 +206,6 @@ pub const Node = struct {
         fn_param,
 
         // ####### Statement #######
-
-        // block = span(Statement)
 
         /// TOK : k_return
         /// LHS : Expr?
@@ -216,12 +218,12 @@ pub const Node = struct {
         discard,
 
         /// TOK : k_loop
-        /// LHS : block
+        /// LHS : span(Statement)
         /// RHS : --
         loop,
 
         /// TOK : k_continuing
-        /// LHS : block
+        /// LHS : span(Statement)
         /// RHS : --
         continuing,
 
@@ -260,16 +262,16 @@ pub const Node = struct {
         @"switch",
         /// TOK : k_case
         /// LHS : span(Expr)
-        /// RHS : block
+        /// RHS : span(Statement)
         switch_case,
         /// TOK : k_default
-        /// LHS : block
+        /// LHS : span(Statement)
         /// RHS : --
         switch_default,
         /// switch_case with default (`case 1, 2, default {}`)
         /// TOK : k_case
         /// LHS : span(Expr)
-        /// RHS : block
+        /// RHS : span(Statement)
         switch_case_default,
 
         /// TOK : k_var
@@ -289,12 +291,12 @@ pub const Node = struct {
 
         /// TOK : k_while
         /// LHS : Expr
-        /// RHS : block
+        /// RHS : span(Statement)
         @"while",
 
         /// TOK : k_for
         /// LHS : ForHeader
-        /// RHS : block
+        /// RHS : span(Statement)
         @"for",
 
         /// TOK : plus_plus, minus_minus
@@ -588,7 +590,8 @@ pub const Node = struct {
         /// LHS is prefix expression
         /// TOK : ident
         /// LHS : Expr
-        component_access,
+        /// RHS : Token(Index(ident))
+        field_access,
 
         /// LHS is prefix expression
         /// TOK : bracket_left
@@ -673,7 +676,7 @@ pub const Node = struct {
     pub const IfStatement = struct {
         /// Expr
         cond: Index,
-        /// block
+        /// span(Statement)
         body: Index,
     };
 

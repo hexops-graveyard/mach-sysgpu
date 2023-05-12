@@ -29,7 +29,7 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemor
     defer {
         astgen.scope_pool.deinit();
         astgen.scratch.deinit(allocator);
-        astgen.resolved_vars.deinit(allocator);
+        astgen.resolved_refs.deinit(allocator);
     }
     errdefer {
         astgen.instructions.deinit(allocator);
@@ -278,7 +278,7 @@ pub const Inst = struct {
             const i = self.toIndex() orelse return false;
             return switch (list.items[i].tag) {
                 .index,
-                .member_access,
+                .field_access,
                 .bitcast,
                 .ident,
                 => true,
@@ -367,54 +367,47 @@ pub const Inst = struct {
 
         /// data is ref
         not,
-        /// data is ref
         negate,
-        /// data is ref
         deref,
-        /// data is ref
         addr_of,
 
         /// data is binary
         mul,
-        /// data is binary
         div,
-        /// data is binary
         mod,
-        /// data is binary
         add,
-        /// data is binary
         sub,
-        /// data is binary
         shift_left,
-        /// data is binary
         shift_right,
-        /// data is binary
         binary_and,
-        /// data is binary
         binary_or,
-        /// data is binary
         binary_xor,
-        /// data is binary
         circuit_and,
-        /// data is binary
         circuit_or,
-        /// data is binary
         equal,
-        /// data is binary
         not_equal,
-        /// data is binary
         less,
-        /// data is binary
         less_equal,
-        /// data is binary
         greater,
-        /// data is binary
         greater_equal,
 
         /// data is binary
-        index,
-        /// data is member_access
-        member_access,
+        assign,
+        assign_plus,
+        assign_minus,
+        assign_times,
+        assign_division,
+        assign_modulo,
+        assign_and,
+        assign_or,
+        assign_xor,
+        assign_shift_right,
+        assign_shift_left,
+
+        /// data is field_access
+        field_access,
+        /// data is index_access
+        index_access,
         /// data is bitcast
         bitcast,
 
@@ -453,7 +446,8 @@ pub const Inst = struct {
         float_literal: FloatLiteral,
         /// meaning of LHS and RHS depends on the corresponding Tag.
         binary: BinaryExpr,
-        member_access: MemberAccess,
+        field_access: FieldAccess,
+        index_access: IndexAccess,
         bitcast: Bitcast,
     };
 
@@ -494,10 +488,12 @@ pub const Inst = struct {
     pub const FnDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
+        /// nullable
         /// index to zero-terminated args Ref in `refs`
-        args: u32,
+        args: u32 = 0,
+        /// nullable
         /// index to zero-terminated statements Ref in `refs`
-        statements: Ref,
+        statements: u32 = 0,
         fragment: bool,
     };
 
@@ -702,10 +698,17 @@ pub const Inst = struct {
         rhs: Ref,
     };
 
-    pub const MemberAccess = struct {
+    pub const FieldAccess = struct {
         base: Ref,
+        field: Ref,
         /// index to zero-terminated string in `strings`
         name: u32,
+    };
+
+    pub const IndexAccess = struct {
+        base: Ref,
+        elem_type: Ref,
+        index: Ref,
     };
 
     pub const Bitcast = struct {
