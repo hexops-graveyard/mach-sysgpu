@@ -65,11 +65,11 @@ pub fn genDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
     }
 
     const decl = switch (self.tree.nodeTag(node)) {
-        .global_variable => self.genGlobalVariable(scope, node),
-        .global_constant => self.genGlobalConstDecl(scope, node),
-        .fn_decl => self.genFnDecl(scope, node),
+        .global_var => self.genGlobalVariable(scope, node),
+        .global_const => self.genGlobalConstDecl(scope, node),
+        .function => self.genFnDecl(scope, node),
         .type_alias => self.genTypeAlias(scope, node),
-        .struct_decl => self.genStruct(scope, node),
+        .@"struct" => self.genStruct(scope, node),
         else => return error.AnalysisFail, // TODO: make this unreachable
     } catch |err| {
         if (err == error.AnalysisFail) {
@@ -146,8 +146,6 @@ pub fn genTypeAlias(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref 
 }
 
 pub fn genGlobalConstDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .global_constant);
-
     const inst = try self.reserveInst();
     const node_lhs = self.tree.nodeLHS(node);
     const node_rhs = self.tree.nodeRHS(node);
@@ -191,8 +189,6 @@ fn isConstExpr(self: *AstGen, expr: IR.Inst.Ref) bool {
 }
 
 pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .global_variable);
-
     const inst = try self.reserveInst();
     const node_rhs = self.tree.nodeRHS(node);
     const gv = self.tree.extraData(Node.GlobalVarDecl, self.tree.nodeLHS(node));
@@ -360,8 +356,6 @@ pub fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst
 }
 
 pub fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .struct_decl);
-
     const inst = try self.reserveInst();
 
     const scratch_top = self.scratch.items.len;
@@ -452,8 +446,6 @@ pub fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
 }
 
 pub fn genFnDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .fn_decl);
-
     const inst = try self.reserveInst();
     const fn_proto = self.tree.extraData(Node.FnProto, self.tree.nodeLHS(node));
     var args: u32 = 0;
@@ -700,17 +692,17 @@ pub fn genBinary(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
         .sub => .sub,
         .shift_left => .shift_left,
         .shift_right => .shift_right,
-        .binary_and => .binary_and,
-        .binary_or => .binary_or,
-        .binary_xor => .binary_xor,
-        .circuit_and => .circuit_and,
-        .circuit_or => .circuit_or,
+        .@"and" => .binary_and,
+        .@"or" => .binary_or,
+        .xor => .binary_xor,
+        .logical_and => .circuit_and,
+        .logical_or => .circuit_or,
         .equal => .equal,
         .not_equal => .not_equal,
-        .less => .less,
-        .less_equal => .less_equal,
-        .greater => .greater,
-        .greater_equal => .greater_equal,
+        .less_than => .less,
+        .less_than_equal => .less_equal,
+        .greater_than => .greater,
+        .greater_than_equal => .greater_equal,
         else => unreachable,
     };
 
@@ -1016,9 +1008,9 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
 pub fn genExpr(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
     const node_tag = self.tree.nodeTag(node);
     switch (node_tag) {
-        .number_literal => return self.genNumber(node),
-        .bool_true => return .true_literal,
-        .bool_false => return .false_literal,
+        .number => return self.genNumber(node),
+        .true => return .true_literal,
+        .false => return .false_literal,
         .not => return self.genNot(scope, node),
         .negate => return self.genNegate(scope, node),
         .deref => return self.genDeref(scope, node),
@@ -1030,22 +1022,22 @@ pub fn genExpr(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
         .sub,
         .shift_left,
         .shift_right,
-        .binary_and,
-        .binary_or,
-        .binary_xor,
-        .circuit_and,
-        .circuit_or,
+        .@"and",
+        .@"or",
+        .xor,
+        .logical_and,
+        .logical_or,
         .equal,
         .not_equal,
-        .less,
-        .less_equal,
-        .greater,
-        .greater_equal,
+        .less_than,
+        .less_than_equal,
+        .greater_than,
+        .greater_than_equal,
         => return self.genBinary(scope, node),
         .index_access => return self.genIndexAccess(scope, node),
         .field_access => return self.genFieldAccess(scope, node),
         .bitcast => return self.genBitcast(scope, node),
-        .ident_expr => return self.genIdent(scope, node),
+        .ident => return self.genIdent(scope, node),
         // TODO: call expr
         else => unreachable,
     }
@@ -1204,7 +1196,7 @@ pub fn genType(self: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFai
         .atomic_type => try self.genAtomicType(scope, node),
         .array_type => try self.genArrayType(scope, node),
         .ptr_type => try self.genPtrType(scope, node),
-        .ident_expr => {
+        .ident => {
             const node_loc = self.tree.nodeLoc(node);
             const decl_ref = try self.findSymbol(scope, self.tree.nodeToken(node));
             switch (decl_ref) {
@@ -1244,7 +1236,7 @@ pub fn genType(self: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFai
             }
         },
         .sampler_type => try self.genSamplerType(node),
-        .sampled_texture_type => try self.genSampledTextureType(scope, node),
+        .texture_type => try self.genSampledTextureType(scope, node),
         .multisampled_texture_type => try self.genMultigenSampledTextureType(scope, node),
         .storage_texture_type => try self.genStorageTextureType(node),
         .depth_texture_type => try self.genDepthTextureType(node),
@@ -1254,8 +1246,6 @@ pub fn genType(self: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFai
 }
 
 pub fn genSampledTextureType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .sampled_texture_type);
-
     const inst = try self.reserveInst();
     const component_type_node = self.tree.nodeLHS(node);
     const component_type_ref = try self.genType(scope, component_type_node);

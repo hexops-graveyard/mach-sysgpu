@@ -132,10 +132,10 @@ pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
 
 pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
     const token = switch (tree.nodeTag(node)) {
-        .global_variable => tree.extraData(Node.GlobalVarDecl, tree.nodeLHS(node)).name,
-        .struct_decl,
-        .fn_decl,
-        .global_constant,
+        .global_var => tree.extraData(Node.GlobalVarDecl, tree.nodeLHS(node)).name,
+        .@"struct",
+        .function,
+        .global_const,
         .override,
         .type_alias,
         => tree.nodeToken(node) + 1,
@@ -155,23 +155,21 @@ pub const Node = struct {
     rhs: NodeIndex = null_node,
 
     pub const Tag = enum {
-        /// an slice to extra field [LHS..RHS]
+        /// an slice NodeIndex in extra [LHS..RHS]
         /// TOK : undefined
         /// LHS : NodeIndex
         /// RHS : NodeIndex
         span,
 
-        // ####### GlobalDecl #######
-
         /// TOK : k_var
         /// LHS : GlobalVarDecl
         /// RHS : Expr?
-        global_variable,
+        global_var,
 
         /// TOK : k_const
         /// LHS : Type
         /// RHS : Expr
-        global_constant,
+        global_const,
 
         /// TOK : k_override
         /// LHS : OverrideDecl
@@ -191,7 +189,7 @@ pub const Node = struct {
         /// TOK : k_struct
         /// LHS : span(struct_member)
         /// RHS : --
-        struct_decl,
+        @"struct",
         /// TOK : ident
         /// LHS : span(Attribute)
         /// RHS : Type
@@ -200,13 +198,11 @@ pub const Node = struct {
         /// TOK : k_fn
         /// LHS : FnProto
         /// RHS : span(Statement)
-        fn_decl,
+        function,
         /// TOK : ident
         /// LHS : ?span(Attribute)
         /// RHS : type
-        fn_param,
-
-        // ####### Statement #######
+        function_param,
 
         /// TOK : k_return
         /// LHS : Expr?
@@ -278,17 +274,17 @@ pub const Node = struct {
         /// TOK : k_var
         /// LHS : VarDecl
         /// RHS : Expr?
-        var_decl,
+        @"var",
 
         /// TOK : k_const
         /// LHS : Type?
         /// RHS : Expr
-        const_decl,
+        @"const",
 
         /// TOK : k_let
         /// LHS : Type?
         /// RHS : Expr
-        let_decl,
+        let,
 
         /// TOK : k_while
         /// LHS : Expr
@@ -300,9 +296,13 @@ pub const Node = struct {
         /// RHS : span(Statement)
         @"for",
 
-        /// TOK : plus_plus, minus_minus
+        /// TOK : plus_plus
         /// LHS : Expr
-        increase_decrement,
+        increase,
+
+        /// TOK : minus_minus
+        /// LHS : Expr
+        decrease,
 
         /// TOK : plus_equal,        minus_equal,
         ///       times_equal,       division_equal,
@@ -317,8 +317,6 @@ pub const Node = struct {
         /// LHS : Expr
         /// RHS : --
         phony_assign,
-
-        // ####### Type #######
 
         /// TOK : k_i32, k_u32, k_f32, k_f16, k_bool
         /// LHS : --
@@ -366,7 +364,7 @@ pub const Node = struct {
         ///       k_texture_3d, k_texture_cube, k_texture_cube_array
         /// LHS : Type
         /// RHS : --
-        sampled_texture_type,
+        texture_type,
 
         /// TOK : k_texture_multisampled_2d
         /// LHS : Type
@@ -380,8 +378,8 @@ pub const Node = struct {
 
         /// TOK : k_texture_storage_1d, k_texture_storage_2d,
         ///       k_texture_storage_2d_array, k_texture_storage_3d
-        /// LHS : NodeIndex(Token(TexelFormat))
-        /// RHS : NodeIndex(Token(AccessMode))
+        /// LHS : Token(TexelFormat)
+        /// RHS : Token(AccessMode)
         storage_texture_type,
 
         /// TOK : k_texture_depth_2d, k_texture_depth_2d_array
@@ -390,8 +388,6 @@ pub const Node = struct {
         /// LHS : --
         /// RHS : --
         depth_texture_type,
-
-        // ####### Attribute #######
 
         /// TOK : attr
         attr_const,
@@ -442,7 +438,7 @@ pub const Node = struct {
         attr_size,
 
         /// TOK : attr
-        /// LHS : NodeIndex(Token(BuiltinValue))
+        /// LHS : Token(BuiltinValue)
         /// RHS : --
         attr_builtin,
 
@@ -452,12 +448,9 @@ pub const Node = struct {
         attr_workgroup_size,
 
         /// TOK : attr
-        /// LHS : NodeIndex(Token(InterpolationType))
-        /// RHS : NodeIndex(Token(InterpolationSample))?
+        /// LHS : Token(InterpolationType)
+        /// RHS : Token(InterpolationSample))
         attr_interpolate,
-
-        // ####### Expr #######
-        // see both Parser.zig and https://gpuweb.github.io/gpuweb/wgsl/#expression-grammar
 
         /// TOK : *
         /// LHS : Expr
@@ -497,27 +490,27 @@ pub const Node = struct {
         /// TOK : &
         /// LHS : Expr
         /// RHS : Expr
-        binary_and,
+        @"and",
 
         /// TOK : |
         /// LHS : Expr
         /// RHS : Expr
-        binary_or,
+        @"or",
 
         /// TOK : ^
         /// LHS : Expr
         /// RHS : Expr
-        binary_xor,
+        xor,
 
         /// TOK : &&
         /// LHS : Expr
         /// RHS : Expr
-        circuit_and,
+        logical_and,
 
         /// TOK : ||
         /// LHS : Expr
         /// RHS : Expr
-        circuit_or,
+        logical_or,
 
         /// TOK : !
         /// LHS : Expr
@@ -552,22 +545,22 @@ pub const Node = struct {
         /// TOK : <
         /// LHS : Expr
         /// RHS : Expr
-        less,
+        less_than,
 
         /// TOK : <=
         /// LHS : Expr
         /// RHS : Expr
-        less_equal,
+        less_than_equal,
 
         /// TOK : >
         /// LHS : Expr
         /// RHS : Expr
-        greater,
+        greater_than,
 
         /// TOK : >=
         /// LHS : Expr
         /// RHS : Expr
-        greater_equal,
+        greater_than_equal,
 
         /// for identifier, array without element type specified,
         /// vector prefix (e.g. vec2) and matrix prefix (e.g. mat2x2) LHS is null
@@ -586,7 +579,7 @@ pub const Node = struct {
         /// TOK : ident
         /// LHS : --
         /// RHS : --
-        ident_expr,
+        ident,
 
         /// LHS is prefix expression
         /// TOK : ident
@@ -600,20 +593,18 @@ pub const Node = struct {
         /// RHS : Expr
         index_access,
 
-        // ####### Literals #######
-
         /// TOK : k_true
         /// LHS : --
         /// RHS : --
-        bool_true,
+        true,
         /// TOK : k_false
         /// LHS : --
         /// RHS : --
-        bool_false,
+        false,
         /// TOK : number
         /// LHS : --
         /// RHS : --
-        number_literal,
+        number,
     };
 
     pub const GlobalVarDecl = struct {
