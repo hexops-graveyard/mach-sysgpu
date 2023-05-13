@@ -57,7 +57,7 @@ pub const Inst = struct {
     tag: Tag,
     data: Data,
 
-    pub const List = std.ArrayListUnmanaged(Inst);
+    pub const List = []const Inst;
     pub const Index = u32;
 
     const ref_start_index = @typeInfo(Ref).Enum.fields.len;
@@ -93,7 +93,7 @@ pub const Inst = struct {
 
         pub fn is(self: Ref, list: List, expected: []const Tag) bool {
             const indx = self.toIndex() orelse return false;
-            const tag = list.items[indx].tag;
+            const tag = list[indx].tag;
             for (expected) |t| {
                 if (tag == t) return true;
             }
@@ -115,7 +115,7 @@ pub const Inst = struct {
                 .comparison_sampler_type,
                 .external_sampled_texture_type,
                 => true,
-                _ => switch (list.items[self.toIndex().?].tag) {
+                _ => switch (list[self.toIndex().?].tag) {
                     .struct_decl,
                     .vector_type,
                     .matrix_type,
@@ -147,7 +147,7 @@ pub const Inst = struct {
                 .f32_type,
                 .f16_type,
                 => true,
-                _ => switch (list.items[self.toIndex().?].tag) {
+                _ => switch (list[self.toIndex().?].tag) {
                     .integer_literal,
                     .float_literal,
                     => true,
@@ -171,7 +171,7 @@ pub const Inst = struct {
                 .i32_type,
                 .u32_type,
                 => true,
-                _ => switch (list.items[self.toIndex().?].tag) {
+                _ => switch (list[self.toIndex().?].tag) {
                     .integer_literal => true,
                     else => false,
                 },
@@ -193,7 +193,7 @@ pub const Inst = struct {
                 .f32_type,
                 .f16_type,
                 => true,
-                _ => switch (list.items[self.toIndex().?].tag) {
+                _ => switch (list[self.toIndex().?].tag) {
                     .float_literal => true,
                     else => false,
                 },
@@ -246,7 +246,7 @@ pub const Inst = struct {
                 .comparison_sampler_type,
                 .external_sampled_texture_type,
                 => false,
-                _ => switch (list.items[self.toIndex().?].tag) {
+                _ => switch (list[self.toIndex().?].tag) {
                     .integer_literal,
                     .float_literal,
                     => true,
@@ -266,7 +266,7 @@ pub const Inst = struct {
 
         pub fn isNumberLiteral(self: Ref, list: List) bool {
             const i = self.toIndex() orelse return false;
-            return switch (list.items[i].tag) {
+            return switch (list[i].tag) {
                 .integer_literal,
                 .float_literal,
                 => true,
@@ -276,19 +276,19 @@ pub const Inst = struct {
 
         pub fn isExpr(self: Ref, list: List) bool {
             const i = self.toIndex() orelse return false;
-            return switch (list.items[i].tag) {
-                .index,
+            return switch (list[i].tag) {
+                .index_access,
                 .field_access,
                 .bitcast,
-                .ident,
+                .var_ref,
                 => true,
-                else => self.isBinaryExpr() or self.isUnaryExpr(),
+                else => self.isBinaryExpr(list) or self.isUnaryExpr(list),
             };
         }
 
         pub fn isBinaryExpr(self: Ref, list: List) bool {
             const i = self.toIndex() orelse return false;
-            return switch (list.items[i].tag) {
+            return switch (list[i].tag) {
                 .mul,
                 .div,
                 .mod,
@@ -314,7 +314,7 @@ pub const Inst = struct {
 
         pub fn isUnaryExpr(self: Ref, list: List) bool {
             const i = self.toIndex() orelse return false;
-            return switch (list.items[i].tag) {
+            return switch (list[i].tag) {
                 .not,
                 .negate,
                 .deref,
