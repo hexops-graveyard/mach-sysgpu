@@ -1318,12 +1318,12 @@ pub fn genSampledTextureType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.
         .data = .{
             .sampled_texture_type = .{
                 .kind = switch (token_tag) {
-                    .k_texture_sampled_1d => .@"1d",
-                    .k_texture_sampled_2d => .@"2d",
-                    .k_texture_sampled_2d_array => .@"2d_array",
-                    .k_texture_sampled_3d => .@"3d",
-                    .k_texture_sampled_cube => .cube,
-                    .k_texture_sampled_cube_array => .cube_array,
+                    .k_texture_1d => .@"1d",
+                    .k_texture_2d => .@"2d",
+                    .k_texture_2d_array => .@"2d_array",
+                    .k_texture_3d => .@"3d",
+                    .k_texture_cube => .cube,
+                    .k_texture_cube_array => .cube_array,
                     else => unreachable,
                 },
                 .component_type = component_type_ref,
