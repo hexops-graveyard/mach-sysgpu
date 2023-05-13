@@ -16,20 +16,20 @@ const State = union(enum) {
         has_dot: bool = false,
     },
     block_comment,
-    @"and",
+    ampersand,
     bang,
     equal,
-    greater,
-    shift_right,
-    less,
-    shift_left,
+    angle_bracket_left,
+    angle_bracket_angle_bracket_left,
+    angle_bracket_right,
+    angle_bracket_angle_bracket_right,
     minus,
     percent,
     dot,
     pipe,
     plus,
     slash,
-    star,
+    asterisk,
     xor,
 };
 
@@ -65,18 +65,18 @@ pub fn peek(self: *Tokenizer) Token {
 
                 'a'...'z', 'A'...'Z' => state = .ident,
                 '0'...'9' => state = .{ .number = .{} },
-                '&' => state = .@"and",
+                '&' => state = .ampersand,
                 '!' => state = .bang,
                 '=' => state = .equal,
-                '>' => state = .greater,
-                '<' => state = .less,
+                '<' => state = .angle_bracket_left,
+                '>' => state = .angle_bracket_right,
                 '-' => state = .minus,
                 '%' => state = .percent,
                 '.' => state = .dot,
                 '|' => state = .pipe,
                 '+' => state = .plus,
                 '/' => state = .slash,
-                '*' => state = .star,
+                '*' => state = .asterisk,
                 '_' => state = .underscore,
                 '^' => state = .xor,
 
@@ -201,25 +201,25 @@ pub fn peek(self: *Tokenizer) Token {
                 },
                 else => {},
             },
-            .@"and" => switch (c) {
+            .ampersand => switch (c) {
                 '&' => {
-                    result.tag = .and_and;
+                    result.tag = .ampersand_ampersand;
                     index += 1;
                     break;
                 },
                 '=' => {
-                    result.tag = .and_equal;
+                    result.tag = .ampersand_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .@"and";
+                    result.tag = .ampersand;
                     break;
                 },
             },
             .bang => switch (c) {
                 '=' => {
-                    result.tag = .not_equal;
+                    result.tag = .bang_equal;
                     index += 1;
                     break;
                 },
@@ -239,49 +239,49 @@ pub fn peek(self: *Tokenizer) Token {
                     break;
                 },
             },
-            .greater => switch (c) {
-                '>' => state = .shift_right,
+            .angle_bracket_left => switch (c) {
+                '<' => state = .angle_bracket_angle_bracket_left,
                 '=' => {
-                    result.tag = .greater_than_equal;
+                    result.tag = .angle_bracket_left_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .greater_than;
+                    result.tag = .angle_bracket_left;
                     break;
                 },
             },
-            .shift_right => switch (c) {
+            .angle_bracket_angle_bracket_left => switch (c) {
                 '=' => {
-                    result.tag = .shift_right_equal;
+                    result.tag = .angle_bracket_angle_bracket_left_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .shift_right;
+                    result.tag = .angle_bracket_angle_bracket_left;
                     break;
                 },
             },
-            .less => switch (c) {
-                '<' => state = .shift_left,
+            .angle_bracket_right => switch (c) {
+                '>' => state = .angle_bracket_angle_bracket_right,
                 '=' => {
-                    result.tag = .less_than_equal;
+                    result.tag = .angle_bracket_right_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .less_than;
+                    result.tag = .angle_bracket_right;
                     break;
                 },
             },
-            .shift_left => switch (c) {
+            .angle_bracket_angle_bracket_right => switch (c) {
                 '=' => {
-                    result.tag = .shift_left_equal;
+                    result.tag = .angle_bracket_angle_bracket_right_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .shift_left;
+                    result.tag = .angle_bracket_angle_bracket_right;
                     break;
                 },
             },
@@ -329,17 +329,17 @@ pub fn peek(self: *Tokenizer) Token {
             },
             .pipe => switch (c) {
                 '|' => {
-                    result.tag = .or_or;
+                    result.tag = .pipe_pipe;
                     index += 1;
                     break;
                 },
                 '=' => {
-                    result.tag = .or_equal;
+                    result.tag = .pipe_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .@"or";
+                    result.tag = .pipe;
                     break;
                 },
             },
@@ -376,23 +376,23 @@ pub fn peek(self: *Tokenizer) Token {
             .slash => switch (c) {
                 '/' => state = .block_comment,
                 '=' => {
-                    result.tag = .division_equal;
+                    result.tag = .slash_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .division;
+                    result.tag = .slash;
                     break;
                 },
             },
-            .star => switch (c) {
+            .asterisk => switch (c) {
                 '=' => {
-                    result.tag = .times_equal;
+                    result.tag = .asterisk_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .star;
+                    result.tag = .asterisk;
                     break;
                 },
             },

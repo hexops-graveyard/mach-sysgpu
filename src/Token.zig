@@ -52,236 +52,127 @@ pub const Tag = enum {
     ident,
     number,
 
-    /// '&'
-    @"and",
-    /// '&&'
-    and_and,
-    /// '->'
-    arrow,
-    /// '@'
-    attr,
-    /// '/'
-    division,
-    /// '!'
-    bang,
-    /// '{'
-    brace_left,
-    /// '}'
-    brace_right,
-    /// '['
-    bracket_left,
-    /// ']'
-    bracket_right,
-    /// ':'
-    colon,
-    /// ','
-    comma,
-    /// '='
-    equal,
-    /// '=='
-    equal_equal,
-    /// '>'
-    greater_than,
-    /// '>='
-    greater_than_equal,
-    /// '>>'
-    shift_right,
-    /// '<'
-    less_than,
-    /// '<='
-    less_than_equal,
-    /// '<<'
-    shift_left,
-    /// '%'
-    percent,
-    /// '-'
-    minus,
-    /// '--'
-    minus_minus,
-    /// '!='
-    not_equal,
-    /// '.'
-    dot,
-    /// '+'
-    plus,
-    /// '++'
-    plus_plus,
-    /// '|'
-    @"or",
-    /// '||'
-    or_or,
-    /// '('
     paren_left,
-    /// ')'
     paren_right,
-    /// ';'
+    brace_left,
+    brace_right,
+    bracket_left,
+    bracket_right,
+
+    dot,
+    comma,
+    colon,
     semicolon,
-    /// '*'
-    star,
-    /// '~'
+    arrow,
+    attr,
+
+    equal,
+    equal_equal,
+    bang,
+    bang_equal,
+    ampersand,
+    ampersand_equal,
+    ampersand_ampersand,
+    pipe,
+    pipe_equal,
+    pipe_pipe,
     tilde,
-    /// '_'
-    underscore,
-    /// '^'
-    xor,
-    /// '+='
+    plus,
     plus_equal,
-    /// '-='
+    plus_plus,
+    minus,
     minus_equal,
-    /// '*='
-    times_equal,
-    /// '/='
-    division_equal,
-    /// '%='
+    minus_minus,
+    asterisk,
+    asterisk_equal,
+    slash,
+    slash_equal,
+    percent,
     percent_equal,
-    /// '&='
-    and_equal,
-    /// '|='
-    or_equal,
-    /// '^='
+    xor,
     xor_equal,
-    /// '>>='
-    shift_right_equal,
-    /// '<<='
-    shift_left_equal,
+    angle_bracket_left,
+    angle_bracket_left_equal,
+    angle_bracket_angle_bracket_left,
+    angle_bracket_angle_bracket_left_equal,
+    angle_bracket_right,
+    angle_bracket_right_equal,
+    angle_bracket_angle_bracket_right,
+    angle_bracket_angle_bracket_right_equal,
+    underscore,
 
-    /// 'array'
-    k_array,
-    /// 'atomic'
-    k_atomic,
-    /// 'bitcast'
-    k_bitcast,
-    /// 'bool'
-    k_bool,
-    /// 'break'
-    k_break,
-    /// 'case'
-    k_case,
-    /// 'const'
-    k_const,
-    /// 'continue'
-    k_continue,
-    /// 'continuing'
-    k_continuing,
-    /// 'discard'
-    k_discard,
-    /// 'default'
-    k_default,
-    /// 'else'
-    k_else,
-    /// 'enable'
     k_enable,
-    /// 'f16'
-    k_f16,
-    /// 'f32'
-    k_f32,
-    /// 'fallthrough'
-    k_fallthrough,
-    /// 'false'
-    k_false,
-    /// 'fn'
-    k_fn,
-    /// 'for'
-    k_for,
-    /// 'i32'
-    k_i32,
-    /// 'if'
-    k_if,
-    /// 'let'
-    k_let,
-    /// 'loop'
-    k_loop,
-    /// 'mat2x2'
-    k_mat2x2,
-    /// 'mat2x3'
-    k_mat2x3,
-    /// 'mat2x4'
-    k_mat2x4,
-    /// 'mat3x2'
-    k_mat3x2,
-    /// 'mat3x3'
-    k_mat3x3,
-    /// 'mat3x4'
-    k_mat3x4,
-    /// 'mat4x2'
-    k_mat4x2,
-    /// 'mat4x3'
-    k_mat4x3,
-    /// 'mat4x4'
-    k_mat4x4,
-    /// 'override'
-    k_override,
-    /// 'ptr'
-    k_ptr,
-    /// 'require'
-    k_require,
-    /// 'return'
-    k_return,
-    /// 'sampler'
-    k_sampler,
-    /// 'sampler_comparison'
-    k_sampler_comparison,
-    /// 'const_assert'
-    k_const_assert,
-    /// 'struct'
-    k_struct,
-    /// 'switch'
-    k_switch,
-    /// 'texture_depth_2d'
-    k_texture_depth_2d,
-    /// 'texture_depth_2d_array'
-    k_texture_depth_2d_array,
-    /// 'texture_depth_cube'
-    k_texture_depth_cube,
-    /// 'texture_depth_cube_array'
-    k_texture_depth_cube_array,
-    /// 'texture_depth_multisampled_2d'
-    k_texture_depth_multisampled_2d,
-    /// 'texture_external'
-    k_texture_external,
-    /// 'texture_multisampled_2d'
-    k_texture_multisampled_2d,
-    /// 'texture_1d'
-    k_texture_sampled_1d,
-    /// 'texture_2d'
-    k_texture_sampled_2d,
-    /// 'texture_2d_array'
-    k_texture_sampled_2d_array,
-    /// 'texture_3d'
-    k_texture_sampled_3d,
-    /// 'texture_cube'
-    k_texture_sampled_cube,
-    /// 'texture_cube_array'
-    k_texture_sampled_cube_array,
-    /// 'texture_storage_1d'
-    k_texture_storage_1d,
-    /// 'texture_storage_2d'
-    k_texture_storage_2d,
-    /// 'texture_storage_2d_array'
-    k_texture_storage_2d_array,
-    /// 'texture_storage_3d'
-    k_texture_storage_3d,
-    /// 'true'
-    k_true,
-    /// 'type'
-    k_type,
-    /// 'u32'
-    k_u32,
-    /// 'var'
-    k_var,
-    /// 'vec2'
-    k_vec2,
-    /// 'vec3'
-    k_vec3,
-    /// 'vec4'
-    k_vec4,
-    /// 'while'
-    k_while,
+    k_requires,
 
-    /// Template left '<'
-    tmpl_left,
-    /// Template right '>'
-    tmpl_right,
+    k_fn,
+    k_var,
+    k_let,
+    k_const,
+    k_override,
+    k_type,
+
+    k_if,
+    k_else,
+    k_loop,
+    k_while,
+    k_for,
+    k_break,
+    k_continue,
+    k_continuing,
+    k_discard,
+    k_switch,
+    k_case,
+    k_default,
+    k_return,
+    k_const_assert,
+    k_bitcast,
+
+    k_bool,
+    k_u32,
+    k_i32,
+    k_f16,
+    k_f32,
+    k_vec2,
+    k_vec3,
+    k_vec4,
+    k_mat2x2,
+    k_mat2x3,
+    k_mat2x4,
+    k_mat3x2,
+    k_mat3x3,
+    k_mat3x4,
+    k_mat4x2,
+    k_mat4x3,
+    k_mat4x4,
+    k_ptr,
+    k_array,
+    k_atomic,
+    k_struct,
+    k_sampler,
+    k_sampler_comparison,
+    k_texture_depth_2d,
+    k_texture_depth_2d_array,
+    k_texture_depth_cube,
+    k_texture_depth_cube_array,
+    k_texture_depth_multisampled_2d,
+    k_texture_external,
+    k_texture_multisampled_2d,
+    k_texture_1d,
+    k_texture_2d,
+    k_texture_2d_array,
+    k_texture_3d,
+    k_texture_cube,
+    k_texture_cube_array,
+    k_texture_storage_1d,
+    k_texture_storage_2d,
+    k_texture_storage_2d_array,
+    k_texture_storage_3d,
+
+    k_false,
+    k_true,
+
+    template_left,
+    template_right,
 
     pub fn symbol(self: Tag) []const u8 {
         return switch (self) {
@@ -289,75 +180,84 @@ pub const Tag = enum {
             .invalid => "invalid bytes",
             .ident => "an identifier",
             .number => "a number literal",
-            .@"and" => "&",
-            .and_and => "&&",
-            .arrow => "->",
-            .attr => "@",
-            .division => "/",
-            .bang => "!",
+
+            .paren_left => "(",
+            .paren_right => ")",
             .brace_left => "{",
             .brace_right => "}",
             .bracket_left => "[",
             .bracket_right => "]",
-            .colon => ":",
+            .dot => ".",
             .comma => ",",
+            .colon => ":",
+            .semicolon => ";",
+            .arrow => "->",
+            .attr => "@",
             .equal => "=",
             .equal_equal => "==",
-            .greater_than => ">",
-            .greater_than_equal => ">=",
-            .shift_right => ">>",
-            .less_than => "<",
-            .less_than_equal => "<=",
-            .shift_left => "<<",
-            .percent => "%",
-            .minus => "-",
-            .minus_minus => "--",
-            .not_equal => "!=",
-            .dot => ".",
-            .plus => "+",
-            .plus_plus => "++",
-            .@"or" => "|",
-            .or_or => "||",
-            .paren_left => "(",
-            .paren_right => ")",
-            .semicolon => ";",
-            .star => "*",
+            .bang => "!",
+            .bang_equal => "!=",
+            .ampersand => "&",
+            .ampersand_equal => "&=",
+            .ampersand_ampersand => "&&",
+            .pipe => "|",
+            .pipe_equal => "|=",
+            .pipe_pipe => "||",
             .tilde => "~",
-            .underscore => "_",
-            .xor => "^",
+            .plus => "+",
             .plus_equal => "+=",
+            .plus_plus => "++",
+            .minus => "-",
             .minus_equal => "-=",
-            .times_equal => "*=",
-            .division_equal => "/=",
+            .minus_minus => "--",
+            .asterisk => "*",
+            .asterisk_equal => "*=",
+            .slash => "/",
+            .slash_equal => "/=",
+            .percent => "%",
             .percent_equal => "%=",
-            .and_equal => "&=",
-            .or_equal => "|=",
+            .xor => "^",
             .xor_equal => "^=",
-            .shift_right_equal => ">>=",
-            .shift_left_equal => "<<=",
-            .k_array => "array",
-            .k_atomic => "atomic",
-            .k_bitcast => "bitcast",
-            .k_bool => "bool",
-            .k_break => "break",
-            .k_case => "case",
+            .angle_bracket_left => "<",
+            .angle_bracket_left_equal => "<=",
+            .angle_bracket_angle_bracket_left => "<<",
+            .angle_bracket_angle_bracket_left_equal => "<<=",
+            .angle_bracket_right => ">",
+            .angle_bracket_right_equal => ">=",
+            .angle_bracket_angle_bracket_right => ">>",
+            .angle_bracket_angle_bracket_right_equal => ">>=",
+            .underscore => "_",
+            .k_enable => "enable",
+            .k_requires => "requires",
+            .k_fn => "fn",
+            .k_var => "var",
+            .k_let => "let",
             .k_const => "const",
+            .k_override => "override",
+            .k_type => "type",
+            .k_if => "if",
+            .k_else => "else",
+            .k_loop => "loop",
+            .k_while => "while",
+            .k_for => "for",
+            .k_break => "break",
             .k_continue => "continue",
             .k_continuing => "continuing",
             .k_discard => "discard",
+            .k_switch => "switch",
+            .k_case => "case",
             .k_default => "default",
-            .k_else => "else",
-            .k_enable => "enable",
+            .k_return => "return",
+            .k_const_assert => "const_assert",
+            .k_bitcast => "bitcast",
+            .k_bool => "bool",
+            .k_u32 => "u32",
+            .k_i32 => "i32",
             .k_f16 => "f16",
             .k_f32 => "f32",
-            .k_fallthrough => "fallthrough",
-            .k_false => "false",
-            .k_fn => "fn",
-            .k_for => "for",
-            .k_i32 => "i32",
-            .k_if => "if",
-            .k_let => "let",
-            .k_loop => "loop",
+            .k_vec2 => "vec2",
+            .k_vec3 => "vec3",
+            .k_vec4 => "vec4",
             .k_mat2x2 => "mat2x2",
             .k_mat2x3 => "mat2x3",
             .k_mat2x4 => "mat2x4",
@@ -367,15 +267,12 @@ pub const Tag = enum {
             .k_mat4x2 => "mat4x2",
             .k_mat4x3 => "mat4x3",
             .k_mat4x4 => "mat4x4",
-            .k_override => "override",
             .k_ptr => "ptr",
-            .k_require => "require",
-            .k_return => "return",
+            .k_array => "array",
+            .k_atomic => "atomic",
+            .k_struct => "struct",
             .k_sampler => "sampler",
             .k_sampler_comparison => "sampler_comparison",
-            .k_const_assert => "const_assert",
-            .k_struct => "struct",
-            .k_switch => "switch",
             .k_texture_depth_2d => "texture_depth_2d",
             .k_texture_depth_2d_array => "texture_depth_2d_array",
             .k_texture_depth_cube => "texture_depth_cube",
@@ -383,54 +280,56 @@ pub const Tag = enum {
             .k_texture_depth_multisampled_2d => "texture_depth_multisampled_2d",
             .k_texture_external => "texture_external",
             .k_texture_multisampled_2d => "texture_multisampled_2d",
-            .k_texture_sampled_1d => "texture_1d",
-            .k_texture_sampled_2d => "texture_2d",
-            .k_texture_sampled_2d_array => "texture_2d_array",
-            .k_texture_sampled_3d => "texture_3d",
-            .k_texture_sampled_cube => "texture_cube",
-            .k_texture_sampled_cube_array => "texture_cube_array",
+            .k_texture_1d => "texture_1d",
+            .k_texture_2d => "texture_2d",
+            .k_texture_2d_array => "texture_2d_array",
+            .k_texture_3d => "texture_3d",
+            .k_texture_cube => "texture_cube",
+            .k_texture_cube_array => "texture_cube_array",
             .k_texture_storage_1d => "texture_storage_1d",
             .k_texture_storage_2d => "texture_storage_2d",
             .k_texture_storage_2d_array => "texture_storage_2d_array",
             .k_texture_storage_3d => "texture_storage_3d",
+            .k_false => "false",
             .k_true => "true",
-            .k_type => "type",
-            .k_u32 => "u32",
-            .k_var => "var",
-            .k_vec2 => "vec2",
-            .k_vec3 => "vec3",
-            .k_vec4 => "vec4",
-            .k_while => "while",
-            .tmpl_left => "<",
-            .tmpl_right => ">",
+            .template_left => "<",
+            .template_right => ">",
         };
     }
 };
 
 pub const keywords = std.ComptimeStringMap(Tag, .{
-    .{ "array", .k_array },
-    .{ "atomic", .k_atomic },
-    .{ "bitcast", .k_bitcast },
-    .{ "bool", .k_bool },
-    .{ "break", .k_break },
-    .{ "case", .k_case },
+    .{ "enable", .k_enable },
+    .{ "requires", .k_requires },
+    .{ "fn", .k_fn },
+    .{ "var", .k_var },
+    .{ "let", .k_let },
     .{ "const", .k_const },
+    .{ "override", .k_override },
+    .{ "type", .k_type },
+    .{ "if", .k_if },
+    .{ "else", .k_else },
+    .{ "loop", .k_loop },
+    .{ "while", .k_while },
+    .{ "for", .k_for },
+    .{ "break", .k_break },
     .{ "continue", .k_continue },
     .{ "continuing", .k_continuing },
     .{ "discard", .k_discard },
+    .{ "switch", .k_switch },
+    .{ "case", .k_case },
     .{ "default", .k_default },
-    .{ "else", .k_else },
-    .{ "enable", .k_enable },
+    .{ "return", .k_return },
+    .{ "const_assert", .k_const_assert },
+    .{ "bitcast", .k_bitcast },
+    .{ "bool", .k_bool },
+    .{ "u32", .k_u32 },
+    .{ "i32", .k_i32 },
     .{ "f16", .k_f16 },
     .{ "f32", .k_f32 },
-    .{ "fallthrough", .k_fallthrough },
-    .{ "false", .k_false },
-    .{ "fn", .k_fn },
-    .{ "for", .k_for },
-    .{ "i32", .k_i32 },
-    .{ "if", .k_if },
-    .{ "let", .k_let },
-    .{ "loop", .k_loop },
+    .{ "vec2", .k_vec2 },
+    .{ "vec3", .k_vec3 },
+    .{ "vec4", .k_vec4 },
     .{ "mat2x2", .k_mat2x2 },
     .{ "mat2x3", .k_mat2x3 },
     .{ "mat2x4", .k_mat2x4 },
@@ -440,15 +339,12 @@ pub const keywords = std.ComptimeStringMap(Tag, .{
     .{ "mat4x2", .k_mat4x2 },
     .{ "mat4x3", .k_mat4x3 },
     .{ "mat4x4", .k_mat4x4 },
-    .{ "override", .k_override },
     .{ "ptr", .k_ptr },
-    .{ "require", .k_require },
-    .{ "return", .k_return },
+    .{ "array", .k_array },
+    .{ "atomic", .k_atomic },
+    .{ "struct", .k_struct },
     .{ "sampler", .k_sampler },
     .{ "sampler_comparison", .k_sampler_comparison },
-    .{ "const_assert", .k_const_assert },
-    .{ "struct", .k_struct },
-    .{ "switch", .k_switch },
     .{ "texture_depth_2d", .k_texture_depth_2d },
     .{ "texture_depth_2d_array", .k_texture_depth_2d_array },
     .{ "texture_depth_cube", .k_texture_depth_cube },
@@ -456,24 +352,18 @@ pub const keywords = std.ComptimeStringMap(Tag, .{
     .{ "texture_depth_multisampled_2d", .k_texture_depth_multisampled_2d },
     .{ "texture_external", .k_texture_external },
     .{ "texture_multisampled_2d", .k_texture_multisampled_2d },
-    .{ "texture_1d", .k_texture_sampled_1d },
-    .{ "texture_2d", .k_texture_sampled_2d },
-    .{ "texture_2d_array", .k_texture_sampled_2d_array },
-    .{ "texture_3d", .k_texture_sampled_3d },
-    .{ "texture_cube", .k_texture_sampled_cube },
-    .{ "texture_cube_array", .k_texture_sampled_cube_array },
+    .{ "texture_1d", .k_texture_1d },
+    .{ "texture_2d", .k_texture_2d },
+    .{ "texture_2d_array", .k_texture_2d_array },
+    .{ "texture_3d", .k_texture_3d },
+    .{ "texture_cube", .k_texture_cube },
+    .{ "texture_cube_array", .k_texture_cube_array },
     .{ "texture_storage_1d", .k_texture_storage_1d },
     .{ "texture_storage_2d", .k_texture_storage_2d },
     .{ "texture_storage_2d_array", .k_texture_storage_2d_array },
     .{ "texture_storage_3d", .k_texture_storage_3d },
+    .{ "false", .k_false },
     .{ "true", .k_true },
-    .{ "type", .k_type },
-    .{ "u32", .k_u32 },
-    .{ "var", .k_var },
-    .{ "vec2", .k_vec2 },
-    .{ "vec3", .k_vec3 },
-    .{ "vec4", .k_vec4 },
-    .{ "while", .k_while },
 });
 
 pub const reserved = blk: {
