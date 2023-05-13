@@ -77,8 +77,8 @@ pub const Inst = struct {
         comparison_sampler_type,
         external_sampled_texture_type,
 
-        true_literal,
-        false_literal,
+        true,
+        false,
 
         _,
 
@@ -103,8 +103,8 @@ pub const Inst = struct {
         pub fn isType(self: Ref, list: List) bool {
             return switch (self) {
                 .none,
-                .true_literal,
-                .false_literal,
+                .true,
+                .false,
                 => false,
                 .bool_type,
                 .i32_type,
@@ -135,8 +135,8 @@ pub const Inst = struct {
         pub fn isNumber(self: Ref, list: List) bool {
             return switch (self) {
                 .none,
-                .true_literal,
-                .false_literal,
+                .true,
+                .false,
                 .bool_type,
                 .sampler_type,
                 .comparison_sampler_type,
@@ -148,8 +148,8 @@ pub const Inst = struct {
                 .f16_type,
                 => true,
                 _ => switch (list[self.toIndex().?].tag) {
-                    .integer_literal,
-                    .float_literal,
+                    .integer,
+                    .float,
                     => true,
                     else => false,
                 },
@@ -159,8 +159,8 @@ pub const Inst = struct {
         pub fn isInteger(self: Ref, list: List) bool {
             return switch (self) {
                 .none,
-                .true_literal,
-                .false_literal,
+                .true,
+                .false,
                 .bool_type,
                 .f32_type,
                 .f16_type,
@@ -172,7 +172,7 @@ pub const Inst = struct {
                 .u32_type,
                 => true,
                 _ => switch (list[self.toIndex().?].tag) {
-                    .integer_literal => true,
+                    .integer => true,
                     else => false,
                 },
             };
@@ -181,8 +181,8 @@ pub const Inst = struct {
         pub fn isFloat(self: Ref, list: List) bool {
             return switch (self) {
                 .none,
-                .true_literal,
-                .false_literal,
+                .true,
+                .false,
                 .bool_type,
                 .i32_type,
                 .u32_type,
@@ -194,7 +194,7 @@ pub const Inst = struct {
                 .f16_type,
                 => true,
                 _ => switch (list[self.toIndex().?].tag) {
-                    .float_literal => true,
+                    .float => true,
                     else => false,
                 },
             };
@@ -203,8 +203,8 @@ pub const Inst = struct {
         pub fn isBool(self: Ref) bool {
             return switch (self) {
                 .bool_type,
-                .true_literal,
-                .false_literal,
+                .true,
+                .false,
                 => true,
                 else => false,
             };
@@ -233,8 +233,8 @@ pub const Inst = struct {
 
         pub fn isLiteral(self: Ref, list: List) bool {
             return switch (self) {
-                .true_literal,
-                .false_literal,
+                .true,
+                .false,
                 => true,
                 .none,
                 .bool_type,
@@ -247,8 +247,8 @@ pub const Inst = struct {
                 .external_sampled_texture_type,
                 => false,
                 _ => switch (list[self.toIndex().?].tag) {
-                    .integer_literal,
-                    .float_literal,
+                    .integer,
+                    .float,
                     => true,
                     else => false,
                 },
@@ -257,8 +257,8 @@ pub const Inst = struct {
 
         pub fn isBoolLiteral(self: Ref) bool {
             return switch (self) {
-                .true_literal,
-                .false_literal,
+                .true,
+                .false,
                 => true,
                 else => false,
             };
@@ -267,8 +267,8 @@ pub const Inst = struct {
         pub fn isNumberLiteral(self: Ref, list: List) bool {
             const i = self.toIndex() orelse return false;
             return switch (list[i].tag) {
-                .integer_literal,
-                .float_literal,
+                .integer,
+                .float,
                 => true,
                 else => false,
             };
@@ -296,11 +296,11 @@ pub const Inst = struct {
                 .sub,
                 .shift_left,
                 .shift_right,
-                .binary_and,
-                .binary_or,
-                .binary_xor,
-                .circuit_and,
-                .circuit_or,
+                .@"and",
+                .@"or",
+                .xor,
+                .logical_and,
+                .logical_or,
                 .equal,
                 .not_equal,
                 .less,
@@ -333,8 +333,8 @@ pub const Inst = struct {
 
         /// data is fn_decl
         fn_decl,
-        /// data is fn_arg
-        fn_arg,
+        /// data is fn_param
+        fn_param,
 
         /// data is struct_decl
         struct_decl,
@@ -360,10 +360,10 @@ pub const Inst = struct {
         /// data is depth_texture_type
         depth_texture_type,
 
-        /// data is integer_literal
-        integer_literal,
-        /// data is float_literal
-        float_literal,
+        /// data is integer
+        integer,
+        /// data is float
+        float,
 
         /// data is ref
         not,
@@ -379,17 +379,24 @@ pub const Inst = struct {
         sub,
         shift_left,
         shift_right,
-        binary_and,
-        binary_or,
-        binary_xor,
-        circuit_and,
-        circuit_or,
+        @"and",
+        @"or",
+        xor,
+        logical_and,
+        logical_or,
         equal,
         not_equal,
-        less,
-        less_equal,
-        greater,
-        greater_equal,
+        less_than,
+        less_than_equal,
+        greater_than,
+        greater_than_equal,
+
+        /// data is field_access
+        field_access,
+        /// data is index_access
+        index_access,
+        /// data is bitcast
+        bitcast,
 
         /// data is binary
         assign,
@@ -404,16 +411,8 @@ pub const Inst = struct {
         assign_shift_right,
         assign_shift_left,
 
-        /// data is field_access
-        field_access,
-        /// data is index_access
-        index_access,
-        /// data is bitcast
-        bitcast,
-
         /// data is ref
         var_ref,
-
         /// data is ref
         struct_ref,
 
@@ -430,7 +429,7 @@ pub const Inst = struct {
         global_variable_decl: GlobalVariableDecl,
         global_const_decl: GlobalConstDecl,
         fn_decl: FnDecl,
-        fn_arg: FnArg,
+        fn_param: FnArg,
         struct_decl: StructDecl,
         struct_member: StructMember,
         vector_type: VectorType,
@@ -442,8 +441,8 @@ pub const Inst = struct {
         multisampled_texture_type: MultisampledTextureType,
         storage_texture_type: StorageTextureType,
         depth_texture_type: DepthTextureType,
-        integer_literal: IntegerLiteral,
-        float_literal: FloatLiteral,
+        integer: Integer,
+        float: Float,
         /// meaning of LHS and RHS depends on the corresponding Tag.
         binary: BinaryExpr,
         field_access: FieldAccess,
@@ -489,8 +488,8 @@ pub const Inst = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         /// nullable
-        /// index to zero-terminated args Ref in `refs`
-        args: u32 = 0,
+        /// index to zero-terminated params Ref in `refs`
+        params: u32 = 0,
         /// nullable
         /// index to zero-terminated statements Ref in `refs`
         statements: u32 = 0,
@@ -524,6 +523,23 @@ pub const Inst = struct {
             num_workgroups,
             sample_index,
             sample_mask,
+
+            pub fn fromAst(ast: Ast.BuiltinValue) BuiltinValue {
+                return switch (ast) {
+                    .vertex_index => .vertex_index,
+                    .instance_index => .instance_index,
+                    .position => .position,
+                    .front_facing => .front_facing,
+                    .frag_depth => .frag_depth,
+                    .local_invocation_id => .local_invocation_id,
+                    .local_invocation_index => .local_invocation_index,
+                    .global_invocation_id => .global_invocation_id,
+                    .workgroup_id => .workgroup_id,
+                    .num_workgroups => .num_workgroups,
+                    .sample_index => .sample_index,
+                    .sample_mask => .sample_mask,
+                };
+            }
         };
 
         pub const Interpolate = struct {
@@ -717,13 +733,13 @@ pub const Inst = struct {
         result_type: Ref,
     };
 
-    pub const IntegerLiteral = struct {
+    pub const Integer = struct {
         value: i64,
         base: u8,
         tag: enum { none, i, u },
     };
 
-    pub const FloatLiteral = struct {
+    pub const Float = struct {
         value: f64,
         base: u8,
         tag: enum { none, f, h },
