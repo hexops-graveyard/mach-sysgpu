@@ -11,9 +11,9 @@ const State = union(enum) {
     ident,
     underscore,
     number: struct {
-        hex: bool = false,
-        leading_sign: bool = false,
-        dot: bool = false,
+        is_hex: bool = false,
+        allow_leading_sign: bool = false,
+        has_dot: bool = false,
     },
     block_comment,
     @"and",
@@ -34,12 +34,7 @@ const State = union(enum) {
 };
 
 pub fn init(source: [:0]const u8) Tokenizer {
-    // return Tokenizer{
-    //     // Skip the UTF-8 BOM if present
-    //     .source = std.mem.trimLeft(u8, source, "\xEF\xBB\xBF"),
-    // };
-
-    // Skip the UTF-8 BOM if present
+    // skip the UTF-8 BOM if present
     const src_start: u32 = if (std.mem.startsWith(u8, source, "\xEF\xBB\xBF")) 3 else 0;
     return Tokenizer{ .source = source[src_start..] };
 }
@@ -63,16 +58,13 @@ pub fn peek(self: *Tokenizer) Token {
                     if (index != self.source.len) {
                         result.tag = .invalid;
                         index += 1;
-                        result.loc.end = index;
-                        return result;
                     }
                     break;
                 },
-
                 ' ', '\n', '\t', '\r' => result.loc.start = index + 1,
+
                 'a'...'z', 'A'...'Z' => state = .ident,
                 '0'...'9' => state = .{ .number = .{} },
-
                 '&' => state = .@"and",
                 '!' => state = .bang,
                 '=' => state = .equal,
@@ -156,6 +148,8 @@ pub fn peek(self: *Tokenizer) Token {
                     result.tag = .ident;
                     if (Token.keywords.get(self.source[result.loc.start..index])) |tag| {
                         result.tag = tag;
+                    } else if (Token.reserved.get(self.source[result.loc.start..index])) |_| {
+                        result.tag = .invalid;
                     }
                     break;
                 },
@@ -169,40 +163,35 @@ pub fn peek(self: *Tokenizer) Token {
             },
             .number => |*number| {
                 result.tag = .number;
-                while (true) : (index += 1) {
-                    c = self.source[index];
-                    switch (c) {
-                        '0'...'9' => {},
-                        'a'...'d', 'A'...'D' => if (!number.hex) break,
-                        'x', 'X' => number.hex = true,
-                        '.' => {
-                            if (number.dot) break;
-                            number.dot = true;
-                        },
-                        '+', '-' => {
-                            if (!number.leading_sign) break;
-                            number.leading_sign = false;
-                            number.hex = false;
-                        },
-                        'e', 'E' => if (!number.hex) {
-                            number.leading_sign = true;
-                        },
-                        'p', 'P' => if (number.hex) {
-                            number.leading_sign = true;
-                        },
-                        'i', 'u' => {
-                            index += 1;
-                            break;
-                        },
-                        'f', 'h' => if (!number.hex) {
-                            index += 1;
-                            break;
-                        },
-                        else => break,
-                    }
+                switch (c) {
+                    '0'...'9' => {},
+                    'a'...'d', 'A'...'D' => if (!number.is_hex) break,
+                    'x', 'X' => number.is_hex = true,
+                    '.' => {
+                        if (number.has_dot) break;
+                        number.has_dot = true;
+                    },
+                    '+', '-' => {
+                        if (!number.allow_leading_sign) break;
+                        number.allow_leading_sign = false;
+                        number.is_hex = false;
+                    },
+                    'e', 'E' => if (!number.is_hex) {
+                        number.allow_leading_sign = true;
+                    },
+                    'p', 'P' => if (number.is_hex) {
+                        number.allow_leading_sign = true;
+                    },
+                    'i', 'u' => {
+                        index += 1;
+                        break;
+                    },
+                    'f', 'h' => if (!number.is_hex) {
+                        index += 1;
+                        break;
+                    },
+                    else => break,
                 }
-
-                break;
             },
             .block_comment => switch (c) {
                 0 => break,
