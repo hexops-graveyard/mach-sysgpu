@@ -32,8 +32,8 @@ fn Printer(comptime Writer: type) type {
                 .sampler_type,
                 .comparison_sampler_type,
                 .external_sampled_texture_type,
-                .true_literal,
-                .false_literal,
+                .true,
+                .false,
                 => {
                     try self.tty.setColor(self.writer, .Green);
                     try self.writer.print(".{s}", .{@tagName(ref)});
@@ -69,7 +69,7 @@ fn Printer(comptime Writer: type) type {
                             try self.printFnDecl(indent, index);
                             try self.printFieldEnd();
                         },
-                        .integer_literal, .float_literal => try self.printNumberLiteral(indent, index),
+                        .integer, .float => try self.printNumberLiteral(indent, index),
                         .mul,
                         .div,
                         .mod,
@@ -77,17 +77,17 @@ fn Printer(comptime Writer: type) type {
                         .sub,
                         .shift_left,
                         .shift_right,
-                        .binary_and,
-                        .binary_or,
-                        .binary_xor,
-                        .circuit_and,
-                        .circuit_or,
+                        .@"and",
+                        .@"or",
+                        .xor,
+                        .logical_and,
+                        .logical_or,
                         .equal,
                         .not_equal,
-                        .less,
-                        .less_equal,
-                        .greater,
-                        .greater_equal,
+                        .less_than,
+                        .less_than_equal,
+                        .greater_than,
+                        .greater_than_equal,
                         .assign,
                         => try self.printBinary(indent, index),
                         .field_access => try self.printFieldAccess(indent, index),
@@ -153,21 +153,21 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockStart(index);
             try self.printField(indent + 1, "name", inst.data.fn_decl.name);
 
-            if (inst.data.fn_decl.args != 0) {
-                try self.printFieldName(indent + 1, "args");
+            if (inst.data.fn_decl.params != 0) {
+                try self.printFieldName(indent + 1, "params");
                 try self.listStart();
-                const args = std.mem.sliceTo(self.ir.refs[inst.data.fn_decl.args..], .none);
-                for (args) |arg| {
+                const params = std.mem.sliceTo(self.ir.refs[inst.data.fn_decl.params..], .none);
+                for (params) |arg| {
                     const arg_index = arg.toIndex().?;
                     const arg_inst = self.ir.instructions[arg_index];
                     try self.printIndent(indent + 2);
                     try self.instBlockStart(arg_index);
-                    try self.printField(indent + 3, "name", arg_inst.data.fn_arg.name);
-                    try self.printField(indent + 3, "type", arg_inst.data.fn_arg.type);
-                    if (arg_inst.data.fn_arg.builtin != .none) {
-                        try self.printField(indent + 3, "builtin", arg_inst.data.fn_arg.builtin);
+                    try self.printField(indent + 3, "name", arg_inst.data.fn_param.name);
+                    try self.printField(indent + 3, "type", arg_inst.data.fn_param.type);
+                    if (arg_inst.data.fn_param.builtin != .none) {
+                        try self.printField(indent + 3, "builtin", arg_inst.data.fn_param.builtin);
                     }
-                    if (arg_inst.data.fn_arg.interpolate) |interpolate| {
+                    if (arg_inst.data.fn_param.interpolate) |interpolate| {
                         try self.printFieldName(indent + 3, "interpolate");
                         try self.instBlockStart(index);
                         try self.printField(indent + 4, "type", interpolate.type);
@@ -177,11 +177,11 @@ fn Printer(comptime Writer: type) type {
                         try self.instBlockEnd(indent + 4);
                         try self.printFieldEnd();
                     }
-                    if (arg_inst.data.fn_arg.location != .none) {
-                        try self.printField(indent + 3, "location", arg_inst.data.fn_arg.location);
+                    if (arg_inst.data.fn_param.location != .none) {
+                        try self.printField(indent + 3, "location", arg_inst.data.fn_param.location);
                     }
-                    if (arg_inst.data.fn_arg.invariant) {
-                        try self.printField(indent + 3, "invariant", arg_inst.data.fn_arg.invariant);
+                    if (arg_inst.data.fn_param.invariant) {
+                        try self.printField(indent + 3, "invariant", arg_inst.data.fn_param.invariant);
                     }
                     try self.instBlockEnd(indent + 2);
                     try self.printFieldEnd();
@@ -210,18 +210,18 @@ fn Printer(comptime Writer: type) type {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             switch (inst.tag) {
-                .integer_literal => try self.printField(indent + 1, "value", inst.data.integer_literal.value),
-                .float_literal => try self.printField(indent + 1, "value", inst.data.float_literal.value),
+                .integer => try self.printField(indent + 1, "value", inst.data.integer.value),
+                .float => try self.printField(indent + 1, "value", inst.data.float.value),
                 else => unreachable,
             }
             switch (inst.tag) {
-                .integer_literal => try self.printField(indent + 1, "base", inst.data.integer_literal.base),
-                .float_literal => try self.printField(indent + 1, "base", inst.data.float_literal.base),
+                .integer => try self.printField(indent + 1, "base", inst.data.integer.base),
+                .float => try self.printField(indent + 1, "base", inst.data.float.base),
                 else => unreachable,
             }
             switch (inst.tag) {
-                .integer_literal => try self.printField(indent + 1, "tag", inst.data.integer_literal.tag),
-                .float_literal => try self.printField(indent + 1, "tag", inst.data.float_literal.tag),
+                .integer => try self.printField(indent + 1, "tag", inst.data.integer.tag),
+                .float => try self.printField(indent + 1, "tag", inst.data.float.tag),
                 else => unreachable,
             }
             try self.instBlockEnd(indent);
