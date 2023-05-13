@@ -477,7 +477,7 @@ fn globalVarDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
         .type = var_type,
     });
     return try p.addNode(.{
-        .tag = .global_variable,
+        .tag = .global_var,
         .main_token = var_token,
         .lhs = extra,
         .rhs = initializer,
@@ -505,7 +505,7 @@ fn globalConstDecl(p: *Parser) !?NodeIndex {
     };
 
     return try p.addNode(.{
-        .tag = .global_constant,
+        .tag = .global_const,
         .main_token = const_token,
         .lhs = const_type,
         .rhs = initializer,
@@ -590,7 +590,7 @@ fn structDecl(p: *Parser) !?NodeIndex {
     const members = try p.listToSpan(list);
 
     return try p.addNode(.{
-        .tag = .struct_decl,
+        .tag = .@"struct",
         .main_token = main_token,
         .lhs = members,
     });
@@ -658,7 +658,7 @@ fn functionDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
         .result_type = result_type,
     });
     return try p.addNode(.{
-        .tag = .fn_decl,
+        .tag = .function,
         .main_token = fn_token,
         .lhs = fn_proto,
         .rhs = body,
@@ -695,7 +695,7 @@ fn parameter(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     _ = try p.expectToken(.colon);
     const param_type = try p.expectTypeSpecifier();
     return try p.addNode(.{
-        .tag = .fn_param,
+        .tag = .function_param,
         .main_token = main_token,
         .lhs = attrs orelse null_node,
         .rhs = param_type,
@@ -1065,7 +1065,7 @@ fn varStatement(p: *Parser) !?NodeIndex {
             .type = var_type,
         });
         return try p.addNode(.{
-            .tag = .var_decl,
+            .tag = .@"var",
             .main_token = var_token,
             .lhs = extra,
             .rhs = initializer,
@@ -1092,9 +1092,9 @@ fn varStatement(p: *Parser) !?NodeIndex {
 
     return try p.addNode(.{
         .tag = if (p.getToken(.tag, const_let_token) == .k_const)
-            .const_decl
+            .@"const"
         else
-            .let_decl,
+            .let,
         .main_token = const_let_token,
         .lhs = const_let_type,
         .rhs = initializer,
@@ -1121,9 +1121,16 @@ fn varUpdateStatement(p: *Parser) !?NodeIndex {
     } else if (try p.lhsExpression()) |lhs| {
         const op_token = p.advanceToken();
         switch (p.getToken(.tag, op_token)) {
-            .plus_plus, .minus_minus => {
+            .plus_plus => {
                 return try p.addNode(.{
-                    .tag = .increase_decrement,
+                    .tag = .increase,
+                    .main_token = op_token,
+                    .lhs = lhs,
+                });
+            },
+            .minus_minus => {
+                return try p.addNode(.{
+                    .tag = .decrease,
                     .main_token = op_token,
                     .lhs = lhs,
                 });
@@ -1206,7 +1213,7 @@ fn expectTypeSpecifier(p: *Parser) error{ OutOfMemory, Parsing }!NodeIndex {
 fn typeSpecifier(p: *Parser) !?NodeIndex {
     if (p.peekToken(.tag, 0) == .ident) {
         const main_token = p.advanceToken();
-        return try p.addNode(.{ .tag = .ident_expr, .main_token = main_token });
+        return try p.addNode(.{ .tag = .ident, .main_token = main_token });
     }
     return p.typeSpecifierWithoutIdent();
 }
@@ -1329,7 +1336,7 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
             const elem_type = try p.expectTypeSpecifier();
             _ = try p.expectToken(.template_right);
             return try p.addNode(.{
-                .tag = .sampled_texture_type,
+                .tag = .texture_type,
                 .main_token = main_token,
                 .lhs = elem_type,
             });
@@ -1542,7 +1549,7 @@ fn expression(p: *Parser) !?NodeIndex {
 fn lhsExpression(p: *Parser) !?NodeIndex {
     if (p.eatToken(.ident)) |ident_token| {
         return try p.componentOrSwizzleSpecifier(
-            try p.addNode(.{ .tag = .ident_expr, .main_token = ident_token }),
+            try p.addNode(.{ .tag = .ident, .main_token = ident_token }),
         );
     }
 
@@ -1606,15 +1613,15 @@ fn primaryExpr(p: *Parser) !?NodeIndex {
     switch (p.getToken(.tag, main_token)) {
         .k_true => {
             _ = p.advanceToken();
-            return try p.addNode(.{ .tag = .bool_true, .main_token = main_token });
+            return try p.addNode(.{ .tag = .true, .main_token = main_token });
         },
         .k_false => {
             _ = p.advanceToken();
-            return try p.addNode(.{ .tag = .bool_false, .main_token = main_token });
+            return try p.addNode(.{ .tag = .false, .main_token = main_token });
         },
         .number => {
             _ = p.advanceToken();
-            return try p.addNode(.{ .tag = .number_literal, .main_token = main_token });
+            return try p.addNode(.{ .tag = .number, .main_token = main_token });
         },
         .k_bitcast => {
             _ = p.advanceToken();
@@ -1632,7 +1639,7 @@ fn primaryExpr(p: *Parser) !?NodeIndex {
         .paren_left => return try p.expectParenExpr(),
         .ident => {
             _ = p.advanceToken();
-            return try p.addNode(.{ .tag = .ident_expr, .main_token = main_token });
+            return try p.addNode(.{ .tag = .ident, .main_token = main_token });
         },
         else => {
             return null;
@@ -1680,10 +1687,10 @@ fn expectRelationalExpr(p: *Parser, lhs_unary: NodeIndex) !NodeIndex {
     const op: Node.Tag = switch (p.getToken(.tag, op_token)) {
         .equal_equal => .equal,
         .bang_equal => .not_equal,
-        .angle_bracket_right => .greater,
-        .angle_bracket_right_equal => .greater_equal,
-        .angle_bracket_left => .less,
-        .angle_bracket_left_equal => .less_equal,
+        .angle_bracket_right => .greater_than,
+        .angle_bracket_right_equal => .greater_than_equal,
+        .angle_bracket_left => .less_than,
+        .angle_bracket_left_equal => .less_than_equal,
         else => return lhs,
     };
     _ = p.advanceToken();
@@ -1711,8 +1718,8 @@ fn expectShortCircuitExpr(p: *Parser, lhs_relational: NodeIndex) !NodeIndex {
 
     const op_token = p.tok_i;
     const op: Node.Tag = switch (p.getToken(.tag, op_token)) {
-        .ampersand_ampersand => .circuit_and,
-        .pipe_pipe => .circuit_or,
+        .ampersand_ampersand => .logical_and,
+        .pipe_pipe => .logical_or,
         else => return lhs,
     };
 
@@ -1744,9 +1751,9 @@ fn expectShortCircuitExpr(p: *Parser, lhs_relational: NodeIndex) !NodeIndex {
 fn bitwiseExpr(p: *Parser, lhs: NodeIndex) !?NodeIndex {
     const op_token = p.tok_i;
     const op: Node.Tag = switch (p.getToken(.tag, op_token)) {
-        .ampersand => .binary_and,
-        .pipe => .binary_or,
-        .xor => .binary_xor,
+        .ampersand => .@"and",
+        .pipe => .@"or",
+        .xor => .xor,
         else => return null,
     };
     _ = p.advanceToken();
