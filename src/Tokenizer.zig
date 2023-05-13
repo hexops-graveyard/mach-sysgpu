@@ -6,14 +6,17 @@ const Tokenizer = @This();
 source: [:0]const u8,
 index: u32 = 0,
 
-const State = enum {
+const State = union(enum) {
     start,
-    invalid,
     ident,
     underscore,
-    number,
+    number: struct {
+        hex: bool = false,
+        leading_sign: bool = false,
+        dot: bool = false,
+    },
     block_comment,
-    ampersand,
+    @"and",
     bang,
     equal,
     greater,
@@ -21,8 +24,8 @@ const State = enum {
     less,
     shift_left,
     minus,
-    mod,
-    period,
+    percent,
+    dot,
     pipe,
     plus,
     slash,
@@ -30,11 +33,12 @@ const State = enum {
     xor,
 };
 
-pub fn dump(self: *Tokenizer, token: Token) void {
-    std.debug.print("\x1b[0;33m{s} \x1b[0;90m\"{s}\"\x1b[0m\n", .{ @tagName(token.tag), token.loc.slice(self.source) });
-}
-
 pub fn init(source: [:0]const u8) Tokenizer {
+    // return Tokenizer{
+    //     // Skip the UTF-8 BOM if present
+    //     .source = std.mem.trimLeft(u8, source, "\xEF\xBB\xBF"),
+    // };
+
     // Skip the UTF-8 BOM if present
     const src_start: u32 = if (std.mem.startsWith(u8, source, "\xEF\xBB\xBF")) 3 else 0;
     return Tokenizer{ .source = source[src_start..] };
@@ -42,7 +46,7 @@ pub fn init(source: [:0]const u8) Tokenizer {
 
 pub fn peek(self: *Tokenizer) Token {
     var index = self.index;
-    var state = State.start;
+    var state: State = .start;
     var result = Token{
         .tag = .eof,
         .loc = .{
@@ -64,18 +68,19 @@ pub fn peek(self: *Tokenizer) Token {
                     }
                     break;
                 },
+
                 ' ', '\n', '\t', '\r' => result.loc.start = index + 1,
                 'a'...'z', 'A'...'Z' => state = .ident,
-                '0'...'9' => state = .number,
+                '0'...'9' => state = .{ .number = .{} },
 
-                '&' => state = .ampersand,
+                '&' => state = .@"and",
                 '!' => state = .bang,
                 '=' => state = .equal,
                 '>' => state = .greater,
                 '<' => state = .less,
                 '-' => state = .minus,
-                '%' => state = .mod,
-                '.' => state = .period,
+                '%' => state = .percent,
+                '.' => state = .dot,
                 '|' => state = .pipe,
                 '+' => state = .plus,
                 '/' => state = .slash,
@@ -140,12 +145,11 @@ pub fn peek(self: *Tokenizer) Token {
                 },
 
                 else => {
-                    state = .invalid;
                     result.tag = .invalid;
+                    index += 1;
+                    break;
                 },
             },
-            .invalid => break,
-
             .ident => switch (c) {
                 'a'...'z', 'A'...'Z', '0'...'9', '_' => {},
                 else => {
@@ -163,39 +167,34 @@ pub fn peek(self: *Tokenizer) Token {
                     break;
                 },
             },
-
-            .number => {
+            .number => |*number| {
                 result.tag = .number;
-
-                var hex = false;
-                var leading_sign = false;
-                var period = false;
                 while (true) : (index += 1) {
                     c = self.source[index];
                     switch (c) {
                         '0'...'9' => {},
-                        'a'...'d', 'A'...'D' => if (!hex) break,
-                        'x', 'X' => hex = true,
+                        'a'...'d', 'A'...'D' => if (!number.hex) break,
+                        'x', 'X' => number.hex = true,
                         '.' => {
-                            if (period) break;
-                            period = true;
+                            if (number.dot) break;
+                            number.dot = true;
                         },
                         '+', '-' => {
-                            if (!leading_sign) break;
-                            leading_sign = false;
-                            hex = false;
+                            if (!number.leading_sign) break;
+                            number.leading_sign = false;
+                            number.hex = false;
                         },
-                        'e', 'E' => if (!hex) {
-                            leading_sign = true;
+                        'e', 'E' => if (!number.hex) {
+                            number.leading_sign = true;
                         },
-                        'p', 'P' => if (hex) {
-                            leading_sign = true;
+                        'p', 'P' => if (number.hex) {
+                            number.leading_sign = true;
                         },
                         'i', 'u' => {
                             index += 1;
                             break;
                         },
-                        'f', 'h' => if (!hex) {
+                        'f', 'h' => if (!number.hex) {
                             index += 1;
                             break;
                         },
@@ -205,7 +204,6 @@ pub fn peek(self: *Tokenizer) Token {
 
                 break;
             },
-
             .block_comment => switch (c) {
                 0 => break,
                 '\n' => {
@@ -214,8 +212,7 @@ pub fn peek(self: *Tokenizer) Token {
                 },
                 else => {},
             },
-
-            .ampersand => switch (c) {
+            .@"and" => switch (c) {
                 '&' => {
                     result.tag = .and_and;
                     index += 1;
@@ -323,21 +320,21 @@ pub fn peek(self: *Tokenizer) Token {
                         result.tag = .minus;
                         break;
                     }
-                    state = .number;
+                    state = .{ .number = .{} };
                 },
                 else => {
                     result.tag = .minus;
                     break;
                 },
             },
-            .mod => switch (c) {
+            .percent => switch (c) {
                 '=' => {
-                    result.tag = .modulo_equal;
+                    result.tag = .percent_equal;
                     index += 1;
                     break;
                 },
                 else => {
-                    result.tag = .mod;
+                    result.tag = .percent;
                     break;
                 },
             },
@@ -357,10 +354,10 @@ pub fn peek(self: *Tokenizer) Token {
                     break;
                 },
             },
-            .period => switch (c) {
-                '0'...'9' => state = .number,
+            .dot => switch (c) {
+                '0'...'9' => state = .{ .number = .{} },
                 else => {
-                    result.tag = .period;
+                    result.tag = .dot;
                     break;
                 },
             },
@@ -380,7 +377,7 @@ pub fn peek(self: *Tokenizer) Token {
                         result.tag = .plus;
                         break;
                     }
-                    state = .number;
+                    state = .{ .number = .{} };
                 },
                 else => {
                     result.tag = .plus;

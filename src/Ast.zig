@@ -10,10 +10,10 @@ const Ast = @This();
 pub const NodeList = std.MultiArrayList(Node);
 pub const TokenList = std.MultiArrayList(Token);
 
-source: [:0]const u8,
+source: []const u8,
 tokens: TokenList.Slice,
 nodes: NodeList.Slice,
-extra: []const Index,
+extra: []const NodeIndex,
 errors: ErrorList,
 
 pub fn deinit(tree: *Ast, allocator: std.mem.Allocator) void {
@@ -75,46 +75,46 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
     };
 }
 
-pub fn spanToList(tree: Ast, span: Ast.Index) []const Ast.Index {
+pub fn spanToList(tree: Ast, span: NodeIndex) []const NodeIndex {
     std.debug.assert(tree.nodeTag(span) == .span);
     return tree.extra[tree.nodeLHS(span)..tree.nodeRHS(span)];
 }
 
-pub fn extraData(tree: Ast, comptime T: type, index: Ast.Index) T {
+pub fn extraData(tree: Ast, comptime T: type, index: NodeIndex) T {
     const fields = std.meta.fields(T);
     var result: T = undefined;
     inline for (fields, 0..) |field, i| {
-        comptime std.debug.assert(field.type == Ast.Index);
+        comptime std.debug.assert(field.type == NodeIndex);
         @field(result, field.name) = tree.extra[index + i];
     }
     return result;
 }
 
-pub fn tokenTag(tree: Ast, i: Index) Token.Tag {
+pub fn tokenTag(tree: Ast, i: NodeIndex) Token.Tag {
     return tree.tokens.items(.tag)[i];
 }
 
-pub fn tokenLoc(tree: Ast, i: Index) Token.Loc {
+pub fn tokenLoc(tree: Ast, i: NodeIndex) Token.Loc {
     return tree.tokens.items(.loc)[i];
 }
 
-pub fn nodeTag(tree: Ast, i: Index) Node.Tag {
+pub fn nodeTag(tree: Ast, i: NodeIndex) Node.Tag {
     return tree.nodes.items(.tag)[i];
 }
 
-pub fn nodeToken(tree: Ast, i: Index) Index {
+pub fn nodeToken(tree: Ast, i: NodeIndex) NodeIndex {
     return tree.nodes.items(.main_token)[i];
 }
 
-pub fn nodeLHS(tree: Ast, i: Index) Index {
+pub fn nodeLHS(tree: Ast, i: NodeIndex) NodeIndex {
     return tree.nodes.items(.lhs)[i];
 }
 
-pub fn nodeRHS(tree: Ast, i: Index) Index {
+pub fn nodeRHS(tree: Ast, i: NodeIndex) NodeIndex {
     return tree.nodes.items(.rhs)[i];
 }
 
-pub fn nodeLoc(tree: Ast, i: Index) Token.Loc {
+pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
     var loc = tree.tokenLoc(tree.nodeToken(i));
     switch (tree.nodeTag(i)) {
         .deref, .addr_of => {
@@ -130,7 +130,7 @@ pub fn nodeLoc(tree: Ast, i: Index) Token.Loc {
     return loc;
 }
 
-pub fn declNameLoc(tree: Ast, node: Ast.Index) ?Token.Loc {
+pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
     const token = switch (tree.nodeTag(node)) {
         .global_variable => tree.extraData(Node.GlobalVarDecl, tree.nodeLHS(node)).name,
         .struct_decl,
@@ -145,19 +145,20 @@ pub fn declNameLoc(tree: Ast, node: Ast.Index) ?Token.Loc {
     return tree.tokenLoc(token);
 }
 
-pub const Index = u32;
-pub const null_index: Index = 0;
+pub const NodeIndex = u32;
+pub const TokenIndex = u32;
+pub const null_node: NodeIndex = 0;
 pub const Node = struct {
     tag: Tag,
-    main_token: Index,
-    lhs: Index = null_index,
-    rhs: Index = null_index,
+    main_token: NodeIndex,
+    lhs: NodeIndex = null_node,
+    rhs: NodeIndex = null_node,
 
     pub const Tag = enum {
         /// an slice to extra field [LHS..RHS]
         /// TOK : undefined
-        /// LHS : Index
-        /// RHS : Index
+        /// LHS : NodeIndex
+        /// RHS : NodeIndex
         span,
 
         // ####### GlobalDecl #######
@@ -329,7 +330,7 @@ pub const Node = struct {
         /// RHS : --
         bool_type,
 
-        /// TOK : k_sampler, k_comparison_sampler
+        /// TOK : k_sampler, k_sampler_comparison
         /// LHS : --
         /// RHS : --
         sampler_type,
@@ -379,8 +380,8 @@ pub const Node = struct {
 
         /// TOK : k_texture_storage_1d, k_texture_storage_2d,
         ///       k_texture_storage_2d_array, k_texture_storage_3d
-        /// LHS : Index(Token(TexelFormat))
-        /// RHS : Index(Token(AccessMode))
+        /// LHS : NodeIndex(Token(TexelFormat))
+        /// RHS : NodeIndex(Token(AccessMode))
         storage_texture_type,
 
         /// TOK : k_texture_depth_2d, k_texture_depth_2d_array
@@ -441,7 +442,7 @@ pub const Node = struct {
         attr_size,
 
         /// TOK : attr
-        /// LHS : Index(Token(BuiltinValue))
+        /// LHS : NodeIndex(Token(BuiltinValue))
         /// RHS : --
         attr_builtin,
 
@@ -451,8 +452,8 @@ pub const Node = struct {
         attr_workgroup_size,
 
         /// TOK : attr
-        /// LHS : Index(Token(InterpolationType))
-        /// RHS : Index(Token(InterpolationSample))?
+        /// LHS : NodeIndex(Token(InterpolationType))
+        /// RHS : NodeIndex(Token(InterpolationSample))?
         attr_interpolate,
 
         // ####### Expr #######
@@ -590,7 +591,7 @@ pub const Node = struct {
         /// LHS is prefix expression
         /// TOK : ident
         /// LHS : Expr
-        /// RHS : Token(Index(ident))
+        /// RHS : Token(NodeIndex(ident))
         field_access,
 
         /// LHS is prefix expression
@@ -617,76 +618,76 @@ pub const Node = struct {
 
     pub const GlobalVarDecl = struct {
         /// span(Attr)?
-        attrs: Index = null_index,
+        attrs: NodeIndex = null_node,
         /// Token(ident)
-        name: Index,
+        name: NodeIndex,
         /// Token(AddressSpace)?
-        addr_space: Index = null_index,
+        addr_space: NodeIndex = null_node,
         /// Token(AccessMode)?
-        access_mode: Index = null_index,
+        access_mode: NodeIndex = null_node,
         /// Type?
-        type: Index = null_index,
+        type: NodeIndex = null_node,
     };
 
     pub const VarDecl = struct {
         /// Token(ident)
-        name: Index,
+        name: NodeIndex,
         /// Token(AddressSpace)?
-        addr_space: Index = null_index,
+        addr_space: NodeIndex = null_node,
         /// Token(AccessMode)?
-        access_mode: Index = null_index,
+        access_mode: NodeIndex = null_node,
         /// Type?
-        type: Index = null_index,
+        type: NodeIndex = null_node,
     };
 
     pub const OverrideDecl = struct {
         /// span(Attr)?
-        attrs: Index = null_index,
+        attrs: NodeIndex = null_node,
         /// Type?
-        type: Index = null_index,
+        type: NodeIndex = null_node,
     };
 
     pub const PtrType = struct {
         /// Token(AddressSpace)
-        addr_space: Index,
+        addr_space: NodeIndex,
         /// Token(AccessMode)?
-        access_mode: Index = null_index,
+        access_mode: NodeIndex = null_node,
     };
 
     pub const WorkgroupSize = struct {
         /// Expr
-        x: Index,
+        x: NodeIndex,
         /// Expr?
-        y: Index = null_index,
+        y: NodeIndex = null_node,
         /// Expr?
-        z: Index = null_index,
+        z: NodeIndex = null_node,
     };
 
     pub const FnProto = struct {
         /// span(Attr)?
-        attrs: Index = null_index,
+        attrs: NodeIndex = null_node,
         /// span(fn_param)?
-        params: Index = null_index,
+        params: NodeIndex = null_node,
         /// span(Attr)?
-        result_attrs: Index = null_index,
+        result_attrs: NodeIndex = null_node,
         /// Type?
-        result_type: Index = null_index,
+        result_type: NodeIndex = null_node,
     };
 
     pub const IfStatement = struct {
         /// Expr
-        cond: Index,
+        cond: NodeIndex,
         /// span(Statement)
-        body: Index,
+        body: NodeIndex,
     };
 
     pub const ForHeader = struct {
         /// var_decl, const_decl, let_decl, phony_assign, compound_assign
-        init: Index = null_index,
+        init: NodeIndex = null_node,
         /// Expr
-        cond: Index = null_index,
+        cond: NodeIndex = null_node,
         /// call, phony_assign, compound_assign
-        update: Index = null_index,
+        update: NodeIndex = null_node,
     };
 };
 

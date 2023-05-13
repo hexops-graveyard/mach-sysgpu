@@ -7,7 +7,7 @@ pub const Loc = struct {
     start: u32,
     end: u32,
 
-    pub const Extra = struct {
+    const Extra = struct {
         line: u32,
         col: u32,
         line_start: u32,
@@ -93,7 +93,7 @@ pub const Tag = enum {
     /// '<<'
     shift_left,
     /// '%'
-    mod,
+    percent,
     /// '-'
     minus,
     /// '--'
@@ -101,7 +101,7 @@ pub const Tag = enum {
     /// '!='
     not_equal,
     /// '.'
-    period,
+    dot,
     /// '+'
     plus,
     /// '++'
@@ -133,7 +133,7 @@ pub const Tag = enum {
     /// '/='
     division_equal,
     /// '%='
-    modulo_equal,
+    percent_equal,
     /// '&='
     and_equal,
     /// '|='
@@ -220,7 +220,7 @@ pub const Tag = enum {
     /// 'sampler'
     k_sampler,
     /// 'sampler_comparison'
-    k_comparison_sampler,
+    k_sampler_comparison,
     /// 'const_assert'
     k_const_assert,
     /// 'struct'
@@ -309,11 +309,11 @@ pub const Tag = enum {
             .less_than => "<",
             .less_than_equal => "<=",
             .shift_left => "<<",
-            .mod => "%",
+            .percent => "%",
             .minus => "-",
             .minus_minus => "--",
             .not_equal => "!=",
-            .period => ".",
+            .dot => ".",
             .plus => "+",
             .plus_plus => "++",
             .@"or" => "|",
@@ -329,7 +329,7 @@ pub const Tag = enum {
             .minus_equal => "-=",
             .times_equal => "*=",
             .division_equal => "/=",
-            .modulo_equal => "%=",
+            .percent_equal => "%=",
             .and_equal => "&=",
             .or_equal => "|=",
             .xor_equal => "^=",
@@ -372,7 +372,7 @@ pub const Tag = enum {
             .k_require => "require",
             .k_return => "return",
             .k_sampler => "sampler",
-            .k_comparison_sampler => "sampler_comparison",
+            .k_sampler_comparison => "sampler_comparison",
             .k_const_assert => "const_assert",
             .k_struct => "struct",
             .k_switch => "switch",
@@ -445,7 +445,7 @@ pub const keywords = std.ComptimeStringMap(Tag, .{
     .{ "require", .k_require },
     .{ "return", .k_return },
     .{ "sampler", .k_sampler },
-    .{ "sampler_comparison", .k_comparison_sampler },
+    .{ "sampler_comparison", .k_sampler_comparison },
     .{ "const_assert", .k_const_assert },
     .{ "struct", .k_struct },
     .{ "switch", .k_switch },
