@@ -116,7 +116,6 @@ pub const Inst = struct {
                 .external_sampled_texture_type,
                 => true,
                 _ => switch (list[self.toIndex().?].tag) {
-                    .struct_decl,
                     .vector_type,
                     .matrix_type,
                     .atomic_type,
@@ -126,6 +125,7 @@ pub const Inst = struct {
                     .multisampled_texture_type,
                     .storage_texture_type,
                     .depth_texture_type,
+                    .struct_ref,
                     => true,
                     else => false,
                 },
@@ -211,9 +211,20 @@ pub const Inst = struct {
         }
 
         pub fn isNumberType(self: Ref) bool {
+            return self.isIntegerType() or self.isFloatType();
+        }
+
+        pub fn isIntegerType(self: Ref) bool {
             return switch (self) {
-                .i32_type,
                 .u32_type,
+                .i32_type,
+                => true,
+                else => false,
+            };
+        }
+
+        pub fn isFloatType(self: Ref) bool {
+            return switch (self) {
                 .f32_type,
                 .f16_type,
                 => true,
