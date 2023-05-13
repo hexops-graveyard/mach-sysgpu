@@ -90,16 +90,6 @@ pub fn scanDecls(self: *AstGen, scope: *Scope, decls: []const NodeIndex) !void {
         const loc = self.tree.declNameLoc(decl).?;
         const name = loc.slice(self.tree.source);
 
-        // TODO
-        // if (Token.isReserved(name)) {
-        //     try self.errors.add(
-        //         loc,
-        //         "the name '{s}' has ben reserved",
-        //         .{name},
-        //         null,
-        //     );
-        // }
-
         var iter = scope.decls.keyIterator();
         while (iter.next()) |node| {
             if (std.mem.eql(u8, name, self.tree.declNameLoc(node.*).?.slice(self.tree.source))) {
@@ -884,7 +874,7 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
                 );
                 return error.AnalysisFail;
             }
-            break :blk self.instructions.items[var_type.toIndex().?].data.array_type;
+            break :blk var_type;
         } else if (base.is(self.instructions.items, &.{.index_access})) {
             const index_data = self.instructions.items[base.toIndex().?].data.index_access;
             if (!index_data.elem_type.is(self.instructions.items, &.{.array_type})) {
@@ -896,7 +886,7 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
                 );
                 return error.AnalysisFail;
             }
-            break :blk self.instructions.items[index_data.elem_type.toIndex().?].data.array_type;
+            break :blk index_data.elem_type;
         } else if (base.is(self.instructions.items, &.{.field_access})) {
             const field_data = self.instructions.items[base.toIndex().?].data.field_access;
             const struct_member_data = self.instructions.items[field_data.field.toIndex().?].data.struct_member;
@@ -909,7 +899,7 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
                 );
                 return error.AnalysisFail;
             }
-            break :blk self.instructions.items[struct_member_data.type.toIndex().?].data.array_type;
+            break :blk struct_member_data.type;
         } else {
             try self.errors.add(
                 self.tree.nodeLoc(self.tree.nodeLHS(node)),
@@ -929,7 +919,7 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
             .data = .{
                 .index_access = .{
                     .base = base,
-                    .elem_type = base_array.component_type,
+                    .elem_type = self.instructions.items[base_array.toIndex().?].data.array_type.component_type,
                     .index = rhs,
                 },
             },
@@ -948,7 +938,7 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
 
 fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
     const base = try self.genExpr(scope, self.tree.nodeLHS(node));
-    const base_struct = blk: {
+    const base_struct_ref = blk: {
         if (base.is(self.instructions.items, &.{.var_ref})) {
             const var_type = try self.resolveVarTypeOrValue(base);
             if (!var_type.is(self.instructions.items, &.{.struct_ref})) {
@@ -960,7 +950,7 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
                 );
                 return error.AnalysisFail;
             }
-            break :blk self.instructions.items[var_type.toIndex().?].data.ref;
+            break :blk var_type;
         } else if (base.is(self.instructions.items, &.{.index_access})) {
             const index_data = self.instructions.items[base.toIndex().?].data.index_access;
             if (!index_data.elem_type.is(self.instructions.items, &.{.struct_ref})) {
@@ -972,7 +962,7 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
                 );
                 return error.AnalysisFail;
             }
-            break :blk self.instructions.items[index_data.elem_type.toIndex().?].data.ref;
+            break :blk index_data.elem_type;
         } else if (base.is(self.instructions.items, &.{.field_access})) {
             const field_data = self.instructions.items[base.toIndex().?].data.field_access;
             const struct_member_data = self.instructions.items[field_data.field.toIndex().?].data.struct_member;
@@ -985,10 +975,10 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
                 );
                 return error.AnalysisFail;
             }
-            break :blk self.instructions.items[struct_member_data.type.toIndex().?].data.ref;
+            break :blk struct_member_data.type;
         } else unreachable;
     };
-
+    const base_struct = self.instructions.items[base_struct_ref.toIndex().?].data.ref;
     const struct_members = self.instructions.items[base_struct.toIndex().?].data.struct_decl.members;
     for (std.mem.sliceTo(self.refs.items[struct_members..], .none)) |member| {
         const member_data = self.instructions.items[member.toIndex().?].data.struct_member;

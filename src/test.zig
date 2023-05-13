@@ -119,11 +119,14 @@ test "must pass" {
             \\  l: L,
             \\}
             \\struct L {
-            \\  f: array<u32>,
+            \\  f: array<O>,
+            \\}
+            \\struct O {
+            \\  n: u32,
             \\}
             \\var v1: G;
-            \\fn mom() {
-            \\  v0 = v1.l.f[0];
+            \\fn test() {
+            \\  v0 = v1.l.f[0].n;
             \\}
         ;
         var ir = try expectIR(source);
