@@ -255,7 +255,7 @@ fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref
                         return error.AnalysisFail;
                     }
 
-                    const is_negative = self.instructions.items[binding_res.?.toIndex().?].data.integer.value < 0;
+                    const is_negative = self.getInstData(binding_res.?).integer.value < 0;
                     if (is_negative) {
                         try self.errors.add(
                             attr_node_lhs_loc,
@@ -291,7 +291,7 @@ fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref
                         return error.AnalysisFail;
                     }
 
-                    const is_negative = self.instructions.items[group_res.?.toIndex().?].data.integer.value < 0;
+                    const is_negative = self.getInstData(group_res.?).integer.value < 0;
                     if (is_negative) {
                         try self.errors.add(
                             attr_node_lhs_loc,
@@ -365,61 +365,41 @@ fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
             error.OutOfMemory => return error.OutOfMemory,
         };
 
-        switch (member_type_ref) {
-            .bool_type, .i32_type, .u32_type, .f32_type, .f16_type => {},
-            .sampler_type, .comparison_sampler_type, .external_sampled_texture_type => {
-                try self.errors.add(
-                    member_name_loc,
-                    "invalid struct member type '{s}'",
-                    .{member_type_loc.slice(self.tree.source)},
-                    null,
-                );
-                continue;
-            },
-            .none, .true, .false => unreachable,
-            _ => switch (self.instructions.items[member_type_ref.toIndex().?].tag) {
-                .vector_type, .matrix_type, .atomic_type, .struct_ref => {},
-                .array_type => {
-                    if (self.instructions.items[member_type_ref.toIndex().?].data.array_type.size == .none and i + 1 != member_nodes_list.len) {
-                        try self.errors.add(
-                            member_name_loc,
-                            "struct member with runtime-sized array type, must be the last member of the structure",
-                            .{},
-                            null,
-                        );
-                        continue;
-                    }
-                },
-                .ptr_type,
-                .sampled_texture_type,
-                .multisampled_texture_type,
-                .storage_texture_type,
-                .depth_texture_type,
-                => {
+        if (member_type_ref.is(self.instructions.items, &.{ .array_type, .vector_type, .matrix_type, .atomic_type, .struct_ref }) or
+            member_type_ref.isNumberType() or
+            member_type_ref == .bool_type)
+        {
+            if (member_type_ref.is(self.instructions.items, &.{.array_type})) {
+                if (self.getInstData(member_type_ref).array_type.size == .none and i + 1 != member_nodes_list.len) {
                     try self.errors.add(
                         member_name_loc,
-                        "invalid struct member type '{s}'",
-                        .{member_type_loc.slice(self.tree.source)},
+                        "struct member with runtime-sized array type, must be the last member of the structure",
+                        .{},
                         null,
                     );
-                    continue;
-                },
-                else => unreachable,
-            },
-        }
+                }
+            }
 
-        const name_index = try self.addString(member_name_loc.slice(self.tree.source));
-        self.instructions.items[member_inst] = .{
-            .tag = .struct_member,
-            .data = .{
-                .struct_member = .{
-                    .name = name_index,
-                    .type = member_type_ref,
-                    .@"align" = 0, // TODO
+            const name_index = try self.addString(member_name_loc.slice(self.tree.source));
+            self.instructions.items[member_inst] = .{
+                .tag = .struct_member,
+                .data = .{
+                    .struct_member = .{
+                        .name = name_index,
+                        .type = member_type_ref,
+                        .@"align" = 0, // TODO
+                    },
                 },
-            },
-        };
-        try self.scratch.append(self.allocator, IR.Inst.toRef(member_inst));
+            };
+            try self.scratch.append(self.allocator, IR.Inst.toRef(member_inst));
+        } else {
+            try self.errors.add(
+                member_name_loc,
+                "invalid struct member type '{s}'",
+                .{member_type_loc.slice(self.tree.source)},
+                null,
+            );
+        }
     }
 
     const name = self.tree.declNameLoc(node).?.slice(self.tree.source);
@@ -611,7 +591,7 @@ fn genExpr(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
         .index_access => return self.genIndexAccess(scope, node),
         .field_access => return self.genFieldAccess(scope, node),
         .bitcast => return self.genBitcast(scope, node),
-        .ident => return self.genIdent(scope, node),
+        .ident => return self.genVarRef(scope, node),
         // TODO: call expr
         else => unreachable,
     }
@@ -908,52 +888,52 @@ fn genBitcast(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
         }
         // bitcast<T>(vec2<f16>) -> T
         else if (rhs_res.is(self.instructions.items, &.{.vector_type})) {
-            const rhs_inst = self.instructions.items[rhs_res.toIndex().?];
+            const rhs_inst = self.getInstData(rhs_res);
 
-            if (rhs_inst.data.vector_type.size == .two and
-                rhs_inst.data.vector_type.component_type == .f16_type)
+            if (rhs_inst.vector_type.size == .two and
+                rhs_inst.vector_type.component_type == .f16_type)
             {
                 result_type = lhs;
             }
         }
     } else if (lhs.is(self.instructions.items, &.{.vector_type})) {
-        const lhs_inst = self.instructions.items[lhs.toIndex().?];
+        const lhs_inst = self.getInstData(lhs);
 
         // bitcast<vec2<f16>>(T) -> vec2<f16>
-        if (lhs_inst.data.vector_type.size == .two and
-            lhs_inst.data.vector_type.component_type == .f16_type and
+        if (lhs_inst.vector_type.size == .two and
+            lhs_inst.vector_type.component_type == .f16_type and
             rhs_res.is32BitNumberType())
         {
             result_type = lhs;
         } else if (rhs_res.is(self.instructions.items, &.{.vector_type})) {
-            const rhs_inst = self.instructions.items[rhs_res.toIndex().?];
+            const rhs_inst = self.getInstData(rhs_res);
 
-            if (lhs_inst.data.vector_type.size == rhs_inst.data.vector_type.size and
-                lhs_inst.data.vector_type.component_type.is32BitNumberType() and
-                rhs_inst.data.vector_type.component_type.is32BitNumberType())
+            if (lhs_inst.vector_type.size == rhs_inst.vector_type.size and
+                lhs_inst.vector_type.component_type.is32BitNumberType() and
+                rhs_inst.vector_type.component_type.is32BitNumberType())
             {
                 // bitcast<vecN<T>>(vecN<T>) -> vecN<T>
-                if (lhs_inst.data.vector_type.component_type == rhs_inst.data.vector_type.component_type) {
+                if (lhs_inst.vector_type.component_type == rhs_inst.vector_type.component_type) {
                     result_type = lhs;
                 }
                 // bitcast<vecN<T>>(vecN<S>) -> T
                 else {
-                    result_type = lhs_inst.data.vector_type.component_type;
+                    result_type = lhs_inst.vector_type.component_type;
                 }
             }
             // bitcast<vec2<T>>(vec4<f16>) -> vec2<T>
-            else if (lhs_inst.data.vector_type.size == .two and
-                lhs_inst.data.vector_type.component_type.is32BitNumberType() and
-                rhs_inst.data.vector_type.size == .four and
-                rhs_inst.data.vector_type.component_type == .f16_type)
+            else if (lhs_inst.vector_type.size == .two and
+                lhs_inst.vector_type.component_type.is32BitNumberType() and
+                rhs_inst.vector_type.size == .four and
+                rhs_inst.vector_type.component_type == .f16_type)
             {
                 result_type = lhs;
             }
             // bitcast<vec4<f16>>(vec2<T>) -> vec4<f16>
-            else if (rhs_inst.data.vector_type.size == .two and
-                rhs_inst.data.vector_type.component_type.is32BitNumberType() and
-                lhs_inst.data.vector_type.size == .four and
-                lhs_inst.data.vector_type.component_type == .f16_type)
+            else if (rhs_inst.vector_type.size == .two and
+                rhs_inst.vector_type.component_type.is32BitNumberType() and
+                lhs_inst.vector_type.size == .four and
+                lhs_inst.vector_type.component_type == .f16_type)
             {
                 result_type = lhs;
             }
@@ -983,7 +963,7 @@ fn genBitcast(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
     return error.AnalysisFail;
 }
 
-fn genIdent(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
+fn genVarRef(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
     const inst_index = try self.addInst(.{
         .tag = .var_ref,
         .data = .{ .ref = try self.findSymbol(scope, self.tree.nodeToken(node)) },
@@ -1007,7 +987,7 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
             }
             break :blk var_type;
         } else if (base.is(self.instructions.items, &.{.index_access})) {
-            const index_data = self.instructions.items[base.toIndex().?].data.index_access;
+            const index_data = self.getInstData(base).index_access;
             if (!index_data.elem_type.is(self.instructions.items, &.{.array_type})) {
                 try self.errors.add(
                     self.tree.nodeLoc(self.tree.nodeRHS(node)),
@@ -1019,8 +999,8 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
             }
             break :blk index_data.elem_type;
         } else if (base.is(self.instructions.items, &.{.field_access})) {
-            const field_data = self.instructions.items[base.toIndex().?].data.field_access;
-            const struct_member_data = self.instructions.items[field_data.field.toIndex().?].data.struct_member;
+            const field_data = self.getInstData(base).field_access;
+            const struct_member_data = self.getInstData(field_data.field).struct_member;
             if (!struct_member_data.type.is(self.instructions.items, &.{.array_type})) {
                 try self.errors.add(
                     self.tree.nodeLoc(self.tree.nodeRHS(node)),
@@ -1050,7 +1030,7 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
             .data = .{
                 .index_access = .{
                     .base = base,
-                    .elem_type = self.instructions.items[base_array.toIndex().?].data.array_type.component_type,
+                    .elem_type = self.getInstData(base_array).array_type.component_type,
                     .index = rhs,
                 },
             },
@@ -1083,7 +1063,7 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
             }
             break :blk var_type;
         } else if (base.is(self.instructions.items, &.{.index_access})) {
-            const index_data = self.instructions.items[base.toIndex().?].data.index_access;
+            const index_data = self.getInstData(base).index_access;
             if (!index_data.elem_type.is(self.instructions.items, &.{.struct_ref})) {
                 try self.errors.add(
                     self.tree.nodeLoc(node),
@@ -1095,8 +1075,8 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
             }
             break :blk index_data.elem_type;
         } else if (base.is(self.instructions.items, &.{.field_access})) {
-            const field_data = self.instructions.items[base.toIndex().?].data.field_access;
-            const struct_member_data = self.instructions.items[field_data.field.toIndex().?].data.struct_member;
+            const field_data = self.getInstData(base).field_access;
+            const struct_member_data = self.getInstData(field_data.field).struct_member;
             if (!struct_member_data.type.is(self.instructions.items, &.{.struct_ref})) {
                 try self.errors.add(
                     self.tree.nodeLoc(node),
@@ -1109,10 +1089,10 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
             break :blk struct_member_data.type;
         } else unreachable;
     };
-    const base_struct = self.instructions.items[base_struct_ref.toIndex().?].data.ref;
-    const struct_members = self.instructions.items[base_struct.toIndex().?].data.struct_decl.members;
+    const base_struct = self.getInstData(base_struct_ref).ref;
+    const struct_members = self.getInstData(base_struct).struct_decl.members;
     for (std.mem.sliceTo(self.refs.items[struct_members..], .none)) |member| {
-        const member_data = self.instructions.items[member.toIndex().?].data.struct_member;
+        const member_data = self.getInstData(member).struct_member;
         if (std.mem.eql(
             u8,
             self.tree.tokenLoc(self.tree.nodeRHS(node)).slice(self.tree.source),
@@ -1136,7 +1116,7 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
         self.tree.nodeLoc(node),
         "struct '{s}' has no member named '{s}'",
         .{
-            std.mem.sliceTo(self.strings.items[self.instructions.items[base_struct.toIndex().?].data.struct_decl.name..], 0),
+            std.mem.sliceTo(self.strings.items[self.getInstData(base_struct).struct_decl.name..], 0),
             self.tree.tokenLoc(self.tree.nodeRHS(node)).slice(self.tree.source),
         },
         null,
@@ -1146,7 +1126,7 @@ fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
 
 fn genType(self: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail, OutOfMemory }!IR.Inst.Ref {
     return switch (self.tree.nodeTag(node)) {
-        .bool_type => try self.genBoolType(node),
+        .bool_type => return .bool_type,
         .number_type => try self.genNumberType(node),
         .vector_type => try self.genVectorType(scope, node),
         .matrix_type => try self.genMatrixType(scope, node),
@@ -1158,58 +1138,30 @@ fn genType(self: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail, O
         .multisampled_texture_type => try self.genMultisampledTextureType(scope, node),
         .storage_texture_type => try self.genStorageTextureType(node),
         .depth_texture_type => try self.genDepthTextureType(node),
-        .external_texture_type => try self.genExternalTextureType(node),
+        .external_texture_type => return .external_sampled_texture_type,
         .ident => {
             const node_loc = self.tree.nodeLoc(node);
             const decl_ref = try self.findSymbol(scope, self.tree.nodeToken(node));
-            switch (decl_ref) {
-                .bool_type,
-                .i32_type,
-                .u32_type,
-                .f32_type,
-                .f16_type,
-                .sampler_type,
-                .comparison_sampler_type,
-                .external_sampled_texture_type,
-                => return decl_ref,
-                .none, .true, .false => unreachable,
-                _ => switch (self.instructions.items[decl_ref.toIndex().?].tag) {
-                    .vector_type,
-                    .matrix_type,
-                    .atomic_type,
-                    .array_type,
-                    .ptr_type,
-                    .sampled_texture_type,
-                    .multisampled_texture_type,
-                    .storage_texture_type,
-                    .depth_texture_type,
-                    => return decl_ref,
-                    .struct_decl => return IR.Inst.toRef(try self.addInst(.{ .tag = .struct_ref, .data = .{ .ref = decl_ref } })),
-                    .global_variable_decl, .global_const_decl => {
-                        try self.errors.add(
-                            node_loc,
-                            "'{s}' is not a type",
-                            .{node_loc.slice(self.tree.source)},
-                            null,
-                        );
-                        return error.AnalysisFail;
-                    },
-                    else => unreachable,
-                },
+            if (decl_ref.isType(self.instructions.items)) {
+                return decl_ref;
+            } else if (decl_ref.is(self.instructions.items, &.{.struct_decl})) {
+                const inst = try self.addInst(.{ .tag = .struct_ref, .data = .{ .ref = decl_ref } });
+                return IR.Inst.toRef(inst);
+            } else {
+                try self.errors.add(
+                    node_loc,
+                    "'{s}' is not a type",
+                    .{node_loc.slice(self.tree.source)},
+                    null,
+                );
+                return error.AnalysisFail;
             }
         },
         else => unreachable,
     };
 }
 
-fn genBoolType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .bool_type);
-    return .bool_type;
-}
-
 fn genNumberType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .number_type);
-
     const token = self.tree.nodeToken(node);
     const token_tag = self.tree.tokenTag(token);
     return switch (token_tag) {
@@ -1222,157 +1174,83 @@ fn genNumberType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
 }
 
 fn genVectorType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .vector_type);
-
     const inst = try self.reserveInst();
     const component_type_node = self.tree.nodeLHS(node);
     const component_type_ref = try self.genType(scope, component_type_node);
 
-    switch (component_type_ref) {
-        .bool_type, .i32_type, .u32_type, .f32_type, .f16_type => {},
-        .sampler_type, .comparison_sampler_type, .external_sampled_texture_type => {
-            try self.errors.add(
-                self.tree.nodeLoc(component_type_node),
-                "invalid vector component type",
-                .{},
-                try self.errors.createNote(
-                    null,
-                    "must be 'i32', 'u32', 'f32', 'f16' or 'bool'",
-                    .{},
-                ),
-            );
-            return error.AnalysisFail;
-        },
-        .none, .true, .false => unreachable,
-        _ => switch (self.instructions.items[component_type_ref.toIndex().?].tag) {
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .array_type,
-            .ptr_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            .struct_ref,
-            => {
-                try self.errors.add(
-                    self.tree.nodeLoc(component_type_node),
-                    "invalid vector component type",
-                    .{},
-                    try self.errors.createNote(
-                        null,
-                        "must be 'i32', 'u32', 'f32', 'f16' or 'bool'",
-                        .{},
-                    ),
-                );
-                return error.AnalysisFail;
+    if (component_type_ref.isNumberType() or component_type_ref == .bool_type) {
+        const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
+        self.instructions.items[inst] = .{
+            .tag = .vector_type,
+            .data = .{
+                .vector_type = .{
+                    .size = switch (token_tag) {
+                        .k_vec2 => .two,
+                        .k_vec3 => .three,
+                        .k_vec4 => .four,
+                        else => unreachable,
+                    },
+                    .component_type = component_type_ref,
+                },
             },
-            else => unreachable,
-        },
+        };
+        return IR.Inst.toRef(inst);
     }
 
-    const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
-    self.instructions.items[inst] = .{
-        .tag = .vector_type,
-        .data = .{
-            .vector_type = .{
-                .size = switch (token_tag) {
-                    .k_vec2 => .two,
-                    .k_vec3 => .three,
-                    .k_vec4 => .four,
-                    else => unreachable,
-                },
-                .component_type = component_type_ref,
-            },
-        },
-    };
-
-    return IR.Inst.toRef(inst);
+    try self.errors.add(
+        self.tree.nodeLoc(component_type_node),
+        "invalid vector component type",
+        .{},
+        try self.errors.createNote(
+            null,
+            "must be 'i32', 'u32', 'f32', 'f16' or 'bool'",
+            .{},
+        ),
+    );
+    return error.AnalysisFail;
 }
 
 fn genMatrixType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .matrix_type);
-
     const inst = try self.reserveInst();
     const component_type_node = self.tree.nodeLHS(node);
     const component_type_ref = try self.genType(scope, component_type_node);
 
-    switch (component_type_ref) {
-        .f32_type,
-        .f16_type,
-        => {},
-        .bool_type,
-        .i32_type,
-        .u32_type,
-        .sampler_type,
-        .comparison_sampler_type,
-        .external_sampled_texture_type,
-        => {
-            try self.errors.add(
-                self.tree.nodeLoc(component_type_node),
-                "invalid matrix component type",
-                .{},
-                try self.errors.createNote(
-                    null,
-                    "must be 'f32' or 'f16'",
-                    .{},
-                ),
-            );
-            return error.AnalysisFail;
-        },
-        .none, .true, .false => unreachable,
-        _ => switch (self.instructions.items[component_type_ref.toIndex().?].tag) {
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .array_type,
-            .ptr_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            .struct_ref,
-            => {
-                try self.errors.add(
-                    self.tree.nodeLoc(component_type_node),
-                    "invalid matrix component type",
-                    .{},
-                    try self.errors.createNote(
-                        null,
-                        "must be 'f32' or 'f16'",
-                        .{},
-                    ),
-                );
-                return error.AnalysisFail;
+    if (component_type_ref.isFloatType()) {
+        const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
+        self.instructions.items[inst] = .{
+            .tag = .matrix_type,
+            .data = .{
+                .matrix_type = .{
+                    .cols = switch (token_tag) {
+                        .k_mat2x2, .k_mat2x3, .k_mat2x4 => .two,
+                        .k_mat3x2, .k_mat3x3, .k_mat3x4 => .three,
+                        .k_mat4x2, .k_mat4x3, .k_mat4x4 => .four,
+                        else => unreachable,
+                    },
+                    .rows = switch (token_tag) {
+                        .k_mat2x2, .k_mat3x2, .k_mat4x2 => .two,
+                        .k_mat2x3, .k_mat3x3, .k_mat4x3 => .three,
+                        .k_mat2x4, .k_mat3x4, .k_mat4x4 => .four,
+                        else => unreachable,
+                    },
+                    .component_type = component_type_ref,
+                },
             },
-            else => unreachable,
-        },
+        };
+        return IR.Inst.toRef(inst);
     }
 
-    const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
-    self.instructions.items[inst] = .{
-        .tag = .matrix_type,
-        .data = .{
-            .matrix_type = .{
-                .cols = switch (token_tag) {
-                    .k_mat2x2, .k_mat2x3, .k_mat2x4 => .two,
-                    .k_mat3x2, .k_mat3x3, .k_mat3x4 => .three,
-                    .k_mat4x2, .k_mat4x3, .k_mat4x4 => .four,
-                    else => unreachable,
-                },
-                .rows = switch (token_tag) {
-                    .k_mat2x2, .k_mat3x2, .k_mat4x2 => .two,
-                    .k_mat2x3, .k_mat3x3, .k_mat4x3 => .three,
-                    .k_mat2x4, .k_mat3x4, .k_mat4x4 => .four,
-                    else => unreachable,
-                },
-                .component_type = component_type_ref,
-            },
-        },
-    };
-
-    return IR.Inst.toRef(inst);
+    try self.errors.add(
+        self.tree.nodeLoc(component_type_node),
+        "invalid matrix component type",
+        .{},
+        try self.errors.createNote(
+            null,
+            "must be 'f32' or 'f16'",
+            .{},
+        ),
+    );
+    return error.AnalysisFail;
 }
 
 fn genAtomicType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
@@ -1382,229 +1260,139 @@ fn genAtomicType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
     const component_type_node = self.tree.nodeLHS(node);
     const component_type_ref = try self.genType(scope, component_type_node);
 
-    switch (component_type_ref) {
-        .i32_type,
-        .u32_type,
-        => {},
-        .bool_type,
-        .f32_type,
-        .f16_type,
-        .sampler_type,
-        .comparison_sampler_type,
-        .external_sampled_texture_type,
-        => {
-            try self.errors.add(
-                self.tree.nodeLoc(component_type_node),
-                "invalid atomic component type",
-                .{},
-                try self.errors.createNote(
-                    null,
-                    "must be 'i32' or 'u32'",
-                    .{},
-                ),
-            );
-            return error.AnalysisFail;
-        },
-        .none, .true, .false => unreachable,
-        _ => switch (self.instructions.items[component_type_ref.toIndex().?].tag) {
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .array_type,
-            .ptr_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            .struct_ref,
-            => {
-                try self.errors.add(
-                    self.tree.nodeLoc(component_type_node),
-                    "invalid atomic component type",
-                    .{},
-                    try self.errors.createNote(
-                        null,
-                        "must be 'i32' or 'u32'",
-                        .{},
-                    ),
-                );
-                return error.AnalysisFail;
-            },
-            else => unreachable,
-        },
+    if (component_type_ref.isIntegerType()) {
+        self.instructions.items[inst] = .{
+            .tag = .atomic_type,
+            .data = .{ .atomic_type = .{ .component_type = component_type_ref } },
+        };
+        return IR.Inst.toRef(inst);
     }
 
-    self.instructions.items[inst] = .{
-        .tag = .atomic_type,
-        .data = .{ .atomic_type = .{ .component_type = component_type_ref } },
-    };
-
-    return IR.Inst.toRef(inst);
+    try self.errors.add(
+        self.tree.nodeLoc(component_type_node),
+        "invalid atomic component type",
+        .{},
+        try self.errors.createNote(
+            null,
+            "must be 'i32' or 'u32'",
+            .{},
+        ),
+    );
+    return error.AnalysisFail;
 }
 
 fn genPtrType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .ptr_type);
-
     const inst = try self.reserveInst();
     const component_type_node = self.tree.nodeLHS(node);
     const component_type_ref = try self.genType(scope, component_type_node);
 
     switch (component_type_ref) {
         .bool_type,
-        .i32_type,
         .u32_type,
+        .i32_type,
         .f32_type,
         .f16_type,
-        .sampler_type,
-        .comparison_sampler_type,
-        .external_sampled_texture_type,
-        => {},
-        .none, .true, .false => unreachable,
-        _ => switch (self.instructions.items[component_type_ref.toIndex().?].tag) {
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .struct_ref,
-            .array_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            => {},
-            .ptr_type => {
-                try self.errors.add(
-                    self.tree.nodeLoc(component_type_node),
-                    "invalid array component type",
-                    .{},
-                    null,
-                );
-                return error.AnalysisFail;
-            },
-            else => unreachable,
-        },
-    }
-
-    const extra_data = self.tree.extraData(Node.PtrType, self.tree.nodeRHS(node));
-
-    const addr_space_loc = self.tree.tokenLoc(extra_data.addr_space);
-    const ast_addr_space = std.meta.stringToEnum(Ast.AddressSpace, addr_space_loc.slice(self.tree.source)).?;
-    const addr_space: IR.Inst.PointerType.AddressSpace = switch (ast_addr_space) {
-        .function => .function,
-        .private => .private,
-        .workgroup => .workgroup,
-        .uniform => .uniform,
-        .storage => .storage,
-    };
-
-    var access_mode: IR.Inst.PointerType.AccessMode = .none;
-    if (extra_data.access_mode != null_node) {
-        const access_mode_loc = self.tree.tokenLoc(extra_data.access_mode);
-        const ast_access_mode = std.meta.stringToEnum(Ast.AccessMode, access_mode_loc.slice(self.tree.source)).?;
-        access_mode = switch (ast_access_mode) {
-            .read => .read,
-            .write => .write,
-            .read_write => .read_write,
-        };
-    }
-
-    self.instructions.items[inst] = .{
-        .tag = .ptr_type,
-        .data = .{
-            .ptr_type = .{
-                .component_type = component_type_ref,
-                .addr_space = addr_space,
-                .access_mode = access_mode,
-            },
-        },
-    };
-
-    return IR.Inst.toRef(inst);
-}
-
-fn genArrayType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .array_type);
-
-    const inst = try self.reserveInst();
-    const component_type_node = self.tree.nodeLHS(node);
-    const component_type_ref = try self.genType(scope, component_type_node);
-
-    switch (component_type_ref) {
-        .bool_type,
-        .i32_type,
-        .u32_type,
-        .f32_type,
-        .f16_type,
-        => {},
         .sampler_type,
         .comparison_sampler_type,
         .external_sampled_texture_type,
         => {
-            try self.errors.add(
-                self.tree.nodeLoc(component_type_node),
-                "invalid array component type",
-                .{},
-                null,
-            );
-            return error.AnalysisFail;
+            const extra_data = self.tree.extraData(Node.PtrType, self.tree.nodeRHS(node));
+
+            const addr_space_loc = self.tree.tokenLoc(extra_data.addr_space);
+            const ast_addr_space = std.meta.stringToEnum(Ast.AddressSpace, addr_space_loc.slice(self.tree.source)).?;
+            const addr_space: IR.Inst.PointerType.AddressSpace = switch (ast_addr_space) {
+                .function => .function,
+                .private => .private,
+                .workgroup => .workgroup,
+                .uniform => .uniform,
+                .storage => .storage,
+            };
+
+            var access_mode: IR.Inst.PointerType.AccessMode = .none;
+            if (extra_data.access_mode != null_node) {
+                const access_mode_loc = self.tree.tokenLoc(extra_data.access_mode);
+                const ast_access_mode = std.meta.stringToEnum(Ast.AccessMode, access_mode_loc.slice(self.tree.source)).?;
+                access_mode = switch (ast_access_mode) {
+                    .read => .read,
+                    .write => .write,
+                    .read_write => .read_write,
+                };
+            }
+
+            self.instructions.items[inst] = .{
+                .tag = .ptr_type,
+                .data = .{
+                    .ptr_type = .{
+                        .component_type = component_type_ref,
+                        .addr_space = addr_space,
+                        .access_mode = access_mode,
+                    },
+                },
+            };
+
+            return IR.Inst.toRef(inst);
         },
-        .none, .true, .false => unreachable,
-        _ => switch (self.instructions.items[component_type_ref.toIndex().?].tag) {
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .struct_ref,
-            => {},
-            .array_type => {
-                if (self.instructions.items[component_type_ref.toIndex().?].data.array_type.size == .none) {
-                    try self.errors.add(
-                        self.tree.nodeLoc(component_type_node),
-                        "array componet type can not be a runtime-sized array",
-                        .{},
-                        null,
-                    );
-                    return error.AnalysisFail;
-                }
-            },
-            .ptr_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            => {
+        else => {},
+    }
+
+    try self.errors.add(
+        self.tree.nodeLoc(component_type_node),
+        "invalid pointer component type",
+        .{},
+        null,
+    );
+    return error.AnalysisFail;
+}
+
+fn genArrayType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
+    const inst = try self.reserveInst();
+    const component_type_node = self.tree.nodeLHS(node);
+    const component_type_ref = try self.genType(scope, component_type_node);
+
+    if (component_type_ref.is(self.instructions.items, &.{ .array_type, .vector_type, .matrix_type, .atomic_type, .struct_ref }) or
+        component_type_ref.isNumberType() or component_type_ref == .bool_type)
+    {
+        if (component_type_ref.is(self.instructions.items, &.{.array_type})) {
+            if (self.getInstData(component_type_ref).array_type.size == .none) {
                 try self.errors.add(
                     self.tree.nodeLoc(component_type_node),
-                    "invalid array component type",
+                    "array componet type can not be a runtime-sized array",
                     .{},
                     null,
                 );
                 return error.AnalysisFail;
+            }
+        }
+
+        const size_node = self.tree.nodeRHS(node);
+        var size_ref = IR.Inst.Ref.none;
+        if (size_node != null_node) {
+            size_ref = try self.genExpr(scope, size_node);
+        }
+
+        self.instructions.items[inst] = .{
+            .tag = .array_type,
+            .data = .{
+                .array_type = .{
+                    .component_type = component_type_ref,
+                    .size = size_ref,
+                },
             },
-            else => unreachable,
-        },
+        };
+
+        return IR.Inst.toRef(inst);
     }
 
-    const size_node = self.tree.nodeRHS(node);
-    var size_ref = IR.Inst.Ref.none;
-    if (size_node != null_node) {
-        size_ref = try self.genExpr(scope, size_node);
-    }
-
-    self.instructions.items[inst] = .{
-        .tag = .array_type,
-        .data = .{
-            .array_type = .{
-                .component_type = component_type_ref,
-                .size = size_ref,
-            },
-        },
-    };
-
-    return IR.Inst.toRef(inst);
+    try self.errors.add(
+        self.tree.nodeLoc(component_type_node),
+        "invalid array component type",
+        .{},
+        null,
+    );
+    return error.AnalysisFail;
 }
 
 fn genSamplerType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .sampler_type);
-
     const token = self.tree.nodeToken(node);
     const token_tag = self.tree.tokenTag(token);
     return switch (token_tag) {
@@ -1619,158 +1407,77 @@ fn genTextureType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
     const component_type_node = self.tree.nodeLHS(node);
     const component_type_ref = try self.genType(scope, component_type_node);
 
-    switch (component_type_ref) {
-        .i32_type,
-        .u32_type,
-        .f32_type,
-        => {},
-        .bool_type,
-        .f16_type,
-        .sampler_type,
-        .comparison_sampler_type,
-        .external_sampled_texture_type,
-        => {
-            try self.errors.add(
-                self.tree.nodeLoc(component_type_node),
-                "invalid sampled texture component type",
-                .{},
-                try self.errors.createNote(
-                    null,
-                    "must be 'i32', 'u32' or 'f32'",
-                    .{},
-                ),
-            );
-            return error.AnalysisFail;
-        },
-        .none, .true, .false => unreachable,
-        _ => switch (self.instructions.items[component_type_ref.toIndex().?].tag) {
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .array_type,
-            .ptr_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            .struct_ref,
-            => {
-                try self.errors.add(
-                    self.tree.nodeLoc(component_type_node),
-                    "invalid sampled texture component type",
-                    .{},
-                    try self.errors.createNote(
-                        null,
-                        "must be 'i32', 'u32' or 'f32'",
-                        .{},
-                    ),
-                );
-                return error.AnalysisFail;
+    if (component_type_ref.is32BitNumberType()) {
+        const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
+        self.instructions.items[inst] = .{
+            .tag = .sampled_texture_type,
+            .data = .{
+                .sampled_texture_type = .{
+                    .kind = switch (token_tag) {
+                        .k_texture_1d => .@"1d",
+                        .k_texture_2d => .@"2d",
+                        .k_texture_2d_array => .@"2d_array",
+                        .k_texture_3d => .@"3d",
+                        .k_texture_cube => .cube,
+                        .k_texture_cube_array => .cube_array,
+                        else => unreachable,
+                    },
+                    .component_type = component_type_ref,
+                },
             },
-            else => unreachable,
-        },
+        };
+        return IR.Inst.toRef(inst);
     }
 
-    const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
-    self.instructions.items[inst] = .{
-        .tag = .sampled_texture_type,
-        .data = .{
-            .sampled_texture_type = .{
-                .kind = switch (token_tag) {
-                    .k_texture_1d => .@"1d",
-                    .k_texture_2d => .@"2d",
-                    .k_texture_2d_array => .@"2d_array",
-                    .k_texture_3d => .@"3d",
-                    .k_texture_cube => .cube,
-                    .k_texture_cube_array => .cube_array,
-                    else => unreachable,
-                },
-                .component_type = component_type_ref,
-            },
-        },
-    };
-    return IR.Inst.toRef(inst);
+    try self.errors.add(
+        self.tree.nodeLoc(component_type_node),
+        "invalid texture component type",
+        .{},
+        try self.errors.createNote(
+            null,
+            "must be 'i32', 'u32' or 'f32'",
+            .{},
+        ),
+    );
+    return error.AnalysisFail;
 }
 
 fn genMultisampledTextureType(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .multisampled_texture_type);
-
     const inst = try self.reserveInst();
     const component_type_node = self.tree.nodeLHS(node);
     const component_type_ref = try self.genType(scope, component_type_node);
 
-    switch (component_type_ref) {
-        .i32_type,
-        .u32_type,
-        .f32_type,
-        => {},
-        .bool_type,
-        .f16_type,
-        .sampler_type,
-        .comparison_sampler_type,
-        .external_sampled_texture_type,
-        => {
-            try self.errors.add(
-                self.tree.nodeLoc(component_type_node),
-                "invalid multisampled texture component type",
-                .{},
-                try self.errors.createNote(
-                    null,
-                    "must be 'i32', 'u32' or 'f32'",
-                    .{},
-                ),
-            );
-            return error.AnalysisFail;
-        },
-        .none, .true, .false => unreachable,
-        _ => switch (self.instructions.items[component_type_ref.toIndex().?].tag) {
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .array_type,
-            .ptr_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            .struct_ref,
-            => {
-                try self.errors.add(
-                    self.tree.nodeLoc(component_type_node),
-                    "invalid multisampled texture component type",
-                    .{},
-                    try self.errors.createNote(
-                        null,
-                        "must be 'i32', 'u32' or 'f32'",
-                        .{},
-                    ),
-                );
-                return error.AnalysisFail;
+    if (component_type_ref.is32BitNumberType()) {
+        const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
+        self.instructions.items[inst] = .{
+            .tag = .multisampled_texture_type,
+            .data = .{
+                .multisampled_texture_type = .{
+                    .kind = switch (token_tag) {
+                        .k_texture_multisampled_2d => .@"2d",
+                        else => unreachable,
+                    },
+                    .component_type = component_type_ref,
+                },
             },
-            else => unreachable,
-        },
+        };
+        return IR.Inst.toRef(inst);
     }
 
-    const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
-    self.instructions.items[inst] = .{
-        .tag = .multisampled_texture_type,
-        .data = .{
-            .multisampled_texture_type = .{
-                .kind = switch (token_tag) {
-                    .k_texture_multisampled_2d => .@"2d",
-                    else => unreachable,
-                },
-                .component_type = component_type_ref,
-            },
-        },
-    };
-
-    return IR.Inst.toRef(inst);
+    try self.errors.add(
+        self.tree.nodeLoc(component_type_node),
+        "invalid multisampled texture component type",
+        .{},
+        try self.errors.createNote(
+            null,
+            "must be 'i32', 'u32' or 'f32'",
+            .{},
+        ),
+    );
+    return error.AnalysisFail;
 }
 
 fn genStorageTextureType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .storage_texture_type);
-
     const node_lhs = self.tree.nodeLHS(node);
     const texel_format_loc = self.tree.nodeLoc(node_lhs);
     const ast_texel_format = std.meta.stringToEnum(Ast.TexelFormat, texel_format_loc.slice(self.tree.source)).?;
@@ -1836,8 +1543,6 @@ fn genStorageTextureType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
 }
 
 fn genDepthTextureType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .depth_texture_type);
-
     const token_tag = self.tree.tokenTag(self.tree.nodeToken(node));
     const inst = try self.addInst(.{
         .tag = .depth_texture_type,
@@ -1853,11 +1558,6 @@ fn genDepthTextureType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
         },
     });
     return IR.Inst.toRef(inst);
-}
-
-fn genExternalTextureType(self: *AstGen, node: NodeIndex) !IR.Inst.Ref {
-    std.debug.assert(self.tree.nodeTag(node) == .external_texture_type);
-    return .external_sampled_texture_type;
 }
 
 /// takes token and returns the first declaration in the current and parent scopes
@@ -1888,6 +1588,14 @@ fn findSymbol(self: *AstGen, scope: *Scope, token: TokenIndex) error{ OutOfMemor
 
         s = s.parent;
     }
+}
+
+fn genStructRef(self: *AstGen, scope: *Scope, node: NodeIndex) !IR.Inst.Ref {
+    const inst_index = try self.addInst(.{
+        .tag = .var_ref,
+        .data = .{ .ref = try self.findSymbol(scope, self.tree.nodeToken(node)) },
+    });
+    return IR.Inst.toRef(inst_index);
 }
 
 fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?IR.Inst.Ref {
@@ -1924,20 +1632,20 @@ fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?IR.Inst.Ref {
             .@"or",
             .xor,
         })) {
-            const inst = self.instructions.items[r.toIndex().?];
-            r = inst.data.binary.lhs; // TODO
+            const inst_data = self.getInstData(r);
+            r = inst_data.binary.lhs; // TODO
         } else if (r.is(self.instructions.items, &.{.negate})) {
-            const inst = self.instructions.items[r.toIndex().?];
-            r = inst.data.ref;
+            const inst_data = self.getInstData(r);
+            r = inst_data.ref;
         } else if (r.is(self.instructions.items, &.{.deref})) {
             in_deref = true;
-            const inst = self.instructions.items[r.toIndex().?];
-            r = inst.data.ref;
+            const inst_data = self.getInstData(r);
+            r = inst_data.ref;
         } else if (r.is(self.instructions.items, &.{.var_ref})) {
             in_decl = true;
             r = try self.resolveTypeOrValue(r);
             if (in_deref) {
-                r = self.instructions.items[r.toIndex().?].data.ptr_type.component_type;
+                r = self.getInstData(r).ptr_type.component_type;
             }
         } else {
             return null;
@@ -1947,10 +1655,10 @@ fn resolve(self: *AstGen, ref: IR.Inst.Ref) !?IR.Inst.Ref {
 
 fn resolveTypeOrValue(self: *AstGen, ref: IR.Inst.Ref) !IR.Inst.Ref {
     var r = ref;
-    const inst = self.instructions.items[r.toIndex().?];
-    const var_inst = self.instructions.items[inst.data.ref.toIndex().?];
+    const inst_data = self.getInstData(r);
+    const var_inst = self.getInst(inst_data.ref);
 
-    const resolved = try self.resolved_refs.getOrPut(self.allocator, inst.data.ref);
+    const resolved = try self.resolved_refs.getOrPut(self.allocator, inst_data.ref);
     if (resolved.found_existing) return resolved.value_ptr.*;
 
     switch (var_inst.tag) {
@@ -2008,4 +1716,12 @@ fn addString(self: *AstGen, str: []const u8) error{OutOfMemory}!u32 {
     self.strings.appendSliceAssumeCapacity(str);
     self.strings.appendAssumeCapacity('\x00');
     return @intCast(u32, self.strings.items.len - len);
+}
+
+fn getInst(self: *AstGen, ref: IR.Inst.Ref) IR.Inst {
+    return self.instructions.items[ref.toIndex().?];
+}
+
+fn getInstData(self: *AstGen, ref: IR.Inst.Ref) IR.Inst.Data {
+    return self.getInst(ref).data;
 }

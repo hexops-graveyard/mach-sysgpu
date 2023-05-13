@@ -299,7 +299,7 @@ test "must error" {
             \\type T1 = texture_1d<T0>;
         ;
         try expectError(source, .{
-            .msg = "invalid sampled texture component type",
+            .msg = "invalid texture component type",
             .loc = .{ .start = 40, .end = 42 },
             .note = .{ .msg = "must be 'i32', 'u32' or 'f32'" },
         });
