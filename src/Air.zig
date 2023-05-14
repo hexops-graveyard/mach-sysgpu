@@ -1,8 +1,11 @@
+//! Analyzed Intermediate Representation.
+//! This data is produced by AstGen and consumed by codegen.
+
 const std = @import("std");
 const AstGen = @import("AstGen.zig");
 const Ast = @import("Ast.zig");
 const ErrorList = @import("ErrorList.zig");
-const IR = @This();
+const Air = @This();
 
 allocator: std.mem.Allocator,
 globals_index: u32,
@@ -11,7 +14,7 @@ refs: []const Inst.Ref,
 strings: []const u8,
 errors: ErrorList,
 
-pub fn deinit(self: *IR) void {
+pub fn deinit(self: *Air) void {
     self.allocator.free(self.instructions);
     self.allocator.free(self.refs);
     self.allocator.free(self.strings);
@@ -19,7 +22,7 @@ pub fn deinit(self: *IR) void {
     self.* = undefined;
 }
 
-pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemory}!IR {
+pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemory}!Air {
     var astgen = AstGen{
         .allocator = allocator,
         .tree = tree,
@@ -29,7 +32,6 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemor
     defer {
         astgen.scope_pool.deinit();
         astgen.scratch.deinit(allocator);
-        astgen.resolved_refs.deinit(allocator);
     }
     errdefer {
         astgen.instructions.deinit(allocator);
@@ -49,7 +51,7 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemor
     };
 }
 
-pub fn getStr(self: IR, index: u32) []const u8 {
+pub fn getStr(self: Air, index: u32) []const u8 {
     return std.mem.sliceTo(self.strings[index..], 0);
 }
 
@@ -57,14 +59,7 @@ pub const Inst = struct {
     tag: Tag,
     data: Data,
 
-    pub const List = []const Inst;
     pub const Index = u32;
-
-    const ref_start_index = @typeInfo(Ref).Enum.fields.len;
-    pub fn toRef(index: Inst.Index) Ref {
-        return @intToEnum(Ref, ref_start_index + index);
-    }
-
     pub const Ref = enum(u32) {
         none,
 
@@ -82,122 +77,15 @@ pub const Inst = struct {
 
         _,
 
-        pub fn toIndex(inst: Ref) ?Inst.Index {
-            const ref_int = @enumToInt(inst);
-            if (ref_int >= ref_start_index) {
-                return @intCast(Inst.Index, ref_int - ref_start_index);
+        pub const start_index = @typeInfo(Ref).Enum.fields.len;
+
+        pub fn toIndex(inst: Ref) ?Index {
+            const index = @enumToInt(inst);
+            if (index >= start_index) {
+                return @intCast(Index, index - start_index);
             } else {
                 return null;
             }
-        }
-
-        pub fn is(self: Ref, list: List, expected: []const Tag) bool {
-            const indx = self.toIndex() orelse return false;
-            const tag = list[indx].tag;
-            for (expected) |t| {
-                if (tag == t) return true;
-            }
-            return false;
-        }
-
-        pub fn isType(self: Ref, list: List) bool {
-            return switch (self) {
-                .none,
-                .true,
-                .false,
-                => false,
-                .bool_type,
-                .i32_type,
-                .u32_type,
-                .f32_type,
-                .f16_type,
-                .sampler_type,
-                .comparison_sampler_type,
-                .external_sampled_texture_type,
-                => true,
-                _ => switch (list[self.toIndex().?].tag) {
-                    .vector_type,
-                    .matrix_type,
-                    .atomic_type,
-                    .array_type,
-                    .ptr_type,
-                    .sampled_texture_type,
-                    .multisampled_texture_type,
-                    .storage_texture_type,
-                    .depth_texture_type,
-                    .struct_ref,
-                    => true,
-                    else => false,
-                },
-            };
-        }
-
-        pub fn isNumber(self: Ref, list: List) bool {
-            return switch (self) {
-                .none,
-                .true,
-                .false,
-                .bool_type,
-                .sampler_type,
-                .comparison_sampler_type,
-                .external_sampled_texture_type,
-                => false,
-                .i32_type,
-                .u32_type,
-                .f32_type,
-                .f16_type,
-                => true,
-                _ => switch (list[self.toIndex().?].tag) {
-                    .integer,
-                    .float,
-                    => true,
-                    else => false,
-                },
-            };
-        }
-
-        pub fn isInteger(self: Ref, list: List) bool {
-            return switch (self) {
-                .none,
-                .true,
-                .false,
-                .bool_type,
-                .f32_type,
-                .f16_type,
-                .sampler_type,
-                .comparison_sampler_type,
-                .external_sampled_texture_type,
-                => false,
-                .i32_type,
-                .u32_type,
-                => true,
-                _ => switch (list[self.toIndex().?].tag) {
-                    .integer => true,
-                    else => false,
-                },
-            };
-        }
-
-        pub fn isFloat(self: Ref, list: List) bool {
-            return switch (self) {
-                .none,
-                .true,
-                .false,
-                .bool_type,
-                .i32_type,
-                .u32_type,
-                .sampler_type,
-                .comparison_sampler_type,
-                .external_sampled_texture_type,
-                => false,
-                .f32_type,
-                .f16_type,
-                => true,
-                _ => switch (list[self.toIndex().?].tag) {
-                    .float => true,
-                    else => false,
-                },
-            };
         }
 
         pub fn isBool(self: Ref) bool {
@@ -237,99 +125,6 @@ pub const Inst = struct {
                 .i32_type,
                 .u32_type,
                 .f32_type,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isLiteral(self: Ref, list: List) bool {
-            return switch (self) {
-                .true,
-                .false,
-                => true,
-                .none,
-                .bool_type,
-                .i32_type,
-                .u32_type,
-                .f32_type,
-                .f16_type,
-                .sampler_type,
-                .comparison_sampler_type,
-                .external_sampled_texture_type,
-                => false,
-                _ => switch (list[self.toIndex().?].tag) {
-                    .integer,
-                    .float,
-                    => true,
-                    else => false,
-                },
-            };
-        }
-
-        pub fn isBoolLiteral(self: Ref) bool {
-            return switch (self) {
-                .true,
-                .false,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isNumberLiteral(self: Ref, list: List) bool {
-            const i = self.toIndex() orelse return false;
-            return switch (list[i].tag) {
-                .integer,
-                .float,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isExpr(self: Ref, list: List) bool {
-            const i = self.toIndex() orelse return false;
-            return switch (list[i].tag) {
-                .index_access,
-                .field_access,
-                .bitcast,
-                .var_ref,
-                => true,
-                else => self.isBinaryExpr(list) or self.isUnaryExpr(list),
-            };
-        }
-
-        pub fn isBinaryExpr(self: Ref, list: List) bool {
-            const i = self.toIndex() orelse return false;
-            return switch (list[i].tag) {
-                .mul,
-                .div,
-                .mod,
-                .add,
-                .sub,
-                .shift_left,
-                .shift_right,
-                .@"and",
-                .@"or",
-                .xor,
-                .logical_and,
-                .logical_or,
-                .equal,
-                .not_equal,
-                .less,
-                .less_equal,
-                .greater,
-                .greater_equal,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isUnaryExpr(self: Ref, list: List) bool {
-            const i = self.toIndex() orelse return false;
-            return switch (list[i].tag) {
-                .not,
-                .negate,
-                .deref,
-                .addr_of,
                 => true,
                 else => false,
             };
@@ -616,27 +411,27 @@ pub const Inst = struct {
     };
 
     pub const VectorType = struct {
-        component_type: Ref,
+        elem_type: Ref,
         size: Size,
 
         pub const Size = enum { two, three, four };
     };
 
     pub const MatrixType = struct {
-        component_type: Ref,
+        elem_type: Ref,
         cols: VectorType.Size,
         rows: VectorType.Size,
     };
 
-    pub const AtomicType = struct { component_type: Ref };
+    pub const AtomicType = struct { elem_type: Ref };
 
     pub const ArrayType = struct {
-        component_type: Ref,
+        elem_type: Ref,
         size: Ref = .none,
     };
 
     pub const PointerType = struct {
-        component_type: Ref,
+        elem_type: Ref,
         addr_space: AddressSpace,
         access_mode: AccessMode,
 
@@ -658,7 +453,7 @@ pub const Inst = struct {
 
     pub const SampledTextureType = struct {
         kind: Kind,
-        component_type: Ref,
+        elem_type: Ref,
 
         pub const Kind = enum {
             @"1d",
@@ -672,7 +467,7 @@ pub const Inst = struct {
 
     pub const MultisampledTextureType = struct {
         kind: Kind,
-        component_type: Ref,
+        elem_type: Ref,
 
         pub const Kind = enum { @"2d" };
     };
