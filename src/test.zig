@@ -1,13 +1,14 @@
 const std = @import("std");
-const IR = @import("IR.zig");
-const Ast = @import("Ast.zig");
-const ErrorList = @import("ErrorList.zig");
-const printIR = @import("print_ir.zig").printIR;
+const dusk = @import("main.zig");
+const ErrorList = dusk.ErrorList;
+const Ast = dusk.Ast;
+const Air = dusk.Air;
+const printAir = dusk.printAir;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const allocator = std.testing.allocator;
 
-fn expectIR(source: [:0]const u8) !IR {
+fn expectIR(source: [:0]const u8) !Air {
     var tree = try Ast.parse(allocator, source);
     defer tree.deinit(allocator);
 
@@ -16,7 +17,7 @@ fn expectIR(source: [:0]const u8) !IR {
         return error.Parsing;
     }
 
-    var ir = try IR.generate(allocator, &tree);
+    var ir = try Air.generate(allocator, &tree);
     errdefer ir.deinit();
 
     if (ir.errors.list.items.len > 0) {
@@ -32,11 +33,11 @@ fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
     defer tree.deinit(allocator);
     var err_list = tree.errors;
 
-    var ir: ?IR = null;
+    var ir: ?Air = null;
     defer if (ir != null) ir.?.deinit();
 
     if (err_list.list.items.len == 0) {
-        ir = try IR.generate(allocator, &tree);
+        ir = try Air.generate(allocator, &tree);
 
         err_list = ir.?.errors;
         if (err_list.list.items.len == 0) {
@@ -87,17 +88,6 @@ fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
     }
 }
 
-test {
-    std.testing.refAllDecls(@import("Ast.zig"));
-    std.testing.refAllDecls(@import("AstGen.zig"));
-    std.testing.refAllDecls(@import("ErrorList.zig"));
-    std.testing.refAllDecls(@import("IR.zig"));
-    std.testing.refAllDecls(@import("Parser.zig"));
-    std.testing.refAllDecls(@import("print_ir.zig"));
-    std.testing.refAllDecls(@import("Token.zig"));
-    std.testing.refAllDecls(@import("Tokenizer.zig"));
-}
-
 test "empty" {
     const source = "";
     var ir = try expectIR(source);
@@ -108,7 +98,7 @@ test "gkurve" {
     if (true) return;
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
-    try printIR(ir, std.io.getStdOut().writer());
+    try printAir(ir, std.io.getStdOut().writer());
 }
 
 test "must pass" {
@@ -130,7 +120,7 @@ test "must pass" {
             \\}
         ;
         var ir = try expectIR(source);
-        try printIR(ir, std.io.getStdOut().writer());
+        try printAir(ir, std.io.getStdOut().writer());
         ir.deinit();
     }
     {
@@ -213,7 +203,7 @@ test "integer/float literals" {
     defer ir.deinit();
 
     const toInst = struct {
-        fn toInst(_ir: IR, i: IR.Inst.Ref) IR.Inst {
+        fn toInst(_ir: Air, i: Air.Inst.Ref) Air.Inst {
             return _ir.instructions[_ir.instructions[i.toIndex().?].data.global_variable_decl.expr.toIndex().?];
         }
     }.toInst;

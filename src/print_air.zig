@@ -1,9 +1,9 @@
 const std = @import("std");
-const IR = @import("IR.zig");
+const Air = @import("Air.zig");
 
 const indention_size = 2;
 
-pub fn printIR(ir: IR, writer: anytype) !void {
+pub fn printAir(ir: Air, writer: anytype) !void {
     var p = Printer(@TypeOf(writer)){
         .ir = ir,
         .writer = writer,
@@ -17,11 +17,11 @@ pub fn printIR(ir: IR, writer: anytype) !void {
 
 fn Printer(comptime Writer: type) type {
     return struct {
-        ir: IR,
+        ir: Air,
         writer: Writer,
         tty: std.debug.TTY.Config,
 
-        fn printInst(self: @This(), indent: u16, ref: IR.Inst.Ref, decl_scope: bool) Writer.Error!void {
+        fn printInst(self: @This(), indent: u16, ref: Air.Inst.Ref, decl_scope: bool) Writer.Error!void {
             switch (ref) {
                 .none,
                 .bool_type,
@@ -102,7 +102,7 @@ fn Printer(comptime Writer: type) type {
             }
         }
 
-        fn printGlobalVariable(self: @This(), indent: u16, index: IR.Inst.Index) Writer.Error!void {
+        fn printGlobalVariable(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printField(indent + 1, "name", inst.data.global_variable_decl.name);
@@ -117,7 +117,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printConstDecl(self: @This(), indent: u16, index: IR.Inst.Index) Writer.Error!void {
+        fn printConstDecl(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printField(indent + 1, "name", inst.data.global_const_decl.name);
@@ -126,7 +126,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printStructDecl(self: @This(), indent: u16, index: IR.Inst.Index) Writer.Error!void {
+        fn printStructDecl(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printField(indent + 1, "name", inst.data.struct_decl.name);
@@ -148,7 +148,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printFnDecl(self: @This(), indent: u16, index: IR.Inst.Index) Writer.Error!void {
+        fn printFnDecl(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printField(indent + 1, "name", inst.data.fn_decl.name);
@@ -206,7 +206,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printNumberLiteral(self: @This(), indent: u16, index: IR.Inst.Index) Writer.Error!void {
+        fn printNumberLiteral(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             switch (inst.tag) {
@@ -227,7 +227,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printBinary(self: @This(), indent: u16, index: IR.Inst.Index) Writer.Error!void {
+        fn printBinary(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printField(indent + 1, "lhs", inst.data.binary.lhs);
@@ -235,7 +235,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printFieldAccess(self: @This(), indent: u16, index: IR.Inst.Index) Writer.Error!void {
+        fn printFieldAccess(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printField(indent + 1, "base", inst.data.field_access.base);
@@ -243,7 +243,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printIndexAccess(self: @This(), indent: u16, index: IR.Inst.Index) Writer.Error!void {
+        fn printIndexAccess(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printField(indent + 1, "base", inst.data.index_access.base);
@@ -252,7 +252,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn instStart(self: @This(), index: IR.Inst.Index) !void {
+        fn instStart(self: @This(), index: Air.Inst.Index) !void {
             const inst = self.ir.instructions[index];
             try self.tty.setColor(self.writer, .Bold);
             try self.writer.print("{s}", .{@tagName(inst.tag)});
@@ -275,7 +275,7 @@ fn Printer(comptime Writer: type) type {
             try self.tty.setColor(self.writer, .Reset);
         }
 
-        fn instBlockStart(self: @This(), index: IR.Inst.Index) !void {
+        fn instBlockStart(self: @This(), index: Air.Inst.Index) !void {
             const inst = self.ir.instructions[index];
             try self.tty.setColor(self.writer, .Bold);
             try self.writer.print("{s}", .{@tagName(inst.tag)});
@@ -324,7 +324,7 @@ fn Printer(comptime Writer: type) type {
         fn printField(self: @This(), indent: u16, name: []const u8, value: anytype) !void {
             try self.printFieldName(indent, name);
             switch (@TypeOf(value)) {
-                IR.Inst.Ref => try self.printInst(indent, value, true),
+                Air.Inst.Ref => try self.printInst(indent, value, true),
                 u32 => {
                     // assume string index
                     try self.tty.setColor(self.writer, .Yellow);
