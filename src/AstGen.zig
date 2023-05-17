@@ -117,7 +117,7 @@ fn genTypeAlias(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 }
 
 fn genGlobalConstDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const node_lhs = self.tree.nodeLHS(node);
     const node_rhs = self.tree.nodeRHS(node);
     const name_loc = self.tree.declNameLoc(node).?;
@@ -160,7 +160,7 @@ fn isConstExpr(self: *AstGen, expr: Air.Inst.Ref) bool {
 }
 
 fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const node_rhs = self.tree.nodeRHS(node);
     const extra_data = self.tree.extraData(Node.GlobalVarDecl, self.tree.nodeLHS(node));
     const name_loc = self.tree.declNameLoc(node).?;
@@ -348,14 +348,14 @@ fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Re
 }
 
 fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
 
     const scratch_top = self.scratch.items.len;
     defer self.scratch.shrinkRetainingCapacity(scratch_top);
 
     const member_nodes_list = self.tree.spanToList(self.tree.nodeLHS(node));
     for (member_nodes_list, 0..) |member_node, i| {
-        const member_inst = try self.reserveInst();
+        const member_inst = try self.allocInst();
         const member_name_loc = self.tree.tokenLoc(self.tree.nodeToken(member_node));
         const member_type_node = self.tree.nodeRHS(member_node);
         const member_type_loc = self.tree.nodeLoc(member_type_node);
@@ -421,7 +421,7 @@ fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 }
 
 fn genFnDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const fn_proto = self.tree.extraData(Node.FnProto, self.tree.nodeLHS(node));
 
     var params: u32 = 0;
@@ -455,7 +455,7 @@ fn getFnParams(self: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     defer self.scratch.shrinkRetainingCapacity(scratch_top);
 
     for (self.tree.spanToList(node)) |param_node| {
-        const param_inst = try self.reserveInst();
+        const param_inst = try self.allocInst();
         const param_name_loc = self.tree.tokenLoc(self.tree.nodeToken(param_node));
         const param_type_node = self.tree.nodeRHS(param_node);
         const param_type_ref = self.genType(scope, param_type_node) catch |err| switch (err) {
@@ -1128,7 +1128,7 @@ fn genNumberType(self: *AstGen, node: NodeIndex) !Air.Inst.Ref {
 }
 
 fn genVectorType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const elem_type_node = self.tree.nodeLHS(node);
     const elem_type_ref = try self.genType(scope, elem_type_node);
 
@@ -1165,7 +1165,7 @@ fn genVectorType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 }
 
 fn genMatrixType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const elem_type_node = self.tree.nodeLHS(node);
     const elem_type_ref = try self.genType(scope, elem_type_node);
 
@@ -1210,7 +1210,7 @@ fn genMatrixType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 fn genAtomicType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     std.debug.assert(self.tree.nodeTag(node) == .atomic_type);
 
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const elem_type_node = self.tree.nodeLHS(node);
     const elem_type_ref = try self.genType(scope, elem_type_node);
 
@@ -1236,7 +1236,7 @@ fn genAtomicType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 }
 
 fn genPtrType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const elem_type_node = self.tree.nodeLHS(node);
     const elem_type_ref = try self.genType(scope, elem_type_node);
 
@@ -1299,7 +1299,7 @@ fn genPtrType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 }
 
 fn genArrayType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const elem_type_node = self.tree.nodeLHS(node);
     const elem_type_ref = try self.genType(scope, elem_type_node);
 
@@ -1357,7 +1357,7 @@ fn genSamplerType(self: *AstGen, node: NodeIndex) !Air.Inst.Ref {
 }
 
 fn genTextureType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const elem_type_node = self.tree.nodeLHS(node);
     const elem_type_ref = try self.genType(scope, elem_type_node);
 
@@ -1397,7 +1397,7 @@ fn genTextureType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 }
 
 fn genMultisampledTextureType(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
-    const inst = try self.reserveInst();
+    const inst = try self.allocInst();
     const elem_type_node = self.tree.nodeLHS(node);
     const elem_type_ref = try self.genType(scope, elem_type_node);
 
@@ -1645,7 +1645,7 @@ fn resolveTypeOrValue(self: *AstGen, ref: Air.Inst.Ref) !?Air.Inst.Ref {
     }
 }
 
-fn reserveInst(self: *AstGen) error{OutOfMemory}!Air.Inst.Index {
+fn allocInst(self: *AstGen) error{OutOfMemory}!Air.Inst.Index {
     try self.instructions.append(self.allocator, undefined);
     return @intCast(Air.Inst.Index, self.instructions.items.len - 1);
 }
