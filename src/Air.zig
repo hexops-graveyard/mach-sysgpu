@@ -79,8 +79,13 @@ pub const Inst = struct {
 
         pub const start_index = @typeInfo(Ref).Enum.fields.len;
 
-        pub fn toIndex(inst: Ref) ?Index {
-            const index = @enumToInt(inst);
+        pub fn isIndex(self: Ref) bool {
+            const index = @enumToInt(self);
+            return index >= start_index;
+        }
+
+        pub fn toIndex(self: Ref) ?Index {
+            const index = @enumToInt(self);
             if (index >= start_index) {
                 return @intCast(Index, index - start_index);
             } else {
@@ -206,16 +211,16 @@ pub const Inst = struct {
 
         /// data is binary
         assign,
-        assign_plus,
-        assign_minus,
-        assign_times,
-        assign_division,
-        assign_modulo,
+        assign_add,
+        assign_sub,
+        assign_mul,
+        assign_div,
+        assign_mod,
         assign_and,
         assign_or,
         assign_xor,
-        assign_shift_right,
-        assign_shift_left,
+        assign_shl,
+        assign_shr,
 
         /// data is ref
         var_ref,
@@ -293,78 +298,96 @@ pub const Inst = struct {
     pub const FnDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
+        stage: Stage,
         /// nullable
         /// index to zero-terminated params Ref in `refs`
         params: u32 = 0,
+        return_type: Ref,
+        return_attrs: ReturnAttrs,
         /// nullable
         /// index to zero-terminated statements Ref in `refs`
         statements: u32 = 0,
-        fragment: bool,
+
+        pub const Stage = union(enum) {
+            normal,
+            vertex,
+            fragment,
+            compute: WorkgroupSize,
+
+            pub const WorkgroupSize = struct {
+                x: Ref,
+                y: Ref = .none,
+                z: Ref = .none,
+            };
+        };
+
+        pub const ReturnAttrs = struct {
+            builtin: BuiltinValue = .none,
+            location: Ref = .none,
+            interpolate: ?Interpolate = null,
+            invariant: bool = false,
+        };
     };
 
     pub const FnArg = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         type: Ref,
-        /// nullable
-        builtin: BuiltinValue,
-        /// nullable
-        location: Ref,
-        /// nullable
-        interpolate: ?Interpolate,
-        /// nullable
-        invariant: bool,
+        builtin: BuiltinValue = .none,
+        location: Ref = .none,
+        interpolate: ?Interpolate = null,
+        invariant: bool = false,
+    };
 
-        pub const BuiltinValue = enum {
-            none,
-            vertex_index,
-            instance_index,
-            position,
-            front_facing,
-            frag_depth,
-            local_invocation_id,
-            local_invocation_index,
-            global_invocation_id,
-            workgroup_id,
-            num_workgroups,
-            sample_index,
-            sample_mask,
+    pub const BuiltinValue = enum {
+        none,
+        vertex_index,
+        instance_index,
+        position,
+        front_facing,
+        frag_depth,
+        local_invocation_id,
+        local_invocation_index,
+        global_invocation_id,
+        workgroup_id,
+        num_workgroups,
+        sample_index,
+        sample_mask,
 
-            pub fn fromAst(ast: Ast.BuiltinValue) BuiltinValue {
-                return switch (ast) {
-                    .vertex_index => .vertex_index,
-                    .instance_index => .instance_index,
-                    .position => .position,
-                    .front_facing => .front_facing,
-                    .frag_depth => .frag_depth,
-                    .local_invocation_id => .local_invocation_id,
-                    .local_invocation_index => .local_invocation_index,
-                    .global_invocation_id => .global_invocation_id,
-                    .workgroup_id => .workgroup_id,
-                    .num_workgroups => .num_workgroups,
-                    .sample_index => .sample_index,
-                    .sample_mask => .sample_mask,
-                };
-            }
+        pub fn fromAst(ast: Ast.BuiltinValue) BuiltinValue {
+            return switch (ast) {
+                .vertex_index => .vertex_index,
+                .instance_index => .instance_index,
+                .position => .position,
+                .front_facing => .front_facing,
+                .frag_depth => .frag_depth,
+                .local_invocation_id => .local_invocation_id,
+                .local_invocation_index => .local_invocation_index,
+                .global_invocation_id => .global_invocation_id,
+                .workgroup_id => .workgroup_id,
+                .num_workgroups => .num_workgroups,
+                .sample_index => .sample_index,
+                .sample_mask => .sample_mask,
+            };
+        }
+    };
+
+    pub const Interpolate = struct {
+        type: Type,
+        /// nullable
+        sample: Sample,
+
+        pub const Type = enum {
+            perspective,
+            linear,
+            flat,
         };
 
-        pub const Interpolate = struct {
-            type: Type,
-            /// nullable
-            sample: Sample,
-
-            pub const Type = enum {
-                perspective,
-                linear,
-                flat,
-            };
-
-            pub const Sample = enum {
-                none,
-                center,
-                centroid,
-                sample,
-            };
+        pub const Sample = enum {
+            none,
+            center,
+            centroid,
+            sample,
         };
     };
 
@@ -380,34 +403,6 @@ pub const Inst = struct {
         name: u32,
         type: Ref,
         @"align": u29, // 0 means null
-    };
-
-    pub const AttrSimple = enum {
-        invariant,
-        @"const",
-        vertex,
-        fragment,
-        compute,
-    };
-
-    pub const AttrExpr = struct {
-        kind: Kind,
-        expr: Ref,
-
-        pub const Kind = enum {
-            @"align",
-            binding,
-            group,
-            id,
-            location,
-            size,
-        };
-    };
-
-    pub const AttrWorkgroup = struct {
-        expr0: Ref,
-        expr1: Ref = .none,
-        expr2: Ref = .none,
     };
 
     pub const VectorType = struct {

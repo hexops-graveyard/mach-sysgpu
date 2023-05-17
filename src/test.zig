@@ -104,7 +104,7 @@ test "gkurve" {
 test "must pass" {
     {
         const source =
-            \\var v0: array<array<vec2<u32>, 5>>;
+            \\var v0: i32;
             \\struct G {
             \\  l: L,
             \\}
@@ -115,7 +115,7 @@ test "must pass" {
             \\  n: u32,
             \\}
             \\var v1: G;
-            \\fn test() {
+            \\fn test() -> u32 {
             \\  v0 = v1.l.f[0].n;
             \\}
         ;

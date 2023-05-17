@@ -420,13 +420,152 @@ fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     return indexToRef(inst);
 }
 
-fn genFnDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
+fn genFnDecl(self: *AstGen, global_scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     const inst = try self.allocInst();
     const fn_proto = self.tree.extraData(Node.FnProto, self.tree.nodeLHS(node));
+
+    var scope = try self.scope_pool.create();
+    scope.* = .{ .tag = .func, .parent = global_scope };
 
     var params: u32 = 0;
     if (fn_proto.params != 0) {
         params = try self.getFnParams(scope, fn_proto.params);
+    }
+
+    var return_type = Air.Inst.Ref.none;
+    var return_attrs = Air.Inst.FnDecl.ReturnAttrs{};
+    if (fn_proto.return_type != null_node) {
+        return_type = try self.genType(scope, fn_proto.return_type);
+
+        if (fn_proto.return_attrs != null_node) {
+            for (self.tree.spanToList(fn_proto.return_attrs)) |attr| {
+                switch (self.tree.nodeTag(attr)) {
+                    .attr_invariant => return_attrs.invariant = true,
+                    .attr_location => return_attrs.location = try self.genExpr(scope, self.tree.nodeLHS(attr)),
+                    .attr_builtin => return_attrs.builtin = self.attrBuiltin(attr),
+                    .attr_interpolate => return_attrs.interpolate = self.attrInterpolate(attr),
+                    else => {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr),
+                            "unexpected attribute '{s}'",
+                            .{self.tree.nodeLoc(attr).slice(self.tree.source)},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    },
+                }
+            }
+        }
+    }
+
+    var stage: Air.Inst.FnDecl.Stage = .normal;
+    var workgroup_size_attr = null_node;
+    if (fn_proto.attrs != null_node) {
+        for (self.tree.spanToList(fn_proto.attrs)) |attr| {
+            switch (self.tree.nodeTag(attr)) {
+                .attr_vertex,
+                .attr_fragment,
+                .attr_compute,
+                => |stage_attr| {
+                    if (stage != .normal) {
+                        try self.errors.add(self.tree.nodeLoc(attr), "multiple shader stages", .{}, null);
+                        return error.AnalysisFail;
+                    }
+
+                    stage = switch (stage_attr) {
+                        .attr_vertex => .vertex,
+                        .attr_fragment => .fragment,
+                        .attr_compute => .{ .compute = undefined },
+                        else => unreachable,
+                    };
+                },
+                .attr_workgroup_size => workgroup_size_attr = attr,
+                else => {
+                    try self.errors.add(
+                        self.tree.nodeLoc(attr),
+                        "unexpected attribute '{s}'",
+                        .{self.tree.nodeLoc(attr).slice(self.tree.source)},
+                        null,
+                    );
+                    return error.AnalysisFail;
+                },
+            }
+        }
+    }
+
+    if (stage == .compute) {
+        if (return_type != .none) {
+            try self.errors.add(
+                self.tree.nodeLoc(fn_proto.return_type),
+                "return type on compute function",
+                .{},
+                null,
+            );
+            return error.AnalysisFail;
+        }
+
+        if (workgroup_size_attr == null_node) {
+            try self.errors.add(
+                self.tree.nodeLoc(node),
+                "@workgroup_size not specified on compute shader",
+                .{},
+                null,
+            );
+            return error.AnalysisFail;
+        }
+
+        const workgroup_size_data = self.tree.extraData(Ast.Node.WorkgroupSize, self.tree.nodeLHS(workgroup_size_attr));
+        var workgroup_size = Air.Inst.FnDecl.Stage.WorkgroupSize{
+            .x = x: {
+                const x = try self.genExpr(scope, workgroup_size_data.x);
+                if (!self.isConstExpr(x)) {
+                    try self.errors.add(
+                        self.tree.nodeLoc(workgroup_size_data.x),
+                        "expected const-expressions",
+                        .{},
+                        null,
+                    );
+                    return error.AnalysisFail;
+                }
+                break :x x;
+            },
+        };
+
+        if (workgroup_size_data.y != null_node) {
+            workgroup_size.y = try self.genExpr(scope, workgroup_size_data.y);
+            if (!self.isConstExpr(workgroup_size.y)) {
+                try self.errors.add(
+                    self.tree.nodeLoc(workgroup_size_data.y),
+                    "expected const-expressions",
+                    .{},
+                    null,
+                );
+                return error.AnalysisFail;
+            }
+        }
+
+        if (workgroup_size_data.z != null_node) {
+            workgroup_size.z = try self.genExpr(scope, workgroup_size_data.z);
+            if (!self.isConstExpr(workgroup_size.z)) {
+                try self.errors.add(
+                    self.tree.nodeLoc(workgroup_size_data.z),
+                    "expected const-expressions",
+                    .{},
+                    null,
+                );
+                return error.AnalysisFail;
+            }
+        }
+
+        stage.compute = workgroup_size;
+    } else if (workgroup_size_attr != null_node) {
+        try self.errors.add(
+            self.tree.nodeLoc(node),
+            "@workgroup_size must be specified with a compute shader",
+            .{},
+            null,
+        );
+        return error.AnalysisFail;
     }
 
     var statements: u32 = 0;
@@ -441,9 +580,11 @@ fn genFnDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
         .data = .{
             .fn_decl = .{
                 .name = name_index,
+                .stage = stage,
                 .params = params,
+                .return_type = return_type,
+                .return_attrs = return_attrs,
                 .statements = statements,
-                .fragment = false, // TODO
             },
         },
     };
@@ -463,8 +604,8 @@ fn getFnParams(self: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
             error.OutOfMemory => return error.OutOfMemory,
         };
 
-        var builtin = Air.Inst.FnArg.BuiltinValue.none;
-        var inter: ?Air.Inst.FnArg.Interpolate = null;
+        var builtin = Air.Inst.BuiltinValue.none;
+        var inter: ?Air.Inst.Interpolate = null;
         var location = Air.Inst.Ref.none;
         var invariant = false;
 
@@ -473,33 +614,8 @@ fn getFnParams(self: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
                 switch (self.tree.nodeTag(attr)) {
                     .attr_invariant => invariant = true,
                     .attr_location => location = try self.genExpr(scope, self.tree.nodeLHS(attr)),
-                    .attr_builtin => {
-                        const builtin_loc = self.tree.tokenLoc(self.tree.nodeLHS(attr));
-                        const builtin_ast = stringToEnum(Ast.BuiltinValue, builtin_loc.slice(self.tree.source)).?;
-                        builtin = Air.Inst.FnArg.BuiltinValue.fromAst(builtin_ast);
-                    },
-                    .attr_interpolate => {
-                        const inter_type_loc = self.tree.tokenLoc(self.tree.nodeLHS(attr));
-                        const inter_type_ast = stringToEnum(Ast.InterpolationType, inter_type_loc.slice(self.tree.source)).?;
-                        inter = .{
-                            .type = switch (inter_type_ast) {
-                                .perspective => .perspective,
-                                .linear => .linear,
-                                .flat => .flat,
-                            },
-                            .sample = .none,
-                        };
-
-                        if (self.tree.nodeRHS(attr) != null_node) {
-                            const inter_sample_loc = self.tree.tokenLoc(self.tree.nodeRHS(attr));
-                            const inter_sample_ast = stringToEnum(Ast.InterpolationSample, inter_sample_loc.slice(self.tree.source)).?;
-                            inter.?.sample = switch (inter_sample_ast) {
-                                .center => .center,
-                                .centroid => .centroid,
-                                .sample => .sample,
-                            };
-                        }
-                    },
+                    .attr_builtin => builtin = self.attrBuiltin(attr),
+                    .attr_interpolate => inter = self.attrInterpolate(attr),
                     else => {
                         try self.errors.add(
                             self.tree.nodeLoc(attr),
@@ -533,6 +649,38 @@ fn getFnParams(self: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     return self.addRefList(self.scratch.items[scratch_top..]);
 }
 
+fn attrBuiltin(self: *AstGen, node: Ast.NodeIndex) Air.Inst.BuiltinValue {
+    const builtin_loc = self.tree.tokenLoc(self.tree.nodeLHS(node));
+    const builtin_ast = stringToEnum(Ast.BuiltinValue, builtin_loc.slice(self.tree.source)).?;
+    return Air.Inst.BuiltinValue.fromAst(builtin_ast);
+}
+
+fn attrInterpolate(self: *AstGen, node: Ast.NodeIndex) Air.Inst.Interpolate {
+    const inter_type_loc = self.tree.tokenLoc(self.tree.nodeLHS(node));
+    const inter_type_ast = stringToEnum(Ast.InterpolationType, inter_type_loc.slice(self.tree.source)).?;
+
+    var inter = Air.Inst.Interpolate{
+        .type = switch (inter_type_ast) {
+            .perspective => .perspective,
+            .linear => .linear,
+            .flat => .flat,
+        },
+        .sample = .none,
+    };
+
+    if (self.tree.nodeRHS(node) != null_node) {
+        const inter_sample_loc = self.tree.tokenLoc(self.tree.nodeRHS(node));
+        const inter_sample_ast = stringToEnum(Ast.InterpolationSample, inter_sample_loc.slice(self.tree.source)).?;
+        inter.sample = switch (inter_sample_ast) {
+            .center => .center,
+            .centroid => .centroid,
+            .sample => .sample,
+        };
+    }
+
+    return inter;
+}
+
 fn genStatements(self: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     const scratch_top = self.scratch.items.len;
     defer self.scratch.shrinkRetainingCapacity(scratch_top);
@@ -551,11 +699,34 @@ fn genStatements(self: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
 fn genCompoundAssign(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     const node_lhs = self.tree.nodeLHS(node);
     const node_rhs = self.tree.nodeRHS(node);
-    const lhs = try self.findSymbol(scope, self.tree.nodeToken(node_lhs));
+    const lhs = try self.genExpr(scope, node_lhs);
     const rhs = try self.genExpr(scope, node_rhs);
+    const lhs_type = try self.resolveVar(lhs);
+    const rhs_type = try self.resolve(rhs);
+
+    if (!self.eqlType(lhs_type.?, rhs_type.?)) {
+        try self.errors.add(
+            self.tree.nodeLoc(node),
+            "type mismatch",
+            .{},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
     const tag: Air.Inst.Tag = switch (self.tree.tokenTag(self.tree.nodeToken(node))) {
         .equal => .assign,
-        else => .assign_xor,
+        .plus_equal => .assign_add,
+        .minus_equal => .assign_sub,
+        .asterisk_equal => .assign_mul,
+        .slash_equal => .assign_div,
+        .percent_equal => .assign_mod,
+        .ampersand_equal => .assign_and,
+        .pipe_equal => .assign_or,
+        .xor_equal => .assign_xor,
+        .angle_bracket_angle_bracket_left_equal => .assign_shl,
+        .angle_bracket_angle_bracket_right_equal => .assign_shr,
+        else => unreachable,
     };
     const inst = try self.addInst(.{ .tag = tag, .data = .{ .binary = .{ .lhs = lhs, .rhs = rhs } } });
     return indexToRef(inst);
@@ -762,7 +933,7 @@ fn genDeref(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     const node_lhs = self.tree.nodeLHS(node);
     const node_lhs_loc = self.tree.nodeLoc(node_lhs);
     const lhs = try self.genExpr(scope, node_lhs);
-    if (try self.resolveTypeOrValue(lhs)) |lhs_res| {
+    if (try self.resolveVar(lhs)) |lhs_res| {
         if (self.refTagIs(lhs_res, &.{.ptr_type})) {
             const inst_index = try self.addInst(.{ .tag = .deref, .data = .{ .ref = lhs } });
             return indexToRef(inst_index);
@@ -975,7 +1146,7 @@ fn genVarRef(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 
 fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     const base = try self.genExpr(scope, self.tree.nodeLHS(node));
-    const base_type = try self.resolveTypeOrValue(base) orelse {
+    const base_type = try self.resolveVar(base) orelse {
         try self.errors.add(
             self.tree.nodeLoc(self.tree.nodeLHS(node)),
             "expected array type",
@@ -1023,7 +1194,7 @@ fn genIndexAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
 
 fn genFieldAccess(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     const base = try self.genExpr(scope, self.tree.nodeLHS(node));
-    const base_type = try self.resolveTypeOrValue(base) orelse {
+    const base_type = try self.resolveVar(base) orelse {
         try self.errors.add(
             self.tree.nodeLoc(node),
             "expected struct type",
@@ -1526,7 +1697,7 @@ fn findSymbol(self: *AstGen, scope: *Scope, token: TokenIndex) error{ OutOfMemor
         var node_iter = s.decls.keyIterator();
         while (node_iter.next()) |other_node| {
             if (std.mem.eql(u8, name, self.tree.declNameLoc(other_node.*).?.slice(self.tree.source))) {
-                return self.genDecl(scope, other_node.*);
+                return self.genDecl(s, other_node.*);
             }
         }
 
@@ -1558,60 +1729,96 @@ fn resolve(self: *AstGen, _ref: Air.Inst.Ref) !?Air.Inst.Ref {
     var ref = _ref;
 
     while (true) {
-        if (in_decl and self.refIsType(ref)) {
-            return ref;
-        } else if (ref == .true or ref == .false or self.refTagIs(ref, &.{ .integer, .float })) {
-            return ref;
-        } else if (self.refTagIs(ref, &.{
-            .logical_and,
-            .logical_or,
-            .equal,
-            .not_equal,
-            .less_than,
-            .less_than_equal,
-            .greater_than,
-            .greater_than_equal,
-            .not,
-        })) {
-            return .bool_type;
-        } else if (self.refTagIs(ref, &.{
-            .mul,
-            .div,
-            .mod,
-            .add,
-            .sub,
-            .shift_left,
-            .shift_right,
-            .@"and",
-            .@"or",
-            .xor,
-        })) {
-            const inst_data = self.getInst(ref).data;
-            ref = inst_data.binary.lhs; // TODO
-        } else if (self.refTagIs(ref, &.{.negate})) {
-            const inst_data = self.getInst(ref).data;
-            ref = inst_data.ref;
-        } else if (self.refTagIs(ref, &.{.deref})) {
-            in_deref = true;
-            const inst_data = self.getInst(ref).data;
-            ref = inst_data.ref;
-        } else if (try self.resolveTypeOrValue(ref)) |res| {
-            ref = res;
-            in_decl = true;
-            if (in_deref) {
-                ref = self.getInst(res).data.ptr_type.elem_type;
-            }
-        } else {
-            return null;
+        switch (ref) {
+            .none => unreachable,
+
+            .true, .false => return ref,
+
+            .bool_type,
+            .i32_type,
+            .u32_type,
+            .f32_type,
+            .f16_type,
+            .sampler_type,
+            .comparison_sampler_type,
+            .external_sampled_texture_type,
+            => if (in_decl) return ref,
+
+            _ => switch (self.getInst(ref).tag) {
+                .vector_type,
+                .matrix_type,
+                .atomic_type,
+                .array_type,
+                .ptr_type,
+                .sampled_texture_type,
+                .multisampled_texture_type,
+                .storage_texture_type,
+                .depth_texture_type,
+                .struct_ref,
+                => if (in_decl) return ref,
+
+                .integer,
+                .float,
+                => return ref,
+
+                .logical_and,
+                .logical_or,
+                .equal,
+                .not_equal,
+                .less_than,
+                .less_than_equal,
+                .greater_than,
+                .greater_than_equal,
+                .not,
+                => return .bool_type,
+
+                .mul,
+                .div,
+                .mod,
+                .add,
+                .sub,
+                .shift_left,
+                .shift_right,
+                .@"and",
+                .@"or",
+                .xor,
+                => {
+                    const inst_data = self.getInst(ref).data;
+                    ref = inst_data.binary.lhs; // TODO
+                },
+
+                .negate => {
+                    const inst_data = self.getInst(ref).data;
+                    ref = inst_data.ref;
+                },
+
+                .deref => {
+                    in_deref = true;
+                    const inst_data = self.getInst(ref).data;
+                    ref = inst_data.ref;
+                },
+
+                else => {
+                    if (try self.resolveVar(ref)) |res| {
+                        ref = res;
+                        in_decl = true;
+                        if (in_deref) {
+                            ref = self.getInst(res).data.ptr_type.elem_type;
+                        }
+                    } else {
+                        return null;
+                    }
+                },
+            },
         }
     }
 }
 
 /// expects a var_ref index_access, field_access, global_variable_decl or global_const_decl
-fn resolveTypeOrValue(self: *AstGen, ref: Air.Inst.Ref) !?Air.Inst.Ref {
+fn resolveVar(self: *AstGen, ref: Air.Inst.Ref) !?Air.Inst.Ref {
     const inst = self.getInst(ref);
     switch (inst.tag) {
-        .var_ref => return self.resolveTypeOrValue(inst.data.ref),
+        .var_ref => return self.resolveVar(inst.data.ref),
         .index_access => return inst.data.index_access.elem_type,
         .field_access => {
             const struct_member = self.getInst(ref).data.field_access.field;
@@ -1624,7 +1831,7 @@ fn resolveTypeOrValue(self: *AstGen, ref: Air.Inst.Ref) !?Air.Inst.Ref {
             } else {
                 const maybe_value_ref = inst.data.global_variable_decl.expr;
                 if (self.refTagIs(maybe_value_ref, &.{.var_ref})) {
-                    return self.resolveTypeOrValue(maybe_value_ref);
+                    return self.resolveVar(maybe_value_ref);
                 }
                 return maybe_value_ref;
             }
@@ -1636,13 +1843,39 @@ fn resolveTypeOrValue(self: *AstGen, ref: Air.Inst.Ref) !?Air.Inst.Ref {
             } else {
                 const maybe_value_ref = inst.data.global_const_decl.expr;
                 if (self.refTagIs(maybe_value_ref, &.{.var_ref})) {
-                    return try self.resolveTypeOrValue(maybe_value_ref);
+                    return try self.resolveVar(maybe_value_ref);
                 }
                 return maybe_value_ref;
             }
         },
         else => return null,
     }
+}
+
+fn eqlType(self: *AstGen, a: Air.Inst.Ref, b: Air.Inst.Ref) bool {
+    if (a == b or
+        (a.isBool() and b.isBool()) or
+        (a.isFloatType() and b.isFloatType()) or
+        (a.isIntegerType() and b.isIntegerType()))
+    {
+        return true;
+    }
+
+    if ((self.refTagIs(a, &.{.integer}) and b.isIntegerType()) or
+        (self.refTagIs(b, &.{.integer}) and a.isIntegerType()) or
+        (self.refTagIs(a, &.{.float}) and b.isFloatType()) or
+        (self.refTagIs(b, &.{.float}) and a.isFloatType()))
+    {
+        return true;
+    }
+
+    if (a.isIndex() and b.isIndex()) {
+        const a_inst = self.getInst(a);
+        const b_inst = self.getInst(b);
+        if (a_inst.tag == b_inst.tag) return true;
+    }
+
+    return false;
 }
 
 fn allocInst(self: *AstGen) error{OutOfMemory}!Air.Inst.Index {

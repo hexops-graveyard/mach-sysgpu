@@ -634,11 +634,11 @@ fn functionDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     const params = try p.parameterList() orelse null_node;
     _ = try p.expectToken(.paren_right);
 
-    var result_attrs = null_node;
-    var result_type = null_node;
+    var return_attrs = null_node;
+    var return_type = null_node;
     if (p.eatToken(.arrow)) |_| {
-        result_attrs = try p.attributeList() orelse null_node;
-        result_type = try p.expectTypeSpecifier();
+        return_attrs = try p.attributeList() orelse null_node;
+        return_type = try p.expectTypeSpecifier();
     }
 
     const body = try p.block() orelse {
@@ -654,8 +654,8 @@ fn functionDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     const fn_proto = try p.addExtra(Node.FnProto{
         .attrs = attrs orelse null_node,
         .params = params,
-        .result_attrs = result_attrs,
-        .result_type = result_type,
+        .return_attrs = return_attrs,
+        .return_type = return_type,
     });
     return try p.addNode(.{
         .tag = .function,

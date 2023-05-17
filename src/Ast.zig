@@ -660,9 +660,9 @@ pub const Node = struct {
         /// span(fn_param)?
         params: NodeIndex = null_node,
         /// span(Attr)?
-        result_attrs: NodeIndex = null_node,
+        return_attrs: NodeIndex = null_node,
         /// Type?
-        result_type: NodeIndex = null_node,
+        return_type: NodeIndex = null_node,
     };
 
     pub const IfStatement = struct {
