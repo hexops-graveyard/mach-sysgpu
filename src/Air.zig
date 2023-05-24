@@ -135,7 +135,6 @@ pub const Inst = struct {
             };
         }
     };
-
     pub const Tag = enum(u6) {
         /// data is global_variable_decl
         global_variable_decl,
@@ -234,7 +233,6 @@ pub const Inst = struct {
             };
         }
     };
-
     pub const Data = union {
         ref: Ref,
         global_variable_decl: GlobalVariableDecl,
@@ -260,7 +258,6 @@ pub const Inst = struct {
         index_access: IndexAccess,
         bitcast: Bitcast,
     };
-
     pub const GlobalVariableDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
@@ -287,14 +284,12 @@ pub const Inst = struct {
             read_write,
         };
     };
-
     pub const GlobalConstDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         type: Ref = .none,
         expr: Ref,
     };
-
     pub const FnDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
@@ -329,7 +324,6 @@ pub const Inst = struct {
             invariant: bool = false,
         };
     };
-
     pub const FnArg = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
@@ -339,7 +333,6 @@ pub const Inst = struct {
         interpolate: ?Interpolate = null,
         invariant: bool = false,
     };
-
     pub const BuiltinValue = enum {
         none,
         vertex_index,
@@ -372,7 +365,6 @@ pub const Inst = struct {
             };
         }
     };
-
     pub const Interpolate = struct {
         type: Type,
         /// nullable
@@ -391,41 +383,32 @@ pub const Inst = struct {
             sample,
         };
     };
-
     pub const StructDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         /// index to zero-terminated members Ref in `refs`
         members: u32,
     };
-
     pub const StructMember = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         type: Ref,
         @"align": u29, // 0 means null
+        size: u32, // 0 means null
     };
-
     pub const VectorType = struct {
         elem_type: Ref,
         size: Size,
 
         pub const Size = enum { two, three, four };
     };
-
     pub const MatrixType = struct {
         elem_type: Ref,
         cols: VectorType.Size,
         rows: VectorType.Size,
     };
-
     pub const AtomicType = struct { elem_type: Ref };
-
-    pub const ArrayType = struct {
-        elem_type: Ref,
-        size: Ref = .none,
-    };
-
+    pub const ArrayType = struct { elem_type: Ref, size: Ref = .none };
     pub const PointerType = struct {
         elem_type: Ref,
         addr_space: AddressSpace,
@@ -446,7 +429,6 @@ pub const Inst = struct {
             read_write,
         };
     };
-
     pub const SampledTextureType = struct {
         kind: Kind,
         elem_type: Ref,
@@ -460,14 +442,12 @@ pub const Inst = struct {
             cube_array,
         };
     };
-
     pub const MultisampledTextureType = struct {
         kind: Kind,
         elem_type: Ref,
 
         pub const Kind = enum { @"2d" };
     };
-
     pub const StorageTextureType = struct {
         kind: Kind,
         texel_format: TexelFormat,
@@ -502,7 +482,6 @@ pub const Inst = struct {
 
         pub const AccessMode = enum { write };
     };
-
     pub const DepthTextureType = enum {
         @"2d",
         @"2d_array",
@@ -510,37 +489,28 @@ pub const Inst = struct {
         cube_array,
         multisampled_2d,
     };
-
-    pub const BinaryExpr = struct {
-        lhs: Ref,
-        rhs: Ref,
-    };
-
+    pub const BinaryExpr = struct { lhs: Ref, rhs: Ref };
     pub const FieldAccess = struct {
         base: Ref,
         field: Ref,
         /// index to zero-terminated string in `strings`
         name: u32,
     };
-
     pub const IndexAccess = struct {
         base: Ref,
         elem_type: Ref,
         index: Ref,
     };
-
     pub const Bitcast = struct {
         type: Ref,
         expr: Ref,
         result_type: Ref,
     };
-
     pub const Integer = struct {
         value: i64,
         base: u8,
         tag: enum { none, i, u },
     };
-
     pub const Float = struct {
         value: f64,
         base: u8,

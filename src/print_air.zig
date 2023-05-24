@@ -11,7 +11,7 @@ pub fn printAir(ir: Air, writer: anytype) !void {
     };
     const globals = std.mem.sliceTo(ir.refs[ir.globals_index..], .none);
     for (globals) |ref| {
-        try p.printInst(0, ref, false);
+        try p.printInst(0, ref);
     }
 }
 
@@ -21,7 +21,7 @@ fn Printer(comptime Writer: type) type {
         writer: Writer,
         tty: std.debug.TTY.Config,
 
-        fn printInst(self: @This(), indent: u16, ref: Air.Inst.Ref, decl_scope: bool) Writer.Error!void {
+        fn printInst(self: @This(), indent: u16, ref: Air.Inst.Ref) Writer.Error!void {
             switch (ref) {
                 .none,
                 .bool_type,
@@ -35,19 +35,13 @@ fn Printer(comptime Writer: type) type {
                 .true,
                 .false,
                 => {
-                    try self.tty.setColor(self.writer, .Green);
+                    try self.tty.setColor(self.writer, .White);
                     try self.writer.print(".{s}", .{@tagName(ref)});
                     try self.tty.setColor(self.writer, .Reset);
                 },
                 _ => {
                     const index = ref.toIndex().?;
                     const inst = self.ir.instructions[index];
-
-                    if (decl_scope and inst.tag.isDecl()) {
-                        try self.writer.print("&[{d}]", .{index});
-                        return;
-                    }
-
                     switch (inst.tag) {
                         .global_variable_decl => {
                             std.debug.assert(indent == 0);
@@ -92,6 +86,7 @@ fn Printer(comptime Writer: type) type {
                         => try self.printBinary(indent, index),
                         .field_access => try self.printFieldAccess(indent, index),
                         .index_access => try self.printIndexAccess(indent, index),
+                        .struct_ref, .var_ref => try self.printRef(index),
                         else => {
                             try self.instStart(index);
                             try self.writer.writeAll("TODO");
@@ -100,6 +95,15 @@ fn Printer(comptime Writer: type) type {
                     }
                 },
             }
+        }
+
+        fn printRef(self: @This(), index: Air.Inst.Index) !void {
+            const inst = self.ir.instructions[index];
+            try self.instStart(index);
+            try self.tty.setColor(self.writer, .Green);
+            try self.writer.print("{d}", .{inst.data.ref.toIndex().?});
+            try self.tty.setColor(self.writer, .Reset);
+            try self.instEnd();
         }
 
         fn printGlobalVariable(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
@@ -140,6 +144,12 @@ fn Printer(comptime Writer: type) type {
                 try self.instBlockStart(member_index);
                 try self.printField(indent + 3, "name", member_inst.data.struct_member.name);
                 try self.printField(indent + 3, "type", member_inst.data.struct_member.type);
+                if (member_inst.data.struct_member.@"align" != 0) {
+                    try self.printField(indent + 3, "align", member_inst.data.struct_member.@"align");
+                }
+                if (member_inst.data.struct_member.size != 0) {
+                    try self.printField(indent + 3, "size", member_inst.data.struct_member.size);
+                }
                 try self.instBlockEnd(indent + 2);
                 try self.printFieldEnd();
             }
@@ -196,7 +206,7 @@ fn Printer(comptime Writer: type) type {
                 const statements = std.mem.sliceTo(self.ir.refs[inst.data.fn_decl.statements..], .none);
                 for (statements) |statement| {
                     try self.printIndent(indent + 2);
-                    try self.printInst(indent + 2, statement, true);
+                    try self.printInst(indent + 2, statement);
                     try self.printFieldEnd();
                 }
                 try self.listEnd(indent + 1);
@@ -260,7 +270,7 @@ fn Printer(comptime Writer: type) type {
             try self.tty.setColor(self.writer, .Dim);
             try self.writer.print("<", .{});
             try self.tty.setColor(self.writer, .Reset);
-            try self.tty.setColor(self.writer, .Cyan);
+            try self.tty.setColor(self.writer, .Green);
             try self.writer.print("{d}", .{index});
             try self.tty.setColor(self.writer, .Reset);
             try self.tty.setColor(self.writer, .Dim);
@@ -283,7 +293,7 @@ fn Printer(comptime Writer: type) type {
             try self.tty.setColor(self.writer, .Dim);
             try self.writer.print("<", .{});
             try self.tty.setColor(self.writer, .Reset);
-            try self.tty.setColor(self.writer, .Cyan);
+            try self.tty.setColor(self.writer, .Green);
             try self.writer.print("{d}", .{index});
             try self.tty.setColor(self.writer, .Reset);
             try self.tty.setColor(self.writer, .Dim);
@@ -314,7 +324,7 @@ fn Printer(comptime Writer: type) type {
 
         fn printFieldName(self: @This(), indent: u16, name: []const u8) !void {
             try self.printIndent(indent);
-            try self.tty.setColor(self.writer, .White);
+            try self.tty.setColor(self.writer, .Reset);
             try self.writer.print("{s}", .{name});
             try self.tty.setColor(self.writer, .Dim);
             try self.writer.print(": ", .{});
@@ -324,16 +334,16 @@ fn Printer(comptime Writer: type) type {
         fn printField(self: @This(), indent: u16, name: []const u8, value: anytype) !void {
             try self.printFieldName(indent, name);
             switch (@TypeOf(value)) {
-                Air.Inst.Ref => try self.printInst(indent, value, true),
+                Air.Inst.Ref => try self.printInst(indent, value),
                 u32 => {
                     // assume string index
-                    try self.tty.setColor(self.writer, .Yellow);
+                    try self.tty.setColor(self.writer, .Cyan);
                     try self.writer.print("'{s}'", .{self.ir.getStr(value)});
                     try self.tty.setColor(self.writer, .Reset);
                 },
                 else => {
                     if (@typeInfo(@TypeOf(value)) == .Enum) {
-                        try self.tty.setColor(self.writer, .Green);
+                        try self.tty.setColor(self.writer, .Cyan);
                         try self.writer.print(".{s}", .{@tagName(value)});
                         try self.tty.setColor(self.writer, .Reset);
                     } else {
