@@ -104,9 +104,10 @@ test "gkurve" {
 test "must pass" {
     {
         const source =
+            \\const expr = 5 + 6;
             \\var v0: i32;
             \\struct G {
-            \\  l: L,
+            \\  @align(expr % 2 + 3) l: L,
             \\}
             \\struct L {
             \\  f: array<O>,

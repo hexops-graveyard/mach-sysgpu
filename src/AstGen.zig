@@ -25,7 +25,7 @@ pub const Scope = struct {
     parent: *Scope,
     decls: std.AutoHashMapUnmanaged(NodeIndex, error{AnalysisFail}!Air.Inst.Ref) = .{},
 
-    pub const Tag = enum {
+    const Tag = enum {
         root,
         func,
         block,
@@ -128,7 +128,7 @@ fn genGlobalConstDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.R
     }
 
     const expr = try self.genExpr(scope, node_rhs);
-    if (!self.isConstExpr(expr)) {
+    if (self.resolveConstExpr(expr) == null) {
         try self.errors.add(
             name_loc,
             "value of '{s}' must be a const-expression",
@@ -152,12 +152,9 @@ fn genGlobalConstDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.R
     return indexToRef(inst);
 }
 
-fn isConstExpr(self: *AstGen, ref: Air.Inst.Ref) bool {
-    const inst = self.getInst(ref);
+fn resolveConstExpr(self: *AstGen, ref: Air.Inst.Ref) ?Value {
     switch (ref) {
         .none => unreachable,
-        .true,
-        .false,
         .bool_type,
         .i32_type,
         .u32_type,
@@ -166,45 +163,72 @@ fn isConstExpr(self: *AstGen, ref: Air.Inst.Ref) bool {
         .sampler_type,
         .comparison_sampler_type,
         .external_sampled_texture_type,
-        => return true,
-        _ => switch (inst.tag) {
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .ptr_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            .struct_ref,
-            .integer,
-            .float,
-            .global_const,
-            => return true,
-            // TODO: fn_call
-            // .fn_call => return inst.data.fn_call.fn.is_const,
-            .array_type => return self.isConstExpr(inst.data.array_type.size),
-            .not, .negate, .deref => return self.isConstExpr(inst.data.ref),
-            .mul,
-            .div,
-            .mod,
-            .add,
-            .sub,
-            .shift_left,
-            .shift_right,
-            .@"and",
-            .@"or",
-            .xor,
-            .logical_and,
-            .logical_or,
-            .equal,
-            .not_equal,
-            .less_than,
-            .less_than_equal,
-            .greater_than,
-            .greater_than_equal,
-            => return self.isConstExpr(inst.data.binary.lhs) and self.isConstExpr(inst.data.binary.rhs),
-            else => return false,
+        => return null,
+        .true => return .{ .bool = true },
+        .false => return .{ .bool = false },
+        _ => {
+            const inst = self.getInst(ref);
+            switch (inst.tag) {
+                // TODO: fn_call
+                .integer => return .{ .integer = inst.data.integer.value },
+                .float => return .{ .float = inst.data.float.value },
+                .negate, .not => {
+                    const unary = self.resolveConstExpr(inst.data.ref) orelse return null;
+                    return switch (inst.tag) {
+                        .negate => unary.negate(),
+                        .not => unary.not(),
+                        else => unreachable,
+                    };
+                },
+                .mul,
+                .div,
+                .mod,
+                .add,
+                .sub,
+                .shift_left,
+                .shift_right,
+                .@"and",
+                .@"or",
+                .xor,
+                .equal,
+                .not_equal,
+                .less_than,
+                .less_than_equal,
+                .greater_than,
+                .greater_than_equal,
+                .logical_and,
+                .logical_or,
+                => {
+                    const lhs = self.resolveConstExpr(inst.data.binary.lhs) orelse return null;
+                    const rhs = self.resolveConstExpr(inst.data.binary.rhs) orelse return null;
+                    return switch (inst.tag) {
+                        .mul => lhs.mul(rhs),
+                        .div => lhs.div(rhs),
+                        .mod => lhs.mod(rhs),
+                        .add => lhs.add(rhs),
+                        .sub => lhs.sub(rhs),
+                        .shift_left => lhs.shiftLeft(rhs),
+                        .shift_right => lhs.shiftRight(rhs),
+                        .@"and" => lhs.bitwiseAnd(rhs),
+                        .@"or" => lhs.bitwiseOr(rhs),
+                        .xor => lhs.bitwiseXor(rhs),
+                        .equal => lhs.equal(rhs),
+                        .not_equal => lhs.notEqual(rhs),
+                        .less_than => lhs.lessThan(rhs),
+                        .greater_than => lhs.greaterThan(rhs),
+                        .less_than_equal => lhs.lessThanEqual(rhs),
+                        .greater_than_equal => lhs.greaterThanEqual(rhs),
+                        .logical_and => lhs.logicalAnd(rhs),
+                        .logical_or => lhs.logicalOr(rhs),
+                        else => unreachable,
+                    };
+                },
+                .var_ref => {
+                    const res = try self.resolveVar(ref) orelse return null;
+                    return self.resolveConstExpr(res);
+                },
+                else => return null,
+            }
         },
     }
 }
@@ -283,10 +307,10 @@ fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Re
                     binding = try self.genExpr(scope, attr_node_lhs);
                     const binding_res = try self.resolve(binding);
 
-                    if (!self.isConstExpr(binding)) {
+                    if (self.resolveConstExpr(binding) == null) {
                         try self.errors.add(
                             attr_node_lhs_loc,
-                            "expected const-expressions, found '{s}'",
+                            "expected const-expression, found '{s}'",
                             .{attr_node_lhs_loc.slice(self.tree.source)},
                             null,
                         );
@@ -319,10 +343,10 @@ fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Re
                     group = try self.genExpr(scope, attr_node_lhs);
                     const group_res = try self.resolve(group);
 
-                    if (!self.isConstExpr(group)) {
+                    if (self.resolveConstExpr(group) == null) {
                         try self.errors.add(
                             attr_node_lhs_loc,
-                            "expected const-expressions, found '{s}'",
+                            "expected const-expression, found '{s}'",
                             .{attr_node_lhs_loc.slice(self.tree.source)},
                             null,
                         );
@@ -407,6 +431,7 @@ fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     for (member_nodes_list, 0..) |member_node, i| {
         const member_inst = try self.allocInst();
         const member_name_loc = self.tree.tokenLoc(self.tree.nodeToken(member_node));
+        const member_attrs_node = self.tree.nodeLHS(member_node);
         const member_type_node = self.tree.nodeRHS(member_node);
         const member_type_loc = self.tree.nodeLoc(member_type_node);
         const member_type_ref = self.genType(scope, member_type_node) catch |err| switch (err) {
@@ -419,32 +444,7 @@ fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
             member_type_ref.isNumberType() or
             member_type_ref == .bool_type;
 
-        if (is_valid_type) {
-            if (self.refTagIs(member_type_ref, &.{.array_type})) {
-                const array_size = self.getInst(member_type_ref).data.array_type.size;
-                if (array_size == .none and i + 1 != member_nodes_list.len) {
-                    try self.errors.add(
-                        member_name_loc,
-                        "struct member with runtime-sized array type, must be the last member of the structure",
-                        .{},
-                        null,
-                    );
-                }
-            }
-
-            const name_index = try self.addString(member_name_loc.slice(self.tree.source));
-            self.instructions.items[member_inst] = .{
-                .tag = .struct_member,
-                .data = .{
-                    .struct_member = .{
-                        .name = name_index,
-                        .type = member_type_ref,
-                        .@"align" = 0, // TODO
-                    },
-                },
-            };
-            try self.scratch.append(self.allocator, indexToRef(member_inst));
-        } else {
+        if (!is_valid_type) {
             try self.errors.add(
                 member_name_loc,
                 "invalid struct member type '{s}'",
@@ -452,6 +452,78 @@ fn genStruct(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
                 null,
             );
         }
+
+        if (self.refTagIs(member_type_ref, &.{.array_type})) {
+            const array_size = self.getInst(member_type_ref).data.array_type.size;
+            if (array_size == .none and i + 1 != member_nodes_list.len) {
+                try self.errors.add(
+                    member_name_loc,
+                    "struct member with runtime-sized array type, must be the last member of the structure",
+                    .{},
+                    null,
+                );
+            }
+        }
+
+        var @"align": u29 = 0;
+        var size: u32 = 0;
+        if (member_attrs_node != null_node) {
+            for (self.tree.spanToList(member_attrs_node)) |attr| {
+                switch (self.tree.nodeTag(attr)) {
+                    .attr_align => {
+                        const expr = try self.genExpr(scope, self.tree.nodeLHS(attr));
+                        const expr_res = self.resolveConstExpr(expr);
+                        if (expr_res == null or expr_res.? != .integer) {
+                            try self.errors.add(
+                                self.tree.nodeLoc(self.tree.nodeLHS(attr)),
+                                "expected integer const-expression",
+                                .{},
+                                null,
+                            );
+                            return error.AnalysisFail;
+                        }
+                        @"align" = @intCast(u29, expr_res.?.integer);
+                    },
+                    .attr_size => {
+                        const expr = try self.genExpr(scope, self.tree.nodeLHS(attr));
+                        const expr_res = self.resolveConstExpr(expr);
+                        if (expr_res == null or expr_res.? != .integer) {
+                            try self.errors.add(
+                                self.tree.nodeLoc(self.tree.nodeLHS(attr)),
+                                "expected integer const-expression",
+                                .{},
+                                null,
+                            );
+                            return error.AnalysisFail;
+                        }
+                        size = @intCast(u32, expr_res.?.integer);
+                    },
+                    else => {
+                        try self.errors.add(
+                            self.tree.nodeLoc(attr),
+                            "unexpected attribute '{s}'",
+                            .{self.tree.nodeLoc(attr).slice(self.tree.source)},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    },
+                }
+            }
+        }
+
+        const name_index = try self.addString(member_name_loc.slice(self.tree.source));
+        self.instructions.items[member_inst] = .{
+            .tag = .struct_member,
+            .data = .{
+                .struct_member = .{
+                    .name = name_index,
+                    .type = member_type_ref,
+                    .@"align" = @"align",
+                    .size = size,
+                },
+            },
+        };
+        try self.scratch.append(self.allocator, indexToRef(member_inst));
     }
 
     const name = self.tree.declNameLoc(node).?.slice(self.tree.source);
@@ -570,10 +642,10 @@ fn genFnDecl(self: *AstGen, global_scope: *Scope, node: NodeIndex) !Air.Inst.Ref
         var workgroup_size = Air.Inst.FnDecl.Stage.WorkgroupSize{
             .x = x: {
                 const x = try self.genExpr(scope, workgroup_size_data.x);
-                if (!self.isConstExpr(x)) {
+                if (self.resolveConstExpr(x) == null) {
                     try self.errors.add(
                         self.tree.nodeLoc(workgroup_size_data.x),
-                        "expected const-expressions",
+                        "expected const-expression",
                         .{},
                         null,
                     );
@@ -585,10 +657,10 @@ fn genFnDecl(self: *AstGen, global_scope: *Scope, node: NodeIndex) !Air.Inst.Ref
 
         if (workgroup_size_data.y != null_node) {
             workgroup_size.y = try self.genExpr(scope, workgroup_size_data.y);
-            if (!self.isConstExpr(workgroup_size.y)) {
+            if (self.resolveConstExpr(workgroup_size.y) == null) {
                 try self.errors.add(
                     self.tree.nodeLoc(workgroup_size_data.y),
-                    "expected const-expressions",
+                    "expected const-expression",
                     .{},
                     null,
                 );
@@ -598,10 +670,10 @@ fn genFnDecl(self: *AstGen, global_scope: *Scope, node: NodeIndex) !Air.Inst.Ref
 
         if (workgroup_size_data.z != null_node) {
             workgroup_size.z = try self.genExpr(scope, workgroup_size_data.z);
-            if (!self.isConstExpr(workgroup_size.z)) {
+            if (self.resolveConstExpr(workgroup_size.z) == null) {
                 try self.errors.add(
                     self.tree.nodeLoc(workgroup_size_data.z),
-                    "expected const-expressions",
+                    "expected const-expression",
                     .{},
                     null,
                 );
@@ -785,6 +857,9 @@ fn genCompoundAssign(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Re
     return indexToRef(inst);
 }
 
+// TODO: check for float and integer operations
+// TODO: check for floats bit shifting operations
+// TODO: check for floats bitwise operations
 fn genExpr(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     const node_tag = self.tree.nodeTag(node);
     switch (node_tag) {
@@ -1020,6 +1095,7 @@ fn genAddrOf(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     return indexToRef(inst_index);
 }
 
+// TODO!!!: check for int and float operations
 fn genBinary(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
     const node_tag = self.tree.nodeTag(node);
     const node_loc = self.tree.nodeLoc(node);
@@ -1987,11 +2063,11 @@ fn getInst(self: *AstGen, ref: Air.Inst.Ref) Air.Inst {
     return self.instructions.items[ref.toIndex().?];
 }
 
-pub fn indexToRef(index: Air.Inst.Index) Air.Inst.Ref {
+fn indexToRef(index: Air.Inst.Index) Air.Inst.Ref {
     return @intToEnum(Air.Inst.Ref, Air.Inst.Ref.start_index + index);
 }
 
-pub fn refTagIs(self: AstGen, ref: Air.Inst.Ref, one_of: []const Air.Inst.Tag) bool {
+fn refTagIs(self: AstGen, ref: Air.Inst.Ref, one_of: []const Air.Inst.Tag) bool {
     const indx = ref.toIndex() orelse return false;
     const tag = self.instructions.items[indx].tag;
     for (one_of) |t| {
@@ -1999,3 +2075,161 @@ pub fn refTagIs(self: AstGen, ref: Air.Inst.Ref, one_of: []const Air.Inst.Tag) b
     }
     return false;
 }
+
+const Value = union(enum) {
+    integer: i64,
+    float: f64,
+    bool: bool,
+
+    fn negate(unary: Value) Value {
+        return switch (unary) {
+            .integer => .{ .integer = -unary.integer },
+            .float => .{ .float = -unary.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn not(unary: Value) Value {
+        return switch (unary) {
+            .bool => .{ .bool = !unary.bool },
+            .integer, .float => unreachable,
+        };
+    }
+
+    fn mul(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = lhs.integer * rhs.integer },
+            .float => .{ .float = lhs.float * rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn div(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = @divExact(lhs.integer, rhs.integer) },
+            .float => .{ .float = lhs.float / rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn mod(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = @rem(lhs.integer, rhs.integer) },
+            .float => .{ .float = @rem(lhs.float, rhs.float) },
+            .bool => unreachable,
+        };
+    }
+
+    fn add(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = lhs.integer + rhs.integer },
+            .float => .{ .float = lhs.float + rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn sub(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = lhs.integer - rhs.integer },
+            .float => .{ .float = lhs.float - rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn shiftLeft(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = lhs.integer << @intCast(u6, rhs.integer) },
+            .float, .bool => unreachable,
+        };
+    }
+
+    fn shiftRight(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = lhs.integer >> @intCast(u6, rhs.integer) },
+            .float, .bool => unreachable,
+        };
+    }
+
+    fn bitwiseAnd(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = lhs.integer & rhs.integer },
+            .float, .bool => unreachable,
+        };
+    }
+
+    fn bitwiseOr(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = lhs.integer | rhs.integer },
+            .float, .bool => unreachable,
+        };
+    }
+
+    fn bitwiseXor(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .integer = lhs.integer ^ rhs.integer },
+            .float, .bool => unreachable,
+        };
+    }
+
+    fn equal(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .bool = lhs.integer == rhs.integer },
+            .float => .{ .bool = lhs.float == rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn notEqual(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .bool = lhs.integer != rhs.integer },
+            .float => .{ .bool = lhs.float != rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn lessThan(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .bool = lhs.integer < rhs.integer },
+            .float => .{ .bool = lhs.float < rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn greaterThan(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .bool = lhs.integer > rhs.integer },
+            .float => .{ .bool = lhs.float > rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn lessThanEqual(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .bool = lhs.integer <= rhs.integer },
+            .float => .{ .bool = lhs.float <= rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn greaterThanEqual(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .integer => .{ .bool = lhs.integer >= rhs.integer },
+            .float => .{ .bool = lhs.float >= rhs.float },
+            .bool => unreachable,
+        };
+    }
+
+    fn logicalAnd(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .bool => .{ .bool = lhs.bool and rhs.bool },
+            .integer, .float => unreachable,
+        };
+    }
+
+    fn logicalOr(lhs: Value, rhs: Value) Value {
+        return switch (lhs) {
+            .bool => .{ .bool = lhs.bool or rhs.bool },
+            .integer, .float => unreachable,
+        };
+    }
+};
