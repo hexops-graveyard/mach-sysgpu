@@ -140,7 +140,7 @@ pub const Inst = struct {
         /// data is global_variable_decl
         global_variable_decl,
         /// data is const_decl
-        global_const_decl,
+        global_const,
 
         /// data is fn_decl
         fn_decl,
@@ -238,7 +238,7 @@ pub const Inst = struct {
     pub const Data = union {
         ref: Ref,
         global_variable_decl: GlobalVariableDecl,
-        global_const_decl: GlobalConstDecl,
+        global_const: GlobalConstDecl,
         fn_decl: FnDecl,
         fn_param: FnArg,
         struct_decl: StructDecl,
@@ -299,6 +299,7 @@ pub const Inst = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         stage: Stage,
+        is_const: bool,
         /// nullable
         /// index to zero-terminated params Ref in `refs`
         params: u32 = 0,

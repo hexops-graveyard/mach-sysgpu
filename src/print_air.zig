@@ -54,7 +54,7 @@ fn Printer(comptime Writer: type) type {
                             try self.printGlobalVariable(indent, index);
                             try self.printFieldEnd();
                         },
-                        .global_const_decl => {
+                        .global_const => {
                             std.debug.assert(indent == 0);
                             try self.printConstDecl(indent, index);
                             try self.printFieldEnd();
@@ -120,9 +120,9 @@ fn Printer(comptime Writer: type) type {
         fn printConstDecl(self: @This(), indent: u16, index: Air.Inst.Index) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
-            try self.printField(indent + 1, "name", inst.data.global_const_decl.name);
-            try self.printField(indent + 1, "type", inst.data.global_const_decl.type);
-            try self.printField(indent + 1, "value", inst.data.global_const_decl.expr);
+            try self.printField(indent + 1, "name", inst.data.global_const.name);
+            try self.printField(indent + 1, "type", inst.data.global_const.type);
+            try self.printField(indent + 1, "value", inst.data.global_const.expr);
             try self.instBlockEnd(indent);
         }
 

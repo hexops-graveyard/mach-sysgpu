@@ -140,9 +140,9 @@ fn genGlobalConstDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.R
 
     const name_index = try self.addString(name_loc.slice(self.tree.source));
     self.instructions.items[inst] = .{
-        .tag = .global_const_decl,
+        .tag = .global_const,
         .data = .{
-            .global_const_decl = .{
+            .global_const = .{
                 .name = name_index,
                 .type = var_type,
                 .expr = expr,
@@ -152,11 +152,61 @@ fn genGlobalConstDecl(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.R
     return indexToRef(inst);
 }
 
-// TODO
-fn isConstExpr(self: *AstGen, expr: Air.Inst.Ref) bool {
-    _ = self;
-    _ = expr;
-    return true;
+fn isConstExpr(self: *AstGen, ref: Air.Inst.Ref) bool {
+    const inst = self.getInst(ref);
+    switch (ref) {
+        .none => unreachable,
+        .true,
+        .false,
+        .bool_type,
+        .i32_type,
+        .u32_type,
+        .f32_type,
+        .f16_type,
+        .sampler_type,
+        .comparison_sampler_type,
+        .external_sampled_texture_type,
+        => return true,
+        _ => switch (inst.tag) {
+            .vector_type,
+            .matrix_type,
+            .atomic_type,
+            .ptr_type,
+            .sampled_texture_type,
+            .multisampled_texture_type,
+            .storage_texture_type,
+            .depth_texture_type,
+            .struct_ref,
+            .integer,
+            .float,
+            .global_const,
+            => return true,
+            // TODO: fn_call
+            // .fn_call => return inst.data.fn_call.fn.is_const,
+            .array_type => return self.isConstExpr(inst.data.array_type.size),
+            .not, .negate, .deref => return self.isConstExpr(inst.data.ref),
+            .mul,
+            .div,
+            .mod,
+            .add,
+            .sub,
+            .shift_left,
+            .shift_right,
+            .@"and",
+            .@"or",
+            .xor,
+            .logical_and,
+            .logical_or,
+            .equal,
+            .not_equal,
+            .less_than,
+            .less_than_equal,
+            .greater_than,
+            .greater_than_equal,
+            => return self.isConstExpr(inst.data.binary.lhs) and self.isConstExpr(inst.data.binary.rhs),
+            else => return false,
+        },
+    }
 }
 
 fn genGlobalVariable(self: *AstGen, scope: *Scope, node: NodeIndex) !Air.Inst.Ref {
@@ -460,6 +510,7 @@ fn genFnDecl(self: *AstGen, global_scope: *Scope, node: NodeIndex) !Air.Inst.Ref
 
     var stage: Air.Inst.FnDecl.Stage = .normal;
     var workgroup_size_attr = null_node;
+    var is_const = false;
     if (fn_proto.attrs != null_node) {
         for (self.tree.spanToList(fn_proto.attrs)) |attr| {
             switch (self.tree.nodeTag(attr)) {
@@ -480,6 +531,7 @@ fn genFnDecl(self: *AstGen, global_scope: *Scope, node: NodeIndex) !Air.Inst.Ref
                     };
                 },
                 .attr_workgroup_size => workgroup_size_attr = attr,
+                .attr_const => is_const = true,
                 else => {
                     try self.errors.add(
                         self.tree.nodeLoc(attr),
@@ -581,6 +633,7 @@ fn genFnDecl(self: *AstGen, global_scope: *Scope, node: NodeIndex) !Air.Inst.Ref
             .fn_decl = .{
                 .name = name_index,
                 .stage = stage,
+                .is_const = is_const,
                 .params = params,
                 .return_type = return_type,
                 .return_attrs = return_attrs,
@@ -1267,9 +1320,35 @@ fn genType(self: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail, O
         .ident => {
             const node_loc = self.tree.nodeLoc(node);
             const decl_ref = try self.findSymbol(scope, self.tree.nodeToken(node));
-            if (self.refIsType(decl_ref)) {
-                return decl_ref;
-            } else if (self.refTagIs(decl_ref, &.{.struct_decl})) {
+            switch (decl_ref) {
+                .none => unreachable,
+                .true, .false => {},
+                .bool_type,
+                .i32_type,
+                .u32_type,
+                .f32_type,
+                .f16_type,
+                .sampler_type,
+                .comparison_sampler_type,
+                .external_sampled_texture_type,
+                => return decl_ref,
+                _ => switch (self.getInst(decl_ref).tag) {
+                    .vector_type,
+                    .matrix_type,
+                    .atomic_type,
+                    .array_type,
+                    .ptr_type,
+                    .sampled_texture_type,
+                    .multisampled_texture_type,
+                    .storage_texture_type,
+                    .depth_texture_type,
+                    .struct_ref,
+                    => return decl_ref,
+                    else => {},
+                },
+            }
+
+            if (self.refTagIs(decl_ref, &.{.struct_decl})) {
                 const inst = try self.addInst(.{ .tag = .struct_ref, .data = .{ .ref = decl_ref } });
                 return indexToRef(inst);
             } else {
@@ -1814,7 +1893,7 @@ fn resolve(self: *AstGen, _ref: Air.Inst.Ref) !?Air.Inst.Ref {
     }
 }
 
-/// expects a var_ref index_access, field_access, global_variable_decl or global_const_decl
+/// expects a var_ref index_access, field_access, global_variable_decl or global_const
 fn resolveVar(self: *AstGen, ref: Air.Inst.Ref) !?Air.Inst.Ref {
     const inst = self.getInst(ref);
     switch (inst.tag) {
@@ -1836,12 +1915,12 @@ fn resolveVar(self: *AstGen, ref: Air.Inst.Ref) !?Air.Inst.Ref {
                 return maybe_value_ref;
             }
         },
-        .global_const_decl => {
-            const decl_type = inst.data.global_const_decl.type;
+        .global_const => {
+            const decl_type = inst.data.global_const.type;
             if (decl_type != .none) {
                 return decl_type;
             } else {
-                const maybe_value_ref = inst.data.global_const_decl.expr;
+                const maybe_value_ref = inst.data.global_const.expr;
                 if (self.refTagIs(maybe_value_ref, &.{.var_ref})) {
                     return try self.resolveVar(maybe_value_ref);
                 }
@@ -1919,32 +1998,4 @@ pub fn refTagIs(self: AstGen, ref: Air.Inst.Ref, one_of: []const Air.Inst.Tag) b
         if (tag == t) return true;
     }
     return false;
-}
-
-pub fn refIsType(self: AstGen, ref: Air.Inst.Ref) bool {
-    return switch (ref) {
-        .none => unreachable,
-        .true, .false => false,
-        .bool_type,
-        .i32_type,
-        .u32_type,
-        .f32_type,
-        .f16_type,
-        .sampler_type,
-        .comparison_sampler_type,
-        .external_sampled_texture_type,
-        => true,
-        _ => return self.refTagIs(ref, &.{
-            .vector_type,
-            .matrix_type,
-            .atomic_type,
-            .array_type,
-            .ptr_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            .struct_ref,
-        }),
-    };
 }
