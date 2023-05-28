@@ -410,4 +410,13 @@ test "must error" {
             .loc = .{ .start = 9, .end = 13 },
         });
     }
+    {
+        const source =
+            \\var v0 = 5 << 1.0;
+        ;
+        try expectError(source, .{
+            .msg = "invalid operation",
+            .loc = .{ .start = 11, .end = 13 },
+        });
+    }
 }

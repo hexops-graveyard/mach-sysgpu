@@ -1079,36 +1079,62 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         );
         return error.AnalysisFail;
     };
+    const lhs_res_tag = astgen.getInst(lhs_res).tag;
+    const rhs_res_tag = astgen.getInst(rhs_res).tag;
 
-    _ = rhs_res;
-    _ = lhs_res;
-    _ = node_loc;
-    // TODO
-    // switch (inst_tag) {
-    //     .shift_left, .shift_right, .@"and", .@"or", .xor => {
-    //         const is_valid = lhs_res.isIntegerType() and rhs_res.isIntegerType();
-    //         if (!is_valid) {
-    //             try astgen.errors.add(node_loc, "invalid operation", .{}, null);
-    //             return error.AnalysisFail;
-    //         }
-    //     },
-    //     .logical_and, .logical_or => {
-    //         const is_valid = lhs_res.isBool() and rhs_res.isBool();
-    //         if (!is_valid) {
-    //             try astgen.errors.add(node_loc, "invalid operation", .{}, null);
-    //             return error.AnalysisFail;
-    //         }
-    //     },
-    //     else => {
-    //         const is_valid =
-    //             (lhs_res.isIntegerType() and rhs_res.isIntegerType()) or
-    //             (lhs_res.isFloatType() and rhs_res.isFloatType());
-    //         if (!is_valid) {
-    //             try astgen.errors.add(node_loc, "invalid operation", .{}, null);
-    //             return error.AnalysisFail;
-    //         }
-    //     },
-    // }
+    var is_valid = false;
+    switch (inst_tag) {
+        .shift_left, .shift_right, .@"and", .@"or", .xor => {
+            switch (lhs_res_tag) {
+                .u32_type, .i32_type, .integer => switch (rhs_res_tag) {
+                    .u32_type, .i32_type, .integer => {
+                        is_valid = true;
+                    },
+                    else => {},
+                },
+                else => {},
+            }
+        },
+        .logical_and, .logical_or => {
+            switch (lhs_res_tag) {
+                .bool_type, .true, .false => switch (rhs_res_tag) {
+                    .bool_type, .true, .false => {
+                        is_valid = true;
+                    },
+                    else => {},
+                },
+                else => {},
+            }
+        },
+        else => {
+            switch (lhs_res_tag) {
+                .u32_type,
+                .i32_type,
+                .f32_type,
+                .f16_type,
+                .integer,
+                .float,
+                => switch (rhs_res_tag) {
+                    .u32_type,
+                    .i32_type,
+                    .f32_type,
+                    .f16_type,
+                    .integer,
+                    .float,
+                    => {
+                        is_valid = true;
+                    },
+                    else => {},
+                },
+                else => {},
+            }
+        },
+    }
+
+    if (!is_valid) {
+        try astgen.errors.add(node_loc, "invalid operation", .{}, null);
+        return error.AnalysisFail;
+    }
 
     const inst = try astgen.addInst(.{
         .tag = inst_tag,
