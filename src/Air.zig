@@ -10,7 +10,7 @@ const Air = @This();
 allocator: std.mem.Allocator,
 globals_index: u32,
 instructions: []const Inst,
-refs: []const Inst.Ref,
+refs: []const InstIndex,
 strings: []const u8,
 errors: ErrorList,
 
@@ -55,87 +55,13 @@ pub fn getStr(self: Air, index: u32) []const u8 {
     return std.mem.sliceTo(self.strings[index..], 0);
 }
 
+pub const InstIndex = u32;
+pub const null_index: InstIndex = std.math.maxInt(InstIndex);
 pub const Inst = struct {
     tag: Tag,
     data: Data,
 
-    pub const Index = u32;
-    pub const Ref = enum(u32) {
-        none,
-
-        bool_type,
-        i32_type,
-        u32_type,
-        f32_type,
-        f16_type,
-        sampler_type,
-        comparison_sampler_type,
-        external_sampled_texture_type,
-
-        true,
-        false,
-
-        _,
-
-        pub const start_index = @typeInfo(Ref).Enum.fields.len;
-
-        pub fn isIndex(self: Ref) bool {
-            const index = @enumToInt(self);
-            return index >= start_index;
-        }
-
-        pub fn toIndex(self: Ref) ?Index {
-            const index = @enumToInt(self);
-            if (index >= start_index) {
-                return @intCast(Index, index - start_index);
-            } else {
-                return null;
-            }
-        }
-
-        pub fn isBool(self: Ref) bool {
-            return switch (self) {
-                .bool_type,
-                .true,
-                .false,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isNumberType(self: Ref) bool {
-            return self.isIntegerType() or self.isFloatType();
-        }
-
-        pub fn isIntegerType(self: Ref) bool {
-            return switch (self) {
-                .u32_type,
-                .i32_type,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isFloatType(self: Ref) bool {
-            return switch (self) {
-                .f32_type,
-                .f16_type,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn is32BitNumberType(self: Ref) bool {
-            return switch (self) {
-                .i32_type,
-                .u32_type,
-                .f32_type,
-                => true,
-                else => false,
-            };
-        }
-    };
-    pub const Tag = enum(u6) {
+    pub const Tag = enum(u7) {
         /// data is global_variable_decl
         global_variable_decl,
         /// data is const_decl
@@ -151,6 +77,16 @@ pub const Inst = struct {
         /// data is struct_member
         struct_member,
 
+        // data is undefined
+        bool_type,
+        // data is undefined
+        i32_type,
+        // data is undefined
+        u32_type,
+        // data is undefined
+        f32_type,
+        // data is undefined
+        f16_type,
         /// data is vector_type
         vector_type,
         /// data is matrix_type
@@ -161,6 +97,12 @@ pub const Inst = struct {
         array_type,
         /// data is ptr_type
         ptr_type,
+        // data is undefined
+        sampler_type,
+        // data is undefined
+        comparison_sampler_type,
+        // data is undefined
+        external_texture_type,
         /// data is sampled_texture_type
         sampled_texture_type,
         /// data is multisampled_texture_type
@@ -170,6 +112,10 @@ pub const Inst = struct {
         /// data is depth_texture_type
         depth_texture_type,
 
+        // data is undefined
+        true,
+        // data is undefined
+        false,
         /// data is integer
         integer,
         /// data is float
@@ -228,13 +174,59 @@ pub const Inst = struct {
 
         pub fn isDecl(self: Tag) bool {
             return switch (self) {
-                .global_variable_decl, .struct_decl => true,
+                .global_var,
+                .global_const,
+                .struct_decl,
+                => true,
+                else => false,
+            };
+        }
+
+        pub fn isBool(self: Tag) bool {
+            return switch (self) {
+                .bool_type,
+                .true,
+                .false,
+                => true,
+                else => false,
+            };
+        }
+
+        pub fn isNumberType(self: Tag) bool {
+            return self.isIntegerType() or self.isFloatType();
+        }
+
+        pub fn isIntegerType(self: Tag) bool {
+            return switch (self) {
+                .u32_type,
+                .i32_type,
+                => true,
+                else => false,
+            };
+        }
+
+        pub fn isFloatType(self: Tag) bool {
+            return switch (self) {
+                .f32_type,
+                .f16_type,
+                => true,
+                else => false,
+            };
+        }
+
+        pub fn is32BitNumberType(self: Tag) bool {
+            return switch (self) {
+                .i32_type,
+                .u32_type,
+                .f32_type,
+                => true,
                 else => false,
             };
         }
     };
+
     pub const Data = union {
-        ref: Ref,
+        ref: InstIndex,
         global_variable_decl: GlobalVariableDecl,
         global_const: GlobalConstDecl,
         fn_decl: FnDecl,
@@ -261,12 +253,12 @@ pub const Inst = struct {
     pub const GlobalVariableDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
-        type: Ref = .none,
+        type: InstIndex = null_index,
         addr_space: AddressSpace,
         access_mode: AccessMode,
-        binding: Ref = .none,
-        group: Ref = .none,
-        expr: Ref = .none,
+        binding: InstIndex = null_index,
+        group: InstIndex = null_index,
+        expr: InstIndex = null_index,
 
         pub const AddressSpace = enum {
             none,
@@ -287,8 +279,8 @@ pub const Inst = struct {
     pub const GlobalConstDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
-        type: Ref = .none,
-        expr: Ref,
+        type: InstIndex = null_index,
+        expr: InstIndex,
     };
     pub const FnDecl = struct {
         /// index to zero-terminated string in `strings`
@@ -296,12 +288,12 @@ pub const Inst = struct {
         stage: Stage,
         is_const: bool,
         /// nullable
-        /// index to zero-terminated params Ref in `refs`
+        /// index to zero-terminated params InstIndex in `refs`
         params: u32 = 0,
-        return_type: Ref,
+        return_type: InstIndex,
         return_attrs: ReturnAttrs,
         /// nullable
-        /// index to zero-terminated statements Ref in `refs`
+        /// index to zero-terminated statements InstIndex in `refs`
         statements: u32 = 0,
 
         pub const Stage = union(enum) {
@@ -311,15 +303,15 @@ pub const Inst = struct {
             compute: WorkgroupSize,
 
             pub const WorkgroupSize = struct {
-                x: Ref,
-                y: Ref = .none,
-                z: Ref = .none,
+                x: InstIndex,
+                y: InstIndex = null_index,
+                z: InstIndex = null_index,
             };
         };
 
         pub const ReturnAttrs = struct {
             builtin: BuiltinValue = .none,
-            location: Ref = .none,
+            location: InstIndex = null_index,
             interpolate: ?Interpolate = null,
             invariant: bool = false,
         };
@@ -327,9 +319,9 @@ pub const Inst = struct {
     pub const FnArg = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
-        type: Ref,
+        type: InstIndex,
         builtin: BuiltinValue = .none,
-        location: Ref = .none,
+        location: InstIndex = null_index,
         interpolate: ?Interpolate = null,
         invariant: bool = false,
     };
@@ -386,31 +378,31 @@ pub const Inst = struct {
     pub const StructDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
-        /// index to zero-terminated members Ref in `refs`
+        /// index to zero-terminated members InstIndex in `refs`
         members: u32,
     };
     pub const StructMember = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
-        type: Ref,
+        type: InstIndex,
         @"align": u29, // 0 means null
         size: u32, // 0 means null
     };
     pub const VectorType = struct {
-        elem_type: Ref,
+        elem_type: InstIndex,
         size: Size,
 
         pub const Size = enum { two, three, four };
     };
     pub const MatrixType = struct {
-        elem_type: Ref,
+        elem_type: InstIndex,
         cols: VectorType.Size,
         rows: VectorType.Size,
     };
-    pub const AtomicType = struct { elem_type: Ref };
-    pub const ArrayType = struct { elem_type: Ref, size: Ref = .none };
+    pub const AtomicType = struct { elem_type: InstIndex };
+    pub const ArrayType = struct { elem_type: InstIndex, size: InstIndex = null_index };
     pub const PointerType = struct {
-        elem_type: Ref,
+        elem_type: InstIndex,
         addr_space: AddressSpace,
         access_mode: AccessMode,
 
@@ -431,7 +423,7 @@ pub const Inst = struct {
     };
     pub const SampledTextureType = struct {
         kind: Kind,
-        elem_type: Ref,
+        elem_type: InstIndex,
 
         pub const Kind = enum {
             @"1d",
@@ -444,7 +436,7 @@ pub const Inst = struct {
     };
     pub const MultisampledTextureType = struct {
         kind: Kind,
-        elem_type: Ref,
+        elem_type: InstIndex,
 
         pub const Kind = enum { @"2d" };
     };
@@ -489,22 +481,22 @@ pub const Inst = struct {
         cube_array,
         multisampled_2d,
     };
-    pub const BinaryExpr = struct { lhs: Ref, rhs: Ref };
+    pub const BinaryExpr = struct { lhs: InstIndex, rhs: InstIndex };
     pub const FieldAccess = struct {
-        base: Ref,
-        field: Ref,
+        base: InstIndex,
+        field: InstIndex,
         /// index to zero-terminated string in `strings`
         name: u32,
     };
     pub const IndexAccess = struct {
-        base: Ref,
-        elem_type: Ref,
-        index: Ref,
+        base: InstIndex,
+        elem_type: InstIndex,
+        index: InstIndex,
     };
     pub const Bitcast = struct {
-        type: Ref,
-        expr: Ref,
-        result_type: Ref,
+        type: InstIndex,
+        expr: InstIndex,
+        result_type: InstIndex,
     };
     pub const Integer = struct {
         value: i64,

@@ -204,12 +204,12 @@ test "integer/float literals" {
     defer ir.deinit();
 
     const toInst = struct {
-        fn toInst(_ir: Air, i: Air.Inst.Ref) Air.Inst {
-            return _ir.instructions[_ir.instructions[i.toIndex().?].data.global_variable_decl.expr.toIndex().?];
+        fn toInst(air: Air, i: Air.InstIndex) Air.Inst {
+            return air.instructions[air.instructions[i].data.global_variable_decl.expr];
         }
     }.toInst;
 
-    const vars = std.mem.sliceTo(ir.refs[ir.globals_index..], .none);
+    const vars = std.mem.sliceTo(ir.refs[ir.globals_index..], Air.null_index);
     try expectEqual(toInst(ir, vars[0]).data.integer, .{ .value = 1, .base = 10, .tag = .u });
     try expectEqual(toInst(ir, vars[1]).data.integer, .{ .value = 123, .base = 10, .tag = .none });
     try expectEqual(toInst(ir, vars[2]).data.integer, .{ .value = 0, .base = 10, .tag = .none });
