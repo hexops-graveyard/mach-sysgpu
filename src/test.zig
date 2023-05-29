@@ -205,23 +205,23 @@ test "integer/float literals" {
 
     const toInst = struct {
         fn toInst(air: Air, i: Air.InstIndex) Air.Inst {
-            return air.instructions[air.instructions[i].data.global_variable_decl.expr];
+            return air.instructions[air.instructions[i].global_variable_decl.expr];
         }
     }.toInst;
 
     const vars = std.mem.sliceTo(ir.refs[ir.globals_index..], Air.null_index);
-    try expectEqual(toInst(ir, vars[0]).data.integer, .{ .value = 1, .base = 10, .tag = .u });
-    try expectEqual(toInst(ir, vars[1]).data.integer, .{ .value = 123, .base = 10, .tag = .none });
-    try expectEqual(toInst(ir, vars[2]).data.integer, .{ .value = 0, .base = 10, .tag = .none });
-    try expectEqual(toInst(ir, vars[3]).data.integer, .{ .value = 0, .base = 10, .tag = .i });
-    try expectEqual(toInst(ir, vars[4]).data.integer, .{ .value = 0x123, .base = 16, .tag = .none });
-    try expectEqual(toInst(ir, vars[5]).data.integer, .{ .value = 0x123, .base = 16, .tag = .u });
-    try expectEqual(toInst(ir, vars[6]).data.float, .{ .value = 0.e+4, .base = 10, .tag = .f });
-    try expectEqual(toInst(ir, vars[7]).data.float, .{ .value = 0.01, .base = 10, .tag = .none });
-    try expectEqual(toInst(ir, vars[8]).data.float, .{ .value = 12.34, .base = 10, .tag = .none });
-    try expectEqual(toInst(ir, vars[9]).data.float, .{ .value = 0.0, .base = 10, .tag = .f });
-    try expectEqual(toInst(ir, vars[10]).data.float, .{ .value = 0, .base = 10, .tag = .h });
-    try expectEqual(toInst(ir, vars[11]).data.float, .{ .value = 1e-3, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[0]).integer, .{ .value = 1, .base = 10, .tag = .u });
+    try expectEqual(toInst(ir, vars[1]).integer, .{ .value = 123, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[2]).integer, .{ .value = 0, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[3]).integer, .{ .value = 0, .base = 10, .tag = .i });
+    try expectEqual(toInst(ir, vars[4]).integer, .{ .value = 0x123, .base = 16, .tag = .none });
+    try expectEqual(toInst(ir, vars[5]).integer, .{ .value = 0x123, .base = 16, .tag = .u });
+    try expectEqual(toInst(ir, vars[6]).float, .{ .value = 0.e+4, .base = 10, .tag = .f });
+    try expectEqual(toInst(ir, vars[7]).float, .{ .value = 0.01, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[8]).float, .{ .value = 12.34, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[9]).float, .{ .value = 0.0, .base = 10, .tag = .f });
+    try expectEqual(toInst(ir, vars[10]).float, .{ .value = 0, .base = 10, .tag = .h });
+    try expectEqual(toInst(ir, vars[11]).float, .{ .value = 1e-3, .base = 10, .tag = .none });
 }
 
 test "must error" {

@@ -57,170 +57,109 @@ pub fn getStr(self: Air, index: u32) []const u8 {
 
 pub const InstIndex = u32;
 pub const null_index: InstIndex = std.math.maxInt(InstIndex);
-pub const Inst = struct {
-    tag: Tag,
-    data: Data,
+pub const Inst = union(enum) {
+    global_variable_decl: GlobalVariableDecl,
+    global_const: GlobalConstDecl,
 
-    pub const Tag = enum(u7) {
-        /// data is global_variable_decl
-        global_variable_decl,
-        /// data is const_decl
-        global_const,
+    fn_decl: FnDecl,
+    fn_param: FnParam,
 
-        /// data is fn_decl
-        fn_decl,
-        /// data is fn_param
-        fn_param,
+    struct_decl: StructDecl,
+    struct_member: StructMember,
 
-        /// data is struct_decl
-        struct_decl,
-        /// data is struct_member
-        struct_member,
+    bool_type,
+    i32_type,
+    u32_type,
+    f32_type,
+    f16_type,
+    sampler_type,
+    comparison_sampler_type,
+    external_texture_type,
+    vector_type: VectorType,
+    matrix_type: MatrixType,
+    atomic_type: AtomicType,
+    array_type: ArrayType,
+    ptr_type: PointerType,
+    texture_type: TextureType,
+    multisampled_texture_type: MultisampledTextureType,
+    storage_texture_type: StorageTextureType,
+    depth_texture_type: DepthTextureType,
 
-        // data is undefined
-        bool_type,
-        i32_type,
-        u32_type,
-        f32_type,
-        f16_type,
+    true,
+    false,
+    integer: Integer,
+    float: Float,
 
-        /// data is vector_type
-        vector_type,
-        /// data is matrix_type
-        matrix_type,
-        /// data is atomic_type
-        atomic_type,
-        /// data is array_type
-        array_type,
-        /// data is ptr_type
-        ptr_type,
-        // data is undefined
-        sampler_type,
-        // data is undefined
-        comparison_sampler_type,
-        // data is undefined
-        external_texture_type,
-        /// data is sampled_texture_type
-        sampled_texture_type,
-        /// data is multisampled_texture_type
-        multisampled_texture_type,
-        /// data is storage_texture_type
-        storage_texture_type,
-        /// data is depth_texture_type
-        depth_texture_type,
+    not: InstIndex,
+    negate: InstIndex,
+    deref: InstIndex,
+    addr_of: InstIndex,
 
-        // data is undefined
-        true,
-        // data is undefined
-        false,
-        /// data is integer
-        integer,
-        /// data is float
-        float,
+    mul: Binary,
+    div: Binary,
+    mod: Binary,
+    add: Binary,
+    sub: Binary,
+    shift_left: Binary,
+    shift_right: Binary,
+    @"and": Binary,
+    @"or": Binary,
+    xor: Binary,
+    logical_and: Binary,
+    logical_or: Binary,
+    equal: Binary,
+    not_equal: Binary,
+    less_than: Binary,
+    less_than_equal: Binary,
+    greater_than: Binary,
+    greater_than_equal: Binary,
 
-        /// data is ref
-        not,
-        negate,
-        deref,
-        addr_of,
+    assign: Binary,
+    assign_add: Binary,
+    assign_sub: Binary,
+    assign_mul: Binary,
+    assign_div: Binary,
+    assign_mod: Binary,
+    assign_and: Binary,
+    assign_or: Binary,
+    assign_xor: Binary,
+    assign_shl: Binary,
+    assign_shr: Binary,
 
-        /// data is binary
-        mul,
-        div,
-        mod,
-        add,
-        sub,
-        shift_left,
-        shift_right,
-        @"and",
-        @"or",
-        xor,
-        logical_and,
-        logical_or,
-        equal,
-        not_equal,
-        less_than,
-        less_than_equal,
-        greater_than,
-        greater_than_equal,
+    field_access: FieldAccess,
+    index_access: IndexAccess,
+    bitcast: Bitcast,
 
-        /// data is field_access
-        field_access,
-        /// data is index_access
-        index_access,
-        /// data is bitcast
-        bitcast,
+    var_ref: InstIndex,
+    struct_ref: InstIndex,
 
-        /// data is binary
-        assign,
-        assign_add,
-        assign_sub,
-        assign_mul,
-        assign_div,
-        assign_mod,
-        assign_and,
-        assign_or,
-        assign_xor,
-        assign_shl,
-        assign_shr,
+    pub fn eql(a: Air.Inst, b: Air.Inst) bool {
+        return switch (a) {
+            .bool_type, .true, .false => switch (b) {
+                .bool_type, .true, .false => true,
+                else => false,
+            },
+            .integer, .u32_type, .i32_type => switch (b) {
+                .integer, .u32_type, .i32_type => true,
+                else => false,
+            },
+            .float, .f32_type, .f16_type => switch (b) {
+                .float, .f32_type, .f16_type => true,
+                else => false,
+            },
+            else => if (std.meta.activeTag(a) == std.meta.activeTag(b)) true else false,
+        };
+    }
 
-        /// data is ref
-        var_ref,
-        struct_ref,
-
-        pub fn eql(a: Air.Inst.Tag, b: Air.Inst.Tag) bool {
-            return switch (a) {
-                .bool_type, .true, .false => switch (b) {
-                    .bool_type, .true, .false => true,
-                    else => false,
-                },
-                .integer, .u32_type, .i32_type => switch (b) {
-                    .integer, .u32_type, .i32_type => true,
-                    else => false,
-                },
-                .float, .f32_type, .f16_type => switch (b) {
-                    .float, .f32_type, .f16_type => true,
-                    else => false,
-                },
-                else => if (a == b) true else false,
-            };
-        }
-    };
-
-    pub const Data = union {
-        ref: InstIndex,
-        global_variable_decl: GlobalVariableDecl,
-        global_const: GlobalConstDecl,
-        fn_decl: FnDecl,
-        fn_param: FnArg,
-        struct_decl: StructDecl,
-        struct_member: StructMember,
-        vector_type: VectorType,
-        matrix_type: MatrixType,
-        atomic_type: AtomicType,
-        array_type: ArrayType,
-        ptr_type: PointerType,
-        sampled_texture_type: SampledTextureType,
-        multisampled_texture_type: MultisampledTextureType,
-        storage_texture_type: StorageTextureType,
-        depth_texture_type: DepthTextureType,
-        integer: Integer,
-        float: Float,
-        /// meaning of LHS and RHS depends on the corresponding Tag.
-        binary: BinaryExpr,
-        field_access: FieldAccess,
-        index_access: IndexAccess,
-        bitcast: Bitcast,
-    };
     pub const GlobalVariableDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
-        type: InstIndex = null_index,
+        type: InstIndex,
         addr_space: AddressSpace,
         access_mode: AccessMode,
-        binding: InstIndex = null_index,
-        group: InstIndex = null_index,
-        expr: InstIndex = null_index,
+        binding: InstIndex,
+        group: InstIndex,
+        expr: InstIndex,
 
         pub const AddressSpace = enum {
             none,
@@ -238,25 +177,25 @@ pub const Inst = struct {
             read_write,
         };
     };
+
     pub const GlobalConstDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
-        type: InstIndex = null_index,
+        type: InstIndex,
         expr: InstIndex,
     };
+
     pub const FnDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         stage: Stage,
         is_const: bool,
-        /// nullable
         /// index to zero-terminated params InstIndex in `refs`
-        params: u32 = 0,
+        params: u32,
         return_type: InstIndex,
         return_attrs: ReturnAttrs,
-        /// nullable
         /// index to zero-terminated statements InstIndex in `refs`
-        statements: u32 = 0,
+        statements: u32,
 
         pub const Stage = union(enum) {
             normal,
@@ -266,27 +205,29 @@ pub const Inst = struct {
 
             pub const WorkgroupSize = struct {
                 x: InstIndex,
-                y: InstIndex = null_index,
-                z: InstIndex = null_index,
+                y: InstIndex,
+                z: InstIndex,
             };
         };
 
         pub const ReturnAttrs = struct {
-            builtin: BuiltinValue = .none,
-            location: InstIndex = null_index,
-            interpolate: ?Interpolate = null,
-            invariant: bool = false,
+            builtin: BuiltinValue,
+            location: InstIndex,
+            interpolate: ?Interpolate,
+            invariant: bool,
         };
     };
-    pub const FnArg = struct {
+
+    pub const FnParam = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         type: InstIndex,
-        builtin: BuiltinValue = .none,
-        location: InstIndex = null_index,
-        interpolate: ?Interpolate = null,
-        invariant: bool = false,
+        builtin: BuiltinValue,
+        location: InstIndex,
+        interpolate: ?Interpolate,
+        invariant: bool,
     };
+
     pub const BuiltinValue = enum {
         none,
         vertex_index,
@@ -319,9 +260,9 @@ pub const Inst = struct {
             };
         }
     };
+
     pub const Interpolate = struct {
         type: Type,
-        /// nullable
         sample: Sample,
 
         pub const Type = enum {
@@ -337,32 +278,39 @@ pub const Inst = struct {
             sample,
         };
     };
+
     pub const StructDecl = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         /// index to zero-terminated members InstIndex in `refs`
         members: u32,
     };
+
     pub const StructMember = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         type: InstIndex,
-        @"align": u29, // 0 means null
-        size: u32, // 0 means null
+        @"align": u29,
+        size: u32,
     };
+
     pub const VectorType = struct {
         elem_type: InstIndex,
         size: Size,
 
         pub const Size = enum { two, three, four };
     };
+
     pub const MatrixType = struct {
         elem_type: InstIndex,
         cols: VectorType.Size,
         rows: VectorType.Size,
     };
+
     pub const AtomicType = struct { elem_type: InstIndex };
+
     pub const ArrayType = struct { elem_type: InstIndex, size: InstIndex = null_index };
+
     pub const PointerType = struct {
         elem_type: InstIndex,
         addr_space: AddressSpace,
@@ -383,7 +331,8 @@ pub const Inst = struct {
             read_write,
         };
     };
-    pub const SampledTextureType = struct {
+
+    pub const TextureType = struct {
         kind: Kind,
         elem_type: InstIndex,
 
@@ -396,12 +345,14 @@ pub const Inst = struct {
             cube_array,
         };
     };
+
     pub const MultisampledTextureType = struct {
         kind: Kind,
         elem_type: InstIndex,
 
         pub const Kind = enum { @"2d" };
     };
+
     pub const StorageTextureType = struct {
         kind: Kind,
         texel_format: TexelFormat,
@@ -436,6 +387,7 @@ pub const Inst = struct {
 
         pub const AccessMode = enum { write };
     };
+
     pub const DepthTextureType = enum {
         @"2d",
         @"2d_array",
@@ -443,28 +395,34 @@ pub const Inst = struct {
         cube_array,
         multisampled_2d,
     };
-    pub const BinaryExpr = struct { lhs: InstIndex, rhs: InstIndex };
+
+    pub const Binary = struct { lhs: InstIndex, rhs: InstIndex };
+
     pub const FieldAccess = struct {
         base: InstIndex,
         field: InstIndex,
         /// index to zero-terminated string in `strings`
         name: u32,
     };
+
     pub const IndexAccess = struct {
         base: InstIndex,
         elem_type: InstIndex,
         index: InstIndex,
     };
+
     pub const Bitcast = struct {
         type: InstIndex,
         expr: InstIndex,
         result_type: InstIndex,
     };
+
     pub const Integer = struct {
         value: i64,
         base: u8,
         tag: enum { none, i, u },
     };
+
     pub const Float = struct {
         value: f64,
         base: u8,
