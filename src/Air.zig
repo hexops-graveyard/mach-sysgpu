@@ -79,14 +79,11 @@ pub const Inst = struct {
 
         // data is undefined
         bool_type,
-        // data is undefined
         i32_type,
-        // data is undefined
         u32_type,
-        // data is undefined
         f32_type,
-        // data is undefined
         f16_type,
+
         /// data is vector_type
         vector_type,
         /// data is matrix_type
@@ -169,58 +166,23 @@ pub const Inst = struct {
 
         /// data is ref
         var_ref,
-        /// data is ref
         struct_ref,
 
-        pub fn isDecl(self: Tag) bool {
-            return switch (self) {
-                .global_var,
-                .global_const,
-                .struct_decl,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isBool(self: Tag) bool {
-            return switch (self) {
-                .bool_type,
-                .true,
-                .false,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isNumberType(self: Tag) bool {
-            return self.isIntegerType() or self.isFloatType();
-        }
-
-        pub fn isIntegerType(self: Tag) bool {
-            return switch (self) {
-                .u32_type,
-                .i32_type,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn isFloatType(self: Tag) bool {
-            return switch (self) {
-                .f32_type,
-                .f16_type,
-                => true,
-                else => false,
-            };
-        }
-
-        pub fn is32BitNumberType(self: Tag) bool {
-            return switch (self) {
-                .i32_type,
-                .u32_type,
-                .f32_type,
-                => true,
-                else => false,
+        pub fn eql(a: Air.Inst.Tag, b: Air.Inst.Tag) bool {
+            return switch (a) {
+                .bool_type, .true, .false => switch (b) {
+                    .bool_type, .true, .false => true,
+                    else => false,
+                },
+                .integer, .u32_type, .i32_type => switch (b) {
+                    .integer, .u32_type, .i32_type => true,
+                    else => false,
+                },
+                .float, .f32_type, .f16_type => switch (b) {
+                    .float, .f32_type, .f16_type => true,
+                    else => false,
+                },
+                else => if (a == b) true else false,
             };
         }
     };
