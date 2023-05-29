@@ -1977,8 +1977,8 @@ fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) ?Value {
                 else => unreachable,
             };
         },
-        .var_ref => { // TODO: pass var_ref instead?
-            const res = try astgen.resolveVar(inst_idx) orelse return null;
+        .var_ref => |var_ref| {
+            const res = try astgen.resolveVar(var_ref) orelse return null;
             return astgen.resolveConstExpr(res);
         },
         else => return null,
