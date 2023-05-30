@@ -1,5 +1,6 @@
 const std = @import("std");
 const Air = @import("Air.zig");
+const null_inst = Air.null_inst;
 
 const indention_size = 2;
 
@@ -9,7 +10,7 @@ pub fn printAir(ir: Air, writer: anytype) !void {
         .writer = writer,
         .tty = std.io.tty.Config{ .escape_codes = {} },
     };
-    const globals = std.mem.sliceTo(ir.refs[ir.globals_index..], Air.null_index);
+    const globals = std.mem.sliceTo(ir.refs[ir.globals_index..], null_inst);
     for (globals) |ref| {
         try p.printInst(0, ref);
     }
@@ -34,7 +35,7 @@ fn Printer(comptime Writer: type) type {
                     try self.printConstDecl(indent, index);
                     try self.printFieldEnd();
                 },
-                .struct_decl => {
+                .@"struct" => {
                     std.debug.assert(indent == 0);
                     try self.printStructDecl(indent, index);
                     try self.printFieldEnd();
@@ -112,10 +113,10 @@ fn Printer(comptime Writer: type) type {
             if (inst.global_variable_decl.access_mode != .none) {
                 try self.printFieldEnum(indent + 1, "access_mode", inst.global_variable_decl.access_mode);
             }
-            if (inst.global_variable_decl.type != Air.null_index) {
+            if (inst.global_variable_decl.type != null_inst) {
                 try self.printFieldInst(indent + 1, "type", inst.global_variable_decl.type);
             }
-            if (inst.global_variable_decl.expr != Air.null_index) {
+            if (inst.global_variable_decl.expr != null_inst) {
                 try self.printFieldInst(indent + 1, "value", inst.global_variable_decl.expr);
             }
             try self.instBlockEnd(indent);
@@ -125,7 +126,7 @@ fn Printer(comptime Writer: type) type {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.global_const.name);
-            if (inst.global_const.type != Air.null_index) {
+            if (inst.global_const.type != null_inst) {
                 try self.printFieldInst(indent + 1, "type", inst.global_const.type);
             }
             try self.printFieldInst(indent + 1, "value", inst.global_const.expr);
@@ -135,10 +136,10 @@ fn Printer(comptime Writer: type) type {
         fn printStructDecl(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
-            try self.printFieldString(indent + 1, "name", inst.struct_decl.name);
+            try self.printFieldString(indent + 1, "name", inst.@"struct".name);
             try self.printFieldName(indent + 1, "members");
             try self.listStart();
-            const members = std.mem.sliceTo(self.ir.refs[inst.struct_decl.members..], Air.null_index);
+            const members = std.mem.sliceTo(self.ir.refs[inst.@"struct".members..], null_inst);
             for (members) |member| {
                 const member_index = member;
                 const member_inst = self.ir.instructions[member_index];
@@ -151,6 +152,12 @@ fn Printer(comptime Writer: type) type {
                 }
                 if (member_inst.struct_member.size != 0) {
                     try self.printFieldAny(indent + 3, "size", member_inst.struct_member.size);
+                }
+                if (member_inst.struct_member.builtin != .none) {
+                    try self.printFieldAny(indent + 3, "builtin", member_inst.struct_member.builtin);
+                }
+                if (member_inst.struct_member.location != null_inst) {
+                    try self.printFieldAny(indent + 3, "location", member_inst.struct_member.location);
                 }
                 try self.instBlockEnd(indent + 2);
                 try self.printFieldEnd();
@@ -168,7 +175,7 @@ fn Printer(comptime Writer: type) type {
             if (inst.fn_decl.params != 0) {
                 try self.printFieldName(indent + 1, "params");
                 try self.listStart();
-                const params = std.mem.sliceTo(self.ir.refs[inst.fn_decl.params..], Air.null_index);
+                const params = std.mem.sliceTo(self.ir.refs[inst.fn_decl.params..], null_inst);
                 for (params) |arg| {
                     const arg_index = arg;
                     const arg_inst = self.ir.instructions[arg_index];
@@ -189,7 +196,7 @@ fn Printer(comptime Writer: type) type {
                         try self.instBlockEnd(indent + 4);
                         try self.printFieldEnd();
                     }
-                    if (arg_inst.fn_param.location != Air.null_index) {
+                    if (arg_inst.fn_param.location != null_inst) {
                         try self.printFieldInst(indent + 3, "location", arg_inst.fn_param.location);
                     }
                     if (arg_inst.fn_param.invariant) {
@@ -205,7 +212,7 @@ fn Printer(comptime Writer: type) type {
             if (inst.fn_decl.statements != 0) {
                 try self.printFieldName(indent + 1, "statements");
                 try self.listStart();
-                const statements = std.mem.sliceTo(self.ir.refs[inst.fn_decl.statements..], Air.null_index);
+                const statements = std.mem.sliceTo(self.ir.refs[inst.fn_decl.statements..], null_inst);
                 for (statements) |statement| {
                     try self.printIndent(indent + 2);
                     try self.printInst(indent + 2, statement);

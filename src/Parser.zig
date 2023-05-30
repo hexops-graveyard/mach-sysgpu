@@ -175,7 +175,7 @@ fn expectGlobalDecl(p: *Parser) !NodeIndex {
     const attrs = try p.attributeList();
 
     if (try p.structDecl() orelse
-        try p.functionDecl(attrs)) |node|
+        try p.fnDecl(attrs)) |node|
     {
         return node;
     }
@@ -330,7 +330,7 @@ fn attribute(p: *Parser) !?NodeIndex {
         .builtin => {
             _ = try p.expectToken(.paren_left);
             node.tag = .attr_builtin;
-            node.lhs = try p.expectBuiltinValue();
+            node.lhs = try p.expectBuiltin();
             _ = p.eatToken(.comma);
             _ = try p.expectToken(.paren_right);
         },
@@ -376,11 +376,11 @@ fn attribute(p: *Parser) !?NodeIndex {
     return try p.addNode(node);
 }
 
-fn expectBuiltinValue(p: *Parser) !NodeIndex {
+fn expectBuiltin(p: *Parser) !NodeIndex {
     const token = p.advanceToken();
     if (p.getToken(.tag, token) == .ident) {
         const str = p.getToken(.loc, token).slice(p.source);
-        if (std.meta.stringToEnum(Ast.BuiltinValue, str)) |_| return token;
+        if (std.meta.stringToEnum(Ast.Builtin, str)) |_| return token;
     }
 
     try p.errors.add(
@@ -626,7 +626,7 @@ fn constAssert(p: *Parser) !?NodeIndex {
     });
 }
 
-fn functionDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
+fn fnDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     const fn_token = p.eatToken(.k_fn) orelse return null;
     _ = try p.expectToken(.ident);
 
@@ -658,7 +658,7 @@ fn functionDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
         .return_type = return_type,
     });
     return try p.addNode(.{
-        .tag = .function,
+        .tag = .@"fn",
         .main_token = fn_token,
         .lhs = fn_proto,
         .rhs = body,
@@ -695,7 +695,7 @@ fn parameter(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     _ = try p.expectToken(.colon);
     const param_type = try p.expectTypeSpecifier();
     return try p.addNode(.{
-        .tag = .function_param,
+        .tag = .fn_param,
         .main_token = main_token,
         .lhs = attrs orelse null_node,
         .rhs = param_type,
@@ -789,6 +789,8 @@ fn block(p: *Parser) error{ OutOfMemory, Parsing }!?NodeIndex {
     if (failed) return error.Parsing;
 
     const list = p.scratch.items[scratch_top..];
+    if (list.len == 0) return null_node;
+
     return try p.listToSpan(list);
 }
 
@@ -1006,7 +1008,7 @@ fn switchStatement(p: *Parser) !?NodeIndex {
             try p.scratch.append(p.allocator, try p.addNode(.{
                 .tag = if (has_default) .switch_case_default else .switch_case,
                 .main_token = case_token,
-                .lhs = try p.listToSpan(case_expr_list),
+                .lhs = if (case_expr_list.len == 0) null_node else try p.listToSpan(case_expr_list),
                 .rhs = default_body,
             }));
             p.scratch.shrinkRetainingCapacity(cases_scratch_top);
@@ -1022,7 +1024,7 @@ fn switchStatement(p: *Parser) !?NodeIndex {
         .tag = .@"switch",
         .main_token = main_token,
         .lhs = expr,
-        .rhs = try p.listToSpan(case_list),
+        .rhs = if (case_list.len == 0) null_node else try p.listToSpan(case_list),
     });
 }
 
@@ -1477,18 +1479,17 @@ fn expectParenExpr(p: *Parser) !NodeIndex {
 
 fn callExpr(p: *Parser) !?NodeIndex {
     const main_token = p.tok_i;
-    var lhs = null_node;
+    var rhs = null_node;
 
-    // function call
     if (p.peekToken(.tag, 0) == .ident and p.peekToken(.tag, 1) == .paren_left) {
+        // fn call
         _ = p.advanceToken();
-    }
-    // without template args ('vec2', 'array', etc)
-    else if (p.peekToken(.tag, 1) != .template_left and
+    } else if (p.peekToken(.tag, 1) != .template_left and
         (p.isVectorPrefix() or
         p.isMatrixPrefix() or
         p.peekToken(.tag, 0) == .k_array))
     {
+        // without template args ('vec2', 'array', etc)
         _ = p.advanceToken();
     } else {
         // maybe with template args ('i32', 'vec2<f32>', 'array<i32>', etc)
@@ -1500,7 +1501,7 @@ fn callExpr(p: *Parser) !?NodeIndex {
             .vector_type,
             .matrix_type,
             .array_type,
-            => lhs = type_node,
+            => rhs = type_node,
             else => {
                 try p.errors.add(
                     p.getToken(.loc, main_token),
@@ -1513,7 +1514,7 @@ fn callExpr(p: *Parser) !?NodeIndex {
         }
     }
 
-    const rhs = try p.expectArgumentListExpr();
+    const lhs = try p.expectArgumentListExpr();
     return try p.addNode(.{
         .tag = .call,
         .main_token = main_token,
@@ -1536,6 +1537,8 @@ fn expectArgumentListExpr(p: *Parser) !NodeIndex {
     _ = try p.expectToken(.paren_right);
 
     const list = p.scratch.items[scratch_top..];
+    if (list.len == 0) return null_node;
+
     return p.listToSpan(list);
 }
 

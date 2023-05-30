@@ -55,8 +55,8 @@ pub fn getStr(self: Air, index: u32) []const u8 {
     return std.mem.sliceTo(self.strings[index..], 0);
 }
 
+pub const null_inst: InstIndex = std.math.maxInt(InstIndex);
 pub const InstIndex = u32;
-pub const null_index: InstIndex = std.math.maxInt(InstIndex);
 pub const Inst = union(enum) {
     global_variable_decl: GlobalVariableDecl,
     global_const: GlobalConstDecl,
@@ -64,7 +64,7 @@ pub const Inst = union(enum) {
     fn_decl: FnDecl,
     fn_param: FnParam,
 
-    struct_decl: StructDecl,
+    @"struct": StructDecl,
     struct_member: StructMember,
 
     bool_type,
@@ -128,6 +128,7 @@ pub const Inst = union(enum) {
 
     field_access: FieldAccess,
     index_access: IndexAccess,
+    call: Call,
     bitcast: Bitcast,
 
     var_ref: InstIndex,
@@ -211,7 +212,7 @@ pub const Inst = union(enum) {
         };
 
         pub const ReturnAttrs = struct {
-            builtin: BuiltinValue,
+            builtin: Builtin,
             location: InstIndex,
             interpolate: ?Interpolate,
             invariant: bool,
@@ -222,13 +223,13 @@ pub const Inst = union(enum) {
         /// index to zero-terminated string in `strings`
         name: u32,
         type: InstIndex,
-        builtin: BuiltinValue,
+        builtin: Builtin,
         location: InstIndex,
         interpolate: ?Interpolate,
         invariant: bool,
     };
 
-    pub const BuiltinValue = enum {
+    pub const Builtin = enum {
         none,
         vertex_index,
         instance_index,
@@ -243,7 +244,7 @@ pub const Inst = union(enum) {
         sample_index,
         sample_mask,
 
-        pub fn fromAst(ast: Ast.BuiltinValue) BuiltinValue {
+        pub fn fromAst(ast: Ast.Builtin) Builtin {
             return switch (ast) {
                 .vertex_index => .vertex_index,
                 .instance_index => .instance_index,
@@ -292,6 +293,9 @@ pub const Inst = union(enum) {
         type: InstIndex,
         @"align": u29,
         size: u32,
+        location: InstIndex,
+        builtin: Builtin,
+        interpolate: ?Interpolate,
     };
 
     pub const VectorType = struct {
@@ -309,7 +313,7 @@ pub const Inst = union(enum) {
 
     pub const AtomicType = struct { elem_type: InstIndex };
 
-    pub const ArrayType = struct { elem_type: InstIndex, size: InstIndex = null_index };
+    pub const ArrayType = struct { elem_type: InstIndex, size: InstIndex };
 
     pub const PointerType = struct {
         elem_type: InstIndex,
@@ -409,6 +413,12 @@ pub const Inst = union(enum) {
         base: InstIndex,
         elem_type: InstIndex,
         index: InstIndex,
+    };
+
+    pub const Call = struct {
+        @"fn": InstIndex,
+        /// index to zero-terminated args InstIndex in `refs`
+        args: InstIndex,
     };
 
     pub const Bitcast = struct {
