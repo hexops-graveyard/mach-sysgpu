@@ -95,7 +95,8 @@ test "empty" {
 }
 
 test "gkurve" {
-    if (true) return;
+    if (true) return error.SkipZigTest;
+
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
     try printAir(ir, std.io.getStdOut().writer());
@@ -118,6 +119,10 @@ test "must pass" {
             \\var v1: G;
             \\fn test() -> u32 {
             \\  v0 = v1.l.f[0].n;
+            \\  v0 = urmom();
+            \\}
+            \\fn urmom() -> u32 {
+            \\
             \\}
         ;
         var ir = try expectIR(source);
@@ -209,7 +214,7 @@ test "integer/float literals" {
         }
     }.toInst;
 
-    const vars = std.mem.sliceTo(ir.refs[ir.globals_index..], Air.null_index);
+    const vars = std.mem.sliceTo(ir.refs[ir.globals_index..], Air.null_inst);
     try expectEqual(toInst(ir, vars[0]).integer, .{ .value = 1, .base = 10, .tag = .u });
     try expectEqual(toInst(ir, vars[1]).integer, .{ .value = 123, .base = 10, .tag = .none });
     try expectEqual(toInst(ir, vars[2]).integer, .{ .value = 0, .base = 10, .tag = .none });

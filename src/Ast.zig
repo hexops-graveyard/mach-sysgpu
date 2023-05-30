@@ -134,7 +134,7 @@ pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
     const token = switch (tree.nodeTag(node)) {
         .global_var => tree.extraData(Node.GlobalVarDecl, tree.nodeLHS(node)).name,
         .@"struct",
-        .function,
+        .@"fn",
         .global_const,
         .override,
         .type_alias,
@@ -147,7 +147,7 @@ pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
 
 pub const NodeIndex = u32;
 pub const TokenIndex = u32;
-pub const null_node: NodeIndex = 0;
+pub const null_node: NodeIndex = std.math.maxInt(NodeIndex);
 pub const Node = struct {
     tag: Tag,
     main_token: NodeIndex,
@@ -198,11 +198,11 @@ pub const Node = struct {
         /// TOK : k_fn
         /// LHS : FnProto
         /// RHS : span(Statement)
-        function,
+        @"fn",
         /// TOK : ident
         /// LHS : ?span(Attribute)
         /// RHS : type
-        function_param,
+        fn_param,
 
         /// TOK : k_return
         /// LHS : Expr?
@@ -438,7 +438,7 @@ pub const Node = struct {
         attr_size,
 
         /// TOK : attr
-        /// LHS : Token(BuiltinValue)
+        /// LHS : Token(Builtin)
         /// RHS : --
         attr_builtin,
 
@@ -563,12 +563,12 @@ pub const Node = struct {
         greater_than_equal,
 
         /// for identifier, array without element type specified,
-        /// vector prefix (e.g. vec2) and matrix prefix (e.g. mat2x2) LHS is null
+        /// vector prefix (e.g. vec2) and matrix prefix (e.g. mat2x2) RHS is null
         /// see callExpr in Parser.zig if you don't understand this
         ///
         /// TOK : ident, k_array, k_bool, 'number type keywords', 'vector keywords', 'matrix keywords'
-        /// LHS : (number_type, bool_type, vector_type, matrix_type, array_type)?
-        /// RHS : arguments (Expr span)
+        /// LHS : Span(Arguments Expr)
+        /// RHS : (number_type, bool_type, vector_type, matrix_type, array_type)?
         call,
 
         /// TOK : k_bitcast
@@ -673,7 +673,7 @@ pub const Node = struct {
     };
 
     pub const ForHeader = struct {
-        /// var_decl, const_decl, let_decl, phony_assign, compound_assign
+        /// var, const, let, phony_assign, compound_assign
         init: NodeIndex = null_node,
         /// Expr
         cond: NodeIndex = null_node,
@@ -682,7 +682,7 @@ pub const Node = struct {
     };
 };
 
-pub const BuiltinValue = enum {
+pub const Builtin = enum {
     vertex_index,
     instance_index,
     position,
