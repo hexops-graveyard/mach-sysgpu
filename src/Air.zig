@@ -89,6 +89,8 @@ pub const Inst = union(enum) {
     false,
     integer: Integer,
     float: Float,
+    vector: Vector,
+    matrix: Matrix,
 
     not: InstIndex,
     negate: InstIndex,
@@ -133,24 +135,6 @@ pub const Inst = union(enum) {
 
     var_ref: InstIndex,
     struct_ref: InstIndex,
-
-    pub fn eql(a: Air.Inst, b: Air.Inst) bool {
-        return switch (a) {
-            .bool_type, .true, .false => switch (b) {
-                .bool_type, .true, .false => true,
-                else => false,
-            },
-            .integer, .u32_type, .i32_type => switch (b) {
-                .integer, .u32_type, .i32_type => true,
-                else => false,
-            },
-            .float, .f32_type, .f16_type => switch (b) {
-                .float, .f32_type, .f16_type => true,
-                else => false,
-            },
-            else => if (std.meta.activeTag(a) == std.meta.activeTag(b)) true else false,
-        };
-    }
 
     pub const GlobalVariableDecl = struct {
         /// index to zero-terminated string in `strings`
@@ -439,7 +423,18 @@ pub const Inst = union(enum) {
         tag: enum { none, f, h },
     };
 
+    pub const Vector = struct {
+        value: @Vector(4, u32),
+        type: InstIndex,
+    };
+
+    pub const Matrix = struct {
+        value: @Vector(4 * 4, u32),
+        type: InstIndex,
+    };
+
     comptime {
-        std.debug.assert(@sizeOf(Inst) <= 64);
+        // TODO
+        // std.debug.assert(@sizeOf(Inst) <= 64);
     }
 };

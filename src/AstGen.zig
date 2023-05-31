@@ -769,7 +769,7 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
     const lhs_type = try astgen.resolveSymbol(lhs);
     const rhs_type = try astgen.resolve(rhs);
 
-    if (!astgen.getInst(lhs_type.?).eql(astgen.getInst(rhs_type.?))) {
+    if (!astgen.eql(lhs_type.?, rhs_type.?)) {
         try astgen.errors.add(
             astgen.tree.nodeLoc(node),
             "type mismatch",
@@ -1151,36 +1151,95 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_rhs = astgen.tree.nodeRHS(node);
     const node_loc = astgen.tree.nodeLoc(node);
-    const func = try astgen.findSymbol(scope, token);
-    _ = node_rhs;
 
-    if (astgen.getInst(func) != .fn_decl) {
-        try astgen.errors.add(
-            node_loc,
-            "'{s}' cannot be called",
-            .{token_loc.slice(astgen.tree.source)},
-            null,
-        );
-        return error.AnalysisFail;
-    }
+    astgen.instructions.items[inst] = switch (token_tag) {
+        .k_bool => if (node_lhs == null_inst) .false else unreachable,
+        .k_u32 => if (node_lhs == null_inst) .{ .integer = .{ .value = 0, .base = 10, .tag = .u } } else unreachable,
+        .k_i32 => if (node_lhs == null_inst) .{ .integer = .{ .value = 0, .base = 10, .tag = .i } } else unreachable,
+        .k_f32 => if (node_lhs == null_inst) .{ .float = .{ .value = 0, .base = 10, .tag = .f } } else unreachable,
+        .k_f16 => if (node_lhs == null_inst) .{ .float = .{ .value = 0, .base = 10, .tag = .h } } else unreachable,
+        .k_vec2, .k_vec3, .k_vec4 => if (node_lhs == null_inst) .{
+            .vector = .{
+                .value = .{ 0, 0, 0, 0 },
+                .type = if (node_rhs != null_inst)
+                    try astgen.genVectorType(scope, node_rhs)
+                else
+                    try astgen.addInst(.{
+                        .vector_type = .{
+                            .size = switch (token_tag) {
+                                .k_vec2 => .two,
+                                .k_vec3 => .three,
+                                .k_vec4 => .four,
+                                else => unreachable,
+                            },
+                            .elem_type = try astgen.addInst(.u32_type), // TODO: AbstractInt!,
+                        },
+                    }),
+            },
+        } else unreachable,
+        .k_mat2x2,
+        .k_mat2x3,
+        .k_mat2x4,
+        .k_mat3x2,
+        .k_mat3x3,
+        .k_mat3x4,
+        .k_mat4x2,
+        .k_mat4x3,
+        .k_mat4x4,
+        => if (node_lhs == null_inst) .{
+            .matrix = .{
+                .value = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+                .type = if (node_rhs != null_inst)
+                    try astgen.genMatrixType(scope, node_rhs)
+                else
+                    try astgen.addInst(.{
+                        .matrix_type = .{
+                            .cols = switch (token_tag) {
+                                .k_mat2x2, .k_mat2x3, .k_mat2x4 => .two,
+                                .k_mat3x2, .k_mat3x3, .k_mat3x4 => .three,
+                                .k_mat4x2, .k_mat4x3, .k_mat4x4 => .four,
+                                else => unreachable,
+                            },
+                            .rows = switch (token_tag) {
+                                .k_mat2x2, .k_mat3x2, .k_mat4x2 => .two,
+                                .k_mat2x3, .k_mat3x3, .k_mat4x3 => .three,
+                                .k_mat2x4, .k_mat3x4, .k_mat4x4 => .four,
+                                else => unreachable,
+                            },
+                            .elem_type = try astgen.addInst(.u32_type), // TODO: AbstractInt!,
+                        },
+                    }),
+            },
+        } else unreachable,
+        .ident => {
+            const func = try astgen.findSymbol(scope, token);
+            if (astgen.getInst(func) == .fn_decl) {
+                const scratch_top = astgen.scratch.items.len;
+                defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
-    switch (token_tag) {
-        .ident => {},
-        else => unreachable, // TODO
-    }
+                if (node_lhs != null_node) {
+                    for (astgen.tree.spanToList(node_lhs)) |arg_node| {
+                        const arg = try astgen.genExpr(scope, arg_node);
+                        try astgen.scratch.append(astgen.allocator, arg);
+                    }
+                }
 
-    const scratch_top = astgen.scratch.items.len;
-    defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
+                const args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
+                astgen.instructions.items[inst] = .{ .call = .{ .@"fn" = func, .args = args } };
+                return inst;
+            } else {
+                try astgen.errors.add(
+                    node_loc,
+                    "'{s}' cannot be called",
+                    .{token_loc.slice(astgen.tree.source)},
+                    null,
+                );
+                return error.AnalysisFail;
+            }
+        },
+        else => unreachable,
+    };
 
-    if (node_lhs != null_node) {
-        for (astgen.tree.spanToList(node_lhs)) |arg_node| {
-            const arg = try astgen.genExpr(scope, arg_node);
-            try astgen.scratch.append(astgen.allocator, arg);
-        }
-    }
-
-    const args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-    astgen.instructions.items[inst] = .{ .call = .{ .@"fn" = func, .args = args } };
     return inst;
 }
 
@@ -1935,6 +1994,8 @@ fn resolve(astgen: *AstGen, _index: InstIndex) !?InstIndex {
             .false,
             .integer,
             .float,
+            .vector,
+            .matrix,
             => return index,
 
             .mul,
@@ -2082,6 +2143,59 @@ fn resolveSymbol(astgen: *AstGen, inst_idx: InstIndex) !?InstIndex {
         },
         else => return null,
     }
+}
+
+pub fn eql(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
+    const a = astgen.getInst(a_idx);
+    const b = astgen.getInst(b_idx);
+
+    return switch (a) {
+        .bool_type, .true, .false => switch (b) {
+            .bool_type, .true, .false => true,
+            else => false,
+        },
+        .integer, .u32_type, .i32_type => switch (b) {
+            .integer, .u32_type, .i32_type => true,
+            else => false,
+        },
+        .float, .f32_type, .f16_type => switch (b) {
+            .float, .f32_type, .f16_type => true,
+            else => false,
+        },
+        .vector => |vec_a| switch (b) {
+            .vector => |vec_b| astgen.eqlVector(vec_a.type, vec_b.type),
+            .vector_type => astgen.eqlVector(vec_a.type, b_idx),
+            else => false,
+        },
+        .vector_type => switch (b) {
+            .vector => |vec_b| astgen.eqlVector(a_idx, vec_b.type),
+            .vector_type => astgen.eqlVector(a_idx, b_idx),
+            else => false,
+        },
+        .matrix => |mat_a| switch (b) {
+            .matrix => |mat_b| astgen.eqlMatrix(mat_a.type, mat_b.type),
+            .matrix_type => astgen.eqlMatrix(mat_a.type, b_idx),
+            else => false,
+        },
+        .matrix_type => switch (b) {
+            .matrix => |mat_b| astgen.eqlMatrix(a_idx, mat_b.type),
+            .matrix_type => astgen.eqlMatrix(a_idx, b_idx),
+            else => false,
+        },
+        else => if (std.meta.activeTag(a) == std.meta.activeTag(b)) true else false,
+    };
+}
+
+pub fn eqlVector(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
+    const a = astgen.getInst(a_idx).vector_type;
+    const b = astgen.getInst(b_idx).vector_type;
+    return a.size == b.size and astgen.eql(a.elem_type, b.elem_type);
+}
+
+pub fn eqlMatrix(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
+    const a = astgen.getInst(a_idx).matrix_type;
+    const b = astgen.getInst(b_idx).matrix_type;
+    return a.cols == b.cols and a.rows == b.rows and astgen.eql(a.elem_type, b.elem_type);
 }
 
 fn allocInst(astgen: *AstGen) error{OutOfMemory}!InstIndex {
