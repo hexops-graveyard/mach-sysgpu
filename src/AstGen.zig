@@ -171,9 +171,6 @@ fn genGlobalVariable(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
     var group = null_inst;
     if (extra_data.attrs != null_node) {
         for (astgen.tree.spanToList(extra_data.attrs)) |attr| {
-            const attr_node_lhs = astgen.tree.nodeLHS(attr);
-            const attr_node_lhs_loc = astgen.tree.nodeLoc(attr_node_lhs);
-
             if (!is_resource) {
                 try astgen.errors.add(
                     astgen.tree.nodeLoc(attr),
@@ -185,78 +182,8 @@ fn genGlobalVariable(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
             }
 
             switch (astgen.tree.nodeTag(attr)) {
-                .attr_binding => {
-                    binding = try astgen.genExpr(scope, attr_node_lhs);
-
-                    if (astgen.resolveConstExpr(binding) == null) {
-                        try astgen.errors.add(
-                            attr_node_lhs_loc,
-                            "expected const-expression, found '{s}'",
-                            .{attr_node_lhs_loc.slice(astgen.tree.source)},
-                            null,
-                        );
-                        return error.AnalysisFail;
-                    }
-
-                    const binding_res = try astgen.resolve(binding);
-                    const is_integer = if (binding_res) |res| astgen.getInst(res) == .integer else false;
-                    if (!is_integer) {
-                        try astgen.errors.add(
-                            attr_node_lhs_loc,
-                            "binding value must be integer",
-                            .{},
-                            null,
-                        );
-                        return error.AnalysisFail;
-                    }
-
-                    const is_negative = astgen.getInst(binding_res.?).integer.value < 0;
-                    if (is_negative) {
-                        try astgen.errors.add(
-                            attr_node_lhs_loc,
-                            "binding value must be a positive",
-                            .{},
-                            null,
-                        );
-                        return error.AnalysisFail;
-                    }
-                },
-                .attr_group => {
-                    group = try astgen.genExpr(scope, attr_node_lhs);
-
-                    if (astgen.resolveConstExpr(group) == null) {
-                        try astgen.errors.add(
-                            attr_node_lhs_loc,
-                            "expected const-expression, found '{s}'",
-                            .{attr_node_lhs_loc.slice(astgen.tree.source)},
-                            null,
-                        );
-                        return error.AnalysisFail;
-                    }
-
-                    const group_res = try astgen.resolve(group);
-                    const is_integer = if (group_res) |res| astgen.getInst(res) == .integer else false;
-                    if (!is_integer) {
-                        try astgen.errors.add(
-                            attr_node_lhs_loc,
-                            "group value must be integer",
-                            .{},
-                            null,
-                        );
-                        return error.AnalysisFail;
-                    }
-
-                    const is_negative = astgen.getInst(group_res.?).integer.value < 0;
-                    if (is_negative) {
-                        try astgen.errors.add(
-                            attr_node_lhs_loc,
-                            "group value must be a positive",
-                            .{},
-                            null,
-                        );
-                        return error.AnalysisFail;
-                    }
-                },
+                .attr_binding => binding = try astgen.attrBinding(scope, attr),
+                .attr_group => group = try astgen.attrGroup(scope, attr),
                 else => {
                     try astgen.errors.add(
                         astgen.tree.nodeLoc(attr),
@@ -673,6 +600,86 @@ fn getFnParams(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     }
 
     return astgen.addRefList(astgen.scratch.items[scratch_top..]);
+}
+
+fn attrBinding(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
+    const binding = try astgen.genExpr(scope, node_lhs);
+
+    if (astgen.resolveConstExpr(binding) == null) {
+        try astgen.errors.add(
+            node_lhs_loc,
+            "expected const-expression, found '{s}'",
+            .{node_lhs_loc.slice(astgen.tree.source)},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    const binding_res = try astgen.resolve(binding);
+    const is_integer = if (binding_res) |res| astgen.getInst(res) == .integer else false;
+    if (!is_integer) {
+        try astgen.errors.add(
+            node_lhs_loc,
+            "binding value must be integer",
+            .{},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    if (astgen.getInst(binding_res.?).integer.value < 0) {
+        try astgen.errors.add(
+            node_lhs_loc,
+            "binding value must be a positive",
+            .{},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    return binding;
+}
+
+fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
+    const group = try astgen.genExpr(scope, node_lhs);
+
+    if (astgen.resolveConstExpr(group) == null) {
+        try astgen.errors.add(
+            node_lhs_loc,
+            "expected const-expression, found '{s}'",
+            .{node_lhs_loc.slice(astgen.tree.source)},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    const group_res = try astgen.resolve(group);
+    const is_integer = if (group_res) |res| astgen.getInst(res) == .integer else false;
+    if (!is_integer) {
+        try astgen.errors.add(
+            node_lhs_loc,
+            "group value must be integer",
+            .{},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    if (astgen.getInst(group_res.?).integer.value < 0) {
+        try astgen.errors.add(
+            node_lhs_loc,
+            "group value must be a positive",
+            .{},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    return group;
 }
 
 fn attrAlign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u29 {
