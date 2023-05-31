@@ -1482,36 +1482,33 @@ fn callExpr(p: *Parser) !?NodeIndex {
     var rhs = null_node;
 
     if (p.peekToken(.tag, 0) == .ident and p.peekToken(.tag, 1) == .paren_left) {
-        // fn call
+        // fn call or struct construct
         _ = p.advanceToken();
-    } else if (p.peekToken(.tag, 1) != .template_left and
-        (p.isVectorPrefix() or
-        p.isMatrixPrefix() or
-        p.peekToken(.tag, 0) == .k_array))
-    {
-        // without template args ('vec2', 'array', etc)
-        _ = p.advanceToken();
-    } else {
-        // maybe with template args ('i32', 'vec2<f32>', 'array<i32>', etc)
-        const type_node = try p.typeSpecifierWithoutIdent() orelse return null;
-        const tag = p.nodes.items(.tag)[type_node];
-        switch (tag) {
-            .bool_type,
-            .number_type,
-            .vector_type,
-            .matrix_type,
-            .array_type,
-            => rhs = type_node,
-            else => {
-                try p.errors.add(
-                    p.getToken(.loc, main_token),
-                    "type '{s}' can not be constructed",
-                    .{p.getToken(.tag, main_token).symbol()},
-                    null,
-                );
-                return error.Parsing;
-            },
-        }
+    } else switch (p.peekToken(.tag, 0)) {
+        .k_bool, .k_u32, .k_i32, .k_f32, .k_f16 => {
+            _ = p.advanceToken();
+        },
+        .k_vec2,
+        .k_vec3,
+        .k_vec4,
+        .k_mat2x2,
+        .k_mat2x3,
+        .k_mat2x4,
+        .k_mat3x2,
+        .k_mat3x3,
+        .k_mat3x4,
+        .k_mat4x2,
+        .k_mat4x3,
+        .k_mat4x4,
+        .k_array,
+        => {
+            if (p.peekToken(.tag, 1) == .template_left) {
+                rhs = try p.typeSpecifierWithoutIdent() orelse return null;
+            } else {
+                _ = p.advanceToken();
+            }
+        },
+        else => return null,
     }
 
     const lhs = try p.expectArgumentListExpr();

@@ -117,12 +117,17 @@ test "must pass" {
             \\  n: u32,
             \\}
             \\var v1: G;
+            \\var v2: vec2<u32>;
+            \\var v3: vec2<f32>;
+            \\var v4: mat3x4<i32>;
             \\fn test() -> u32 {
             \\  v0 = v1.l.f[0].n;
             \\  v0 = urmom();
             \\}
             \\fn urmom() -> u32 {
-            \\
+            \\  v2 = vec2();
+            \\  v3 = vec2<f32>();
+            \\  v4 = mat3x4<i32>();
             \\}
         ;
         var ir = try expectIR(source);
