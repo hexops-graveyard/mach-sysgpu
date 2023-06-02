@@ -334,14 +334,14 @@ pub const Node = struct {
         sampler_type,
 
         /// TOK : k_vec2, k_vec3, k_vec4
-        /// LHS : Type
+        /// LHS : Type?
         /// RHS : --
         vector_type,
 
         /// TOK : k_mat2x2, k_mat2x3, k_mat2x4,
         ///       k_mat3x2, k_mat3x3, k_mat3x4,
         ///       k_mat4x2, k_mat4x3, k_mat4x4
-        /// LHS : Type
+        /// LHS : Type?
         /// RHS : --
         matrix_type,
 
@@ -351,7 +351,7 @@ pub const Node = struct {
         atomic_type,
 
         /// TOK : k_array
-        /// LHS : Type
+        /// LHS : Type?
         /// RHS : Expr?
         array_type,
 
@@ -364,10 +364,10 @@ pub const Node = struct {
         ///       k_texture_3d, k_texture_cube, k_texture_cube_array
         /// LHS : Type
         /// RHS : --
-        texture_type,
+        sampled_texture_type,
 
-        /// TOK : k_texture_multisampled_2d
-        /// LHS : Type
+        /// TOK : k_texture_multisampled_2d, k_texture_depth_multisampled_2d
+        /// LHS : Type?
         /// RHS : --
         multisampled_texture_type,
 
@@ -384,7 +384,6 @@ pub const Node = struct {
 
         /// TOK : k_texture_depth_2d, k_texture_depth_2d_array
         ///       k_texture_depth_cube, k_texture_depth_cube_array
-        ///       k_texture_depth_multisampled_2d
         /// LHS : --
         /// RHS : --
         depth_texture_type,

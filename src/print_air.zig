@@ -45,22 +45,16 @@ fn Printer(comptime Writer: type) type {
                     try self.printFnDecl(indent, index);
                     try self.printFieldEnd();
                 },
-                .bool_type,
-                .i32_type,
-                .u32_type,
-                .f32_type,
-                .f16_type,
+                .bool => try self.printBool(indent, index),
+                .int, .float => try self.printNumber(indent, index),
                 .sampler_type,
                 .comparison_sampler_type,
                 .external_texture_type,
-                .true,
-                .false,
                 => {
                     try self.tty.setColor(self.writer, .bright_magenta);
                     try self.writer.print(".{s}", .{@tagName(inst)});
                     try self.tty.setColor(self.writer, .reset);
                 },
-                .integer, .float => try self.printNumberLiteral(indent, index),
                 .mul,
                 .div,
                 .mod,
@@ -225,14 +219,36 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printNumberLiteral(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+        fn printBool(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+            const inst = self.ir.instructions[index];
+            if (inst.bool.value) |value| {
+                try self.instBlockStart(index);
+                switch (value) {
+                    .literal => |lit| try self.printFieldAny(indent + 1, "value", lit),
+                    .inst => |cast_inst| try self.printFieldAny(indent + 1, "cast", cast_inst),
+                }
+                try self.instBlockEnd(indent);
+            } else {
+                try self.instStart(index);
+                try self.instEnd();
+            }
+        }
+
+        fn printNumber(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             switch (inst) {
-                inline .integer, .float => |num| {
-                    try self.printFieldAny(indent + 1, "value", num.value);
-                    try self.printFieldAny(indent + 1, "base", num.base);
-                    try self.printFieldEnum(indent + 1, "tag", num.tag);
+                inline .int, .float => |num| {
+                    try self.printFieldEnum(indent + 1, "type", num.type);
+                    if (num.value) |value| {
+                        switch (value) {
+                            .literal => |lit| {
+                                try self.printFieldAny(indent + 1, "value", lit.value);
+                                try self.printFieldAny(indent + 1, "base", lit.base);
+                            },
+                            .inst => |cast_inst| try self.printFieldAny(indent + 1, "cast", cast_inst),
+                        }
+                    }
                 },
                 else => unreachable,
             }

@@ -1221,54 +1221,55 @@ fn typeSpecifier(p: *Parser) !?NodeIndex {
 }
 
 fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
-    if (p.isVectorPrefix()) {
-        const main_token = p.advanceToken();
-
-        _ = try p.expectToken(.template_left);
-        const elem_type = try p.expectTypeSpecifier();
-        _ = try p.expectToken(.template_right);
-
-        return try p.addNode(.{
-            .tag = .vector_type,
-            .main_token = main_token,
-            .lhs = elem_type,
-        });
-    }
-
-    if (p.isMatrixPrefix()) {
-        const main_token = p.advanceToken();
-
-        _ = try p.expectToken(.template_left);
-        const elem_type = try p.expectTypeSpecifier();
-        _ = try p.expectToken(.template_right);
-
-        return try p.addNode(.{
-            .tag = .matrix_type,
-            .main_token = main_token,
-            .lhs = elem_type,
-        });
-    }
-
-    const main_token = p.tok_i;
+    const main_token = p.advanceToken();
     switch (p.getToken(.tag, main_token)) {
+        .k_bool => return try p.addNode(.{ .tag = .bool_type, .main_token = main_token }),
         .k_i32,
         .k_u32,
         .k_f32,
         .k_f16,
-        => {
-            _ = p.advanceToken();
-            return try p.addNode(.{ .tag = .number_type, .main_token = main_token });
+        => return try p.addNode(.{ .tag = .number_type, .main_token = main_token }),
+        .k_vec2, .k_vec3, .k_vec4 => {
+            var elem_type = null_node;
+
+            if (p.eatToken(.template_left)) |_| {
+                elem_type = try p.expectTypeSpecifier();
+                _ = try p.expectToken(.template_right);
+            }
+
+            return try p.addNode(.{
+                .tag = .vector_type,
+                .main_token = main_token,
+                .lhs = elem_type,
+            });
         },
-        .k_bool => {
-            _ = p.advanceToken();
-            return try p.addNode(.{ .tag = .bool_type, .main_token = main_token });
+        .k_mat2x2,
+        .k_mat2x3,
+        .k_mat2x4,
+        .k_mat3x2,
+        .k_mat3x3,
+        .k_mat3x4,
+        .k_mat4x2,
+        .k_mat4x3,
+        .k_mat4x4,
+        => {
+            var elem_type = null_node;
+
+            if (p.eatToken(.template_left)) |_| {
+                elem_type = try p.expectTypeSpecifier();
+                _ = try p.expectToken(.template_right);
+            }
+
+            return try p.addNode(.{
+                .tag = .matrix_type,
+                .main_token = main_token,
+                .lhs = elem_type,
+            });
         },
         .k_sampler, .k_sampler_comparison => {
-            _ = p.advanceToken();
             return try p.addNode(.{ .tag = .sampler_type, .main_token = main_token });
         },
         .k_atomic => {
-            _ = p.advanceToken();
             _ = try p.expectToken(.template_left);
             const elem_type = try p.expectTypeSpecifier();
             _ = try p.expectToken(.template_right);
@@ -1279,22 +1280,25 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
             });
         },
         .k_array => {
-            _ = p.advanceToken();
-            _ = try p.expectToken(.template_left);
-            const elem_type = try p.expectTypeSpecifier();
+            var elem_type = null_node;
             var size = null_node;
-            if (p.eatToken(.comma)) |_| {
-                size = try p.elementCountExpr() orelse {
-                    try p.errors.add(
-                        p.peekToken(.loc, 0),
-                        "expected array size expression, found '{s}'",
-                        .{p.peekToken(.tag, 0).symbol()},
-                        null,
-                    );
-                    return error.Parsing;
-                };
+
+            if (p.eatToken(.template_left)) |_| {
+                elem_type = try p.expectTypeSpecifier();
+                if (p.eatToken(.comma)) |_| {
+                    size = try p.elementCountExpr() orelse {
+                        try p.errors.add(
+                            p.peekToken(.loc, 0),
+                            "expected array size expression, found '{s}'",
+                            .{p.peekToken(.tag, 0).symbol()},
+                            null,
+                        );
+                        return error.Parsing;
+                    };
+                }
+                _ = try p.expectToken(.template_right);
             }
-            _ = try p.expectToken(.template_right);
+
             return try p.addNode(.{
                 .tag = .array_type,
                 .main_token = main_token,
@@ -1303,7 +1307,6 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
             });
         },
         .k_ptr => {
-            _ = p.advanceToken();
             _ = try p.expectToken(.template_left);
 
             const addr_space = try p.expectAddressSpace();
@@ -1333,17 +1336,26 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
         .k_texture_cube,
         .k_texture_cube_array,
         => {
-            _ = p.advanceToken();
             _ = try p.expectToken(.template_left);
             const elem_type = try p.expectTypeSpecifier();
             _ = try p.expectToken(.template_right);
             return try p.addNode(.{
-                .tag = .texture_type,
+                .tag = .sampled_texture_type,
                 .main_token = main_token,
                 .lhs = elem_type,
             });
         },
         .k_texture_multisampled_2d => {
+            _ = try p.expectToken(.template_left);
+            const elem_type = try p.expectTypeSpecifier();
+            _ = try p.expectToken(.template_right);
+            return try p.addNode(.{
+                .tag = .multisampled_texture_type,
+                .main_token = main_token,
+                .lhs = elem_type,
+            });
+        },
+        .k_texture_depth_multisampled_2d => {
             return try p.addNode(.{
                 .tag = .multisampled_texture_type,
                 .main_token = main_token,
@@ -1359,7 +1371,6 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
         .k_texture_depth_2d_array,
         .k_texture_depth_cube,
         .k_texture_depth_cube_array,
-        .k_texture_depth_multisampled_2d,
         => {
             return try p.addNode(.{
                 .tag = .depth_texture_type,
@@ -1371,7 +1382,6 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
         .k_texture_storage_2d_array,
         .k_texture_storage_3d,
         => {
-            _ = p.advanceToken();
             _ = try p.expectToken(.template_left);
             const texel_format = try p.expectTexelFormat();
             _ = try p.expectToken(.comma);
@@ -1386,32 +1396,6 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
         },
         else => return null,
     }
-}
-
-fn isVectorPrefix(p: *Parser) bool {
-    return switch (p.peekToken(.tag, 0)) {
-        .k_vec2,
-        .k_vec3,
-        .k_vec4,
-        => true,
-        else => false,
-    };
-}
-
-fn isMatrixPrefix(p: *Parser) bool {
-    return switch (p.peekToken(.tag, 0)) {
-        .k_mat2x2,
-        .k_mat2x3,
-        .k_mat2x4,
-        .k_mat3x2,
-        .k_mat3x3,
-        .k_mat3x4,
-        .k_mat4x2,
-        .k_mat4x3,
-        .k_mat4x4,
-        => true,
-        else => false,
-    };
 }
 
 fn expectAddressSpace(p: *Parser) !NodeIndex {
@@ -1481,13 +1465,21 @@ fn callExpr(p: *Parser) !?NodeIndex {
     const main_token = p.tok_i;
     var rhs = null_node;
 
-    if (p.peekToken(.tag, 0) == .ident and p.peekToken(.tag, 1) == .paren_left) {
+    switch (p.peekToken(.tag, 0)) {
         // fn call or struct construct
-        _ = p.advanceToken();
-    } else switch (p.peekToken(.tag, 0)) {
-        .k_bool, .k_u32, .k_i32, .k_f32, .k_f16 => {
-            _ = p.advanceToken();
+        .ident => {
+            if (p.peekToken(.tag, 1) == .paren_left) {
+                _ = p.advanceToken();
+            } else {
+                return null;
+            }
         },
+        // construct
+        .k_bool,
+        .k_u32,
+        .k_i32,
+        .k_f32,
+        .k_f16,
         .k_vec2,
         .k_vec3,
         .k_vec4,
@@ -1502,11 +1494,7 @@ fn callExpr(p: *Parser) !?NodeIndex {
         .k_mat4x4,
         .k_array,
         => {
-            if (p.peekToken(.tag, 1) == .template_left) {
-                rhs = try p.typeSpecifierWithoutIdent() orelse return null;
-            } else {
-                _ = p.advanceToken();
-            }
+            rhs = try p.typeSpecifierWithoutIdent() orelse return null;
         },
         else => return null,
     }

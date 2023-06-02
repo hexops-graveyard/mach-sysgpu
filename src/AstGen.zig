@@ -281,16 +281,19 @@ fn genStruct(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
         switch (member_type_inst) {
             .array_type,
-            .vector_type,
-            .matrix_type,
             .atomic_type,
             .struct_ref,
-            .bool_type,
-            .u32_type,
-            .i32_type,
-            .f32_type,
-            .f16_type,
             => {},
+            inline .bool, .int, .float, .vector, .matrix => |data| {
+                if (data.value != null) {
+                    try astgen.errors.add(
+                        member_name_loc,
+                        "invalid struct member type '{s}'",
+                        .{member_type_loc.slice(astgen.tree.source)},
+                        null,
+                    );
+                }
+            },
             else => {
                 try astgen.errors.add(
                     member_name_loc,
@@ -618,7 +621,7 @@ fn attrBinding(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const binding_res = try astgen.resolve(binding);
-    const is_integer = if (binding_res) |res| astgen.getInst(res) == .integer else false;
+    const is_integer = if (binding_res) |res| astgen.getInst(res) == .int else false;
     if (!is_integer) {
         try astgen.errors.add(
             node_lhs_loc,
@@ -629,7 +632,7 @@ fn attrBinding(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    if (astgen.getInst(binding_res.?).integer.value < 0) {
+    if (astgen.getInst(binding_res.?).int.value.?.literal.value < 0) {
         try astgen.errors.add(
             node_lhs_loc,
             "binding value must be a positive",
@@ -658,7 +661,7 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const group_res = try astgen.resolve(group);
-    const is_integer = if (group_res) |res| astgen.getInst(res) == .integer else false;
+    const is_integer = if (group_res) |res| astgen.getInst(res) == .int else false;
     if (!is_integer) {
         try astgen.errors.add(
             node_lhs_loc,
@@ -669,7 +672,7 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    if (astgen.getInst(group_res.?).integer.value < 0) {
+    if (astgen.getInst(group_res.?).int.value.?.literal.value < 0) {
         try astgen.errors.add(
             node_lhs_loc,
             "group value must be a positive",
@@ -685,8 +688,8 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 fn attrAlign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u29 {
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
     if (astgen.resolveConstExpr(expr)) |expr_res| {
-        if (expr_res == .integer) {
-            return @intCast(u29, expr_res.integer);
+        if (expr_res == .int) {
+            return @intCast(u29, expr_res.int);
         }
     }
 
@@ -702,8 +705,8 @@ fn attrAlign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u29 {
 fn attrSize(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
     if (astgen.resolveConstExpr(expr)) |expr_res| {
-        if (expr_res == .integer) {
-            return @intCast(u32, expr_res.integer);
+        if (expr_res == .int) {
+            return @intCast(u32, expr_res.int);
         }
     }
 
@@ -808,8 +811,8 @@ fn genExpr(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_tag = astgen.tree.nodeTag(node);
     switch (node_tag) {
         .number => return astgen.genNumber(node),
-        .true => return astgen.addInst(.true),
-        .false => return astgen.addInst(.false),
+        .true => return astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }),
+        .false => return astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }),
         .not => return astgen.genNot(scope, node),
         .negate => return astgen.genNegate(scope, node),
         .deref => return astgen.genDeref(scope, node),
@@ -913,13 +916,17 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
 
         inst = .{
             .float = .{
-                .value = value,
-                .base = base,
-                .tag = switch (suffix) {
-                    0 => .none,
-                    'f' => .f,
-                    'h' => .h,
+                .type = switch (suffix) {
+                    0 => .abstract,
+                    'f' => .f32,
+                    'h' => .f16,
                     else => unreachable,
+                },
+                .value = .{
+                    .literal = .{
+                        .value = value,
+                        .base = base,
+                    },
                 },
             },
         };
@@ -939,14 +946,18 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
         };
 
         inst = .{
-            .integer = .{
-                .value = value,
-                .base = base,
-                .tag = switch (suffix) {
-                    0 => .none,
-                    'i' => .i,
-                    'u' => .u,
+            .int = .{
+                .type = switch (suffix) {
+                    0 => .abstract,
+                    'u' => .u32,
+                    'i' => .i32,
                     else => unreachable,
+                },
+                .value = .{
+                    .literal = .{
+                        .value = value,
+                        .base = base,
+                    },
                 },
             },
         };
@@ -960,11 +971,8 @@ fn genNot(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const lhs = try astgen.genExpr(scope, node_lhs);
 
     if (try astgen.resolve(lhs)) |lhs_res| {
-        switch (astgen.getInst(lhs_res)) {
-            .bool_type, .true, .false => {
-                return astgen.addInst(.{ .not = lhs });
-            },
-            else => {},
+        if (astgen.getInst(lhs_res) == .bool) {
+            return astgen.addInst(.{ .not = lhs });
         }
     }
 
@@ -984,13 +992,7 @@ fn genNegate(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     if (try astgen.resolve(lhs)) |lhs_res| {
         switch (astgen.getInst(lhs_res)) {
-            .u32_type,
-            .i32_type,
-            .f32_type,
-            .f16_type,
-            .integer,
-            .float,
-            => return astgen.addInst(.{ .negate = lhs }),
+            .int, .float => return astgen.addInst(.{ .negate = lhs }),
             else => {},
         }
     }
@@ -1074,49 +1076,19 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     var is_valid = false;
     switch (node_tag) {
         .shift_left, .shift_right, .@"and", .@"or", .xor => {
-            switch (lhs_res_tag) {
-                .u32_type, .i32_type, .integer => switch (rhs_res_tag) {
-                    .u32_type, .i32_type, .integer => {
-                        is_valid = true;
-                    },
-                    else => {},
-                },
-                else => {},
-            }
+            is_valid = lhs_res_tag == .int and rhs_res_tag == .int;
         },
         .logical_and, .logical_or => {
-            switch (lhs_res_tag) {
-                .bool_type, .true, .false => switch (rhs_res_tag) {
-                    .bool_type, .true, .false => {
-                        is_valid = true;
-                    },
-                    else => {},
-                },
-                else => {},
-            }
+            is_valid = lhs_res_tag == .bool and rhs_res_tag == .bool;
         },
-        else => {
-            switch (lhs_res_tag) {
-                .u32_type,
-                .i32_type,
-                .f32_type,
-                .f16_type,
-                .integer,
-                .float,
-                => switch (rhs_res_tag) {
-                    .u32_type,
-                    .i32_type,
-                    .f32_type,
-                    .f16_type,
-                    .integer,
-                    .float,
-                    => {
-                        is_valid = true;
-                    },
-                    else => {},
+        else => switch (lhs_res_tag) {
+            .int, .float => switch (rhs_res_tag) {
+                .int, .float => {
+                    is_valid = true;
                 },
                 else => {},
-            }
+            },
+            else => {},
         },
     }
 
@@ -1151,7 +1123,6 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 }
 
 fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
-    const inst = try astgen.allocInst();
     const token = astgen.tree.nodeToken(node);
     const token_tag = astgen.tree.tokenTag(token);
     const token_loc = astgen.tree.tokenLoc(token);
@@ -1159,31 +1130,51 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_rhs = astgen.tree.nodeRHS(node);
     const node_loc = astgen.tree.nodeLoc(node);
 
-    astgen.instructions.items[inst] = switch (token_tag) {
-        .k_bool => if (node_lhs == null_inst) .false else unreachable,
-        .k_u32 => if (node_lhs == null_inst) .{ .integer = .{ .value = 0, .base = 10, .tag = .u } } else unreachable,
-        .k_i32 => if (node_lhs == null_inst) .{ .integer = .{ .value = 0, .base = 10, .tag = .i } } else unreachable,
-        .k_f32 => if (node_lhs == null_inst) .{ .float = .{ .value = 0, .base = 10, .tag = .f } } else unreachable,
-        .k_f16 => if (node_lhs == null_inst) .{ .float = .{ .value = 0, .base = 10, .tag = .h } } else unreachable,
-        .k_vec2, .k_vec3, .k_vec4 => if (node_lhs == null_inst) .{
-            .vector = .{
-                .value = .{ 0, 0, 0, 0 },
-                .type = if (node_rhs != null_inst)
-                    try astgen.genVectorType(scope, node_rhs)
-                else
-                    try astgen.addInst(.{
-                        .vector_type = .{
-                            .size = switch (token_tag) {
-                                .k_vec2 => .two,
-                                .k_vec3 => .three,
-                                .k_vec4 => .four,
-                                else => unreachable,
-                            },
-                            .elem_type = try astgen.addInst(.u32_type), // TODO: AbstractInt!,
-                        },
-                    }),
-            },
-        } else unreachable,
+    if (node_rhs == null_node) {
+        std.debug.assert(token_tag == .ident);
+
+        const inst = try astgen.allocInst();
+        const func = try astgen.findSymbol(scope, token);
+        if (astgen.getInst(func) == .fn_decl) {
+            const scratch_top = astgen.scratch.items.len;
+            defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
+
+            if (node_lhs != null_node) {
+                for (astgen.tree.spanToList(node_lhs)) |arg_node| {
+                    const arg = try astgen.genExpr(scope, arg_node);
+                    try astgen.scratch.append(astgen.allocator, arg);
+                }
+            }
+
+            const args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
+            astgen.instructions.items[inst] = .{ .call = .{ .@"fn" = func, .args = args } };
+            return inst;
+        }
+
+        try astgen.errors.add(
+            node_loc,
+            "'{s}' cannot be called",
+            .{token_loc.slice(astgen.tree.source)},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
+    switch (token_tag) {
+        .k_bool => if (node_lhs == null_node) return astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }) else unreachable,
+        .k_u32 => if (node_lhs == null_node) return astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .u32 } }) else unreachable,
+        .k_i32 => if (node_lhs == null_node) return astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .i32 } }) else unreachable,
+        .k_f32 => if (node_lhs == null_node) return astgen.addInst(.{ .float = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .f32 } }) else unreachable,
+        .k_f16 => if (node_lhs == null_node) return astgen.addInst(.{ .float = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .f16 } }) else unreachable,
+        .k_vec2,
+        .k_vec3,
+        .k_vec4,
+        => if (node_lhs == null_node) return astgen.genVector(
+            scope,
+            node_rhs,
+            try astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .abstract } }),
+            .{ .literal = std.mem.zeroes(@Vector(4, u32)) },
+        ) else unreachable,
         .k_mat2x2,
         .k_mat2x3,
         .k_mat2x4,
@@ -1193,61 +1184,14 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .k_mat4x2,
         .k_mat4x3,
         .k_mat4x4,
-        => if (node_lhs == null_inst) .{
-            .matrix = .{
-                .value = .{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
-                .type = if (node_rhs != null_inst)
-                    try astgen.genMatrixType(scope, node_rhs)
-                else
-                    try astgen.addInst(.{
-                        .matrix_type = .{
-                            .cols = switch (token_tag) {
-                                .k_mat2x2, .k_mat2x3, .k_mat2x4 => .two,
-                                .k_mat3x2, .k_mat3x3, .k_mat3x4 => .three,
-                                .k_mat4x2, .k_mat4x3, .k_mat4x4 => .four,
-                                else => unreachable,
-                            },
-                            .rows = switch (token_tag) {
-                                .k_mat2x2, .k_mat3x2, .k_mat4x2 => .two,
-                                .k_mat2x3, .k_mat3x3, .k_mat4x3 => .three,
-                                .k_mat2x4, .k_mat3x4, .k_mat4x4 => .four,
-                                else => unreachable,
-                            },
-                            .elem_type = try astgen.addInst(.u32_type), // TODO: AbstractInt!,
-                        },
-                    }),
-            },
-        } else unreachable,
-        .ident => {
-            const func = try astgen.findSymbol(scope, token);
-            if (astgen.getInst(func) == .fn_decl) {
-                const scratch_top = astgen.scratch.items.len;
-                defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
-
-                if (node_lhs != null_node) {
-                    for (astgen.tree.spanToList(node_lhs)) |arg_node| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        try astgen.scratch.append(astgen.allocator, arg);
-                    }
-                }
-
-                const args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-                astgen.instructions.items[inst] = .{ .call = .{ .@"fn" = func, .args = args } };
-                return inst;
-            } else {
-                try astgen.errors.add(
-                    node_loc,
-                    "'{s}' cannot be called",
-                    .{token_loc.slice(astgen.tree.source)},
-                    null,
-                );
-                return error.AnalysisFail;
-            }
-        },
+        => if (node_lhs == null_node) return astgen.genMatrix(
+            scope,
+            node_rhs,
+            try astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .abstract } }),
+            .{ .literal = std.mem.zeroes(@Vector(4 * 4, u32)) },
+        ) else unreachable,
         else => unreachable,
-    };
-
-    return inst;
+    }
 }
 
 fn genBitcast(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -1262,87 +1206,85 @@ fn genBitcast(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const rhs_res_inst = astgen.getInst(rhs_res);
     var result_type = null_inst;
 
-    switch (lhs_inst) {
-        .u32_type,
-        .i32_type,
-        .f32_type,
-        => {
-            switch (rhs_res_inst) {
-                .u32_type,
-                .i32_type,
-                .f32_type,
-                => {
-                    // bitcast<T>(T) -> T
-                    // bitcast<T>(S) -> T
+    const lhs_is_32bit = switch (lhs_inst) {
+        .int => |int| int.type == .u32 or int.type == .i32,
+        .float => |float| float.type == .f32,
+        else => false,
+    };
+    const rhs_is_32bit = switch (rhs_res_inst) {
+        .int => |int| int.type == .u32 or int.type == .i32,
+        .float => |float| float.type == .f32,
+        else => false,
+    };
+
+    if (lhs_is_32bit) {
+        if (rhs_is_32bit) {
+            // bitcast<T>(T) -> T
+            // bitcast<T>(S) -> T
+            result_type = lhs;
+        } else if (rhs_res_inst == .vector) {
+            const rhs_vec_type = astgen.getInst(rhs_res_inst.vector.elem_type);
+
+            if (rhs_res_inst.vector.size == .two and
+                rhs_vec_type == .float and rhs_vec_type.float.type == .f16)
+            {
+                // bitcast<T>(vec2<f16>) -> T
+                result_type = lhs;
+            }
+        }
+    } else if (lhs_inst == .vector) {
+        if (rhs_is_32bit) {
+            const lhs_vec_type = astgen.getInst(lhs_inst.vector.elem_type);
+
+            if (lhs_inst.vector.size == .two and
+                lhs_vec_type == .float and lhs_vec_type.float.type == .f16)
+            {
+                // bitcast<vec2<f16>>(T) -> vec2<f16>
+                result_type = lhs;
+            }
+        } else if (rhs_res_inst == .vector) {
+            const lhs_vec_type = astgen.getInst(lhs_inst.vector.elem_type);
+            const rhs_vec_type = astgen.getInst(rhs_res_inst.vector.elem_type);
+
+            const lhs_vec_is_32bit = switch (lhs_vec_type) {
+                .int => |int| int.type == .u32 or int.type == .i32,
+                .float => |float| float.type == .f32,
+                else => false,
+            };
+            const rhs_vec_is_32bit = switch (rhs_vec_type) {
+                .int => |int| int.type == .u32 or int.type == .i32,
+                .float => |float| float.type == .f32,
+                else => false,
+            };
+
+            if (lhs_vec_is_32bit) {
+                if (rhs_vec_is_32bit) {
+                    if (lhs_inst.vector.size == rhs_res_inst.vector.size) {
+                        if (lhs_inst.vector.elem_type == rhs_res_inst.vector.elem_type) {
+                            // bitcast<vecN<T>>(vecN<T>) -> vecN<T>
+                            result_type = lhs;
+                        } else {
+                            // bitcast<vecN<T>>(vecN<S>) -> T
+                            result_type = lhs_inst.vector.elem_type;
+                        }
+                    }
+                } else if (rhs_vec_type == .float and rhs_vec_type.float.type == .f16) {
+                    if (lhs_inst.vector.size == .two and
+                        rhs_res_inst.vector.size == .four)
+                    {
+                        // bitcast<vec2<T>>(vec4<f16>) -> vec2<T>
+                        result_type = lhs;
+                    }
+                }
+            } else if (lhs_vec_type == .float and lhs_vec_type.float.type == .f16) {
+                if (rhs_res_inst.vector.size == .two and
+                    lhs_inst.vector.size == .four)
+                {
+                    // bitcast<vec4<f16>>(vec2<T>) -> vec4<f16>
                     result_type = lhs;
-                },
-                .vector_type => |rhs_vector_type| {
-                    if (rhs_vector_type.size == .two and
-                        astgen.getInst(rhs_vector_type.elem_type) == .f16_type)
-                    {
-                        // bitcast<T>(vec2<f16>) -> T
-                        result_type = lhs;
-                    }
-                },
-                else => {},
+                }
             }
-        },
-        .vector_type => |lhs_vector_type| {
-            switch (rhs_res_inst) {
-                .u32_type,
-                .i32_type,
-                .f32_type,
-                => {
-                    if (lhs_vector_type.size == .two and
-                        astgen.getInst(lhs_vector_type.elem_type) == .f16_type)
-                    {
-                        // bitcast<vec2<f16>>(T) -> vec2<f16>
-                        result_type = lhs;
-                    }
-                },
-                .vector_type => |rhs_vector_type| {
-                    const rhs_vec_type = astgen.getInst(rhs_vector_type.elem_type);
-                    switch (astgen.getInst(lhs_vector_type.elem_type)) {
-                        .u32_type, .i32_type, .f32_type => switch (rhs_vec_type) {
-                            .u32_type, .i32_type, .f32_type => {
-                                if (lhs_vector_type.size == rhs_vector_type.size) {
-                                    if (lhs_vector_type.elem_type == rhs_vector_type.elem_type) {
-                                        // bitcast<vecN<T>>(vecN<T>) -> vecN<T>
-                                        result_type = lhs;
-                                    } else {
-                                        // bitcast<vecN<T>>(vecN<S>) -> T
-                                        result_type = lhs_vector_type.elem_type;
-                                    }
-                                }
-                            },
-                            .f16_type => {
-                                if (lhs_vector_type.size == .two and
-                                    rhs_vector_type.size == .four)
-                                {
-                                    // bitcast<vec2<T>>(vec4<f16>) -> vec2<T>
-                                    result_type = lhs;
-                                }
-                            },
-                            else => {},
-                        },
-                        .f16_type => switch (rhs_vec_type) {
-                            .u32_type, .i32_type, .f32_type => {
-                                if (rhs_vector_type.size == .two and
-                                    lhs_vector_type.size == .four)
-                                {
-                                    // bitcast<vec4<f16>>(vec2<T>) -> vec4<f16>
-                                    result_type = lhs;
-                                }
-                            },
-                            else => {},
-                        },
-                        else => {},
-                    }
-                },
-                else => {},
-            }
-        },
-        else => {},
+        }
     }
 
     if (result_type != null_inst) {
@@ -1396,21 +1338,15 @@ fn genIndexAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     const rhs = try astgen.genExpr(scope, astgen.tree.nodeRHS(node));
     if (try astgen.resolve(rhs)) |rhs_res| {
-        switch (astgen.getInst(rhs_res)) {
-            .u32_type,
-            .i32_type,
-            .integer,
-            => {
-                const inst = try astgen.addInst(.{
-                    .index_access = .{
-                        .base = base,
-                        .elem_type = astgen.getInst(base_type).array_type.elem_type,
-                        .index = rhs,
-                    },
-                });
-                return inst;
-            },
-            else => {},
+        if (astgen.getInst(rhs_res) == .int) {
+            const inst = try astgen.addInst(.{
+                .index_access = .{
+                    .base = base,
+                    .elem_type = astgen.getInst(base_type).array_type.elem_type,
+                    .index = rhs,
+                },
+            });
+            return inst;
         }
     }
 
@@ -1479,15 +1415,15 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
 fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail, OutOfMemory }!InstIndex {
     return switch (astgen.tree.nodeTag(node)) {
-        .bool_type => try astgen.addInst(.bool_type),
+        .bool_type => try astgen.addInst(.{ .bool = .{ .value = null } }),
         .number_type => try astgen.genNumberType(node),
-        .vector_type => try astgen.genVectorType(scope, node),
-        .matrix_type => try astgen.genMatrixType(scope, node),
+        .vector_type => try astgen.genVector(scope, node, null_inst, null),
+        .matrix_type => try astgen.genMatrix(scope, node, null_inst, null),
         .atomic_type => try astgen.genAtomicType(scope, node),
         .array_type => try astgen.genArrayType(scope, node),
         .ptr_type => try astgen.genPtrType(scope, node),
         .sampler_type => try astgen.genSamplerType(node),
-        .texture_type => try astgen.genTextureType(scope, node),
+        .sampled_texture_type => try astgen.genSampledTextureType(scope, node),
         .multisampled_texture_type => try astgen.genMultisampledTextureType(scope, node),
         .storage_texture_type => try astgen.genStorageTextureType(node),
         .depth_texture_type => try astgen.genDepthTextureType(node),
@@ -1496,22 +1432,18 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
             const node_loc = astgen.tree.nodeLoc(node);
             const decl = try astgen.findSymbol(scope, astgen.tree.nodeToken(node));
             switch (astgen.getInst(decl)) {
-                .true,
-                .false,
-                .bool_type,
-                .i32_type,
-                .u32_type,
-                .f32_type,
-                .f16_type,
-                .vector_type,
-                .matrix_type,
+                .bool,
+                .int,
+                .float,
+                .vector,
+                .matrix,
                 .atomic_type,
                 .array_type,
                 .ptr_type,
                 .sampler_type,
                 .comparison_sampler_type,
                 .external_texture_type,
-                .texture_type,
+                .sampled_texture_type,
                 .multisampled_texture_type,
                 .storage_texture_type,
                 .depth_texture_type,
@@ -1540,86 +1472,65 @@ fn genNumberType(astgen: *AstGen, node: NodeIndex) !InstIndex {
     const token = astgen.tree.nodeToken(node);
     const token_tag = astgen.tree.tokenTag(token);
     return astgen.addInst(switch (token_tag) {
-        .k_i32 => .i32_type,
-        .k_u32 => .u32_type,
-        .k_f32 => .f32_type,
-        .k_f16 => .f16_type,
+        .k_i32 => .{ .int = .{ .type = .u32, .value = null } },
+        .k_u32 => .{ .int = .{ .type = .i32, .value = null } },
+        .k_f32 => .{ .float = .{ .type = .f32, .value = null } },
+        .k_f16 => .{ .float = .{ .type = .f16, .value = null } },
         else => unreachable,
     });
 }
 
-fn genVectorType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
-    const vector_type = try astgen.allocInst();
-    const elem_type_node = astgen.tree.nodeLHS(node);
-    const elem_type = try astgen.genType(scope, elem_type_node);
+fn genVector(astgen: *AstGen, scope: *Scope, node: NodeIndex, _elem_type: InstIndex, value: ?Air.Inst.Vector.Value) !InstIndex {
+    const inst = try astgen.allocInst();
+    const node_lhs = astgen.tree.nodeLHS(node);
+    var elem_type = _elem_type;
 
-    switch (astgen.getInst(elem_type)) {
-        .bool_type,
-        .u32_type,
-        .i32_type,
-        .f32_type,
-        .f16_type,
-        => {
-            const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-            astgen.instructions.items[vector_type] = .{
-                .vector_type = .{
-                    .size = switch (token_tag) {
-                        .k_vec2 => .two,
-                        .k_vec3 => .three,
-                        .k_vec4 => .four,
-                        else => unreachable,
-                    },
-                    .elem_type = elem_type,
-                },
-            };
-            return vector_type;
-        },
-        else => {
-            try astgen.errors.add(
-                astgen.tree.nodeLoc(elem_type_node),
-                "invalid vector component type",
-                .{},
-                try astgen.errors.createNote(
-                    null,
-                    "must be 'i32', 'u32', 'f32', 'f16' or 'bool'",
+    if (node_lhs != null_node) {
+        elem_type = try astgen.genType(scope, node_lhs);
+        switch (astgen.getInst(elem_type)) {
+            .bool, .int, .float => {},
+            else => {
+                try astgen.errors.add(
+                    astgen.tree.nodeLoc(node_lhs),
+                    "invalid vector component type",
                     .{},
-                ),
-            );
-            return error.AnalysisFail;
-        },
+                    try astgen.errors.createNote(
+                        null,
+                        "must be 'i32', 'u32', 'f32', 'f16' or 'bool'",
+                        .{},
+                    ),
+                );
+                return error.AnalysisFail;
+            },
+        }
     }
+
+    const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
+    astgen.instructions.items[inst] = .{
+        .vector = .{
+            .size = switch (token_tag) {
+                .k_vec2 => .two,
+                .k_vec3 => .three,
+                .k_vec4 => .four,
+                else => unreachable,
+            },
+            .elem_type = elem_type,
+            .value = value,
+        },
+    };
+    return inst;
 }
 
-fn genMatrixType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+fn genMatrix(astgen: *AstGen, scope: *Scope, node: NodeIndex, _elem_type: InstIndex, value: ?Air.Inst.Matrix.Value) !InstIndex {
     const inst = try astgen.allocInst();
-    const elem_type_node = astgen.tree.nodeLHS(node);
-    const elem_type = try astgen.genType(scope, elem_type_node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    var elem_type = _elem_type;
 
-    switch (astgen.getInst(elem_type)) {
-        .u32_type, .i32_type => {
-            const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-            astgen.instructions.items[inst] = .{
-                .matrix_type = .{
-                    .cols = switch (token_tag) {
-                        .k_mat2x2, .k_mat2x3, .k_mat2x4 => .two,
-                        .k_mat3x2, .k_mat3x3, .k_mat3x4 => .three,
-                        .k_mat4x2, .k_mat4x3, .k_mat4x4 => .four,
-                        else => unreachable,
-                    },
-                    .rows = switch (token_tag) {
-                        .k_mat2x2, .k_mat3x2, .k_mat4x2 => .two,
-                        .k_mat2x3, .k_mat3x3, .k_mat4x3 => .three,
-                        .k_mat2x4, .k_mat3x4, .k_mat4x4 => .four,
-                        else => unreachable,
-                    },
-                    .elem_type = elem_type,
-                },
-            };
-            return inst;
-        },
-        else => {
+    if (node_lhs != null_node) {
+        elem_type = try astgen.genType(scope, node_lhs);
+        if (astgen.getInst(elem_type) != .float) {
             try astgen.errors.add(
-                astgen.tree.nodeLoc(elem_type_node),
+                astgen.tree.nodeLoc(node_lhs),
                 "invalid matrix component type",
                 .{},
                 try astgen.errors.createNote(
@@ -1629,49 +1540,65 @@ fn genMatrixType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 ),
             );
             return error.AnalysisFail;
-        },
+        }
     }
+
+    const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
+    astgen.instructions.items[inst] = .{
+        .matrix = .{
+            .cols = switch (token_tag) {
+                .k_mat2x2, .k_mat2x3, .k_mat2x4 => .two,
+                .k_mat3x2, .k_mat3x3, .k_mat3x4 => .three,
+                .k_mat4x2, .k_mat4x3, .k_mat4x4 => .four,
+                else => unreachable,
+            },
+            .rows = switch (token_tag) {
+                .k_mat2x2, .k_mat3x2, .k_mat4x2 => .two,
+                .k_mat2x3, .k_mat3x3, .k_mat4x3 => .three,
+                .k_mat2x4, .k_mat3x4, .k_mat4x4 => .four,
+                else => unreachable,
+            },
+            .elem_type = elem_type,
+            .value = value,
+        },
+    };
+    return inst;
 }
 
 fn genAtomicType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     std.debug.assert(astgen.tree.nodeTag(node) == .atomic_type);
 
     const inst = try astgen.allocInst();
-    const elem_type_node = astgen.tree.nodeLHS(node);
-    const elem_type = try astgen.genType(scope, elem_type_node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const elem_type = try astgen.genType(scope, node_lhs);
 
-    switch (astgen.getInst(elem_type)) {
-        .u32_type, .i32_type => {
-            astgen.instructions.items[inst] = .{ .atomic_type = .{ .elem_type = elem_type } };
-            return inst;
-        },
-        else => {
-            try astgen.errors.add(
-                astgen.tree.nodeLoc(elem_type_node),
-                "invalid atomic component type",
-                .{},
-                try astgen.errors.createNote(
-                    null,
-                    "must be 'i32' or 'u32'",
-                    .{},
-                ),
-            );
-            return error.AnalysisFail;
-        },
+    if (astgen.getInst(elem_type) == .int) {
+        astgen.instructions.items[inst] = .{ .atomic_type = .{ .elem_type = elem_type } };
+        return inst;
     }
+
+    try astgen.errors.add(
+        astgen.tree.nodeLoc(node_lhs),
+        "invalid atomic component type",
+        .{},
+        try astgen.errors.createNote(
+            null,
+            "must be 'i32' or 'u32'",
+            .{},
+        ),
+    );
+    return error.AnalysisFail;
 }
 
 fn genPtrType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const inst = try astgen.allocInst();
-    const elem_type_node = astgen.tree.nodeLHS(node);
-    const elem_type = try astgen.genType(scope, elem_type_node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const elem_type = try astgen.genType(scope, node_lhs);
 
     switch (astgen.getInst(elem_type)) {
-        .bool_type,
-        .u32_type,
-        .i32_type,
-        .f32_type,
-        .f16_type,
+        .bool,
+        .int,
+        .float,
         .sampler_type,
         .comparison_sampler_type,
         .external_texture_type,
@@ -1713,7 +1640,7 @@ fn genPtrType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     try astgen.errors.add(
-        astgen.tree.nodeLoc(elem_type_node),
+        astgen.tree.nodeLoc(node_lhs),
         "invalid pointer component type",
         .{},
         null,
@@ -1723,25 +1650,23 @@ fn genPtrType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
 fn genArrayType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const inst = try astgen.allocInst();
-    const elem_type_node = astgen.tree.nodeLHS(node);
-    const elem_type = try astgen.genType(scope, elem_type_node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const elem_type = try astgen.genType(scope, node_lhs);
 
     switch (astgen.getInst(elem_type)) {
         .array_type,
-        .vector_type,
-        .matrix_type,
         .atomic_type,
         .struct_ref,
-        .u32_type,
-        .i32_type,
-        .f32_type,
-        .f16_type,
-        .bool_type,
+        .bool,
+        .int,
+        .float,
+        .vector,
+        .matrix,
         => {
             if (astgen.getInst(elem_type) == .array_type) {
                 if (astgen.getInst(elem_type).array_type.size == null_inst) {
                     try astgen.errors.add(
-                        astgen.tree.nodeLoc(elem_type_node),
+                        astgen.tree.nodeLoc(node_lhs),
                         "array componet type can not be a runtime-sized array",
                         .{},
                         null,
@@ -1769,7 +1694,7 @@ fn genArrayType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     try astgen.errors.add(
-        astgen.tree.nodeLoc(elem_type_node),
+        astgen.tree.nodeLoc(node_lhs),
         "invalid array component type",
         .{},
         null,
@@ -1787,68 +1712,56 @@ fn genSamplerType(astgen: *AstGen, node: NodeIndex) !InstIndex {
     });
 }
 
-fn genTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+fn genSampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const inst = try astgen.allocInst();
-    const elem_type_node = astgen.tree.nodeLHS(node);
-    const elem_type = try astgen.genType(scope, elem_type_node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const elem_type = try astgen.genType(scope, node_lhs);
+    const elem_type_inst = astgen.getInst(elem_type);
 
-    switch (astgen.getInst(elem_type)) {
-        .u32_type, .i32_type, .f32_type => {
-            const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-            astgen.instructions.items[inst] = .{
-                .texture_type = .{
-                    .kind = switch (token_tag) {
-                        .k_texture_1d => .@"1d",
-                        .k_texture_2d => .@"2d",
-                        .k_texture_2d_array => .@"2d_array",
-                        .k_texture_3d => .@"3d",
-                        .k_texture_cube => .cube,
-                        .k_texture_cube_array => .cube_array,
-                        else => unreachable,
-                    },
-                    .elem_type = elem_type,
+    if (elem_type_inst == .int or (elem_type_inst == .float and elem_type_inst.float.type == .f32)) {
+        const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
+        astgen.instructions.items[inst] = .{
+            .sampled_texture_type = .{
+                .kind = switch (token_tag) {
+                    .k_texture_1d => .@"1d",
+                    .k_texture_2d => .@"2d",
+                    .k_texture_2d_array => .@"2d_array",
+                    .k_texture_3d => .@"3d",
+                    .k_texture_cube => .cube,
+                    .k_texture_cube_array => .cube_array,
+                    else => unreachable,
                 },
-            };
-            return inst;
-        },
-        else => {
-            try astgen.errors.add(
-                astgen.tree.nodeLoc(elem_type_node),
-                "invalid texture component type",
-                .{},
-                try astgen.errors.createNote(
-                    null,
-                    "must be 'i32', 'u32' or 'f32'",
-                    .{},
-                ),
-            );
-            return error.AnalysisFail;
-        },
+                .elem_type = elem_type,
+            },
+        };
+        return inst;
     }
+
+    try astgen.errors.add(
+        astgen.tree.nodeLoc(node_lhs),
+        "invalid texture component type",
+        .{},
+        try astgen.errors.createNote(
+            null,
+            "must be 'i32', 'u32' or 'f32'",
+            .{},
+        ),
+    );
+    return error.AnalysisFail;
 }
 
 fn genMultisampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const inst = try astgen.allocInst();
-    const elem_type_node = astgen.tree.nodeLHS(node);
-    const elem_type = try astgen.genType(scope, elem_type_node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    var elem_type = null_inst;
 
-    switch (astgen.getInst(elem_type)) {
-        .u32_type, .i32_type, .f32_type => {
-            const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-            astgen.instructions.items[inst] = .{
-                .multisampled_texture_type = .{
-                    .kind = switch (token_tag) {
-                        .k_texture_multisampled_2d => .@"2d",
-                        else => unreachable,
-                    },
-                    .elem_type = elem_type,
-                },
-            };
-            return inst;
-        },
-        else => {
+    if (node_lhs != null_node) {
+        elem_type = try astgen.genType(scope, node_lhs);
+        const elem_type_inst = astgen.getInst(elem_type);
+
+        if (elem_type_inst != .int and !(elem_type_inst == .float and elem_type_inst.float.type == .f32)) {
             try astgen.errors.add(
-                astgen.tree.nodeLoc(elem_type_node),
+                astgen.tree.nodeLoc(node_lhs),
                 "invalid multisampled texture component type",
                 .{},
                 try astgen.errors.createNote(
@@ -1858,8 +1771,21 @@ fn genMultisampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !
                 ),
             );
             return error.AnalysisFail;
-        },
+        }
     }
+
+    const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
+    astgen.instructions.items[inst] = .{
+        .multisampled_texture_type = .{
+            .kind = switch (token_tag) {
+                .k_texture_multisampled_2d => .@"2d",
+                .k_texture_depth_multisampled_2d => .depth_2d,
+                else => unreachable,
+            },
+            .elem_type = elem_type,
+        },
+    };
+    return inst;
 }
 
 fn genStorageTextureType(astgen: *AstGen, node: NodeIndex) !InstIndex {
@@ -1932,7 +1858,6 @@ fn genDepthTextureType(astgen: *AstGen, node: NodeIndex) !InstIndex {
             .k_texture_depth_2d_array => .@"2d_array",
             .k_texture_depth_cube => .cube,
             .k_texture_depth_cube_array => .cube_array,
-            .k_texture_depth_multisampled_2d => .multisampled_2d,
             else => unreachable,
         },
     });
@@ -1977,33 +1902,24 @@ fn resolve(astgen: *AstGen, _index: InstIndex) !?InstIndex {
     while (true) {
         const inst = astgen.getInst(index);
         switch (inst) {
-            .bool_type,
-            .i32_type,
-            .u32_type,
-            .f32_type,
-            .f16_type,
-            .vector_type,
-            .matrix_type,
             .atomic_type,
             .array_type,
             .ptr_type,
             .sampler_type,
             .comparison_sampler_type,
             .external_texture_type,
-            .texture_type,
+            .sampled_texture_type,
             .multisampled_texture_type,
             .storage_texture_type,
             .depth_texture_type,
             .struct_ref,
             => if (in_decl) return index,
 
-            .true,
-            .false,
-            .integer,
-            .float,
-            .vector,
-            .matrix,
-            => return index,
+            inline .bool, .int, .float, .vector, .matrix => |data| {
+                if (data.value != null or in_decl) {
+                    return index;
+                }
+            },
 
             .mul,
             .div,
@@ -2054,10 +1970,36 @@ fn resolve(astgen: *AstGen, _index: InstIndex) !?InstIndex {
 fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) ?Value {
     const inst = astgen.getInst(inst_idx);
     switch (inst) {
-        .true => return .{ .bool = true },
-        .false => return .{ .bool = false },
-        .integer => |integer| return .{ .integer = integer.value },
-        .float => |float| return .{ .float = float.value },
+        .bool => |data| {
+            if (data.value) |value| {
+                switch (value) {
+                    .literal => |literal| return .{ .bool = literal },
+                    .inst => return null,
+                }
+            } else {
+                return null;
+            }
+        },
+        .int => |data| {
+            if (data.value) |value| {
+                switch (value) {
+                    .literal => |literal| return .{ .int = literal.value },
+                    .inst => return null,
+                }
+            } else {
+                return null;
+            }
+        },
+        .float => |data| {
+            if (data.value) |value| {
+                switch (value) {
+                    .literal => |literal| return .{ .float = literal.value },
+                    .inst => return null,
+                }
+            } else {
+                return null;
+            }
+        },
         .negate, .not => |un| {
             const value = astgen.resolveConstExpr(un) orelse return null;
             return switch (inst) {
@@ -2152,56 +2094,28 @@ fn resolveSymbol(astgen: *AstGen, inst_idx: InstIndex) !?InstIndex {
     }
 }
 
-pub fn eql(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
+fn eql(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
     const a = astgen.getInst(a_idx);
     const b = astgen.getInst(b_idx);
 
     return switch (a) {
-        .bool_type, .true, .false => switch (b) {
-            .bool_type, .true, .false => true,
-            else => false,
-        },
-        .integer, .u32_type, .i32_type => switch (b) {
-            .integer, .u32_type, .i32_type => true,
-            else => false,
-        },
-        .float, .f32_type, .f16_type => switch (b) {
-            .float, .f32_type, .f16_type => true,
-            else => false,
-        },
         .vector => |vec_a| switch (b) {
-            .vector => |vec_b| astgen.eqlVector(vec_a.type, vec_b.type),
-            .vector_type => astgen.eqlVector(vec_a.type, b_idx),
-            else => false,
-        },
-        .vector_type => switch (b) {
-            .vector => |vec_b| astgen.eqlVector(a_idx, vec_b.type),
-            .vector_type => astgen.eqlVector(a_idx, b_idx),
+            .vector => |vec_b| astgen.eqlVector(vec_a, vec_b),
             else => false,
         },
         .matrix => |mat_a| switch (b) {
-            .matrix => |mat_b| astgen.eqlMatrix(mat_a.type, mat_b.type),
-            .matrix_type => astgen.eqlMatrix(mat_a.type, b_idx),
-            else => false,
-        },
-        .matrix_type => switch (b) {
-            .matrix => |mat_b| astgen.eqlMatrix(a_idx, mat_b.type),
-            .matrix_type => astgen.eqlMatrix(a_idx, b_idx),
+            .matrix => |mat_b| astgen.eqlMatrix(mat_a, mat_b),
             else => false,
         },
         else => if (std.meta.activeTag(a) == std.meta.activeTag(b)) true else false,
     };
 }
 
-pub fn eqlVector(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
-    const a = astgen.getInst(a_idx).vector_type;
-    const b = astgen.getInst(b_idx).vector_type;
+fn eqlVector(astgen: *AstGen, a: Air.Inst.Vector, b: Air.Inst.Vector) bool {
     return a.size == b.size and astgen.eql(a.elem_type, b.elem_type);
 }
 
-pub fn eqlMatrix(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
-    const a = astgen.getInst(a_idx).matrix_type;
-    const b = astgen.getInst(b_idx).matrix_type;
+fn eqlMatrix(astgen: *AstGen, a: Air.Inst.Matrix, b: Air.Inst.Matrix) bool {
     return a.cols == b.cols and a.rows == b.rows and astgen.eql(a.elem_type, b.elem_type);
 }
 
@@ -2236,28 +2150,25 @@ fn getInst(astgen: *AstGen, inst: InstIndex) Inst {
 }
 
 const Value = union(enum) {
-    integer: i64,
+    int: i64,
     float: f64,
     bool: bool,
 
     fn negate(unary: Value) Value {
         return switch (unary) {
-            .integer => .{ .integer = -unary.integer },
+            .int => .{ .int = -unary.int },
             .float => .{ .float = -unary.float },
             .bool => unreachable,
         };
     }
 
     fn not(unary: Value) Value {
-        return switch (unary) {
-            .bool => .{ .bool = !unary.bool },
-            .integer, .float => unreachable,
-        };
+        return .{ .bool = !unary.bool };
     }
 
     fn mul(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .integer = lhs.integer * rhs.integer },
+            .int => .{ .int = lhs.int * rhs.int },
             .float => .{ .float = lhs.float * rhs.float },
             .bool => unreachable,
         };
@@ -2265,7 +2176,7 @@ const Value = union(enum) {
 
     fn div(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .integer = @divExact(lhs.integer, rhs.integer) },
+            .int => .{ .int = @divExact(lhs.int, rhs.int) },
             .float => .{ .float = lhs.float / rhs.float },
             .bool => unreachable,
         };
@@ -2273,7 +2184,7 @@ const Value = union(enum) {
 
     fn mod(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .integer = @rem(lhs.integer, rhs.integer) },
+            .int => .{ .int = @rem(lhs.int, rhs.int) },
             .float => .{ .float = @rem(lhs.float, rhs.float) },
             .bool => unreachable,
         };
@@ -2281,7 +2192,7 @@ const Value = union(enum) {
 
     fn add(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .integer = lhs.integer + rhs.integer },
+            .int => .{ .int = lhs.int + rhs.int },
             .float => .{ .float = lhs.float + rhs.float },
             .bool => unreachable,
         };
@@ -2289,50 +2200,38 @@ const Value = union(enum) {
 
     fn sub(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .integer = lhs.integer - rhs.integer },
+            .int => .{ .int = lhs.int - rhs.int },
             .float => .{ .float = lhs.float - rhs.float },
             .bool => unreachable,
         };
     }
 
     fn shiftLeft(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .integer => .{ .integer = lhs.integer << @intCast(u6, rhs.integer) },
-            .float, .bool => unreachable,
-        };
+        return .{ .int = lhs.int << @intCast(u6, rhs.int) };
     }
 
     fn shiftRight(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .integer => .{ .integer = lhs.integer >> @intCast(u6, rhs.integer) },
-            .float, .bool => unreachable,
-        };
+        return .{ .int = lhs.int >> @intCast(u6, rhs.int) };
     }
 
     fn bitwiseAnd(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .integer = lhs.integer & rhs.integer },
+            .int => .{ .int = lhs.int & rhs.int },
             .float, .bool => unreachable,
         };
     }
 
     fn bitwiseOr(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .integer => .{ .integer = lhs.integer | rhs.integer },
-            .float, .bool => unreachable,
-        };
+        return .{ .int = lhs.int | rhs.int };
     }
 
     fn bitwiseXor(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .integer => .{ .integer = lhs.integer ^ rhs.integer },
-            .float, .bool => unreachable,
-        };
+        return .{ .int = lhs.int ^ rhs.int };
     }
 
     fn equal(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .bool = lhs.integer == rhs.integer },
+            .int => .{ .bool = lhs.int == rhs.int },
             .float => .{ .bool = lhs.float == rhs.float },
             .bool => unreachable,
         };
@@ -2340,7 +2239,7 @@ const Value = union(enum) {
 
     fn notEqual(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .bool = lhs.integer != rhs.integer },
+            .int => .{ .bool = lhs.int != rhs.int },
             .float => .{ .bool = lhs.float != rhs.float },
             .bool => unreachable,
         };
@@ -2348,7 +2247,7 @@ const Value = union(enum) {
 
     fn lessThan(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .bool = lhs.integer < rhs.integer },
+            .int => .{ .bool = lhs.int < rhs.int },
             .float => .{ .bool = lhs.float < rhs.float },
             .bool => unreachable,
         };
@@ -2356,7 +2255,7 @@ const Value = union(enum) {
 
     fn greaterThan(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .bool = lhs.integer > rhs.integer },
+            .int => .{ .bool = lhs.int > rhs.int },
             .float => .{ .bool = lhs.float > rhs.float },
             .bool => unreachable,
         };
@@ -2364,7 +2263,7 @@ const Value = union(enum) {
 
     fn lessThanEqual(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .bool = lhs.integer <= rhs.integer },
+            .int => .{ .bool = lhs.int <= rhs.int },
             .float => .{ .bool = lhs.float <= rhs.float },
             .bool => unreachable,
         };
@@ -2372,23 +2271,17 @@ const Value = union(enum) {
 
     fn greaterThanEqual(lhs: Value, rhs: Value) Value {
         return switch (lhs) {
-            .integer => .{ .bool = lhs.integer >= rhs.integer },
+            .int => .{ .bool = lhs.int >= rhs.int },
             .float => .{ .bool = lhs.float >= rhs.float },
             .bool => unreachable,
         };
     }
 
     fn logicalAnd(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .bool => .{ .bool = lhs.bool and rhs.bool },
-            .integer, .float => unreachable,
-        };
+        return .{ .bool = lhs.bool and rhs.bool };
     }
 
     fn logicalOr(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .bool => .{ .bool = lhs.bool or rhs.bool },
-            .integer, .float => unreachable,
-        };
+        return .{ .bool = lhs.bool or rhs.bool };
     }
 };
