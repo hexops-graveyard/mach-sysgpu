@@ -184,6 +184,15 @@ test "must pass" {
         var ir = try expectIR(source);
         ir.deinit();
     }
+    {
+        const source =
+            \\var v0: u32;
+            \\var v1 = bool(v0);
+            \\var v2 = f32(v0);
+        ;
+        var ir = try expectIR(source);
+        ir.deinit();
+    }
 }
 
 test "integer/float literals" {
@@ -428,6 +437,15 @@ test "must error" {
         try expectError(source, .{
             .msg = "invalid operation",
             .loc = .{ .start = 11, .end = 13 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = bool(5);
+        ;
+        try expectError(source, .{
+            .msg = "cannot cast '5' into bool",
+            .loc = .{ .start = 9, .end = 13 },
         });
     }
 }

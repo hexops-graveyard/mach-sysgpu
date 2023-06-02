@@ -1161,20 +1161,197 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     switch (token_tag) {
-        .k_bool => if (node_lhs == null_node) return astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }) else unreachable,
-        .k_u32 => if (node_lhs == null_node) return astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .u32 } }) else unreachable,
-        .k_i32 => if (node_lhs == null_node) return astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .i32 } }) else unreachable,
-        .k_f32 => if (node_lhs == null_node) return astgen.addInst(.{ .float = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .f32 } }) else unreachable,
-        .k_f16 => if (node_lhs == null_node) return astgen.addInst(.{ .float = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .f16 } }) else unreachable,
+        .k_bool => {
+            if (node_lhs == null_node) {
+                return astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } });
+            }
+
+            const arg_node = astgen.tree.spanToList(node_lhs)[0];
+            const lhs = try astgen.genExpr(scope, arg_node);
+            if (try astgen.resolve(lhs)) |lhs_res| {
+                switch (astgen.getInst(lhs_res)) {
+                    .bool => return lhs,
+                    .int => |int| switch (int.type) {
+                        .u32, .i32 => return astgen.addInst(.{ .bool = .{ .value = .{ .inst = lhs } } }),
+                        else => {},
+                    },
+                    .float => |float| switch (float.type) {
+                        .f32, .f16 => return astgen.addInst(.{ .bool = .{ .value = .{ .inst = lhs } } }),
+                        else => {},
+                    },
+                    else => {},
+                }
+            }
+
+            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
+            try astgen.errors.add(
+                node_loc,
+                "cannot cast '{s}' into bool",
+                .{arg_node_loc.slice(astgen.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
+        .k_u32 => {
+            if (node_lhs == null_node) {
+                return astgen.addInst(.{
+                    .int = .{
+                        .value = .{ .literal = .{ .value = 0, .base = 10 } },
+                        .type = .u32,
+                    },
+                });
+            }
+
+            const arg_node = astgen.tree.spanToList(node_lhs)[0];
+            const lhs = try astgen.genExpr(scope, arg_node);
+            if (try astgen.resolve(lhs)) |lhs_res| {
+                switch (astgen.getInst(lhs_res)) {
+                    .bool => return astgen.addInst(.{ .int = .{ .value = .{ .inst = lhs }, .type = .u32 } }),
+                    .int => |int| switch (int.type) {
+                        .u32 => return lhs,
+                        .i32 => return astgen.addInst(.{ .int = .{ .value = .{ .inst = lhs }, .type = .u32 } }),
+                        else => {},
+                    },
+                    .float => |float| switch (float.type) {
+                        .f32, .f16 => return astgen.addInst(.{ .int = .{ .value = .{ .inst = lhs }, .type = .u32 } }),
+                        else => {},
+                    },
+                    else => {},
+                }
+            }
+
+            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
+            try astgen.errors.add(
+                node_loc,
+                "cannot cast '{s}' into u32",
+                .{arg_node_loc.slice(astgen.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
+        .k_i32 => {
+            if (node_lhs == null_node) {
+                return astgen.addInst(.{
+                    .int = .{
+                        .value = .{ .literal = .{ .value = 0, .base = 10 } },
+                        .type = .i32,
+                    },
+                });
+            }
+
+            const arg_node = astgen.tree.spanToList(node_lhs)[0];
+            const lhs = try astgen.genExpr(scope, arg_node);
+            if (try astgen.resolve(lhs)) |lhs_res| {
+                switch (astgen.getInst(lhs_res)) {
+                    .bool => return astgen.addInst(.{ .int = .{ .value = .{ .inst = lhs }, .type = .i32 } }),
+                    .int => |int| switch (int.type) {
+                        .i32 => return lhs,
+                        .u32 => return astgen.addInst(.{ .int = .{ .value = .{ .inst = lhs }, .type = .i32 } }),
+                        else => {},
+                    },
+                    .float => |float| switch (float.type) {
+                        .f32, .f16 => return astgen.addInst(.{ .int = .{ .value = .{ .inst = lhs }, .type = .i32 } }),
+                        else => {},
+                    },
+                    else => {},
+                }
+            }
+
+            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
+            try astgen.errors.add(
+                node_loc,
+                "cannot cast '{s}' into i32",
+                .{arg_node_loc.slice(astgen.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
+        .k_f32 => {
+            if (node_lhs == null_node) {
+                return astgen.addInst(.{
+                    .float = .{
+                        .value = .{ .literal = .{ .value = 0, .base = 10 } },
+                        .type = .f32,
+                    },
+                });
+            }
+
+            const arg_node = astgen.tree.spanToList(node_lhs)[0];
+            const lhs = try astgen.genExpr(scope, arg_node);
+            if (try astgen.resolve(lhs)) |lhs_res| {
+                switch (astgen.getInst(lhs_res)) {
+                    .bool => return astgen.addInst(.{ .float = .{ .value = .{ .inst = lhs }, .type = .f32 } }),
+                    .int => |int| switch (int.type) {
+                        .i32, .u32 => return astgen.addInst(.{ .float = .{ .value = .{ .inst = lhs }, .type = .f32 } }),
+                        else => {},
+                    },
+                    .float => |float| switch (float.type) {
+                        .f32 => return lhs,
+                        .f16 => return astgen.addInst(.{ .float = .{ .value = .{ .inst = lhs }, .type = .f32 } }),
+                        else => {},
+                    },
+                    else => {},
+                }
+            }
+
+            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
+            try astgen.errors.add(
+                node_loc,
+                "cannot cast '{s}' into f32",
+                .{arg_node_loc.slice(astgen.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
+
+        .k_f16 => {
+            if (node_lhs == null_node) {
+                return astgen.addInst(.{
+                    .float = .{
+                        .value = .{ .literal = .{ .value = 0, .base = 10 } },
+                        .type = .f16,
+                    },
+                });
+            }
+
+            const arg_node = astgen.tree.spanToList(node_lhs)[0];
+            const lhs = try astgen.genExpr(scope, arg_node);
+            if (try astgen.resolve(lhs)) |lhs_res| {
+                switch (astgen.getInst(lhs_res)) {
+                    .bool => return astgen.addInst(.{ .float = .{ .value = .{ .inst = lhs }, .type = .f16 } }),
+                    .int => |int| switch (int.type) {
+                        .i32, .u32 => return astgen.addInst(.{ .float = .{ .value = .{ .inst = lhs }, .type = .f16 } }),
+                        else => {},
+                    },
+                    .float => |float| switch (float.type) {
+                        .f16 => return lhs,
+                        .f32 => return astgen.addInst(.{ .float = .{ .value = .{ .inst = lhs }, .type = .f16 } }),
+                        else => {},
+                    },
+                    else => {},
+                }
+            }
+
+            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
+            try astgen.errors.add(
+                node_loc,
+                "cannot cast '{s}' into f16",
+                .{arg_node_loc.slice(astgen.tree.source)},
+                null,
+            );
+            return error.AnalysisFail;
+        },
         .k_vec2,
         .k_vec3,
         .k_vec4,
-        => if (node_lhs == null_node) return astgen.genVector(
-            scope,
-            node_rhs,
-            try astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .abstract } }),
-            .{ .literal = std.mem.zeroes(@Vector(4, u32)) },
-        ) else unreachable,
+        => {
+            if (node_lhs == null_node) return astgen.genVector(
+                scope,
+                node_rhs,
+                try astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .abstract } }),
+                .{ .literal = std.mem.zeroes(@Vector(4, u32)) },
+            ) else unreachable; // TODO
+        },
         .k_mat2x2,
         .k_mat2x3,
         .k_mat2x4,
@@ -1184,12 +1361,14 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .k_mat4x2,
         .k_mat4x3,
         .k_mat4x4,
-        => if (node_lhs == null_node) return astgen.genMatrix(
-            scope,
-            node_rhs,
-            try astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .abstract } }),
-            .{ .literal = std.mem.zeroes(@Vector(4 * 4, u32)) },
-        ) else unreachable,
+        => {
+            if (node_lhs == null_node) return astgen.genMatrix(
+                scope,
+                node_rhs,
+                try astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .abstract } }),
+                .{ .literal = std.mem.zeroes(@Vector(4 * 4, u32)) },
+            ) else unreachable; // TODO
+        },
         else => unreachable,
     }
 }
