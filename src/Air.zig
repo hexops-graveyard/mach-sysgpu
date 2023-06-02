@@ -67,30 +67,21 @@ pub const Inst = union(enum) {
     @"struct": StructDecl,
     struct_member: StructMember,
 
-    bool_type,
-    i32_type,
-    u32_type,
-    f32_type,
-    f16_type,
-    sampler_type,
-    comparison_sampler_type,
-    external_texture_type,
-    vector_type: VectorType,
-    matrix_type: MatrixType,
-    atomic_type: AtomicType,
-    array_type: ArrayType,
-    ptr_type: PointerType,
-    texture_type: TextureType,
-    multisampled_texture_type: MultisampledTextureType,
-    storage_texture_type: StorageTextureType,
-    depth_texture_type: DepthTextureType,
-
-    true,
-    false,
-    integer: Integer,
+    bool: Bool,
+    int: Int,
     float: Float,
     vector: Vector,
     matrix: Matrix,
+    atomic_type: AtomicType,
+    array_type: ArrayType,
+    ptr_type: PointerType,
+    sampled_texture_type: SampledTextureType,
+    multisampled_texture_type: MultisampledTextureType,
+    storage_texture_type: StorageTextureType,
+    depth_texture_type: DepthTextureType,
+    sampler_type,
+    comparison_sampler_type,
+    external_texture_type,
 
     not: InstIndex,
     negate: InstIndex,
@@ -282,17 +273,67 @@ pub const Inst = union(enum) {
         interpolate: ?Interpolate,
     };
 
-    pub const VectorType = struct {
-        elem_type: InstIndex,
-        size: Size,
+    pub const Bool = struct {
+        value: ?Value,
 
-        pub const Size = enum { two, three, four };
+        pub const Value = union(enum) {
+            literal: bool,
+            inst: InstIndex,
+        };
     };
 
-    pub const MatrixType = struct {
+    pub const Int = struct {
+        type: enum { u32, i32, abstract },
+        value: ?Value,
+
+        pub const Value = union(enum) {
+            literal: Literal,
+            inst: InstIndex,
+
+            pub const Literal = struct {
+                value: i64,
+                base: u8,
+            };
+        };
+    };
+
+    pub const Float = struct {
+        type: enum { f32, f16, abstract },
+        value: ?Value,
+
+        pub const Value = union(enum) {
+            literal: Literal,
+            inst: InstIndex,
+
+            pub const Literal = struct {
+                value: f64,
+                base: u8,
+            };
+        };
+    };
+
+    pub const Vector = struct {
         elem_type: InstIndex,
-        cols: VectorType.Size,
-        rows: VectorType.Size,
+        size: Size,
+        value: ?Value,
+
+        pub const Size = enum { two, three, four };
+        pub const Value = union(enum) {
+            literal: @Vector(4, u32),
+            inst: InstIndex,
+        };
+    };
+
+    pub const Matrix = struct {
+        elem_type: InstIndex,
+        cols: Vector.Size,
+        rows: Vector.Size,
+        value: ?Value,
+
+        pub const Value = union(enum) {
+            literal: @Vector(4 * 4, u32),
+            inst: InstIndex,
+        };
     };
 
     pub const AtomicType = struct { elem_type: InstIndex };
@@ -320,7 +361,7 @@ pub const Inst = union(enum) {
         };
     };
 
-    pub const TextureType = struct {
+    pub const SampledTextureType = struct {
         kind: Kind,
         elem_type: InstIndex,
 
@@ -331,6 +372,7 @@ pub const Inst = union(enum) {
             @"3d",
             cube,
             cube_array,
+            multisampled_2d,
         };
     };
 
@@ -338,7 +380,7 @@ pub const Inst = union(enum) {
         kind: Kind,
         elem_type: InstIndex,
 
-        pub const Kind = enum { @"2d" };
+        pub const Kind = enum { @"2d", depth_2d };
     };
 
     pub const StorageTextureType = struct {
@@ -411,30 +453,8 @@ pub const Inst = union(enum) {
         result_type: InstIndex,
     };
 
-    pub const Integer = struct {
-        value: i64,
-        base: u8,
-        tag: enum { none, i, u },
-    };
-
-    pub const Float = struct {
-        value: f64,
-        base: u8,
-        tag: enum { none, f, h },
-    };
-
-    pub const Vector = struct {
-        value: @Vector(4, u32),
-        type: InstIndex,
-    };
-
-    pub const Matrix = struct {
-        value: @Vector(4 * 4, u32),
-        type: InstIndex,
-    };
-
     comptime {
-        // TODO
-        // std.debug.assert(@sizeOf(Inst) <= 64);
+        // TODO: this is very large!
+        std.debug.assert(@sizeOf(Inst) <= 512);
     }
 };

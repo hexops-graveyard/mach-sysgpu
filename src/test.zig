@@ -105,10 +105,11 @@ test "gkurve" {
 test "must pass" {
     {
         const source =
-            \\const expr = 5 + 6;
+            \\const expr0 = 5 + 6;
+            \\const expr1: bool = true;
             \\var v0: i32;
             \\struct G {
-            \\  @align(expr % 2 + 3) l: L,
+            \\  @align(expr0 % 2 + 3) l: L,
             \\}
             \\struct L {
             \\  f: array<O>,
@@ -119,7 +120,7 @@ test "must pass" {
             \\var v1: G;
             \\var v2: vec2<u32>;
             \\var v3: vec2<f32>;
-            \\var v4: mat3x4<i32>;
+            \\var v4: mat3x4<f32>;
             \\fn test() -> u32 {
             \\  v0 = v1.l.f[0].n;
             \\  v0 = urmom();
@@ -127,7 +128,7 @@ test "must pass" {
             \\fn urmom() -> u32 {
             \\  v2 = vec2();
             \\  v3 = vec2<f32>();
-            \\  v4 = mat3x4<i32>();
+            \\  v4 = mat3x4<f16>();
             \\}
         ;
         var ir = try expectIR(source);
@@ -220,18 +221,18 @@ test "integer/float literals" {
     }.toInst;
 
     const vars = std.mem.sliceTo(ir.refs[ir.globals_index..], Air.null_inst);
-    try expectEqual(toInst(ir, vars[0]).integer, .{ .value = 1, .base = 10, .tag = .u });
-    try expectEqual(toInst(ir, vars[1]).integer, .{ .value = 123, .base = 10, .tag = .none });
-    try expectEqual(toInst(ir, vars[2]).integer, .{ .value = 0, .base = 10, .tag = .none });
-    try expectEqual(toInst(ir, vars[3]).integer, .{ .value = 0, .base = 10, .tag = .i });
-    try expectEqual(toInst(ir, vars[4]).integer, .{ .value = 0x123, .base = 16, .tag = .none });
-    try expectEqual(toInst(ir, vars[5]).integer, .{ .value = 0x123, .base = 16, .tag = .u });
-    try expectEqual(toInst(ir, vars[6]).float, .{ .value = 0.e+4, .base = 10, .tag = .f });
-    try expectEqual(toInst(ir, vars[7]).float, .{ .value = 0.01, .base = 10, .tag = .none });
-    try expectEqual(toInst(ir, vars[8]).float, .{ .value = 12.34, .base = 10, .tag = .none });
-    try expectEqual(toInst(ir, vars[9]).float, .{ .value = 0.0, .base = 10, .tag = .f });
-    try expectEqual(toInst(ir, vars[10]).float, .{ .value = 0, .base = 10, .tag = .h });
-    try expectEqual(toInst(ir, vars[11]).float, .{ .value = 1e-3, .base = 10, .tag = .none });
+    try expectEqual(toInst(ir, vars[0]).int, .{ .type = .u32, .value = .{ .literal = .{ .value = 1, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[1]).int, .{ .type = .abstract, .value = .{ .literal = .{ .value = 123, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[2]).int, .{ .type = .abstract, .value = .{ .literal = .{ .value = 0, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[3]).int, .{ .type = .i32, .value = .{ .literal = .{ .value = 0, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[4]).int, .{ .type = .abstract, .value = .{ .literal = .{ .value = 0x123, .base = 16 } } });
+    try expectEqual(toInst(ir, vars[5]).int, .{ .type = .u32, .value = .{ .literal = .{ .value = 0x123, .base = 16 } } });
+    try expectEqual(toInst(ir, vars[6]).float, .{ .type = .f32, .value = .{ .literal = .{ .value = 0.e+4, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[7]).float, .{ .type = .abstract, .value = .{ .literal = .{ .value = 0.01, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[8]).float, .{ .type = .abstract, .value = .{ .literal = .{ .value = 12.34, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[9]).float, .{ .type = .f32, .value = .{ .literal = .{ .value = 0, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[10]).float, .{ .type = .f16, .value = .{ .literal = .{ .value = 0, .base = 10 } } });
+    try expectEqual(toInst(ir, vars[11]).float, .{ .type = .abstract, .value = .{ .literal = .{ .value = 1e-3, .base = 10 } } });
 }
 
 test "must error" {
@@ -296,12 +297,12 @@ test "must error" {
     }
     {
         const source =
-            \\type T0 = sampler;
+            \\type T0 = texture_depth_multisampled_2d;
             \\type T1 = texture_1d<T0>;
         ;
         try expectError(source, .{
             .msg = "invalid texture component type",
-            .loc = .{ .start = 40, .end = 42 },
+            .loc = .{ .start = 62, .end = 64 },
             .note = .{ .msg = "must be 'i32', 'u32' or 'f32'" },
         });
     }
