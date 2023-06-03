@@ -193,6 +193,19 @@ test "must pass" {
         var ir = try expectIR(source);
         ir.deinit();
     }
+    {
+        const source =
+            \\var v0: u32;
+            \\var v1 = vec2(v0, v0);
+            \\var v2 = vec3(v0, v1);
+            \\var v3 = vec3<u32>(v2);
+            \\var v4 = vec4<u32>(v1, v1);
+            \\var v5 = vec4<u32>(v0, v2);
+            \\var v6 = vec4<u32>(v0, v1, v0);
+        ;
+        var ir = try expectIR(source);
+        ir.deinit();
+    }
 }
 
 test "integer/float literals" {
@@ -446,6 +459,26 @@ test "must error" {
         try expectError(source, .{
             .msg = "cannot cast '5' into bool",
             .loc = .{ .start = 9, .end = 13 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = vec3<f32>();
+            \\var v1 = vec2<f32>(v0);
+        ;
+        try expectError(source, .{
+            .msg = "cannot cast into vec2",
+            .loc = .{ .start = 31, .end = 35 },
+        });
+    }
+    {
+        const source =
+            \\var v0 = vec2<f32>();
+            \\var v1 = vec3<f32>(v0, v0);
+        ;
+        try expectError(source, .{
+            .msg = "cannot cast into vec3",
+            .loc = .{ .start = 31, .end = 35 },
         });
     }
 }
