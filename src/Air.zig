@@ -320,7 +320,7 @@ pub const Inst = union(enum) {
         pub const Size = enum { two, three, four };
         pub const Value = union(enum) {
             literal: @Vector(4, u32),
-            inst: InstIndex,
+            inst: @Vector(4, InstIndex),
         };
     };
 
@@ -332,7 +332,7 @@ pub const Inst = union(enum) {
 
         pub const Value = union(enum) {
             literal: @Vector(4 * 4, u32),
-            inst: InstIndex,
+            inst: @Vector(4 * 4, InstIndex),
         };
     };
 
