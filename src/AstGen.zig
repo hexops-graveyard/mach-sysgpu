@@ -9,6 +9,7 @@ const null_node = Ast.null_node;
 const Node = Ast.Node;
 const NodeIndex = Ast.NodeIndex;
 const TokenIndex = Ast.TokenIndex;
+const TokenTag = @import("Token.zig").Tag;
 const stringToEnum = std.meta.stringToEnum;
 
 const AstGen = @This();
@@ -1388,6 +1389,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                             switch (astgen.getInst(arg_res)) {
                                 .bool, .int, .float => {
                                     if (i == 0) {
+                                        args[i] = arg;
                                         arg0_res = arg_res;
                                     } else if (astgen.eql(arg0_res, arg_res)) {
                                         args[i] = arg;
@@ -1395,7 +1397,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                 },
                                 else => break :blk,
                             }
-                        }
+                        } else break :blk;
                     }
                     const vec = try astgen.genVector(scope, node_rhs, arg0_res, .{ .inst = args });
                     if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
@@ -1493,7 +1495,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                             } else if (astgen.eql(arg0_res, arg_res)) {
                                 args[i] = arg;
                             } else break :blk;
-                        }
+                        } else break :blk;
                     }
                     const vec = try astgen.genVector(scope, node_rhs, arg0_res, .{ .inst = args });
                     if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
@@ -1647,7 +1649,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                             } else if (astgen.eql(arg0_res, arg_res)) {
                                 args[i] = arg;
                             } else break :blk;
-                        }
+                        } else break :blk;
                     }
                     const vec = try astgen.genVector(scope, node_rhs, arg0_res, .{ .inst = args });
                     if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
@@ -1660,253 +1662,99 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             try astgen.errors.add(node_loc, "cannot cast into vec4", .{}, null);
             return error.AnalysisFail;
         },
-        .k_mat2x2 => {
-            if (node_lhs == null_node) {
-                return astgen.genMatrix(
-                    scope,
-                    node_rhs,
-                    try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    .{ .literal = std.mem.zeroes(@Vector(4 * 4, u32)) },
-                );
-            }
-
-            var args = null_mat;
-            const arg_nodes = astgen.tree.spanToList(node_lhs);
-            switch (arg_nodes.len) {
-                1 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    if (try astgen.resolve(args[0])) |arg_res| {
-                        switch (astgen.getInst(arg_res)) {
-                            .matrix => |matrix| if (matrix.cols == .two and matrix.rows == .two) {
-                                const mat = try astgen.genMatrix(
-                                    scope,
-                                    node_rhs,
-                                    astgen.getInst(arg_res).matrix.elem_type,
-                                    .{ .inst = args },
-                                );
-
-                                if (astgen.eql(astgen.getInst(mat).matrix.elem_type, matrix.elem_type)) {
-                                    return mat;
-                                }
-                            },
-                            else => {},
-                        }
-                    }
-                },
-                2 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    args[2] = try astgen.genExpr(scope, arg_nodes[1]);
-                    if (try astgen.resolve(args[0])) |arg0_res| {
-                        switch (astgen.getInst(arg0_res)) {
-                            .vector => |vector0| if (try astgen.resolve(args[2])) |arg1_res| {
-                                switch (astgen.getInst(arg1_res)) {
-                                    .vector => |vector1| {
-                                        if (vector0.size == .two and astgen.eqlVector(vector0, vector1)) {
-                                            const mat = try astgen.genMatrix(scope, node_rhs, vector0.elem_type, .{ .inst = args });
-                                            if (astgen.eql(astgen.getInst(mat).matrix.elem_type, vector0.elem_type)) {
-                                                return mat;
-                                            }
-                                        }
-                                    },
-                                    else => {},
-                                }
-                            },
-                            else => {},
-                        }
-                    }
-                },
-                4 => blk: {
-                    var arg0_res = null_inst;
-                    for (arg_nodes, 0..) |arg_node, i| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        if (try astgen.resolve(arg)) |arg_res| {
-                            if (i == 0) {
-                                arg0_res = arg_res;
-                            } else if (astgen.eql(arg0_res, arg_res)) {
-                                args[i] = arg;
-                            } else break :blk;
-                        }
-                    }
-                    const mat = try astgen.genMatrix(scope, node_rhs, arg0_res, .{ .inst = args });
-                    if (astgen.eql(astgen.getInst(mat).matrix.elem_type, arg0_res)) {
-                        return mat;
-                    }
-                },
-                else => {},
-            }
-
-            try astgen.errors.add(node_loc, "cannot cast into mat2x3", .{}, null);
-            return error.AnalysisFail;
-        },
-        .k_mat2x3 => {
-            if (node_lhs == null_node) {
-                return astgen.genMatrix(
-                    scope,
-                    node_rhs,
-                    try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    .{ .literal = std.mem.zeroes(@Vector(4 * 4, u32)) },
-                );
-            }
-
-            var args = null_mat;
-            const arg_nodes = astgen.tree.spanToList(node_lhs);
-            switch (arg_nodes.len) {
-                1 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    if (try astgen.resolve(args[0])) |arg_res| {
-                        switch (astgen.getInst(arg_res)) {
-                            .matrix => |matrix| if (matrix.cols == .two and matrix.rows == .three) {
-                                const mat = try astgen.genMatrix(
-                                    scope,
-                                    node_rhs,
-                                    astgen.getInst(arg_res).matrix.elem_type,
-                                    .{ .inst = args },
-                                );
-
-                                if (astgen.eql(astgen.getInst(mat).matrix.elem_type, matrix.elem_type)) {
-                                    return mat;
-                                }
-                            },
-                            else => {},
-                        }
-                    }
-                },
-                2 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    args[2] = try astgen.genExpr(scope, arg_nodes[1]);
-                    if (try astgen.resolve(args[0])) |arg0_res| {
-                        switch (astgen.getInst(arg0_res)) {
-                            .vector => |vector0| if (try astgen.resolve(args[2])) |arg1_res| {
-                                switch (astgen.getInst(arg1_res)) {
-                                    .vector => |vector1| {
-                                        if (vector0.size == .three and astgen.eqlVector(vector0, vector1)) {
-                                            const mat = try astgen.genMatrix(scope, node_rhs, vector0.elem_type, .{ .inst = args });
-                                            if (astgen.eql(astgen.getInst(mat).matrix.elem_type, vector0.elem_type)) {
-                                                return mat;
-                                            }
-                                        }
-                                    },
-                                    else => {},
-                                }
-                            },
-                            else => {},
-                        }
-                    }
-                },
-                6 => blk: {
-                    var arg0_res = null_inst;
-                    for (arg_nodes, 0..) |arg_node, i| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        if (try astgen.resolve(arg)) |arg_res| {
-                            if (i == 0) {
-                                arg0_res = arg_res;
-                            } else if (astgen.eql(arg0_res, arg_res)) {
-                                args[i] = arg;
-                            } else break :blk;
-                        }
-                    }
-                    const mat = try astgen.genMatrix(scope, node_rhs, arg0_res, .{ .inst = args });
-                    if (astgen.eql(astgen.getInst(mat).matrix.elem_type, arg0_res)) {
-                        return mat;
-                    }
-                },
-                else => {},
-            }
-
-            try astgen.errors.add(node_loc, "cannot cast into mat2x3", .{}, null);
-            return error.AnalysisFail;
-        },
-        .k_mat2x4 => {
-            if (node_lhs == null_node) {
-                return astgen.genMatrix(
-                    scope,
-                    node_rhs,
-                    try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    .{ .literal = std.mem.zeroes(@Vector(4 * 4, u32)) },
-                );
-            }
-
-            var args = null_mat;
-            const arg_nodes = astgen.tree.spanToList(node_lhs);
-            switch (arg_nodes.len) {
-                1 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    if (try astgen.resolve(args[0])) |arg_res| {
-                        switch (astgen.getInst(arg_res)) {
-                            .matrix => |matrix| if (matrix.cols == .two and matrix.rows == .four) {
-                                const mat = try astgen.genMatrix(
-                                    scope,
-                                    node_rhs,
-                                    astgen.getInst(arg_res).matrix.elem_type,
-                                    .{ .inst = args },
-                                );
-
-                                if (astgen.eql(astgen.getInst(mat).matrix.elem_type, matrix.elem_type)) {
-                                    return mat;
-                                }
-                            },
-                            else => {},
-                        }
-                    }
-                },
-                2 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    args[2] = try astgen.genExpr(scope, arg_nodes[1]);
-                    if (try astgen.resolve(args[0])) |arg0_res| {
-                        switch (astgen.getInst(arg0_res)) {
-                            .vector => |vector0| if (try astgen.resolve(args[2])) |arg1_res| {
-                                switch (astgen.getInst(arg1_res)) {
-                                    .vector => |vector1| {
-                                        if (vector0.size == .four and astgen.eqlVector(vector0, vector1)) {
-                                            const mat = try astgen.genMatrix(scope, node_rhs, vector0.elem_type, .{ .inst = args });
-                                            if (astgen.eql(astgen.getInst(mat).matrix.elem_type, vector0.elem_type)) {
-                                                return mat;
-                                            }
-                                        }
-                                    },
-                                    else => {},
-                                }
-                            },
-                            else => {},
-                        }
-                    }
-                },
-                6 => blk: {
-                    var arg0_res = null_inst;
-                    for (arg_nodes, 0..) |arg_node, i| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        if (try astgen.resolve(arg)) |arg_res| {
-                            if (i == 0) {
-                                arg0_res = arg_res;
-                            } else if (astgen.eql(arg0_res, arg_res)) {
-                                args[i] = arg;
-                            } else break :blk;
-                        }
-                    }
-                    const mat = try astgen.genMatrix(scope, node_rhs, arg0_res, .{ .inst = args });
-                    if (astgen.eql(astgen.getInst(mat).matrix.elem_type, arg0_res)) {
-                        return mat;
-                    }
-                },
-                else => {},
-            }
-
-            try astgen.errors.add(node_loc, "cannot cast into mat2x3", .{}, null);
-            return error.AnalysisFail;
-        },
-        .k_mat3x2, // TODO
-        .k_mat3x3, // TODO
-        .k_mat3x4, // TODO
-        .k_mat4x2, // TODO
-        .k_mat4x3, // TODO
-        .k_mat4x4, // TODO
+        .k_mat2x2,
+        .k_mat2x3,
+        .k_mat2x4,
+        .k_mat3x2,
+        .k_mat3x3,
+        .k_mat3x4,
+        .k_mat4x2,
+        .k_mat4x3,
+        .k_mat4x4,
         => {
-            if (node_lhs == null_node) return astgen.genMatrix(
-                scope,
-                node_rhs,
-                try astgen.addInst(.{ .int = .{ .value = .{ .literal = .{ .value = 0, .base = 10 } }, .type = .abstract } }),
-                .{ .literal = std.mem.zeroes(@Vector(4 * 4, u32)) },
-            ) else unreachable;
+            if (node_lhs == null_node) {
+                return astgen.genMatrix(
+                    scope,
+                    node_rhs,
+                    try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
+                    .{ .literal = std.mem.zeroes(@Vector(4 * 4, u32)) },
+                );
+            }
+
+            const cols = matrixCols(token_tag);
+            const rows = matrixRows(token_tag);
+
+            var args = null_mat;
+            const arg_nodes = astgen.tree.spanToList(node_lhs);
+            if (arg_nodes.len == 1) {
+                args[0] = try astgen.genExpr(scope, arg_nodes[0]);
+                if (try astgen.resolve(args[0])) |arg_res| {
+                    switch (astgen.getInst(arg_res)) {
+                        .matrix => |matrix| if (matrix.cols == cols and matrix.rows == rows) {
+                            const mat = try astgen.genMatrix(
+                                scope,
+                                node_rhs,
+                                astgen.getInst(arg_res).matrix.elem_type,
+                                .{ .inst = args },
+                            );
+                            if (astgen.eql(astgen.getInst(mat).matrix.elem_type, matrix.elem_type)) {
+                                return mat;
+                            }
+                        },
+                        else => {},
+                    }
+                }
+            } else if (arg_nodes.len == @enumToInt(cols)) blk: {
+                const offset = @enumToInt(rows);
+                var arg0_res = null_inst;
+                for (arg_nodes, 0..) |arg_node, i| {
+                    const arg = try astgen.genExpr(scope, arg_node);
+                    if (try astgen.resolve(arg)) |arg_res| {
+                        if (i == 0) {
+                            args[0] = arg;
+                            arg0_res = arg_res;
+
+                            if (astgen.getInst(arg0_res) != .vector or
+                                astgen.getInst(arg0_res).vector.size != @enumToInt(rows))
+                            {
+                                break :blk;
+                            }
+                        } else if (astgen.eql(arg0_res, arg_res)) {
+                            args[i * offset] = arg;
+                        } else break :blk;
+                    } else break :blk;
+                }
+
+                const mat = try astgen.genMatrix(
+                    scope,
+                    node_rhs,
+                    astgen.getInst(arg0_res).vector.elem_type,
+                    .{ .inst = args },
+                );
+                if (astgen.eql(astgen.getInst(mat).matrix.elem_type, astgen.getInst(arg0_res).vector.elem_type)) {
+                    return mat;
+                }
+            } else if (arg_nodes.len == @enumToInt(cols) * @enumToInt(rows)) blk: {
+                var arg0_res = null_inst;
+                for (arg_nodes, 0..) |arg_node, i| {
+                    const arg = try astgen.genExpr(scope, arg_node);
+                    if (try astgen.resolve(arg)) |arg_res| {
+                        if (i == 0) {
+                            args[i] = arg;
+                            arg0_res = arg_res;
+                        } else if (astgen.eql(arg0_res, arg_res)) {
+                            args[i] = arg;
+                        } else break :blk;
+                    } else break :blk;
+                }
+                const mat = try astgen.genMatrix(scope, node_rhs, arg0_res, .{ .inst = args });
+                if (astgen.eql(astgen.getInst(mat).matrix.elem_type, arg0_res)) {
+                    return mat;
+                }
+            }
+
+            try astgen.errors.add(node_loc, "cannot cast into matrix", .{}, null);
+            return error.AnalysisFail;
         },
         else => unreachable,
     }
@@ -2268,23 +2116,31 @@ fn genMatrix(astgen: *AstGen, scope: *Scope, node: NodeIndex, element_type: Inst
     const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
     astgen.instructions.items[inst] = .{
         .matrix = .{
-            .cols = switch (token_tag) {
-                .k_mat2x2, .k_mat2x3, .k_mat2x4 => .two,
-                .k_mat3x2, .k_mat3x3, .k_mat3x4 => .three,
-                .k_mat4x2, .k_mat4x3, .k_mat4x4 => .four,
-                else => unreachable,
-            },
-            .rows = switch (token_tag) {
-                .k_mat2x2, .k_mat3x2, .k_mat4x2 => .two,
-                .k_mat2x3, .k_mat3x3, .k_mat4x3 => .three,
-                .k_mat2x4, .k_mat3x4, .k_mat4x4 => .four,
-                else => unreachable,
-            },
+            .cols = matrixCols(token_tag),
+            .rows = matrixRows(token_tag),
             .elem_type = elem_type,
             .value = value,
         },
     };
     return inst;
+}
+
+fn matrixCols(tag: TokenTag) Air.Inst.Vector.Size {
+    return switch (tag) {
+        .k_mat2x2, .k_mat2x3, .k_mat2x4 => .two,
+        .k_mat3x2, .k_mat3x3, .k_mat3x4 => .three,
+        .k_mat4x2, .k_mat4x3, .k_mat4x4 => .four,
+        else => unreachable,
+    };
+}
+
+fn matrixRows(tag: TokenTag) Air.Inst.Vector.Size {
+    return switch (tag) {
+        .k_mat2x2, .k_mat3x2, .k_mat4x2 => .two,
+        .k_mat2x3, .k_mat3x3, .k_mat4x3 => .three,
+        .k_mat2x4, .k_mat3x4, .k_mat4x4 => .four,
+        else => unreachable,
+    };
 }
 
 fn genAtomicType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -3007,5 +2863,3 @@ const Value = union(enum) {
         return .{ .bool = lhs.bool or rhs.bool };
     }
 };
-
-// TODO: don't check types on vector/matrix construct?
