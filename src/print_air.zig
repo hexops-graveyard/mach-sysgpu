@@ -47,6 +47,8 @@ fn Printer(comptime Writer: type) type {
                 },
                 .bool => try self.printBool(indent, index),
                 .int, .float => try self.printNumber(indent, index),
+                .vector => try self.printVector(indent, index),
+                .matrix => try self.printMatrix(indent, index),
                 .sampler_type,
                 .comparison_sampler_type,
                 .external_texture_type,
@@ -246,11 +248,93 @@ fn Printer(comptime Writer: type) type {
                                 try self.printFieldAny(indent + 1, "value", lit.value);
                                 try self.printFieldAny(indent + 1, "base", lit.base);
                             },
-                            .inst => |cast_inst| try self.printFieldAny(indent + 1, "cast", cast_inst),
+                            .inst => |cast| try self.printFieldAny(indent + 1, "cast", cast),
                         }
                     }
                 },
                 else => unreachable,
+            }
+            try self.instBlockEnd(indent);
+        }
+
+        fn printVector(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+            const vec = self.ir.instructions[index].vector;
+            try self.instBlockStart(index);
+            try self.printFieldInst(indent + 1, "type", vec.elem_type);
+            if (vec.value) |value| {
+                switch (value) {
+                    .literal => |lit| {
+                        try self.printFieldName(indent + 1, "literal");
+                        try self.tty.setColor(self.writer, .dim);
+                        try self.writer.writeAll("[");
+                        try self.tty.setColor(self.writer, .reset);
+                        for (0..@enumToInt(vec.size)) |i| {
+                            try self.tty.setColor(self.writer, .cyan);
+                            try self.writer.print("{d}", .{lit[i]});
+                            try self.tty.setColor(self.writer, .reset);
+                            try self.tty.setColor(self.writer, .dim);
+                            if (i < @enumToInt(vec.size) - 1) try self.writer.writeAll(", ");
+                            try self.tty.setColor(self.writer, .reset);
+                        }
+                        try self.tty.setColor(self.writer, .dim);
+                        try self.writer.writeAll("]");
+                        try self.tty.setColor(self.writer, .reset);
+                        try self.printFieldEnd();
+                    },
+                    .inst => |cast| {
+                        try self.printFieldName(indent + 1, "cast");
+                        try self.listStart();
+                        for (0..@enumToInt(vec.size)) |i| {
+                            if (cast[i] == null_inst) continue;
+                            try self.printIndent(indent + 2);
+                            try self.printInst(indent + 2, cast[i]);
+                            try self.printFieldEnd();
+                        }
+                        try self.listEnd(indent + 1);
+                        try self.printFieldEnd();
+                    },
+                }
+            }
+            try self.instBlockEnd(indent);
+        }
+
+        fn printMatrix(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+            const mat = self.ir.instructions[index].matrix;
+            try self.instBlockStart(index);
+            try self.printFieldInst(indent + 1, "type", mat.elem_type);
+            if (mat.value) |value| {
+                switch (value) {
+                    .literal => |lit| {
+                        try self.printFieldName(indent + 1, "literal");
+                        try self.tty.setColor(self.writer, .dim);
+                        try self.writer.writeAll("[");
+                        try self.tty.setColor(self.writer, .reset);
+                        for (0..@enumToInt(mat.cols) * @enumToInt(mat.rows)) |i| {
+                            try self.tty.setColor(self.writer, .cyan);
+                            try self.writer.print("{d}", .{lit[i]});
+                            try self.tty.setColor(self.writer, .reset);
+                            try self.tty.setColor(self.writer, .dim);
+                            if (i < @enumToInt(mat.cols) * @enumToInt(mat.rows) - 1) try self.writer.writeAll(", ");
+                            try self.tty.setColor(self.writer, .reset);
+                        }
+                        try self.tty.setColor(self.writer, .dim);
+                        try self.writer.writeAll("]");
+                        try self.tty.setColor(self.writer, .reset);
+                        try self.printFieldEnd();
+                    },
+                    .inst => |cast| {
+                        try self.printFieldName(indent + 1, "cast");
+                        try self.listStart();
+                        for (0..@enumToInt(mat.cols) * @enumToInt(mat.rows)) |i| {
+                            if (cast[i] == null_inst) continue;
+                            try self.printIndent(indent + 2);
+                            try self.printInst(indent + 2, cast[i]);
+                            try self.printFieldEnd();
+                        }
+                        try self.listEnd(indent + 1);
+                        try self.printFieldEnd();
+                    },
+                }
             }
             try self.instBlockEnd(indent);
         }
