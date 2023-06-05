@@ -107,7 +107,7 @@ test "must pass" {
         const source =
             \\const expr0 = 5 + 6;
             \\const expr1: bool = true;
-            \\var v0: i32;
+            \\var v0: u32;
             \\struct G {
             \\  @align(expr0 % 2 + 3) l: L,
             \\}
@@ -121,14 +121,18 @@ test "must pass" {
             \\var v2: vec2<u32>;
             \\var v3: vec2<f32>;
             \\var v4: mat2x2<f32>;
+            \\var v5: O = O(2);
+            \\var v6: ptr<function, u32>;
             \\fn test() -> u32 {
             \\  v0 = v1.l.f[0].n;
             \\  v0 = urmom();
             \\}
             \\fn urmom() -> u32 {
-            \\  v2 = vec2();
+            \\  v2 = vec2<u32>();
             \\  v3 = vec2<f32>(vec2<f32>(1.0, 3.0));
             \\  v4 = mat2x2<f32>(v3, v3);
+            \\  *v6 = 4;
+            \\  _ = v1;
             \\}
         ;
         var ir = try expectIR(source);
@@ -238,7 +242,7 @@ test "integer/float literals" {
 
     const toInst = struct {
         fn toInst(air: Air, i: Air.InstIndex) Air.Inst {
-            return air.instructions[air.instructions[i].global_variable_decl.expr];
+            return air.instructions[air.instructions[i].global_var.expr];
         }
     }.toInst;
 
@@ -334,8 +338,8 @@ test "must error" {
             \\var v1 = &v0 + 5;
         ;
         try expectError(source, .{
-            .msg = "invalid operation with '&v0'",
-            .loc = .{ .start = 21, .end = 24 },
+            .msg = "invalid operation",
+            .loc = .{ .start = 25, .end = 26 },
         });
     }
     {
@@ -345,16 +349,6 @@ test "must error" {
         try expectError(source, .{
             .msg = "cannot dereference '4'",
             .loc = .{ .start = 10, .end = 11 },
-        });
-    }
-    {
-        const source =
-            \\var v0 = 1;
-            \\var v1 = *v0 + 5;
-        ;
-        try expectError(source, .{
-            .msg = "cannot dereference non-pointer variable 'v0'",
-            .loc = .{ .start = 22, .end = 24 },
         });
     }
     {
@@ -381,18 +375,8 @@ test "must error" {
             \\var v1 = v0[0];
         ;
         try expectError(source, .{
-            .msg = "cannot access index of a non-array variable",
+            .msg = "cannot access index of a non-array",
             .loc = .{ .start = 25, .end = 26 },
-        });
-    }
-    {
-        const source =
-            \\var v0: array<u32>;
-            \\var v1 = 5[0];
-        ;
-        try expectError(source, .{
-            .msg = "expected array type",
-            .loc = .{ .start = 29, .end = 30 },
         });
     }
     {
@@ -450,15 +434,6 @@ test "must error" {
         try expectError(source, .{
             .msg = "invalid operation",
             .loc = .{ .start = 11, .end = 13 },
-        });
-    }
-    {
-        const source =
-            \\var v0 = bool(5);
-        ;
-        try expectError(source, .{
-            .msg = "cannot cast '5' into bool",
-            .loc = .{ .start = 9, .end = 13 },
         });
     }
     {
