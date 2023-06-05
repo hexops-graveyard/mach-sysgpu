@@ -25,7 +25,7 @@ fn Printer(comptime Writer: type) type {
         fn printInst(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[index];
             switch (inst) {
-                .global_variable_decl => {
+                .global_var => {
                     std.debug.assert(indent == 0);
                     try self.printGlobalVariable(indent, index);
                     try self.printFieldEnd();
@@ -40,7 +40,7 @@ fn Printer(comptime Writer: type) type {
                     try self.printStructDecl(indent, index);
                     try self.printFieldEnd();
                 },
-                .fn_decl => {
+                .@"fn" => {
                     std.debug.assert(indent == 0);
                     try self.printFnDecl(indent, index);
                     try self.printFieldEnd();
@@ -102,18 +102,18 @@ fn Printer(comptime Writer: type) type {
         fn printGlobalVariable(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
-            try self.printFieldString(indent + 1, "name", inst.global_variable_decl.name);
-            if (inst.global_variable_decl.addr_space != .none) {
-                try self.printFieldEnum(indent + 1, "addr_space", inst.global_variable_decl.addr_space);
+            try self.printFieldString(indent + 1, "name", inst.global_var.name);
+            if (inst.global_var.addr_space != .none) {
+                try self.printFieldEnum(indent + 1, "addr_space", inst.global_var.addr_space);
             }
-            if (inst.global_variable_decl.access_mode != .none) {
-                try self.printFieldEnum(indent + 1, "access_mode", inst.global_variable_decl.access_mode);
+            if (inst.global_var.access_mode != .none) {
+                try self.printFieldEnum(indent + 1, "access_mode", inst.global_var.access_mode);
             }
-            if (inst.global_variable_decl.type != null_inst) {
-                try self.printFieldInst(indent + 1, "type", inst.global_variable_decl.type);
+            if (inst.global_var.type != null_inst) {
+                try self.printFieldInst(indent + 1, "type", inst.global_var.type);
             }
-            if (inst.global_variable_decl.expr != null_inst) {
-                try self.printFieldInst(indent + 1, "value", inst.global_variable_decl.expr);
+            if (inst.global_var.expr != null_inst) {
+                try self.printFieldInst(indent + 1, "value", inst.global_var.expr);
             }
             try self.instBlockEnd(indent);
         }
@@ -166,12 +166,12 @@ fn Printer(comptime Writer: type) type {
         fn printFnDecl(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
-            try self.printFieldString(indent + 1, "name", inst.fn_decl.name);
+            try self.printFieldString(indent + 1, "name", inst.@"fn".name);
 
-            if (inst.fn_decl.params != 0) {
+            if (inst.@"fn".params != 0) {
                 try self.printFieldName(indent + 1, "params");
                 try self.listStart();
-                const params = std.mem.sliceTo(self.ir.refs[inst.fn_decl.params..], null_inst);
+                const params = std.mem.sliceTo(self.ir.refs[inst.@"fn".params..], null_inst);
                 for (params) |arg| {
                     const arg_index = arg;
                     const arg_inst = self.ir.instructions[arg_index];
@@ -205,10 +205,10 @@ fn Printer(comptime Writer: type) type {
                 try self.printFieldEnd();
             }
 
-            if (inst.fn_decl.statements != 0) {
+            if (inst.@"fn".statements != 0) {
                 try self.printFieldName(indent + 1, "statements");
                 try self.listStart();
-                const statements = std.mem.sliceTo(self.ir.refs[inst.fn_decl.statements..], null_inst);
+                const statements = std.mem.sliceTo(self.ir.refs[inst.@"fn".statements..], null_inst);
                 for (statements) |statement| {
                     try self.printIndent(indent + 2);
                     try self.printInst(indent + 2, statement);

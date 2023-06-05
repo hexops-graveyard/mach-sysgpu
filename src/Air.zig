@@ -58,13 +58,13 @@ pub fn getStr(self: Air, index: u32) []const u8 {
 pub const null_inst: InstIndex = std.math.maxInt(InstIndex);
 pub const InstIndex = u32;
 pub const Inst = union(enum) {
-    global_variable_decl: GlobalVariableDecl,
-    global_const: GlobalConstDecl,
+    global_var: GlobalVar,
+    global_const: GlobalConst,
 
-    fn_decl: FnDecl,
+    @"fn": Fn,
     fn_param: FnParam,
 
-    @"struct": StructDecl,
+    @"struct": Struct,
     struct_member: StructMember,
 
     bool: Bool,
@@ -118,16 +118,18 @@ pub const Inst = union(enum) {
     assign_xor: Binary,
     assign_shl: Binary,
     assign_shr: Binary,
+    assign_phony: InstIndex,
 
     field_access: FieldAccess,
     index_access: IndexAccess,
-    call: Call,
+    call: FnCall,
+    struct_construct: StructConstruct,
     bitcast: Bitcast,
 
     var_ref: InstIndex,
     struct_ref: InstIndex,
 
-    pub const GlobalVariableDecl = struct {
+    pub const GlobalVar = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         type: InstIndex,
@@ -154,14 +156,14 @@ pub const Inst = union(enum) {
         };
     };
 
-    pub const GlobalConstDecl = struct {
+    pub const GlobalConst = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         type: InstIndex,
         expr: InstIndex,
     };
 
-    pub const FnDecl = struct {
+    pub const Fn = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         stage: Stage,
@@ -255,7 +257,7 @@ pub const Inst = union(enum) {
         };
     };
 
-    pub const StructDecl = struct {
+    pub const Struct = struct {
         /// index to zero-terminated string in `strings`
         name: u32,
         /// index to zero-terminated members InstIndex in `refs`
@@ -441,10 +443,16 @@ pub const Inst = union(enum) {
         index: InstIndex,
     };
 
-    pub const Call = struct {
+    pub const FnCall = struct {
         @"fn": InstIndex,
         /// index to zero-terminated args InstIndex in `refs`
         args: InstIndex,
+    };
+
+    pub const StructConstruct = struct {
+        @"struct": InstIndex,
+        /// index to zero-terminated args InstIndex in `refs`
+        members: InstIndex,
     };
 
     pub const Bitcast = struct {
