@@ -3,10 +3,12 @@ const Ast = @import("Ast.zig");
 const Air = @import("Air.zig");
 const ErrorList = @import("ErrorList.zig");
 const null_inst = Air.null_inst;
-const Inst = Air.Inst;
-const InstIndex = Air.InstIndex;
+const null_ref = Air.null_ref;
 const null_node = Ast.null_node;
+const Inst = Air.Inst;
 const Node = Ast.Node;
+const InstIndex = Air.InstIndex;
+const RefIndex = Air.RefIndex;
 const NodeIndex = Ast.NodeIndex;
 const TokenIndex = Ast.TokenIndex;
 const TokenTag = @import("Token.zig").Tag;
@@ -36,7 +38,7 @@ pub const Scope = struct {
     };
 };
 
-pub fn genTranslationUnit(astgen: *AstGen) !u32 {
+pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
@@ -263,11 +265,23 @@ fn genGlobalConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
 fn genStruct(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const struct_decl = try astgen.allocInst();
+    const name_str = astgen.tree.declNameLoc(node).?.slice(astgen.tree.source);
+    const name = try astgen.addString(name_str);
+    const members = try astgen.genStructMembers(scope, astgen.tree.nodeLHS(node));
+    astgen.instructions.items[struct_decl] = .{
+        .@"struct" = .{
+            .name = name,
+            .members = members,
+        },
+    };
+    return struct_decl;
+}
 
+fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
-    const member_nodes_list = astgen.tree.spanToList(astgen.tree.nodeLHS(node));
+    const member_nodes_list = astgen.tree.spanToList(node);
     for (member_nodes_list, 0..) |member_node, i| {
         const member = try astgen.allocInst();
         const member_name_loc = astgen.tree.tokenLoc(astgen.tree.nodeToken(member_node));
@@ -317,8 +331,8 @@ fn genStruct(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             }
         }
 
-        var @"align": u29 = 0;
-        var size: u32 = 0;
+        var @"align": ?u29 = null;
+        var size: ?u32 = null;
         var builtin: Inst.Builtin = .none;
         var location: InstIndex = null_inst;
         var interpolate: ?Inst.Interpolate = null;
@@ -358,29 +372,20 @@ fn genStruct(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         try astgen.scratch.append(astgen.allocator, member);
     }
 
-    const name_str = astgen.tree.declNameLoc(node).?.slice(astgen.tree.source);
-    const name = try astgen.addString(name_str);
-    const member_list = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-
-    astgen.instructions.items[struct_decl] = .{
-        .@"struct" = .{
-            .name = name,
-            .members = member_list,
-        },
-    };
-    return struct_decl;
+    return astgen.addRefList(astgen.scratch.items[scratch_top..]);
 }
 
 fn genFn(astgen: *AstGen, global_scope: *Scope, node: NodeIndex) !InstIndex {
     const fn_decl = try astgen.allocInst();
     const fn_proto = astgen.tree.extraData(Node.FnProto, astgen.tree.nodeLHS(node));
+    const node_lhs = astgen.tree.nodeRHS(node);
 
     var scope = try astgen.scope_pool.create();
     scope.* = .{ .tag = .func, .parent = global_scope };
 
-    var params: u32 = 0;
+    var params = null_ref;
     if (fn_proto.params != null_node) {
-        params = try astgen.getFnParams(scope, fn_proto.params);
+        params = try astgen.genFnParams(scope, fn_proto.params);
     }
 
     var return_type = null_inst;
@@ -524,13 +529,9 @@ fn genFn(astgen: *AstGen, global_scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    var statements: u32 = 0;
-    if (astgen.tree.nodeRHS(node) != null_node) {
-        statements = try astgen.genStatements(scope, astgen.tree.nodeRHS(node));
-    }
-
     const name_loc = astgen.tree.declNameLoc(node).?;
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
+    const block = try astgen.genBlock(scope, node_lhs);
     astgen.instructions.items[fn_decl] = .{
         .@"fn" = .{
             .name = name,
@@ -539,7 +540,7 @@ fn genFn(astgen: *AstGen, global_scope: *Scope, node: NodeIndex) !InstIndex {
             .params = params,
             .return_type = return_type,
             .return_attrs = return_attrs,
-            .statements = statements,
+            .block = block,
         },
     };
     return fn_decl;
@@ -550,7 +551,7 @@ fn genTypeAlias(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     return astgen.genType(scope, node_lhs);
 }
 
-fn getFnParams(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
+fn genFnParams(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
@@ -754,14 +755,25 @@ fn attrInterpolate(astgen: *AstGen, node: NodeIndex) Inst.Interpolate {
     return inter;
 }
 
-fn genStatements(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
+fn genBlock(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
+    const node_lhs = astgen.tree.nodeLHS(node);
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
-    for (astgen.tree.spanToList(node)) |stmnt_node| {
+    if (node_lhs == null_node) return null_ref;
+    for (astgen.tree.spanToList(node_lhs)) |stmnt_node| {
         const stmnt_inst = switch (astgen.tree.nodeTag(stmnt_node)) {
             .compound_assign => try astgen.genCompoundAssign(scope, stmnt_node),
             .phony_assign => try astgen.genPhonyAssign(scope, stmnt_node),
+            .call => blk: {
+                const token = astgen.tree.nodeToken(stmnt_node);
+                const stmnt_node_loc = astgen.tree.nodeLoc(stmnt_node);
+                const decl = try astgen.findSymbol(scope, token);
+                if (astgen.tree.nodeRHS(stmnt_node) != null_node) {
+                    try astgen.errors.add(stmnt_node_loc, "expected a function", .{}, null);
+                }
+                break :blk try astgen.genFnCall(scope, decl, stmnt_node);
+            },
             else => continue, // TODO
         };
         try astgen.scratch.append(astgen.allocator, stmnt_inst);
@@ -1119,73 +1131,20 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     if (node_rhs == null_node) {
         std.debug.assert(token_tag == .ident);
-
-        const inst = try astgen.allocInst();
-        const called = try astgen.findSymbol(scope, token);
-
-        const scratch_top = astgen.scratch.items.len;
-        defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
-
-        switch (astgen.getInst(called)) {
-            .@"fn" => {
-                if (node_lhs != null_node) {
-                    for (astgen.tree.spanToList(node_lhs)) |arg_node| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        try astgen.scratch.append(astgen.allocator, arg);
-                    }
-                }
-
-                const args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-                astgen.instructions.items[inst] = .{ .call = .{ .@"fn" = called, .args = args } };
-                return inst;
+        const decl = try astgen.findSymbol(scope, token);
+        switch (astgen.getInst(decl)) {
+            .@"fn" => return astgen.genFnCall(scope, decl, node),
+            .@"struct" => return astgen.genStructConstruct(scope, decl, node),
+            else => {
+                try astgen.errors.add(
+                    node_loc,
+                    "'{s}' cannot be called",
+                    .{token_loc.slice(astgen.tree.source)},
+                    null,
+                );
+                return error.AnalysisFail;
             },
-            .@"struct" => |@"struct"| {
-                const struct_members = std.mem.sliceTo(astgen.refs.items[@"struct".members..], null_inst);
-                if (node_lhs != null_node) {
-                    const arg_nodes = astgen.tree.spanToList(node_lhs);
-                    if (struct_members.len != arg_nodes.len) {
-                        try astgen.errors.add(node_loc, "struct members count mismatch", .{}, null);
-                        return error.AnalysisFail;
-                    }
-                    for (arg_nodes, 0..) |arg_node, i| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        const arg_res = try astgen.resolve(arg);
-                        if (astgen.eql(
-                            astgen.getInst(struct_members[i]).struct_member.type,
-                            arg_res,
-                        )) {
-                            try astgen.scratch.append(astgen.allocator, arg);
-                        } else {
-                            try astgen.errors.add(
-                                astgen.tree.nodeLoc(arg_node),
-                                "value and member type mismatch",
-                                .{},
-                                null,
-                            );
-                            return error.AnalysisFail;
-                        }
-                    }
-                } else {
-                    if (struct_members.len != 0) {
-                        try astgen.errors.add(node_loc, "struct members count mismatch", .{}, null);
-                        return error.AnalysisFail;
-                    }
-                }
-
-                const members = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-                astgen.instructions.items[inst] = .{ .struct_construct = .{ .@"struct" = called, .members = members } };
-                return inst;
-            },
-            else => {},
         }
-
-        try astgen.errors.add(
-            node_loc,
-            "'{s}' cannot be called",
-            .{token_loc.slice(astgen.tree.source)},
-            null,
-        );
-        return error.AnalysisFail;
     }
 
     switch (token_tag) {
@@ -1736,6 +1695,97 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 }
 
+fn genFnCall(astgen: *AstGen, scope: *Scope, decl: InstIndex, node: NodeIndex) !InstIndex {
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const node_loc = astgen.tree.nodeLoc(node);
+    const inst = try astgen.allocInst();
+
+    const scratch_top = astgen.scratch.items.len;
+    defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
+
+    var args = null_ref;
+    if (node_lhs != null_node) {
+        const params = std.mem.sliceTo(
+            astgen.refs.items[astgen.getInst(decl).@"fn".params..],
+            null_inst,
+        );
+        const arg_nodes = astgen.tree.spanToList(node_lhs);
+        if (params.len != arg_nodes.len) {
+            try astgen.errors.add(node_loc, "function params count mismatch", .{}, null);
+            return error.AnalysisFail;
+        }
+        for (arg_nodes, 0..) |arg_node, i| {
+            const arg = try astgen.genExpr(scope, arg_node);
+            const arg_res = try astgen.resolve(arg);
+            if (astgen.eql(astgen.getInst(params[i]).fn_param.type, arg_res)) {
+                try astgen.scratch.append(astgen.allocator, arg);
+            } else {
+                try astgen.errors.add(
+                    astgen.tree.nodeLoc(arg_node),
+                    "value and member type mismatch",
+                    .{},
+                    null,
+                );
+                return error.AnalysisFail;
+            }
+        }
+        args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
+    } else {
+        if (astgen.getInst(decl).@"fn".params != null_node) {
+            try astgen.errors.add(node_loc, "function params count mismatch", .{}, null);
+            return error.AnalysisFail;
+        }
+    }
+
+    astgen.instructions.items[inst] = .{ .call = .{ .@"fn" = decl, .args = args } };
+    return inst;
+}
+
+fn genStructConstruct(astgen: *AstGen, scope: *Scope, decl: InstIndex, node: NodeIndex) !InstIndex {
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const node_loc = astgen.tree.nodeLoc(node);
+    const inst = try astgen.allocInst();
+
+    const scratch_top = astgen.scratch.items.len;
+    defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
+
+    const struct_members = std.mem.sliceTo(
+        astgen.refs.items[astgen.getInst(decl).@"struct".members..],
+        null_inst,
+    );
+    if (node_lhs != null_node) {
+        const arg_nodes = astgen.tree.spanToList(node_lhs);
+        if (struct_members.len != arg_nodes.len) {
+            try astgen.errors.add(node_loc, "struct members count mismatch", .{}, null);
+            return error.AnalysisFail;
+        }
+        for (arg_nodes, 0..) |arg_node, i| {
+            const arg = try astgen.genExpr(scope, arg_node);
+            const arg_res = try astgen.resolve(arg);
+            if (astgen.eql(astgen.getInst(struct_members[i]).struct_member.type, arg_res)) {
+                try astgen.scratch.append(astgen.allocator, arg);
+            } else {
+                try astgen.errors.add(
+                    astgen.tree.nodeLoc(arg_node),
+                    "value and member type mismatch",
+                    .{},
+                    null,
+                );
+                return error.AnalysisFail;
+            }
+        }
+    } else {
+        if (struct_members.len != 0) {
+            try astgen.errors.add(node_loc, "struct members count mismatch", .{}, null);
+            return error.AnalysisFail;
+        }
+    }
+
+    const members = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
+    astgen.instructions.items[inst] = .{ .struct_construct = .{ .@"struct" = decl, .members = members } };
+    return inst;
+}
+
 fn genBitcast(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_rhs = astgen.tree.nodeRHS(node);
@@ -1997,8 +2047,8 @@ fn genNumberType(astgen: *AstGen, node: NodeIndex) !InstIndex {
     const token = astgen.tree.nodeToken(node);
     const token_tag = astgen.tree.tokenTag(token);
     return astgen.addInst(switch (token_tag) {
-        .k_i32 => .{ .int = .{ .type = .u32, .value = null } },
-        .k_u32 => .{ .int = .{ .type = .i32, .value = null } },
+        .k_u32 => .{ .int = .{ .type = .u32, .value = null } },
+        .k_i32 => .{ .int = .{ .type = .i32, .value = null } },
         .k_f32 => .{ .float = .{ .type = .f32, .value = null } },
         .k_f16 => .{ .float = .{ .type = .f16, .value = null } },
         else => unreachable,
@@ -2537,6 +2587,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .fn_param,
             .@"struct",
             .struct_member,
+            .block,
             .assign,
             .assign_add,
             .assign_sub,
@@ -2728,12 +2779,12 @@ fn addInst(astgen: *AstGen, inst: Inst) error{OutOfMemory}!InstIndex {
     return @intCast(InstIndex, astgen.instructions.items.len - 1);
 }
 
-fn addRefList(astgen: *AstGen, list: []const InstIndex) error{OutOfMemory}!u32 {
+fn addRefList(astgen: *AstGen, list: []const InstIndex) error{OutOfMemory}!RefIndex {
     const len = list.len + 1;
     try astgen.refs.ensureUnusedCapacity(astgen.allocator, len);
     astgen.refs.appendSliceAssumeCapacity(list);
     astgen.refs.appendAssumeCapacity(null_inst);
-    return @intCast(u32, astgen.refs.items.len - len);
+    return @intCast(RefIndex, astgen.refs.items.len - len);
 }
 
 fn addString(astgen: *AstGen, str: []const u8) error{OutOfMemory}!u32 {

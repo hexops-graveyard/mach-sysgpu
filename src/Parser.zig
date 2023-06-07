@@ -206,9 +206,9 @@ fn attributeList(p: *Parser) !?NodeIndex {
         const attr = try p.attribute() orelse break;
         try p.scratch.append(p.allocator, attr);
     }
-    const list = p.scratch.items[scratch_top..];
-    if (list.len == 0) return null;
-    return try p.listToSpan(list);
+    const attrs = p.scratch.items[scratch_top..];
+    if (attrs.len == 0) return null;
+    return try p.listToSpan(attrs);
 }
 
 fn attribute(p: *Parser) !?NodeIndex {
@@ -561,7 +561,7 @@ fn typeAliasDecl(p: *Parser) !?NodeIndex {
 
 fn structDecl(p: *Parser) !?NodeIndex {
     const main_token = p.eatToken(.k_struct) orelse return null;
-    _ = try p.expectToken(.ident);
+    const name_token = try p.expectToken(.ident);
     _ = try p.expectToken(.brace_left);
 
     const scratch_top = p.scratch.items.len;
@@ -586,13 +586,21 @@ fn structDecl(p: *Parser) !?NodeIndex {
 
     _ = try p.expectToken(.brace_right);
 
-    const list = p.scratch.items[scratch_top..];
-    const members = try p.listToSpan(list);
+    const members = p.scratch.items[scratch_top..];
+    if (members.len == 0) {
+        try p.errors.add(
+            p.getToken(.loc, name_token),
+            "struct '{s}' has no member",
+            .{p.getToken(.loc, name_token).slice(p.source)},
+            null,
+        );
+        return error.Parsing;
+    }
 
     return try p.addNode(.{
         .tag = .@"struct",
         .main_token = main_token,
-        .lhs = members,
+        .lhs = try p.listToSpan(members),
     });
 }
 
@@ -718,8 +726,6 @@ fn statementRecoverable(p: *Parser) !?NodeIndex {
     }
 }
 
-/// for simplicity and better error messages,
-/// we are putting all statements here
 fn statement(p: *Parser) !?NodeIndex {
     while (p.eatToken(.semicolon)) |_| {}
 
@@ -764,34 +770,37 @@ fn expectBlock(p: *Parser) error{ OutOfMemory, Parsing }!NodeIndex {
 }
 
 fn block(p: *Parser) error{ OutOfMemory, Parsing }!?NodeIndex {
-    _ = p.eatToken(.brace_left) orelse return null;
+    const main_token = p.eatToken(.brace_left) orelse return null;
+    const statements = try p.statementList() orelse null_node;
+    _ = try p.expectToken(.brace_right);
+    return try p.addNode(.{
+        .tag = .block,
+        .main_token = main_token,
+        .lhs = statements,
+    });
+}
 
+fn statementList(p: *Parser) error{ OutOfMemory, Parsing }!?NodeIndex {
     const scratch_top = p.scratch.items.len;
     defer p.scratch.shrinkRetainingCapacity(scratch_top);
 
-    var failed = false;
     while (true) {
-        const stmt = try p.statementRecoverable() orelse {
+        const stmt = try p.statement() orelse {
             if (p.peekToken(.tag, 0) == .brace_right) break;
-            failed = true;
             try p.errors.add(
                 p.peekToken(.loc, 0),
                 "expected statement, found '{s}'",
                 .{p.peekToken(.tag, 0).symbol()},
                 null,
             );
-            p.findNextStmt();
-            continue;
+            return error.Parsing;
         };
         try p.scratch.append(p.allocator, stmt);
     }
-    _ = try p.expectToken(.brace_right);
-    if (failed) return error.Parsing;
 
-    const list = p.scratch.items[scratch_top..];
-    if (list.len == 0) return null_node;
-
-    return try p.listToSpan(list);
+    const statements = p.scratch.items[scratch_top..];
+    if (statements.len == 0) return null;
+    return try p.listToSpan(statements);
 }
 
 fn breakStatement(p: *Parser) !?NodeIndex {
@@ -1499,18 +1508,7 @@ fn callExpr(p: *Parser) !?NodeIndex {
         else => return null,
     }
 
-    const lhs = try p.expectArgumentListExpr();
-    return try p.addNode(.{
-        .tag = .call,
-        .main_token = main_token,
-        .lhs = lhs,
-        .rhs = rhs,
-    });
-}
-
-fn expectArgumentListExpr(p: *Parser) !NodeIndex {
     _ = try p.expectToken(.paren_left);
-
     const scratch_top = p.scratch.items.len;
     defer p.scratch.shrinkRetainingCapacity(scratch_top);
     while (true) {
@@ -1518,13 +1516,15 @@ fn expectArgumentListExpr(p: *Parser) !NodeIndex {
         try p.scratch.append(p.allocator, expr);
         if (p.eatToken(.comma) == null) break;
     }
-
     _ = try p.expectToken(.paren_right);
+    const args = p.scratch.items[scratch_top..];
 
-    const list = p.scratch.items[scratch_top..];
-    if (list.len == 0) return null_node;
-
-    return p.listToSpan(list);
+    return try p.addNode(.{
+        .tag = .call,
+        .main_token = main_token,
+        .lhs = if (args.len == 0) null_node else try p.listToSpan(args),
+        .rhs = rhs,
+    });
 }
 
 fn expression(p: *Parser) !?NodeIndex {
