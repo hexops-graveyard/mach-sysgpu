@@ -123,16 +123,18 @@ test "must pass" {
             \\var v4: mat2x2<f32>;
             \\var v5: O = O(2);
             \\var v6: ptr<function, u32>;
-            \\fn test() -> u32 {
+            \\fn test0() -> u32 {
             \\  v0 = v1.l.f[0].n;
             \\  v0 = urmom();
             \\}
+            \\fn test1(p: vec2<u32>) -> u32 {}
             \\fn urmom() -> u32 {
             \\  v2 = vec2<u32>();
             \\  v3 = vec2<f32>(vec2<f32>(1.0, 3.0));
             \\  v4 = mat2x2<f32>(v3, v3);
             \\  *v6 = 4;
             \\  _ = v1;
+            \\  test1(v2);
             \\}
         ;
         var ir = try expectIR(source);
@@ -454,6 +456,18 @@ test "must error" {
         try expectError(source, .{
             .msg = "cannot cast into vec3",
             .loc = .{ .start = 31, .end = 35 },
+        });
+    }
+    {
+        const source =
+            \\fn test0(a: u32) {}
+            \\fn test1() {
+            \\  test0();
+            \\}
+        ;
+        try expectError(source, .{
+            .msg = "function params count mismatch",
+            .loc = .{ .start = 35, .end = 40 },
         });
     }
 }

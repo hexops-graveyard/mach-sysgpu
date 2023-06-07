@@ -1,6 +1,7 @@
 const std = @import("std");
 const Air = @import("Air.zig");
 const null_inst = Air.null_inst;
+const null_ref = Air.null_ref;
 
 const indention_size = 2;
 
@@ -143,11 +144,11 @@ fn Printer(comptime Writer: type) type {
                 try self.instBlockStart(member_index);
                 try self.printFieldString(indent + 3, "name", member_inst.struct_member.name);
                 try self.printFieldInst(indent + 3, "type", member_inst.struct_member.type);
-                if (member_inst.struct_member.@"align" != 0) {
-                    try self.printFieldAny(indent + 3, "align", member_inst.struct_member.@"align");
+                if (member_inst.struct_member.@"align") |@"align"| {
+                    try self.printFieldAny(indent + 3, "align", @"align");
                 }
-                if (member_inst.struct_member.size != 0) {
-                    try self.printFieldAny(indent + 3, "size", member_inst.struct_member.size);
+                if (member_inst.struct_member.size) |size| {
+                    try self.printFieldAny(indent + 3, "size", size);
                 }
                 if (member_inst.struct_member.builtin != .none) {
                     try self.printFieldAny(indent + 3, "builtin", member_inst.struct_member.builtin);
@@ -168,7 +169,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.@"fn".name);
 
-            if (inst.@"fn".params != 0) {
+            if (inst.@"fn".params != null_ref) {
                 try self.printFieldName(indent + 1, "params");
                 try self.listStart();
                 const params = std.mem.sliceTo(self.ir.refs[inst.@"fn".params..], null_inst);
@@ -205,20 +206,25 @@ fn Printer(comptime Writer: type) type {
                 try self.printFieldEnd();
             }
 
-            if (inst.@"fn".statements != 0) {
-                try self.printFieldName(indent + 1, "statements");
-                try self.listStart();
-                const statements = std.mem.sliceTo(self.ir.refs[inst.@"fn".statements..], null_inst);
-                for (statements) |statement| {
-                    try self.printIndent(indent + 2);
-                    try self.printInst(indent + 2, statement);
-                    try self.printFieldEnd();
-                }
-                try self.listEnd(indent + 1);
+            if (inst.@"fn".block != null_ref) {
+                try self.printFieldName(indent + 1, "block");
+                try self.printInst(indent + 1, inst.@"fn".block);
                 try self.printFieldEnd();
             }
 
             try self.instBlockEnd(indent);
+        }
+
+        fn printBlock(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+            const inst = self.ir.instructions[index];
+            try self.listStart();
+            const statements = std.mem.sliceTo(self.ir.refs[inst.block..], null_inst);
+            for (statements) |statement| {
+                try self.printIndent(indent + 1);
+                try self.printInst(indent + 1, statement);
+                try self.printFieldEnd();
+            }
+            try self.listEnd(indent);
         }
 
         fn printBool(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
@@ -362,14 +368,14 @@ fn Printer(comptime Writer: type) type {
             try self.writer.print("{s}", .{@tagName(inst)});
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .dim);
-            try self.writer.print("<", .{});
+            try self.writer.writeAll("<");
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .blue);
             try self.writer.print("{d}", .{index});
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .dim);
-            try self.writer.print(">", .{});
-            try self.writer.print("(", .{});
+            try self.writer.writeAll(">");
+            try self.writer.writeAll("(");
             try self.tty.setColor(self.writer, .reset);
         }
 
@@ -385,21 +391,21 @@ fn Printer(comptime Writer: type) type {
             try self.writer.print("{s}", .{@tagName(inst)});
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .dim);
-            try self.writer.print("<", .{});
+            try self.writer.writeAll("<");
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .blue);
             try self.writer.print("{d}", .{index});
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .dim);
-            try self.writer.print(">", .{});
-            try self.writer.print("(\n", .{});
+            try self.writer.writeAll(">");
+            try self.writer.writeAll("{\n");
             try self.tty.setColor(self.writer, .reset);
         }
 
         fn instBlockEnd(self: @This(), indent: u16) !void {
             try self.printIndent(indent);
             try self.tty.setColor(self.writer, .dim);
-            try self.writer.writeAll(")");
+            try self.writer.writeAll("}");
             try self.tty.setColor(self.writer, .reset);
         }
 

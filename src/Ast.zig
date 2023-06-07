@@ -204,6 +204,11 @@ pub const Node = struct {
         /// RHS : type
         fn_param,
 
+        /// TOK : brace_left
+        /// LHS : Span(Expr)?
+        /// RHS : --
+        block,
+
         /// TOK : k_return
         /// LHS : Expr?
         /// RHS : --
