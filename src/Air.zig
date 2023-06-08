@@ -51,7 +51,7 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemor
     };
 }
 
-pub fn getStr(self: Air, index: u32) []const u8 {
+pub fn getStr(self: Air, index: StringIndex) []const u8 {
     return std.mem.sliceTo(self.strings[index..], 0);
 }
 
@@ -59,7 +59,7 @@ pub const null_inst: InstIndex = std.math.maxInt(InstIndex);
 pub const null_ref: RefIndex = std.math.maxInt(RefIndex);
 pub const InstIndex = u32;
 pub const RefIndex = u32;
-pub const String = u32;
+pub const StringIndex = u32;
 pub const Inst = union(enum) {
     global_var: GlobalVar,
     global_const: GlobalConst,
@@ -111,6 +111,7 @@ pub const Inst = union(enum) {
     greater_than_equal: Binary,
 
     block: RefIndex,
+    @"return": InstIndex,
     assign: Binary,
     assign_add: Binary,
     assign_sub: Binary,
@@ -135,7 +136,7 @@ pub const Inst = union(enum) {
 
     pub const GlobalVar = struct {
         /// index to zero-terminated string in `strings`
-        name: String,
+        name: StringIndex,
         type: InstIndex,
         addr_space: AddressSpace,
         access_mode: AccessMode,
@@ -162,14 +163,14 @@ pub const Inst = union(enum) {
 
     pub const GlobalConst = struct {
         /// index to zero-terminated string in `strings`
-        name: String,
+        name: StringIndex,
         type: InstIndex,
         expr: InstIndex,
     };
 
     pub const Fn = struct {
         /// index to zero-terminated string in `strings`
-        name: String,
+        name: StringIndex,
         stage: Stage,
         is_const: bool,
         /// index to zero-terminated params InstIndex in `refs`
@@ -202,7 +203,7 @@ pub const Inst = union(enum) {
 
     pub const FnParam = struct {
         /// index to zero-terminated string in `strings`
-        name: String,
+        name: StringIndex,
         type: InstIndex,
         builtin: Builtin,
         location: InstIndex,
@@ -263,14 +264,14 @@ pub const Inst = union(enum) {
 
     pub const Struct = struct {
         /// index to zero-terminated string in `strings`
-        name: String,
+        name: StringIndex,
         /// index to zero-terminated members InstIndex in `refs`
         members: RefIndex,
     };
 
     pub const StructMember = struct {
         /// index to zero-terminated string in `strings`
-        name: String,
+        name: StringIndex,
         type: InstIndex,
         @"align": ?u29,
         size: ?u32,
@@ -438,7 +439,7 @@ pub const Inst = union(enum) {
         base: InstIndex,
         field: InstIndex,
         /// index to zero-terminated string in `strings`
-        name: String,
+        name: StringIndex,
     };
 
     pub const IndexAccess = struct {
