@@ -139,7 +139,7 @@ pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
         .override,
         .type_alias,
         => tree.nodeToken(node) + 1,
-        .struct_member => tree.nodeToken(node),
+        .struct_member, .fn_param => tree.nodeToken(node),
         else => return null,
     };
     return tree.tokenLoc(token);

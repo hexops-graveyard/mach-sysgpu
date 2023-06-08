@@ -208,17 +208,16 @@ fn Printer(comptime Writer: type) type {
 
             if (inst.@"fn".block != null_ref) {
                 try self.printFieldName(indent + 1, "block");
-                try self.printInst(indent + 1, inst.@"fn".block);
+                try self.printBlock(indent + 1, inst.@"fn".block);
                 try self.printFieldEnd();
             }
 
             try self.instBlockEnd(indent);
         }
 
-        fn printBlock(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[index];
+        fn printBlock(self: @This(), indent: u16, index: Air.RefIndex) Writer.Error!void {
+            const statements = std.mem.sliceTo(self.ir.refs[index..], null_inst);
             try self.listStart();
-            const statements = std.mem.sliceTo(self.ir.refs[inst.block..], null_inst);
             for (statements) |statement| {
                 try self.printIndent(indent + 1);
                 try self.printInst(indent + 1, statement);
