@@ -39,6 +39,8 @@ pub const Scope = struct {
             returned: bool,
         },
         block,
+        loop,
+        continuing,
     };
 };
 
@@ -68,8 +70,6 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
 
 /// adds `nodes` to scope and checks for re-declarations
 fn scanDecls(astgen: *AstGen, scope: *Scope, nodes: []const NodeIndex) !void {
-    std.debug.assert(scope.decls.count() == 0);
-
     for (nodes) |decl| {
         const loc = astgen.tree.declNameLoc(decl) orelse continue;
         const name = loc.slice(astgen.tree.source);
@@ -312,6 +312,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
                         .{member_type_loc.slice(astgen.tree.source)},
                         null,
                     );
+                    return error.AnalysisFail;
                 }
             },
             else => {
@@ -321,6 +322,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
                     .{member_type_loc.slice(astgen.tree.source)},
                     null,
                 );
+                return error.AnalysisFail;
             },
         }
 
@@ -333,6 +335,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
                     .{},
                     null,
                 );
+                return error.AnalysisFail;
             }
         }
 
@@ -778,12 +781,11 @@ fn attrInterpolate(astgen: *AstGen, node: NodeIndex) Inst.Interpolate {
     return inter;
 }
 
-fn genBlock(astgen: *AstGen, fn_scope: *Scope, node: NodeIndex) !RefIndex {
+fn genBlock(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ OutOfMemory, AnalysisFail }!RefIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     if (node_lhs == null_node) return null_ref;
 
-    var scope = try astgen.scope_pool.create();
-    scope.* = .{ .tag = .block, .parent = fn_scope };
+    const block = try astgen.allocInst();
     const stmnt_nodes = astgen.tree.spanToList(node_lhs);
     try astgen.scanDecls(scope, stmnt_nodes);
 
@@ -815,12 +817,105 @@ fn genBlock(astgen: *AstGen, fn_scope: *Scope, node: NodeIndex) !RefIndex {
                 is_unreachable = true;
                 break :blk try astgen.genReturn(scope, stmnt_node);
             },
+            .break_if => try astgen.genBreakIf(scope, stmnt_node),
+            .@"if" => try astgen.genIf(scope, stmnt_node),
+            .if_else => try astgen.genIfElse(scope, stmnt_node),
+            .if_else_if => try astgen.genIfElseIf(scope, stmnt_node),
+            .loop => try astgen.genLoop(scope, stmnt_node),
+            .block => try astgen.genBlock(scope, stmnt_node), // TODO
+            .continuing => try astgen.genContinuing(scope, stmnt_node),
+            .discard => try astgen.addInst(.discard),
+            .@"break" => try astgen.addInst(.@"break"),
+            .@"continue" => try astgen.addInst(.@"continue"),
+            .increase => try astgen.genIncreaseDecrease(scope, stmnt_node, true),
+            .decrease => try astgen.genIncreaseDecrease(scope, stmnt_node, false),
             else => continue, // TODO
         };
         try astgen.scratch.append(astgen.allocator, stmnt);
     }
 
-    return astgen.addRefList(astgen.scratch.items[scratch_top..]);
+    const statements = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
+    astgen.instructions.items[block] = .{ .block = statements };
+    return block;
+}
+
+fn genLoop(astgen: *AstGen, parent_scope: *Scope, node: NodeIndex) !InstIndex {
+    var scope = try astgen.scope_pool.create();
+    scope.* = .{ .tag = .loop, .parent = parent_scope };
+
+    const loop = try astgen.allocInst();
+    const block = try astgen.genBlock(scope, astgen.tree.nodeLHS(node));
+    astgen.instructions.items[loop] = .{ .loop = block };
+    return loop;
+}
+
+fn genContinuing(astgen: *AstGen, parent_scope: *Scope, node: NodeIndex) !InstIndex {
+    var scope = try astgen.scope_pool.create();
+    scope.* = .{ .tag = .continuing, .parent = parent_scope };
+
+    const continuing = try astgen.allocInst();
+    const block = try astgen.genBlock(scope, astgen.tree.nodeLHS(node));
+    astgen.instructions.items[continuing] = .{ .continuing = block };
+    return continuing;
+}
+
+fn genBreakIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const break_if = try astgen.allocInst();
+    const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
+    astgen.instructions.items[break_if] = .{ .break_if = expr };
+    return break_if;
+}
+
+fn genIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const inst = try astgen.allocInst();
+    const cond = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
+    const block = try astgen.genBlock(scope, astgen.tree.nodeRHS(node));
+    astgen.instructions.items[inst] = .{
+        .@"if" = .{
+            .cond = cond,
+            .body = block,
+            .@"else" = null_inst,
+        },
+    };
+    return inst;
+}
+
+fn genIfElse(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const if_node = astgen.tree.nodeLHS(node);
+    const inst = try astgen.allocInst();
+    const cond = try astgen.genExpr(scope, astgen.tree.nodeLHS(if_node));
+    const if_block = try astgen.genBlock(scope, astgen.tree.nodeRHS(if_node));
+    const else_block = try astgen.genBlock(scope, astgen.tree.nodeRHS(node));
+    astgen.instructions.items[inst] = .{
+        .@"if" = .{
+            .cond = cond,
+            .body = if_block,
+            .@"else" = else_block,
+        },
+    };
+    return inst;
+}
+
+fn genIfElseIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const if_node = astgen.tree.nodeLHS(node);
+    const node_rhs = astgen.tree.nodeRHS(node);
+    const inst = try astgen.allocInst();
+    const cond = try astgen.genExpr(scope, astgen.tree.nodeLHS(if_node));
+    const block = try astgen.genBlock(scope, astgen.tree.nodeRHS(if_node));
+    const else_if = switch (astgen.tree.nodeTag(node_rhs)) {
+        .@"if" => try astgen.genIf(scope, node_rhs),
+        .if_else => try astgen.genIfElse(scope, node_rhs),
+        .if_else_if => try astgen.genIfElseIf(scope, node_rhs),
+        else => unreachable,
+    };
+    astgen.instructions.items[inst] = .{
+        .@"if" = .{
+            .cond = cond,
+            .body = block,
+            .@"else" = else_if,
+        },
+    };
+    return inst;
 }
 
 fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -833,12 +928,7 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
     const rhs_type = try astgen.resolve(rhs);
 
     if (!astgen.eql(lhs_type, rhs_type)) {
-        try astgen.errors.add(
-            astgen.tree.nodeLoc(node),
-            "type mismatch",
-            .{},
-            null,
-        );
+        try astgen.errors.add(astgen.tree.nodeLoc(node), "type mismatch", .{}, null);
         return error.AnalysisFail;
     }
 
@@ -865,6 +955,31 @@ fn genPhonyAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const lhs = try astgen.genExpr(scope, node_lhs);
     astgen.instructions.items[inst] = .{ .assign_phony = lhs };
+    return inst;
+}
+
+fn genIncreaseDecrease(astgen: *AstGen, scope: *Scope, node: NodeIndex, increase: bool) !InstIndex {
+    const node_lhs = astgen.tree.nodeLHS(node);
+    const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
+    const inst = try astgen.allocInst();
+
+    const lhs = try astgen.genExpr(scope, node_lhs);
+    if (astgen.getInst(lhs) != .var_ref) {
+        try astgen.errors.add(node_lhs_loc, "expected a reference", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    const lhs_res = try astgen.resolve(lhs);
+    if (astgen.getInst(lhs_res) != .int) {
+        try astgen.errors.add(node_lhs_loc, "expected an integer", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    if (increase) {
+        astgen.instructions.items[inst] = .{ .increase = lhs };
+    } else {
+        astgen.instructions.items[inst] = .{ .decrease = lhs };
+    }
     return inst;
 }
 
@@ -1773,7 +1888,10 @@ fn findFnScope(scope: *Scope) *Scope {
         switch (s.tag) {
             .root => unreachable,
             .func => return s,
-            .block => s = s.parent,
+            .block,
+            .loop,
+            .continuing,
+            => s = s.parent,
         }
     }
 }
@@ -2677,7 +2795,14 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .@"struct",
             .struct_member,
             .block,
+            .loop,
+            .continuing,
             .@"return",
+            .break_if,
+            .@"if",
+            .discard,
+            .@"break",
+            .@"continue",
             .assign,
             .assign_add,
             .assign_sub,
@@ -2690,6 +2815,8 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .assign_shl,
             .assign_shr,
             .assign_phony,
+            .increase,
+            .decrease,
             => unreachable,
         }
     }

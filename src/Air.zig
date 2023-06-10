@@ -111,7 +111,11 @@ pub const Inst = union(enum) {
     greater_than_equal: Binary,
 
     block: RefIndex,
+    loop: InstIndex,
+    continuing: InstIndex,
     @"return": InstIndex,
+    break_if: InstIndex,
+    @"if": If,
     assign: Binary,
     assign_add: Binary,
     assign_sub: Binary,
@@ -124,6 +128,11 @@ pub const Inst = union(enum) {
     assign_shl: Binary,
     assign_shr: Binary,
     assign_phony: InstIndex,
+    increase: InstIndex,
+    decrease: InstIndex,
+    discard,
+    @"break",
+    @"continue",
 
     field_access: FieldAccess,
     index_access: IndexAccess,
@@ -464,6 +473,13 @@ pub const Inst = union(enum) {
         type: InstIndex,
         expr: InstIndex,
         result_type: InstIndex,
+    };
+
+    pub const If = struct {
+        cond: InstIndex,
+        body: InstIndex,
+        /// `if` or `block`
+        @"else": InstIndex,
     };
 
     comptime {

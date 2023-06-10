@@ -197,7 +197,7 @@ pub const Node = struct {
 
         /// TOK : k_fn
         /// LHS : FnProto
-        /// RHS : span(Statement)
+        /// RHS : block
         @"fn",
         /// TOK : ident
         /// LHS : ?span(Attribute)
@@ -205,7 +205,7 @@ pub const Node = struct {
         fn_param,
 
         /// TOK : brace_left
-        /// LHS : Span(Expr)?
+        /// LHS : span(Statement)?
         /// RHS : --
         block,
 
@@ -220,12 +220,12 @@ pub const Node = struct {
         discard,
 
         /// TOK : k_loop
-        /// LHS : span(Statement)
+        /// LHS : block
         /// RHS : --
         loop,
 
         /// TOK : k_continuing
-        /// LHS : span(Statement)
+        /// LHS : block
         /// RHS : --
         continuing,
 
@@ -264,16 +264,16 @@ pub const Node = struct {
         @"switch",
         /// TOK : k_case
         /// LHS : span(Expr)
-        /// RHS : span(Statement)
+        /// RHS : block
         switch_case,
         /// TOK : k_default
-        /// LHS : span(Statement)
+        /// LHS : block
         /// RHS : --
         switch_default,
         /// switch_case with default (`case 1, 2, default {}`)
         /// TOK : k_case
         /// LHS : span(Expr)
-        /// RHS : span(Statement)
+        /// RHS : block
         switch_case_default,
 
         /// TOK : k_var
@@ -293,12 +293,12 @@ pub const Node = struct {
 
         /// TOK : k_while
         /// LHS : Expr
-        /// RHS : span(Statement)
+        /// RHS : block
         @"while",
 
         /// TOK : k_for
         /// LHS : ForHeader
-        /// RHS : span(Statement)
+        /// RHS : block
         @"for",
 
         /// TOK : plus_plus
@@ -571,7 +571,7 @@ pub const Node = struct {
         /// see callExpr in Parser.zig if you don't understand this
         ///
         /// TOK : ident, k_array, k_bool, 'number type keywords', 'vector keywords', 'matrix keywords'
-        /// LHS : Span(Arguments Expr)
+        /// LHS : span(Arguments Expr)
         /// RHS : (number_type, bool_type, vector_type, matrix_type, array_type)?
         call,
 
@@ -667,13 +667,6 @@ pub const Node = struct {
         return_attrs: NodeIndex = null_node,
         /// Type?
         return_type: NodeIndex = null_node,
-    };
-
-    pub const IfStatement = struct {
-        /// Expr
-        cond: NodeIndex,
-        /// span(Statement)
-        body: NodeIndex,
     };
 
     pub const ForHeader = struct {
