@@ -144,6 +144,16 @@ test "must pass" {
             \\  } else {
             \\      test1(v2);
             \\  }
+            \\  
+            \\  switch (expr0) {
+            \\      case 1 {
+            \\          v0--;
+            \\      }
+            \\      default {
+            \\          v0++;
+            \\      }
+            \\  }
+            \\
             \\  return test1(v2);
             \\}
         ;
