@@ -997,7 +997,7 @@ fn switchStatement(p: *Parser) !?NodeIndex {
             try p.scratch.append(p.allocator, try p.addNode(.{
                 .tag = .switch_default,
                 .main_token = default_token,
-                .lhs = default_body,
+                .rhs = default_body,
             }));
         } else if (p.eatToken(.k_case)) |case_token| {
             const cases_scratch_top = p.scratch.items.len;

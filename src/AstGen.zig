@@ -41,6 +41,7 @@ pub const Scope = struct {
         block,
         loop,
         continuing,
+        switch_case,
     };
 };
 
@@ -821,6 +822,7 @@ fn genBlock(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ OutOfMemory,
             .@"if" => try astgen.genIf(scope, stmnt_node),
             .if_else => try astgen.genIfElse(scope, stmnt_node),
             .if_else_if => try astgen.genIfElseIf(scope, stmnt_node),
+            .@"switch" => try astgen.genSwitch(scope, stmnt_node),
             .loop => try astgen.genLoop(scope, stmnt_node),
             .block => try astgen.genBlock(scope, stmnt_node), // TODO
             .continuing => try astgen.genContinuing(scope, stmnt_node),
@@ -875,6 +877,68 @@ fn genIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .cond = cond,
             .body = block,
             .@"else" = null_inst,
+        },
+    };
+    return inst;
+}
+
+fn genSwitch(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const inst = try astgen.allocInst();
+    const switch_on = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
+    const switch_on_res = try astgen.resolve(switch_on);
+
+    const scratch_top = astgen.scratch.items.len;
+    defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
+
+    const cases_nodes = astgen.tree.spanToList(astgen.tree.nodeRHS(node));
+    for (cases_nodes) |cases_node| {
+        const cases_node_tag = astgen.tree.nodeTag(cases_node);
+
+        var cases_scope = try astgen.scope_pool.create();
+        cases_scope.* = .{ .tag = .switch_case, .parent = scope };
+
+        var cases = null_ref;
+        const body = try astgen.genBlock(cases_scope, astgen.tree.nodeRHS(cases_node));
+        var default = cases_node_tag == .switch_default or cases_node_tag == .switch_case_default;
+
+        switch (cases_node_tag) {
+            .switch_case, .switch_case_default => {
+                const cases_scratch_top = astgen.scratch.items.len;
+                defer astgen.scratch.shrinkRetainingCapacity(cases_scratch_top);
+
+                const case_nodes = astgen.tree.spanToList(astgen.tree.nodeLHS(cases_node));
+                for (case_nodes) |case_node| {
+                    const case_node_loc = astgen.tree.nodeLoc(case_node);
+                    const case = try astgen.genExpr(scope, case_node);
+                    const case_res = try astgen.resolve(case);
+                    if (!astgen.eql(switch_on_res, case_res)) {
+                        try astgen.errors.add(case_node_loc, "switch and case type mismatch", .{}, null);
+                        return error.AnalysisFail;
+                    }
+                    try astgen.scratch.append(astgen.allocator, case);
+                }
+
+                cases = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
+            },
+            .switch_default => {},
+            else => unreachable,
+        }
+
+        const case_inst = try astgen.addInst(.{
+            .switch_case = .{
+                .cases = cases,
+                .body = body,
+                .default = default,
+            },
+        });
+        try astgen.scratch.append(astgen.allocator, case_inst);
+    }
+
+    const cases_list = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
+    astgen.instructions.items[inst] = .{
+        .@"switch" = .{
+            .lhs = switch_on,
+            .rhs = cases_list,
         },
     };
     return inst;
@@ -1891,6 +1955,7 @@ fn findFnScope(scope: *Scope) *Scope {
             .block,
             .loop,
             .continuing,
+            .switch_case,
             => s = s.parent,
         }
     }
@@ -2803,6 +2868,8 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .discard,
             .@"break",
             .@"continue",
+            .@"switch",
+            .switch_case,
             .assign,
             .assign_add,
             .assign_sub,

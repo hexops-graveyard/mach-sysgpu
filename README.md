@@ -38,7 +38,7 @@ Dusk is in **very early stages** and under heavy development; there are hundreds
         - [x] if_else_if
         - [x] increase
         - [x] decrease
-        - [ ] switch
+        - [x] switch
         - [ ] var
         - [ ] const
         - [ ] let

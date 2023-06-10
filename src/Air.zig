@@ -116,6 +116,8 @@ pub const Inst = union(enum) {
     @"return": InstIndex,
     break_if: InstIndex,
     @"if": If,
+    @"switch": Binary,
+    switch_case: SwitchCase,
     assign: Binary,
     assign_add: Binary,
     assign_sub: Binary,
@@ -182,11 +184,11 @@ pub const Inst = union(enum) {
         name: StringIndex,
         stage: Stage,
         is_const: bool,
-        /// index to zero-terminated params InstIndex in `refs`
+        /// index to zero-terminated params in `refs`
         params: RefIndex,
         return_type: InstIndex,
         return_attrs: ReturnAttrs,
-        /// index to zero-terminated block InstIndex in `refs`
+        /// index to zero-terminated block in `refs`
         block: RefIndex,
 
         pub const Stage = union(enum) {
@@ -274,7 +276,7 @@ pub const Inst = union(enum) {
     pub const Struct = struct {
         /// index to zero-terminated string in `strings`
         name: StringIndex,
-        /// index to zero-terminated members InstIndex in `refs`
+        /// index to zero-terminated members in `refs`
         members: RefIndex,
     };
 
@@ -459,13 +461,13 @@ pub const Inst = union(enum) {
 
     pub const FnCall = struct {
         @"fn": InstIndex,
-        /// index to zero-terminated args InstIndex in `refs`
+        /// index to zero-terminated args in `refs`
         args: InstIndex,
     };
 
     pub const StructConstruct = struct {
         @"struct": InstIndex,
-        /// index to zero-terminated args InstIndex in `refs`
+        /// index to zero-terminated args in `refs`
         members: InstIndex,
     };
 
@@ -480,6 +482,13 @@ pub const Inst = union(enum) {
         body: InstIndex,
         /// `if` or `block`
         @"else": InstIndex,
+    };
+
+    pub const SwitchCase = struct {
+        /// index to zero-terminated case expressions in `refs`
+        cases: RefIndex,
+        body: InstIndex,
+        default: bool,
     };
 
     comptime {

@@ -267,8 +267,8 @@ pub const Node = struct {
         /// RHS : block
         switch_case,
         /// TOK : k_default
-        /// LHS : block
-        /// RHS : --
+        /// LHS : --
+        /// RHS : block
         switch_default,
         /// switch_case with default (`case 1, 2, default {}`)
         /// TOK : k_case
