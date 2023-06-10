@@ -888,7 +888,7 @@ fn forStatement(p: *Parser) !?NodeIndex {
 }
 
 fn ifStatement(p: *Parser) !?NodeIndex {
-    const main_token = p.eatToken(.k_if) orelse return null;
+    const if_token = p.eatToken(.k_if) orelse return null;
 
     const cond = try p.expression() orelse {
         try p.errors.add(
@@ -909,18 +909,20 @@ fn ifStatement(p: *Parser) !?NodeIndex {
         return error.Parsing;
     };
 
-    if (p.eatToken(.k_else)) |_| {
-        const extra = try p.addExtra(Node.IfStatement{
-            .cond = cond,
-            .body = body,
+    if (p.eatToken(.k_else)) |else_token| {
+        const if_node = try p.addNode(.{
+            .tag = .@"if",
+            .main_token = if_token,
+            .lhs = cond,
+            .rhs = body,
         });
 
         if (p.peekToken(.tag, 0) == .k_if) {
             const else_if = try p.ifStatement() orelse unreachable;
             return try p.addNode(.{
                 .tag = .if_else_if,
-                .main_token = main_token,
-                .lhs = extra,
+                .main_token = else_token,
+                .lhs = if_node,
                 .rhs = else_if,
             });
         }
@@ -937,15 +939,15 @@ fn ifStatement(p: *Parser) !?NodeIndex {
 
         return try p.addNode(.{
             .tag = .if_else,
-            .main_token = main_token,
-            .lhs = extra,
+            .main_token = else_token,
+            .lhs = if_node,
             .rhs = else_body,
         });
     }
 
     return try p.addNode(.{
         .tag = .@"if",
-        .main_token = main_token,
+        .main_token = if_token,
         .lhs = cond,
         .rhs = body,
     });

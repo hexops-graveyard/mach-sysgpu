@@ -99,7 +99,7 @@ test "gkurve" {
 
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
-    try printAir(ir, std.io.getStdOut().writer());
+    try printAir(ir, std.io.getStdErr().writer());
 }
 
 test "must pass" {
@@ -136,12 +136,19 @@ test "must pass" {
             \\  v3 = vec2<f32>(vec2<f32>(1.0, 3.0));
             \\  v4 = mat2x2<f32>(v3, v3);
             \\  *v6 = 4;
-            \\  _ = v1;
+            \\  loop {}
+            \\  if (expr1) {
+            \\      _ = v1;
+            \\  } else if (false) {
+            \\      v0++;
+            \\  } else {
+            \\      test1(v2);
+            \\  }
             \\  return test1(v2);
             \\}
         ;
         var ir = try expectIR(source);
-        try printAir(ir, std.io.getStdOut().writer());
+        try printAir(ir, std.io.getStdErr().writer());
         ir.deinit();
     }
     {
