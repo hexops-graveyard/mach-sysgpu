@@ -132,6 +132,7 @@ test "must pass" {
             \\  return 4;
             \\}
             \\fn urmom() -> u32 {
+            \\  let expr1 = false;
             \\  v2 = vec2<u32>();
             \\  v3 = vec2<f32>(vec2<f32>(1.0, 3.0));
             \\  v4 = mat2x2<f32>(v3, v3);
@@ -143,6 +144,16 @@ test "must pass" {
             \\      v0++;
             \\  } else {
             \\      test1(v2);
+            \\  }
+            \\
+            \\  while (expr1) {}
+            \\
+            \\  var a: i32 = 2;
+            \\  for (var i: i32 = 0; i < 4; i++) {
+            \\    if a == 0 {
+            \\      continue;
+            \\    }
+            \\    a = a + 2;
             \\  }
             \\  
             \\  switch (expr0) {
@@ -519,6 +530,18 @@ test "must error" {
         try expectError(source, .{
             .msg = "return type mismatch",
             .loc = .{ .start = 22, .end = 28 },
+        });
+    }
+    {
+        const source =
+            \\fn test() {
+            \\  let v0 = true;
+            \\  v0 = false;
+            \\}
+        ;
+        try expectError(source, .{
+            .msg = "cannot assign to constant",
+            .loc = .{ .start = 34, .end = 35 },
         });
     }
 }

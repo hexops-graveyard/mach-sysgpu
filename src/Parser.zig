@@ -180,7 +180,7 @@ fn expectGlobalDecl(p: *Parser) !NodeIndex {
         return node;
     }
 
-    if (try p.globalConstDecl() orelse
+    if (try p.constDecl() orelse
         try p.typeAliasDecl() orelse
         try p.constAssert() orelse
         try p.globalVarDecl(attrs) orelse
@@ -484,34 +484,6 @@ fn globalVarDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     });
 }
 
-fn globalConstDecl(p: *Parser) !?NodeIndex {
-    const const_token = p.eatToken(.k_const) orelse return null;
-
-    _ = try p.expectToken(.ident);
-    var const_type = null_node;
-    if (p.eatToken(.colon)) |_| {
-        const_type = try p.expectTypeSpecifier();
-    }
-
-    _ = try p.expectToken(.equal);
-    const initializer = try p.expression() orelse {
-        try p.errors.add(
-            p.peekToken(.loc, 0),
-            "expected initializer expression, found '{s}'",
-            .{p.peekToken(.tag, 0).symbol()},
-            null,
-        );
-        return error.Parsing;
-    };
-
-    return try p.addNode(.{
-        .tag = .global_const,
-        .main_token = const_token,
-        .lhs = const_type,
-        .rhs = initializer,
-    });
-}
-
 fn globalOverrideDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     const override_token = p.eatToken(.k_override) orelse return null;
 
@@ -736,7 +708,9 @@ fn statement(p: *Parser) !?NodeIndex {
         try p.continueStatement() orelse
         try p.discardStatement() orelse
         try p.returnStatement() orelse
-        try p.varStatement() orelse
+        try p.varDecl() orelse
+        try p.constDecl() orelse
+        try p.letDecl() orelse
         try p.varUpdateStatement()) |node|
     {
         _ = try p.expectToken(.semicolon);
@@ -858,7 +832,9 @@ fn forStatement(p: *Parser) !?NodeIndex {
 
     // for init
     const for_init = try p.callExpr() orelse
-        try p.varStatement() orelse
+        try p.varDecl() orelse
+        try p.constDecl() orelse
+        try p.letDecl() orelse
         try p.varUpdateStatement() orelse
         null_node;
     _ = try p.expectToken(.semicolon);
@@ -1039,57 +1015,60 @@ fn switchStatement(p: *Parser) !?NodeIndex {
     });
 }
 
-fn varStatement(p: *Parser) !?NodeIndex {
-    if (p.eatToken(.k_var)) |var_token| {
-        var addr_space = null_node;
-        var access_mode = null_node;
-        if (p.eatToken(.template_left)) |_| {
-            addr_space = try p.expectAddressSpace();
-            access_mode = if (p.eatToken(.comma)) |_|
-                try p.expectAccessMode()
-            else
-                null_node;
-            _ = try p.expectToken(.template_right);
-        }
+fn varDecl(p: *Parser) !?NodeIndex {
+    const main_token = p.eatToken(.k_var) orelse return null;
 
-        const name_token = try p.expectToken(.ident);
-        var var_type = null_node;
-        if (p.eatToken(.colon)) |_| {
-            var_type = try p.expectTypeSpecifier();
-        }
-
-        var initializer = null_node;
-        if (p.eatToken(.equal)) |_| {
-            initializer = try p.expression() orelse {
-                try p.errors.add(
-                    p.peekToken(.loc, 0),
-                    "expected initializer expression, found '{s}'",
-                    .{p.peekToken(.tag, 0).symbol()},
-                    null,
-                );
-                return error.Parsing;
-            };
-        }
-
-        const extra = try p.addExtra(Node.VarDecl{
-            .name = name_token,
-            .addr_space = addr_space,
-            .access_mode = access_mode,
-            .type = var_type,
-        });
-        return try p.addNode(.{
-            .tag = .@"var",
-            .main_token = var_token,
-            .lhs = extra,
-            .rhs = initializer,
-        });
+    var addr_space = null_node;
+    var access_mode = null_node;
+    if (p.eatToken(.template_left)) |_| {
+        addr_space = try p.expectAddressSpace();
+        access_mode = if (p.eatToken(.comma)) |_|
+            try p.expectAccessMode()
+        else
+            null_node;
+        _ = try p.expectToken(.template_right);
     }
 
-    const const_let_token = p.eatToken(.k_const) orelse p.eatToken(.k_let) orelse return null;
-    _ = try p.expectToken(.ident);
-    var const_let_type = null_node;
+    const name_token = try p.expectToken(.ident);
+    var var_type = null_node;
     if (p.eatToken(.colon)) |_| {
-        const_let_type = try p.expectTypeSpecifier();
+        var_type = try p.expectTypeSpecifier();
+    }
+
+    var initializer = null_node;
+    if (p.eatToken(.equal)) |_| {
+        initializer = try p.expression() orelse {
+            try p.errors.add(
+                p.peekToken(.loc, 0),
+                "expected initializer expression, found '{s}'",
+                .{p.peekToken(.tag, 0).symbol()},
+                null,
+            );
+            return error.Parsing;
+        };
+    }
+
+    const extra = try p.addExtra(Node.VarDecl{
+        .name = name_token,
+        .addr_space = addr_space,
+        .access_mode = access_mode,
+        .type = var_type,
+    });
+    return try p.addNode(.{
+        .tag = .@"var",
+        .main_token = main_token,
+        .lhs = extra,
+        .rhs = initializer,
+    });
+}
+
+fn constDecl(p: *Parser) !?NodeIndex {
+    const const_token = p.eatToken(.k_const) orelse return null;
+
+    _ = try p.expectToken(.ident);
+    var const_type = null_node;
+    if (p.eatToken(.colon)) |_| {
+        const_type = try p.expectTypeSpecifier();
     }
 
     _ = try p.expectToken(.equal);
@@ -1104,12 +1083,37 @@ fn varStatement(p: *Parser) !?NodeIndex {
     };
 
     return try p.addNode(.{
-        .tag = if (p.getToken(.tag, const_let_token) == .k_const)
-            .@"const"
-        else
-            .let,
-        .main_token = const_let_token,
-        .lhs = const_let_type,
+        .tag = .@"const",
+        .main_token = const_token,
+        .lhs = const_type,
+        .rhs = initializer,
+    });
+}
+
+fn letDecl(p: *Parser) !?NodeIndex {
+    const const_token = p.eatToken(.k_let) orelse return null;
+
+    _ = try p.expectToken(.ident);
+    var const_type = null_node;
+    if (p.eatToken(.colon)) |_| {
+        const_type = try p.expectTypeSpecifier();
+    }
+
+    _ = try p.expectToken(.equal);
+    const initializer = try p.expression() orelse {
+        try p.errors.add(
+            p.peekToken(.loc, 0),
+            "expected initializer expression, found '{s}'",
+            .{p.peekToken(.tag, 0).symbol()},
+            null,
+        );
+        return error.Parsing;
+    };
+
+    return try p.addNode(.{
+        .tag = .let,
+        .main_token = const_token,
+        .lhs = const_type,
         .rhs = initializer,
     });
 }

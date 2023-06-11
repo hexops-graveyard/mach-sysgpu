@@ -133,9 +133,11 @@ pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
 pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
     const token = switch (tree.nodeTag(node)) {
         .global_var => tree.extraData(Node.GlobalVarDecl, tree.nodeLHS(node)).name,
+        .@"var" => tree.extraData(Node.VarDecl, tree.nodeLHS(node)).name,
         .@"struct",
         .@"fn",
-        .global_const,
+        .@"const",
+        .let,
         .override,
         .type_alias,
         => tree.nodeToken(node) + 1,
@@ -165,11 +167,6 @@ pub const Node = struct {
         /// LHS : GlobalVarDecl
         /// RHS : Expr?
         global_var,
-
-        /// TOK : k_const
-        /// LHS : Type
-        /// RHS : Expr
-        global_const,
 
         /// TOK : k_override
         /// LHS : OverrideDecl

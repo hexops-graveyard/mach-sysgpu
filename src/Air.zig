@@ -62,7 +62,6 @@ pub const RefIndex = u32;
 pub const StringIndex = u32;
 pub const Inst = union(enum) {
     global_var: GlobalVar,
-    global_const: GlobalConst,
 
     @"fn": Fn,
     fn_param: FnParam,
@@ -116,6 +115,8 @@ pub const Inst = union(enum) {
     @"return": InstIndex,
     break_if: InstIndex,
     @"if": If,
+    @"while": Binary,
+    @"for": For,
     @"switch": Binary,
     switch_case: SwitchCase,
     assign: Binary,
@@ -132,6 +133,9 @@ pub const Inst = union(enum) {
     assign_phony: InstIndex,
     increase: InstIndex,
     decrease: InstIndex,
+    @"var": Var,
+    @"const": Const,
+    let: Const,
     discard,
     @"break",
     @"continue",
@@ -146,13 +150,20 @@ pub const Inst = union(enum) {
     struct_ref: InstIndex,
 
     pub const GlobalVar = struct {
-        /// index to zero-terminated string in `strings`
+        name: StringIndex,
+        type: InstIndex,
+        addr_space: Var.AddressSpace,
+        access_mode: Var.AccessMode,
+        binding: InstIndex,
+        group: InstIndex,
+        expr: InstIndex,
+    };
+
+    pub const Var = struct {
         name: StringIndex,
         type: InstIndex,
         addr_space: AddressSpace,
         access_mode: AccessMode,
-        binding: InstIndex,
-        group: InstIndex,
         expr: InstIndex,
 
         pub const AddressSpace = enum {
@@ -172,23 +183,19 @@ pub const Inst = union(enum) {
         };
     };
 
-    pub const GlobalConst = struct {
-        /// index to zero-terminated string in `strings`
+    pub const Const = struct {
         name: StringIndex,
         type: InstIndex,
         expr: InstIndex,
     };
 
     pub const Fn = struct {
-        /// index to zero-terminated string in `strings`
         name: StringIndex,
         stage: Stage,
         is_const: bool,
-        /// index to zero-terminated params in `refs`
         params: RefIndex,
         return_type: InstIndex,
         return_attrs: ReturnAttrs,
-        /// index to zero-terminated block in `refs`
         block: RefIndex,
 
         pub const Stage = union(enum) {
@@ -213,7 +220,6 @@ pub const Inst = union(enum) {
     };
 
     pub const FnParam = struct {
-        /// index to zero-terminated string in `strings`
         name: StringIndex,
         type: InstIndex,
         builtin: Builtin,
@@ -274,14 +280,11 @@ pub const Inst = union(enum) {
     };
 
     pub const Struct = struct {
-        /// index to zero-terminated string in `strings`
         name: StringIndex,
-        /// index to zero-terminated members in `refs`
         members: RefIndex,
     };
 
     pub const StructMember = struct {
-        /// index to zero-terminated string in `strings`
         name: StringIndex,
         type: InstIndex,
         @"align": ?u29,
@@ -449,7 +452,6 @@ pub const Inst = union(enum) {
     pub const FieldAccess = struct {
         base: InstIndex,
         field: InstIndex,
-        /// index to zero-terminated string in `strings`
         name: StringIndex,
     };
 
@@ -461,14 +463,12 @@ pub const Inst = union(enum) {
 
     pub const FnCall = struct {
         @"fn": InstIndex,
-        /// index to zero-terminated args in `refs`
-        args: InstIndex,
+        args: RefIndex,
     };
 
     pub const StructConstruct = struct {
         @"struct": InstIndex,
-        /// index to zero-terminated args in `refs`
-        members: InstIndex,
+        members: RefIndex,
     };
 
     pub const Bitcast = struct {
@@ -485,10 +485,16 @@ pub const Inst = union(enum) {
     };
 
     pub const SwitchCase = struct {
-        /// index to zero-terminated case expressions in `refs`
         cases: RefIndex,
         body: InstIndex,
         default: bool,
+    };
+
+    pub const For = struct {
+        init: InstIndex,
+        cond: InstIndex,
+        update: InstIndex,
+        body: InstIndex,
     };
 
     comptime {

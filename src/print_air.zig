@@ -28,24 +28,27 @@ fn Printer(comptime Writer: type) type {
             switch (inst) {
                 .global_var => {
                     std.debug.assert(indent == 0);
-                    try self.printGlobalVariable(indent, index);
+                    try self.printGlobalVar(indent, index);
                     try self.printFieldEnd();
                 },
-                .global_const => {
-                    std.debug.assert(indent == 0);
-                    try self.printConstDecl(indent, index);
-                    try self.printFieldEnd();
+                .@"const" => {
+                    try self.printConst(indent, index);
+                    if (indent == 0) {
+                        try self.printFieldEnd();
+                    }
                 },
                 .@"struct" => {
                     std.debug.assert(indent == 0);
-                    try self.printStructDecl(indent, index);
+                    try self.printStruct(indent, index);
                     try self.printFieldEnd();
                 },
                 .@"fn" => {
                     std.debug.assert(indent == 0);
-                    try self.printFnDecl(indent, index);
+                    try self.printFn(indent, index);
                     try self.printFieldEnd();
                 },
+                .@"var" => try self.printVar(indent, index),
+                .let => try self.printLet(indent, index),
                 .bool => try self.printBool(indent, index),
                 .int, .float => try self.printNumber(indent, index),
                 .vector => try self.printVector(indent, index),
@@ -86,13 +89,20 @@ fn Printer(comptime Writer: type) type {
                 .assign_phony,
                 .increase,
                 .decrease,
+                .loop,
+                .continuing,
+                .@"return",
+                .break_if,
                 => |un| {
                     try self.instStart(index);
-                    try self.printInst(indent, un);
+                    if (un != null_inst) {
+                        try self.printInst(indent, un);
+                    }
                     try self.instEnd();
                 },
                 .block => try self.printBlock(indent, index),
                 .@"if" => try self.printIf(indent, index),
+                .@"while" => try self.printWhile(indent, index),
                 .field_access => try self.printFieldAccess(indent, index),
                 .index_access => try self.printIndexAccess(indent, index),
                 .struct_ref, .var_ref => |ref| {
@@ -110,37 +120,67 @@ fn Printer(comptime Writer: type) type {
             }
         }
 
-        fn printGlobalVariable(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[index];
+        fn printGlobalVar(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+            const inst = self.ir.instructions[index].global_var;
             try self.instBlockStart(index);
-            try self.printFieldString(indent + 1, "name", inst.global_var.name);
-            if (inst.global_var.addr_space != .none) {
-                try self.printFieldEnum(indent + 1, "addr_space", inst.global_var.addr_space);
+            try self.printFieldString(indent + 1, "name", inst.name);
+            if (inst.addr_space != .none) {
+                try self.printFieldEnum(indent + 1, "addr_space", inst.addr_space);
             }
-            if (inst.global_var.access_mode != .none) {
-                try self.printFieldEnum(indent + 1, "access_mode", inst.global_var.access_mode);
+            if (inst.access_mode != .none) {
+                try self.printFieldEnum(indent + 1, "access_mode", inst.access_mode);
             }
-            if (inst.global_var.type != null_inst) {
-                try self.printFieldInst(indent + 1, "type", inst.global_var.type);
+            if (inst.type != null_inst) {
+                try self.printFieldInst(indent + 1, "type", inst.type);
             }
-            if (inst.global_var.expr != null_inst) {
-                try self.printFieldInst(indent + 1, "value", inst.global_var.expr);
+            if (inst.expr != null_inst) {
+                try self.printFieldInst(indent + 1, "value", inst.expr);
             }
             try self.instBlockEnd(indent);
         }
 
-        fn printConstDecl(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[index];
+        fn printVar(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+            const inst = self.ir.instructions[index].@"var";
             try self.instBlockStart(index);
-            try self.printFieldString(indent + 1, "name", inst.global_const.name);
-            if (inst.global_const.type != null_inst) {
-                try self.printFieldInst(indent + 1, "type", inst.global_const.type);
+            try self.printFieldString(indent + 1, "name", inst.name);
+            if (inst.addr_space != .none) {
+                try self.printFieldEnum(indent + 1, "addr_space", inst.addr_space);
             }
-            try self.printFieldInst(indent + 1, "value", inst.global_const.expr);
+            if (inst.access_mode != .none) {
+                try self.printFieldEnum(indent + 1, "access_mode", inst.access_mode);
+            }
+            if (inst.type != null_inst) {
+                try self.printFieldInst(indent + 1, "type", inst.type);
+            }
+            if (inst.expr != null_inst) {
+                try self.printFieldInst(indent + 1, "value", inst.expr);
+            }
             try self.instBlockEnd(indent);
         }
 
-        fn printStructDecl(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+        fn printConst(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+            const inst = self.ir.instructions[index].@"const";
+            try self.instBlockStart(index);
+            try self.printFieldString(indent + 1, "name", inst.name);
+            if (inst.type != null_inst) {
+                try self.printFieldInst(indent + 1, "type", inst.type);
+            }
+            try self.printFieldInst(indent + 1, "value", inst.expr);
+            try self.instBlockEnd(indent);
+        }
+
+        fn printLet(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+            const inst = self.ir.instructions[index].let;
+            try self.instBlockStart(index);
+            try self.printFieldString(indent + 1, "name", inst.name);
+            if (inst.type != null_inst) {
+                try self.printFieldInst(indent + 1, "type", inst.type);
+            }
+            try self.printFieldInst(indent + 1, "value", inst.expr);
+            try self.instBlockEnd(indent);
+        }
+
+        fn printStruct(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.@"struct".name);
@@ -174,7 +214,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockEnd(indent);
         }
 
-        fn printFnDecl(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
+        fn printFn(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[index];
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.@"fn".name);
@@ -238,12 +278,24 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printIf(self: @This(), indent: u16, index: Air.RefIndex) Writer.Error!void {
-            const inst = self.ir.instructions[index];
+            const inst = self.ir.instructions[index].@"if";
             try self.instBlockStart(index);
-            try self.printFieldInst(indent + 1, "cond", inst.@"if".cond);
-            try self.printFieldInst(indent + 1, "body", inst.@"if".body);
-            if (inst.@"if".@"else" != null_inst) {
-                try self.printFieldInst(indent + 1, "else", inst.@"if".@"else");
+            try self.printFieldInst(indent + 1, "cond", inst.cond);
+            if (inst.body != null_inst) {
+                try self.printFieldInst(indent + 1, "body", inst.body);
+            }
+            if (inst.@"else" != null_inst) {
+                try self.printFieldInst(indent + 1, "else", inst.@"else");
+            }
+            try self.instBlockEnd(indent);
+        }
+
+        fn printWhile(self: @This(), indent: u16, index: Air.RefIndex) Writer.Error!void {
+            const inst = self.ir.instructions[index].@"while";
+            try self.instBlockStart(index);
+            try self.printFieldInst(indent + 1, "cond", inst.lhs);
+            if (inst.rhs != null_inst) {
+                try self.printFieldInst(indent + 1, "body", inst.rhs);
             }
             try self.instBlockEnd(indent);
         }
