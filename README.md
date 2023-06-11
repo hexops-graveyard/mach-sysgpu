@@ -39,11 +39,11 @@ Dusk is in **very early stages** and under heavy development; there are hundreds
         - [x] increase
         - [x] decrease
         - [x] switch
-        - [ ] var
-        - [ ] const
-        - [ ] let
-        - [ ] while
-        - [ ] for
+        - [x] var
+        - [x] const
+        - [x] let
+        - [x] while
+        - [x] for
     - [ ] override
 - [ ] Transpilation targets
     - [ ] GLSL
