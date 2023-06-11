@@ -183,7 +183,7 @@ fn expectGlobalDecl(p: *Parser) !NodeIndex {
     if (try p.constDecl() orelse
         try p.typeAliasDecl() orelse
         try p.constAssert() orelse
-        try p.globalVarDecl(attrs) orelse
+        try p.globalVar(attrs) orelse
         try p.globalOverrideDecl(attrs)) |node|
     {
         _ = try p.expectToken(.semicolon);
@@ -424,7 +424,7 @@ fn expectInterpolationSample(p: *Parser) !NodeIndex {
     return error.Parsing;
 }
 
-fn globalVarDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
+fn globalVar(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     const var_token = p.eatToken(.k_var) orelse return null;
 
     // qualifier
@@ -469,7 +469,7 @@ fn globalVarDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
         return error.Parsing;
     }
 
-    const extra = try p.addExtra(Node.GlobalVarDecl{
+    const extra = try p.addExtra(Node.GlobalVar{
         .attrs = attrs orelse null_node,
         .name = name_token,
         .addr_space = addr_space,
@@ -507,7 +507,7 @@ fn globalOverrideDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
         };
     }
 
-    const extra = try p.addExtra(Node.OverrideDecl{
+    const extra = try p.addExtra(Node.Override{
         .attrs = attrs orelse null_node,
         .type = override_type,
     });
@@ -1048,7 +1048,7 @@ fn varDecl(p: *Parser) !?NodeIndex {
         };
     }
 
-    const extra = try p.addExtra(Node.VarDecl{
+    const extra = try p.addExtra(Node.Var{
         .name = name_token,
         .addr_space = addr_space,
         .access_mode = access_mode,

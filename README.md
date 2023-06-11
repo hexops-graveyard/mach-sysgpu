@@ -17,34 +17,7 @@ Dusk is in **very early stages** and under heavy development; there are hundreds
 ### WGSL compiler
 
 - [x] Parser
-- [ ] Ast analysis
-    - [x] global var
-    - [x] global const
-    - [x] struct
-    - [x] type_alias
-    - [ ] function
-        - [x] block
-        - [x] loop
-        - [x] continuing
-        - [x] return
-        - [x] discard
-        - [x] assign
-        - [x] break
-        - [x] continue
-        - [x] break_if
-        - [x] block
-        - [x] if
-        - [x] if_else
-        - [x] if_else_if
-        - [x] increase
-        - [x] decrease
-        - [x] switch
-        - [x] var
-        - [x] const
-        - [x] let
-        - [x] while
-        - [x] for
-    - [ ] override
+- [x] Ast analysis
 - [ ] Transpilation targets
     - [ ] GLSL
     - [ ] Spir-V
