@@ -62,6 +62,7 @@ pub const RefIndex = u32;
 pub const StringIndex = u32;
 pub const Inst = union(enum) {
     global_var: GlobalVar,
+    override: Override,
 
     @"fn": Fn,
     fn_param: FnParam,
@@ -181,6 +182,13 @@ pub const Inst = union(enum) {
             write,
             read_write,
         };
+    };
+
+    pub const Override = struct {
+        name: StringIndex,
+        type: InstIndex,
+        id: InstIndex,
+        expr: InstIndex,
     };
 
     pub const Const = struct {

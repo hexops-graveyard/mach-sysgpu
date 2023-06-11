@@ -132,8 +132,8 @@ pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
 
 pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
     const token = switch (tree.nodeTag(node)) {
-        .global_var => tree.extraData(Node.GlobalVarDecl, tree.nodeLHS(node)).name,
-        .@"var" => tree.extraData(Node.VarDecl, tree.nodeLHS(node)).name,
+        .global_var => tree.extraData(Node.GlobalVar, tree.nodeLHS(node)).name,
+        .@"var" => tree.extraData(Node.Var, tree.nodeLHS(node)).name,
         .@"struct",
         .@"fn",
         .@"const",
@@ -164,12 +164,12 @@ pub const Node = struct {
         span,
 
         /// TOK : k_var
-        /// LHS : GlobalVarDecl
+        /// LHS : GlobalVar
         /// RHS : Expr?
         global_var,
 
         /// TOK : k_override
-        /// LHS : OverrideDecl
+        /// LHS : Override
         /// RHS : Expr
         override,
 
@@ -274,7 +274,7 @@ pub const Node = struct {
         switch_case_default,
 
         /// TOK : k_var
-        /// LHS : VarDecl
+        /// LHS : Var
         /// RHS : Expr?
         @"var",
 
@@ -608,7 +608,7 @@ pub const Node = struct {
         number,
     };
 
-    pub const GlobalVarDecl = struct {
+    pub const GlobalVar = struct {
         /// span(Attr)?
         attrs: NodeIndex = null_node,
         /// Token(ident)
@@ -621,7 +621,7 @@ pub const Node = struct {
         type: NodeIndex = null_node,
     };
 
-    pub const VarDecl = struct {
+    pub const Var = struct {
         /// Token(ident)
         name: NodeIndex,
         /// Token(AddressSpace)?
@@ -632,7 +632,7 @@ pub const Node = struct {
         type: NodeIndex = null_node,
     };
 
-    pub const OverrideDecl = struct {
+    pub const Override = struct {
         /// span(Attr)?
         attrs: NodeIndex = null_node,
         /// Type?
