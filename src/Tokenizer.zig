@@ -423,7 +423,7 @@ pub fn next(self: *Tokenizer) Token {
 test "tokenize identifier and numbers" {
     const str =
         \\_ __ _iden iden -100i 100.8i // cc
-        \\// commnet
+        \\// comment
         \\
     ;
     var tokenizer = Tokenizer.init(str);

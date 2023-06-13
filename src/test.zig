@@ -95,7 +95,7 @@ test "empty" {
 }
 
 test "gkurve" {
-    if (true) return error.SkipZigTest;
+    // if (true) return error.SkipZigTest;
 
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
@@ -169,7 +169,7 @@ test "must pass" {
             \\}
         ;
         var ir = try expectIR(source);
-        try printAir(ir, std.io.getStdErr().writer());
+        // try printAir(ir, std.io.getStdErr().writer());
         ir.deinit();
     }
     {
