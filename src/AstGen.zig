@@ -17,10 +17,6 @@ const sliceTo = std.mem.sliceTo;
 
 const AstGen = @This();
 
-const basic_types = struct {
-    const bool_inst = @intToEnum(Air.InstIndex, 0);
-};
-
 allocator: std.mem.Allocator,
 tree: *const Ast,
 instructions: std.ArrayListUnmanaged(Inst) = .{},
@@ -46,14 +42,12 @@ pub const Scope = struct {
         loop,
         continuing,
         switch_case,
+        @"if",
         @"for",
     };
 };
 
 pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
-    // add basic types
-    _ = try astgen.addInst(.{ .bool = .{ .value = null } });
-
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
@@ -973,7 +967,10 @@ fn genIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    const block = try astgen.genBlock(scope, node_rhs);
+    var body_scope = try astgen.scope_pool.create();
+    body_scope.* = .{ .tag = .@"if", .parent = scope };
+    const block = try astgen.genBlock(body_scope, node_rhs);
+
     astgen.instructions.items[@enumToInt(inst)] = .{
         .@"if" = .{
             .cond = cond,
@@ -988,8 +985,15 @@ fn genIfElse(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const if_node = astgen.tree.nodeLHS(node);
     const inst = try astgen.allocInst();
     const cond = try astgen.genExpr(scope, astgen.tree.nodeLHS(if_node));
-    const if_block = try astgen.genBlock(scope, astgen.tree.nodeRHS(if_node));
-    const else_block = try astgen.genBlock(scope, astgen.tree.nodeRHS(node));
+
+    var if_body_scope = try astgen.scope_pool.create();
+    if_body_scope.* = .{ .tag = .@"if", .parent = scope };
+    const if_block = try astgen.genBlock(if_body_scope, astgen.tree.nodeRHS(if_node));
+
+    var else_body_scope = try astgen.scope_pool.create();
+    else_body_scope.* = .{ .tag = .@"if", .parent = scope };
+    const else_block = try astgen.genBlock(else_body_scope, astgen.tree.nodeRHS(node));
+
     astgen.instructions.items[@enumToInt(inst)] = .{
         .@"if" = .{
             .cond = cond,
@@ -1347,17 +1351,6 @@ fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const expr = try astgen.genExpr(scope, node_rhs);
-    const expr_res = try astgen.resolve(expr);
-    switch (astgen.getInst(expr_res)) {
-        inline .int, .float => |num| {
-            if (num.type == .abstract) {
-                try astgen.errors.add(name_loc, "cannot infer type", .{}, null);
-                return error.AnalysisFail;
-            }
-        },
-        else => {},
-    }
-
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
     astgen.instructions.items[@enumToInt(let)] = .{
         .let = .{
@@ -1734,13 +1727,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .all => return astgen.genBuiltinAllAny(scope, node, true),
             .any => return astgen.genBuiltinAllAny(scope, node, false),
             .select => return astgen.genBuiltinSelect(scope, node),
-            .abs => return astgen.genSimpleNumericBuiltin(
-                scope,
-                node,
-                .builtin_abs,
-                &.{ .u32, .i32, .abstract },
-                &.{ .f32, .f16, .abstract },
-            ),
+            .abs => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_abs, &.{ .u32, .i32, .abstract }, &.{ .f32, .f16, .abstract }),
             .acos => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_acos, &.{}, &.{ .f32, .f16, .abstract }),
             .acosh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_acosh, &.{}, &.{ .f32, .f16, .abstract }),
             .asin => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_asin, &.{}, &.{ .f32, .f16, .abstract }),
@@ -1776,6 +1763,9 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .tan => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_tan, &.{}, &.{ .f32, .f16, .abstract }),
             .tanh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_tanh, &.{}, &.{ .f32, .f16, .abstract }),
             .trunc => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_trunc, &.{}, &.{ .f32, .f16, .abstract }),
+            .min => return astgen.genMinMaxBuiltin(scope, node, true),
+            .max => return astgen.genMinMaxBuiltin(scope, node, true),
+            .smoothstep => return astgen.genSmoothstepBuiltin(scope, node),
             .dpdx => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdx),
             .dpdxCoarse => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdx_coarse),
             .dpdxFine => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdx_fine),
@@ -2386,6 +2376,7 @@ fn findFnScope(scope: *Scope) *Scope {
             .loop,
             .continuing,
             .switch_case,
+            .@"if",
             .@"for",
             => s = s.parent,
         }
@@ -2784,6 +2775,94 @@ fn genSimpleNumericBuiltin(
                     return astgen.addInst(inst);
                 },
                 else => {},
+            }
+        },
+        else => {},
+    }
+
+    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+    return error.AnalysisFail;
+}
+
+fn genMinMaxBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex, min: bool) !InstIndex {
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == null_node) {
+        return astgen.failArgCountMismatch(node_loc, 2, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len != 2) {
+        return astgen.failArgCountMismatch(node_loc, 2, arg_nodes.len);
+    }
+
+    const arg0 = try astgen.genExpr(scope, arg_nodes[0]);
+    const arg1 = try astgen.genExpr(scope, arg_nodes[1]);
+    const arg0_res = try astgen.resolve(arg0);
+    const arg1_res = try astgen.resolve(arg1);
+    switch (astgen.getInst(arg0_res)) {
+        .int, .float => {},
+        .vector => |vec| {
+            if (astgen.getInst(vec.elem_type) == .bool) {
+                try astgen.errors.add(node_loc, "invalid vector element type", .{}, null);
+                return error.AnalysisFail;
+            }
+        },
+        else => {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
+        },
+    }
+
+    if (!astgen.eql(arg0_res, arg1_res)) {
+        try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    if (min) {
+        return astgen.addInst(.{ .builtin_min = .{ .lhs = arg0, .rhs = arg1 } });
+    } else {
+        return astgen.addInst(.{ .builtin_max = .{ .lhs = arg0, .rhs = arg1 } });
+    }
+}
+
+fn genSmoothstepBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == null_node) {
+        return astgen.failArgCountMismatch(node_loc, 3, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len != 3) {
+        return astgen.failArgCountMismatch(node_loc, 3, arg_nodes.len);
+    }
+
+    const low = try astgen.genExpr(scope, arg_nodes[0]);
+    const high = try astgen.genExpr(scope, arg_nodes[1]);
+    const x = try astgen.genExpr(scope, arg_nodes[2]);
+    const low_res = try astgen.resolve(low);
+    const high_res = try astgen.resolve(high);
+    const x_res = try astgen.resolve(x);
+
+    if (!astgen.eql(low_res, high_res) or !astgen.eql(low_res, x_res)) {
+        try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    switch (astgen.getInst(low_res)) {
+        .float => return astgen.addInst(.{ .builtin_smoothstep = .{
+            .low = low,
+            .high = high,
+            .x = x,
+        } }),
+        .vector => |vec| {
+            if (astgen.getInst(vec.elem_type) == .float) {
+                return astgen.addInst(.{ .builtin_smoothstep = .{
+                    .low = low,
+                    .high = high,
+                    .x = x,
+                } });
             }
         },
         else => {},
@@ -3409,6 +3488,7 @@ fn findSymbol(astgen: *AstGen, scope: *Scope, token: TokenIndex) error{ OutOfMem
                         .loop,
                         .continuing,
                         .switch_case,
+                        .@"if",
                         .@"for",
                         => {},
                     }
@@ -3457,18 +3537,15 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .@"and",
             .@"or",
             .xor,
-            => |bin| {
-                switch (astgen.getInst(bin.lhs)) {
-                    inline .int, .float => |num| {
-                        if (num.type == .abstract) {
-                            idx = bin.rhs;
-                            continue;
-                        }
-                    },
-                    else => {},
-                }
-                idx = bin.lhs;
+            .builtin_min,
+            .builtin_max,
+            => |bin| idx = astgen.selectType(&.{ bin.lhs, bin.rhs }),
+
+            .builtin_smoothstep => |smoothstep| {
+                idx = astgen.selectType(&.{ smoothstep.low, smoothstep.high, smoothstep.x });
             },
+
+            .builtin_select => |select| idx = astgen.selectType(&.{ select.true, select.false }),
 
             .logical_and,
             .logical_or,
@@ -3480,8 +3557,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .greater_than_equal,
             .builtin_all,
             .builtin_any,
-            .builtin_select,
-            => return basic_types.bool_inst,
+            => return astgen.addInst(.{ .bool = .{ .value = null } }),
 
             .not,
             .negate,
@@ -3530,9 +3606,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .builtin_fwidth,
             .builtin_fwidth_coarse,
             .builtin_fwidth_fine,
-            => |un| {
-                idx = un;
-            },
+            => |un| idx = un,
 
             .deref => {
                 in_deref = true;
@@ -3632,6 +3706,20 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             => unreachable,
         }
     }
+}
+
+fn selectType(astgen: *AstGen, cands: []const InstIndex) InstIndex {
+    for (cands) |cand| {
+        switch (astgen.getInst(cand)) {
+            inline .int, .float => |num| {
+                if (num.type != .abstract) {
+                    return cand;
+                }
+            },
+            else => return cand,
+        }
+    }
+    return cands[0];
 }
 
 fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) !?Value {

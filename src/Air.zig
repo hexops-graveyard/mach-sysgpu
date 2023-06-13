@@ -179,6 +179,8 @@ pub const Inst = union(enum) {
     builtin_length: InstIndex,
     builtin_log: InstIndex,
     builtin_log2: InstIndex,
+    builtin_min: Binary,
+    builtin_max: Binary,
     builtin_quantize_to_F16: InstIndex,
     builtin_radians: InstIndex,
     builtin_reverseBits: InstIndex,
@@ -187,6 +189,7 @@ pub const Inst = union(enum) {
     builtin_sign: InstIndex,
     builtin_sin: InstIndex,
     builtin_sinh: InstIndex,
+    builtin_smoothstep: BuiltinSmoothstep,
     builtin_sqrt: InstIndex,
     builtin_tan: InstIndex,
     builtin_tanh: InstIndex,
@@ -561,6 +564,12 @@ pub const Inst = union(enum) {
         true: InstIndex,
         false: InstIndex,
         cond: InstIndex,
+    };
+
+    pub const BuiltinSmoothstep = struct {
+        low: InstIndex,
+        high: InstIndex,
+        x: InstIndex,
     };
 
     pub const If = struct {
