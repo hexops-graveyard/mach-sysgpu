@@ -52,14 +52,19 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemor
 }
 
 pub fn getStr(self: Air, index: StringIndex) []const u8 {
-    return std.mem.sliceTo(self.strings[index..], 0);
+    return std.mem.sliceTo(self.strings[@enumToInt(index)..], 0);
 }
 
-pub const null_inst: InstIndex = std.math.maxInt(InstIndex);
-pub const null_ref: RefIndex = std.math.maxInt(RefIndex);
-pub const InstIndex = u32;
-pub const RefIndex = u32;
-pub const StringIndex = u32;
+pub const InstIndex = enum(u32) {
+    none = std.math.maxInt(u32),
+    _,
+};
+pub const RefIndex = enum(u32) {
+    none = std.math.maxInt(u32),
+    _,
+};
+pub const StringIndex = enum(u32) { _ };
+
 pub const Inst = union(enum) {
     global_var: GlobalVar,
     override: Override,
@@ -118,7 +123,7 @@ pub const Inst = union(enum) {
     @"if": If,
     @"while": Binary,
     @"for": For,
-    @"switch": Binary,
+    @"switch": Switch,
     switch_case: SwitchCase,
     assign: Binary,
     assign_add: Binary,
@@ -217,7 +222,7 @@ pub const Inst = union(enum) {
         params: RefIndex,
         return_type: InstIndex,
         return_attrs: ReturnAttrs,
-        block: RefIndex,
+        block: InstIndex,
 
         pub const Stage = union(enum) {
             normal,
@@ -361,8 +366,8 @@ pub const Inst = union(enum) {
 
         pub const Size = enum(u5) { two = 2, three = 3, four = 4 };
         pub const Value = union(enum) {
-            literal: @Vector(4, u32),
-            inst: @Vector(4, InstIndex),
+            literal: [4]u32,
+            inst: [4]InstIndex,
         };
     };
 
@@ -373,8 +378,8 @@ pub const Inst = union(enum) {
         value: ?Value,
 
         pub const Value = union(enum) {
-            literal: @Vector(4 * 4, u32),
-            inst: @Vector(4 * 4, InstIndex),
+            literal: [4 * 4]u32,
+            inst: [4 * 4]InstIndex,
         };
     };
 
@@ -509,6 +514,11 @@ pub const Inst = union(enum) {
         body: InstIndex,
         /// `if` or `block`
         @"else": InstIndex,
+    };
+
+    pub const Switch = struct {
+        switch_on: InstIndex,
+        cases_list: RefIndex,
     };
 
     pub const SwitchCase = struct {
