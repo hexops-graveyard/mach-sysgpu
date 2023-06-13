@@ -243,12 +243,12 @@ pub const Node = struct {
 
         /// TOK : k_if
         /// LHS : Expr
-        /// RHS : blcok
+        /// RHS : block
         @"if",
         /// RHS is else body
         /// TOK : k_if
         /// LHS : if
-        /// RHS : blcok
+        /// RHS : block
         if_else,
         /// TOK : k_if
         /// LHS : if

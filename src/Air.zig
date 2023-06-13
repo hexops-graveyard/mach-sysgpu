@@ -146,6 +146,19 @@ pub const Inst = union(enum) {
     call: FnCall,
     struct_construct: StructConstruct,
     bitcast: Bitcast,
+    builtin_all: InstIndex,
+    builtin_any: InstIndex,
+    builtin_select: BuiltinSelect,
+    builtin_abs: InstIndex,
+    builtin_dpdx: InstIndex,
+    builtin_dpdx_coarse: InstIndex,
+    builtin_dpdx_fine: InstIndex,
+    builtin_dpdy: InstIndex,
+    builtin_dpdy_coarse: InstIndex,
+    builtin_dpdy_fine: InstIndex,
+    builtin_fwidth: InstIndex,
+    builtin_fwidth_coarse: InstIndex,
+    builtin_fwidth_fine: InstIndex,
 
     var_ref: InstIndex,
     struct_ref: InstIndex,
@@ -483,6 +496,12 @@ pub const Inst = union(enum) {
         type: InstIndex,
         expr: InstIndex,
         result_type: InstIndex,
+    };
+
+    pub const BuiltinSelect = struct {
+        true: InstIndex,
+        false: InstIndex,
+        cond: InstIndex,
     };
 
     pub const If = struct {

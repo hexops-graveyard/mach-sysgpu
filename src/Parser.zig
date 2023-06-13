@@ -1219,7 +1219,7 @@ fn expectTypeSpecifier(p: *Parser) error{ OutOfMemory, Parsing }!NodeIndex {
     return try p.typeSpecifier() orelse {
         try p.errors.add(
             p.peekToken(.loc, 0),
-            "expected type sepecifier, found '{s}'",
+            "expected type specifier, found '{s}'",
             .{p.peekToken(.tag, 0).symbol()},
             null,
         );

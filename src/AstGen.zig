@@ -13,6 +13,7 @@ const StringIndex = Air.StringIndex;
 const NodeIndex = Ast.NodeIndex;
 const TokenIndex = Ast.TokenIndex;
 const TokenTag = @import("Token.zig").Tag;
+const Loc = @import("Token.zig").Loc;
 const stringToEnum = std.meta.stringToEnum;
 
 const AstGen = @This();
@@ -67,10 +68,15 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
     };
 
     for (global_nodes) |node| {
-        const global = astgen.genGlobalDecl(root_scope, node) catch |err| switch (err) {
-            error.AnalysisFail => continue,
-            error.OutOfMemory => return error.OutOfMemory,
-        };
+        var global = root_scope.decls.get(node).? catch continue;
+        if (global == null_inst) {
+            // declaration has not analysed
+            global = astgen.genGlobalDecl(root_scope, node) catch |err| switch (err) {
+                error.AnalysisFail => continue,
+                error.OutOfMemory => return error.OutOfMemory,
+            };
+        }
+
         try astgen.scratch.append(astgen.allocator, global);
     }
 
@@ -79,8 +85,8 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
 
 /// adds `nodes` to scope and checks for re-declarations
 fn scanDecls(astgen: *AstGen, scope: *Scope, nodes: []const NodeIndex) !void {
-    for (nodes) |decl| {
-        const loc = astgen.tree.declNameLoc(decl) orelse continue;
+    for (nodes) |decl_node| {
+        const loc = astgen.tree.declNameLoc(decl_node) orelse continue;
         const name = loc.slice(astgen.tree.source);
 
         var iter = scope.decls.keyIterator();
@@ -101,25 +107,19 @@ fn scanDecls(astgen: *AstGen, scope: *Scope, nodes: []const NodeIndex) !void {
             }
         }
 
-        try scope.decls.putNoClobber(astgen.scope_pool.arena.allocator(), decl, null_inst);
+        try scope.decls.putNoClobber(astgen.scope_pool.arena.allocator(), decl_node, null_inst);
     }
 }
 
 fn genGlobalDecl(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
-    var decl = try scope.decls.get(node).?;
-    if (decl != null_inst) {
-        // the declaration has already analysed
-        return decl;
-    }
-
-    decl = switch (astgen.tree.nodeTag(node)) {
+    const decl = switch (astgen.tree.nodeTag(node)) {
         .global_var => astgen.genGlobalVar(scope, node),
         .override => astgen.genOverride(scope, node),
         .@"const" => astgen.genConst(scope, node),
         .@"struct" => astgen.genStruct(scope, node),
         .@"fn" => astgen.genFn(scope, node),
         .type_alias => astgen.genTypeAlias(scope, node),
-        else => return error.AnalysisFail, // TODO: make this unreachable
+        else => unreachable,
     } catch |err| {
         if (err == error.AnalysisFail) {
             scope.decls.putAssumeCapacity(node, error.AnalysisFail);
@@ -424,7 +424,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
 fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
     const fn_decl = try astgen.allocInst();
     const fn_proto = astgen.tree.extraData(Node.FnProto, astgen.tree.nodeLHS(node));
-    const node_rhs = astgen.tree.nodeRHS(node); // TODO
+    const node_rhs = astgen.tree.nodeRHS(node);
     const node_loc = astgen.tree.nodeLoc(node);
 
     var return_type = null_inst;
@@ -666,6 +666,7 @@ fn genFnParams(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
             },
         };
         try astgen.scratch.append(astgen.allocator, param);
+        scope.decls.putAssumeCapacity(param_node, param);
     }
 
     return astgen.addRefList(astgen.scratch.items[scratch_top..]);
@@ -872,58 +873,65 @@ fn genBlock(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ OutOfMemory,
     var is_unreachable = false;
     for (stmnt_nodes) |stmnt_node| {
         const stmnt_node_loc = astgen.tree.nodeLoc(stmnt_node);
-
         if (is_unreachable) {
             try astgen.errors.add(stmnt_node_loc, "unreachable code", .{}, null);
             return error.AnalysisFail;
         }
-
-        const stmnt = switch (astgen.tree.nodeTag(stmnt_node)) {
-            .compound_assign => try astgen.genCompoundAssign(scope, stmnt_node),
-            .phony_assign => try astgen.genPhonyAssign(scope, stmnt_node),
-            .call => try astgen.genFnCall(scope, stmnt_node),
-            .@"return" => blk: {
-                is_unreachable = true;
-                break :blk try astgen.genReturn(scope, stmnt_node);
-            },
-            .break_if => try astgen.genBreakIf(scope, stmnt_node),
-            .@"if" => try astgen.genIf(scope, stmnt_node),
-            .if_else => try astgen.genIfElse(scope, stmnt_node),
-            .if_else_if => try astgen.genIfElseIf(scope, stmnt_node),
-            .@"while" => try astgen.genWhile(scope, stmnt_node),
-            .@"for" => try astgen.genFor(scope, stmnt_node),
-            .@"switch" => try astgen.genSwitch(scope, stmnt_node),
-            .loop => try astgen.genLoop(scope, stmnt_node),
-            .block => try astgen.genBlock(scope, stmnt_node), // TODO
-            .continuing => try astgen.genContinuing(scope, stmnt_node),
-            .discard => try astgen.addInst(.discard),
-            .@"break" => try astgen.addInst(.@"break"),
-            .@"continue" => try astgen.addInst(.@"continue"),
-            .increase => try astgen.genIncreaseDecrease(scope, stmnt_node, true),
-            .decrease => try astgen.genIncreaseDecrease(scope, stmnt_node, false),
-            .@"var" => blk: {
-                const decl = try astgen.genVar(scope, stmnt_node);
-                scope.decls.putAssumeCapacity(stmnt_node, decl);
-                break :blk decl;
-            },
-            .@"const" => blk: {
-                const decl = try astgen.genConst(scope, stmnt_node);
-                scope.decls.putAssumeCapacity(stmnt_node, decl);
-                break :blk decl;
-            },
-            .let => blk: {
-                const decl = try astgen.genLet(scope, stmnt_node);
-                scope.decls.putAssumeCapacity(stmnt_node, decl);
-                break :blk decl;
-            },
-            else => continue, // TODO
-        };
+        const stmnt = try astgen.genStatement(scope, stmnt_node);
+        if (astgen.getInst(stmnt) == .@"return") {
+            is_unreachable = true;
+        }
         try astgen.scratch.append(astgen.allocator, stmnt);
     }
 
     const statements = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
     astgen.instructions.items[block] = .{ .block = statements };
     return block;
+}
+
+fn genStatement(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    return switch (astgen.tree.nodeTag(node)) {
+        .compound_assign => try astgen.genCompoundAssign(scope, node),
+        .phony_assign => try astgen.genPhonyAssign(scope, node),
+        .call => try astgen.genFnCall(scope, node),
+        .@"return" => try astgen.genReturn(scope, node),
+        .break_if => try astgen.genBreakIf(scope, node),
+        .@"if" => try astgen.genIf(scope, node),
+        .if_else => try astgen.genIfElse(scope, node),
+        .if_else_if => try astgen.genIfElseIf(scope, node),
+        .@"while" => try astgen.genWhile(scope, node),
+        .@"for" => try astgen.genFor(scope, node),
+        .@"switch" => try astgen.genSwitch(scope, node),
+        .loop => try astgen.genLoop(scope, node),
+        .block => blk: {
+            var inner_scope = try astgen.scope_pool.create();
+            inner_scope.* = .{ .tag = .block, .parent = scope };
+            const inner_block = try astgen.genBlock(inner_scope, node);
+            break :blk inner_block;
+        },
+        .continuing => try astgen.genContinuing(scope, node),
+        .discard => try astgen.addInst(.discard),
+        .@"break" => try astgen.addInst(.@"break"),
+        .@"continue" => try astgen.addInst(.@"continue"),
+        .increase => try astgen.genIncreaseDecrease(scope, node, true),
+        .decrease => try astgen.genIncreaseDecrease(scope, node, false),
+        .@"var" => blk: {
+            const decl = try astgen.genVar(scope, node);
+            scope.decls.putAssumeCapacity(node, decl);
+            break :blk decl;
+        },
+        .@"const" => blk: {
+            const decl = try astgen.genConst(scope, node);
+            scope.decls.putAssumeCapacity(node, decl);
+            break :blk decl;
+        },
+        .let => blk: {
+            const decl = try astgen.genLet(scope, node);
+            scope.decls.putAssumeCapacity(node, decl);
+            break :blk decl;
+        },
+        else => unreachable,
+    };
 }
 
 fn genLoop(astgen: *AstGen, parent_scope: *Scope, node: NodeIndex) !InstIndex {
@@ -1042,13 +1050,13 @@ fn genFor(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     var for_scope = try astgen.scope_pool.create();
     for_scope.* = .{ .tag = .@"for", .parent = scope };
 
+    try astgen.scanDecls(for_scope, &.{extra.init});
     const init = switch (astgen.tree.nodeTag(extra.init)) {
         .@"var" => try astgen.genVar(for_scope, extra.init),
         .@"const" => try astgen.genConst(for_scope, extra.init),
         .let => try astgen.genLet(for_scope, extra.init),
         else => unreachable,
     };
-    try astgen.scanDecls(for_scope, &.{init});
     scope.decls.putAssumeCapacity(extra.init, init);
 
     const cond_node_loc = astgen.tree.nodeLoc(extra.cond);
@@ -1665,14 +1673,41 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     if (node_rhs == null_node) {
         std.debug.assert(token_tag == .ident);
-        const decl = try astgen.findSymbol(scope, token);
-        switch (astgen.getInst(decl)) {
-            .@"fn" => return astgen.genFnCall(scope, node),
-            .@"struct" => return astgen.genStructConstruct(scope, decl, node),
+
+        const builtin_fn = std.meta.stringToEnum(BuiltinFn, token_loc.slice(astgen.tree.source)) orelse {
+            const decl = try astgen.findSymbol(scope, token);
+            switch (astgen.getInst(decl)) {
+                .@"fn" => return astgen.genFnCall(scope, node),
+                .@"struct" => return astgen.genStructConstruct(scope, decl, node),
+                else => {
+                    try astgen.errors.add(
+                        node_loc,
+                        "'{s}' cannot be called",
+                        .{token_loc.slice(astgen.tree.source)},
+                        null,
+                    );
+                    return error.AnalysisFail;
+                },
+            }
+        };
+        switch (builtin_fn) {
+            .all => return astgen.genBuiltinAllAny(scope, node, true),
+            .any => return astgen.genBuiltinAllAny(scope, node, false),
+            .select => return astgen.genBuiltinSelect(scope, node),
+            .abs => return astgen.genBuiltinAbs(scope, node),
+            .dpdx => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdx),
+            .dpdxCoarse => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdx_coarse),
+            .dpdxFine => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdx_fine),
+            .dpdy => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdy),
+            .dpdyCoarse => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdy_coarse),
+            .dpdyFine => return astgen.genDerivativeBuiltin(scope, node, .builtin_dpdy_fine),
+            .fwidth => return astgen.genDerivativeBuiltin(scope, node, .builtin_fwidth),
+            .fwidthCoarse => return astgen.genDerivativeBuiltin(scope, node, .builtin_fwidth_coarse),
+            .fwidthFine => return astgen.genDerivativeBuiltin(scope, node, .builtin_fwidth_fine),
             else => {
                 try astgen.errors.add(
                     node_loc,
-                    "'{s}' cannot be called",
+                    "TODO: unimplemented builtin '{s}'",
                     .{token_loc.slice(astgen.tree.source)},
                     null,
                 );
@@ -2492,6 +2527,175 @@ fn genBitcast(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     return error.AnalysisFail;
 }
 
+fn genBuiltinAllAny(astgen: *AstGen, scope: *Scope, node: NodeIndex, all: bool) !InstIndex {
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == null_node) {
+        return astgen.failArgCountMismatch(node_loc, 1, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len != 1) {
+        return astgen.failArgCountMismatch(node_loc, 1, arg_nodes.len);
+    }
+
+    const arg = try astgen.genExpr(scope, arg_nodes[0]);
+    const arg_res = astgen.resolve(arg);
+    switch (astgen.getInst(arg_res)) {
+        .bool => return arg,
+        .vector => |vec| {
+            if (astgen.getInst(vec.elem_type) != .bool) {
+                try astgen.errors.add(node_loc, "invalid vector element type", .{}, null);
+                return error.AnalysisFail;
+            }
+
+            if (all) {
+                return astgen.addInst(.{ .builtin_all = arg });
+            } else {
+                return astgen.addInst(.{ .builtin_any = arg });
+            }
+        },
+        else => {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
+        },
+    }
+}
+
+fn genBuiltinSelect(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == null_node) {
+        return astgen.failArgCountMismatch(node_loc, 3, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len != 3) {
+        return astgen.failArgCountMismatch(node_loc, 3, arg_nodes.len);
+    }
+
+    const arg0 = try astgen.genExpr(scope, arg_nodes[0]);
+    const arg1 = try astgen.genExpr(scope, arg_nodes[1]);
+    const arg2 = try astgen.genExpr(scope, arg_nodes[2]);
+    const arg0_res = astgen.resolve(arg0);
+    const arg1_res = astgen.resolve(arg1);
+    const arg2_res = astgen.resolve(arg2);
+
+    if (!astgen.eql(arg0_res, arg1_res)) {
+        try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    switch (astgen.getInst(arg2_res)) {
+        .bool => {
+            return astgen.addInst(.{
+                .builtin_select = .{
+                    .true = arg0,
+                    .false = arg1,
+                    .cond = arg2,
+                },
+            });
+        },
+        .vector => |vec| {
+            if (astgen.getInst(vec.elem_type) != .bool) {
+                try astgen.errors.add(node_loc, "invalid vector element type", .{}, null);
+                return error.AnalysisFail;
+            }
+
+            if (astgen.getInst(arg0_res) != .vector) {
+                try astgen.errors.add(node_loc, "'true' and 'false' must be vector", .{}, null);
+                return error.AnalysisFail;
+            }
+
+            return astgen.addInst(.{
+                .builtin_select = .{
+                    .true = arg0,
+                    .false = arg1,
+                    .cond = arg2,
+                },
+            });
+        },
+        else => {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
+        },
+    }
+}
+
+fn genBuiltinAbs(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == null_node) {
+        return astgen.failArgCountMismatch(node_loc, 1, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len != 1) {
+        return astgen.failArgCountMismatch(node_loc, 1, arg_nodes.len);
+    }
+
+    const arg = try astgen.genExpr(scope, arg_nodes[0]);
+    const arg_res = astgen.resolve(arg);
+    switch (astgen.getInst(arg_res)) {
+        .int, .float => return astgen.addInst(.{ .builtin_abs = arg }),
+        .vector => |vec| {
+            if (astgen.getInst(vec.elem_type) == .bool) {
+                try astgen.errors.add(node_loc, "invalid vector element type", .{}, null);
+                return error.AnalysisFail;
+            }
+
+            return astgen.addInst(.{ .builtin_abs = arg });
+        },
+        else => {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
+        },
+    }
+}
+
+fn genDerivativeBuiltin(
+    astgen: *AstGen,
+    scope: *Scope,
+    node: NodeIndex,
+    comptime tag: std.meta.Tag(Inst),
+) !InstIndex {
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == null_node) {
+        return astgen.failArgCountMismatch(node_loc, 1, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len != 1) {
+        return astgen.failArgCountMismatch(node_loc, 1, arg_nodes.len);
+    }
+
+    const arg = try astgen.genExpr(scope, arg_nodes[0]);
+    const arg_res = astgen.resolve(arg);
+    const inst = @unionInit(Inst, @tagName(tag), arg);
+    switch (astgen.getInst(arg_res)) {
+        .float => |float| {
+            if (float.type == .f32) {
+                return astgen.addInst(inst);
+            }
+        },
+        .vector => |vec| {
+            switch (astgen.getInst(vec.elem_type)) {
+                .float => |float| {
+                    if (float.type == .f32) {
+                        return astgen.addInst(inst);
+                    }
+                },
+                else => {},
+            }
+        },
+        else => {},
+    }
+
+    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+    return error.AnalysisFail;
+}
+
 fn genVarRef(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     return astgen.addInst(.{
         .var_ref = try astgen.findSymbol(scope, astgen.tree.nodeToken(node)),
@@ -2846,7 +3050,7 @@ fn genArrayType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 if (astgen.getInst(elem_type).array_type.size == null_inst) {
                     try astgen.errors.add(
                         astgen.tree.nodeLoc(node_lhs),
-                        "array componet type can not be a runtime-sized array",
+                        "array component type can not be a runtime-sized array",
                         .{},
                         null,
                     );
@@ -3052,10 +3256,26 @@ fn findSymbol(astgen: *AstGen, scope: *Scope, token: TokenIndex) error{ OutOfMem
 
     var s = scope;
     while (true) {
-        var node_iter = s.decls.keyIterator();
-        while (node_iter.next()) |other_node| {
-            if (std.mem.eql(u8, name, astgen.tree.declNameLoc(other_node.*).?.slice(astgen.tree.source))) {
-                return astgen.genGlobalDecl(s, other_node.*);
+        var iter = s.decls.iterator();
+        while (iter.next()) |decl| {
+            const decl_node = decl.key_ptr.*;
+            const decl_inst = try decl.value_ptr.*;
+            if (std.mem.eql(u8, name, astgen.tree.declNameLoc(decl_node).?.slice(astgen.tree.source))) {
+                if (decl_inst == null_inst) {
+                    // declaration has not analysed
+                    switch (s.tag) {
+                        .root => return astgen.genGlobalDecl(s, decl_node),
+                        .@"fn",
+                        .block,
+                        .loop,
+                        .continuing,
+                        .switch_case,
+                        .@"for",
+                        => {},
+                    }
+                } else {
+                    return decl_inst;
+                }
             }
         }
 
@@ -3110,9 +3330,24 @@ fn resolve(astgen: *AstGen, index: InstIndex) InstIndex {
             .less_than_equal,
             .greater_than,
             .greater_than_equal,
+            .builtin_all,
+            .builtin_any,
+            .builtin_select,
             => return basic_types.bool_inst,
 
-            .not, .negate => |un| {
+            .not,
+            .negate,
+            .builtin_abs,
+            .builtin_dpdx,
+            .builtin_dpdx_coarse,
+            .builtin_dpdx_fine,
+            .builtin_dpdy,
+            .builtin_dpdy_coarse,
+            .builtin_dpdy_fine,
+            .builtin_fwidth,
+            .builtin_fwidth_coarse,
+            .builtin_fwidth_fine,
+            => |un| {
                 idx = un;
             },
 
@@ -3153,6 +3388,10 @@ fn resolve(astgen: *AstGen, index: InstIndex) InstIndex {
                 idx = decl_expr;
             },
 
+            .fn_param => |param| return param.type,
+
+            .struct_ref => |struct_ref| return struct_ref,
+
             .atomic_type,
             .array_type,
             .ptr_type,
@@ -3163,12 +3402,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) InstIndex {
             .multisampled_texture_type,
             .storage_texture_type,
             .depth_texture_type,
-            => unreachable, // TODO?
-
-            .struct_ref => |struct_ref| return struct_ref,
-
             .@"fn",
-            .fn_param,
             .@"struct",
             .struct_member,
             .block,
@@ -3362,6 +3596,21 @@ fn getInst(astgen: *AstGen, inst: InstIndex) Inst {
     return astgen.instructions.items[inst];
 }
 
+fn failArgCountMismatch(
+    astgen: *AstGen,
+    node_loc: Loc,
+    expected: usize,
+    actual: usize,
+) error{ OutOfMemory, AnalysisFail } {
+    try astgen.errors.add(
+        node_loc,
+        "expected {} argument(s), found {}",
+        .{ expected, actual },
+        null,
+    );
+    return error.AnalysisFail;
+}
+
 const Value = union(enum) {
     int: i64,
     float: f64,
@@ -3497,4 +3746,116 @@ const Value = union(enum) {
     fn logicalOr(lhs: Value, rhs: Value) Value {
         return .{ .bool = lhs.bool or rhs.bool };
     }
+};
+
+const BuiltinFn = enum {
+    all,
+    any,
+    select,
+    arrayLength, // unimplemented
+    abs,
+    acos, // unimplemented
+    acosh, // unimplemented
+    asin, // unimplemented
+    asinh, // unimplemented
+    atan, // unimplemented
+    atanh, // unimplemented
+    atan2, // unimplemented
+    ceil, // unimplemented
+    clamp, // unimplemented
+    cos, // unimplemented
+    cosh, // unimplemented
+    countLeadingZeros, // unimplemented
+    countOneBits, // unimplemented
+    countTrailingZeros, // unimplemented
+    cross, // unimplemented
+    degrees, // unimplemented
+    determinant, // unimplemented
+    distance, // unimplemented
+    dot, // unimplemented
+    exp, // unimplemented
+    exp2, // unimplemented
+    extractBits, // unimplemented
+    faceForward, // unimplemented
+    firstLeadingBit, // unimplemented
+    firstTrailingBit, // unimplemented
+    floor, // unimplemented
+    fma, // unimplemented
+    fract, // unimplemented
+    frexp, // unimplemented
+    insertBits, // unimplemented
+    inverseSqrt, // unimplemented
+    ldexp, // unimplemented
+    length, // unimplemented
+    log, // unimplemented
+    log2, // unimplemented
+    max, // unimplemented
+    min, // unimplemented
+    mix, // unimplemented
+    modf, // unimplemented
+    normalize, // unimplemented
+    pow, // unimplemented
+    quantizeToF16, // unimplemented
+    radians, // unimplemented
+    reflect, // unimplemented
+    refract, // unimplemented
+    reverseBits, // unimplemented
+    round, // unimplemented
+    saturate, // unimplemented
+    sign, // unimplemented
+    sin, // unimplemented
+    sinh, // unimplemented
+    smoothstep, // unimplemented
+    sqrt, // unimplemented
+    step, // unimplemented
+    tan, // unimplemented
+    tanh, // unimplemented
+    transpose, // unimplemented
+    trunc, // unimplemented
+    dpdx,
+    dpdxCoarse,
+    dpdxFine,
+    dpdy,
+    dpdyCoarse,
+    dpdyFine,
+    fwidth,
+    fwidthCoarse,
+    fwidthFine,
+    textureDimensions, // unimplemented
+    textureGather, // unimplemented
+    textureLoad, // unimplemented
+    textureNumLayers, // unimplemented
+    textureNumLevels, // unimplemented
+    textureNumSamples, // unimplemented
+    textureSample, // unimplemented
+    textureSampleBias, // unimplemented
+    textureSampleCompare, // unimplemented
+    textureSampleCompareLevel, // unimplemented
+    textureSampleGrad, // unimplemented
+    textureSampleLevel, // unimplemented
+    textureSampleBaseClampToEdge, // unimplemented
+    textureStore, // unimplemented
+    atomicLoad, // unimplemented
+    atomicStore, // unimplemented
+    atomicAdd, // unimplemented
+    atomicSub, // unimplemented
+    atomicMax, // unimplemented
+    atomicMin, // unimplemented
+    atomicAnd, // unimplemented
+    atomicOr, // unimplemented
+    atomicXor, // unimplemented
+    atomicExchange, // unimplemented
+    atomicCompareExchangeWeak, // unimplemented
+    pack4x8unorm, // unimplemented
+    pack2x16snorm, // unimplemented
+    pack2x16unorm, // unimplemented
+    pack2x16float, // unimplemented
+    unpack4x8snorm, // unimplemented
+    unpack4x8unorm, // unimplemented
+    unpack2x16snorm, // unimplemented
+    unpack2x16unorm, // unimplemented
+    unpack2x16float, // unimplemented
+    storageBarrier, // unimplemented
+    workgroupBarrier, // unimplemented
+    workgroupUniformLoad, // unimplemented
 };
