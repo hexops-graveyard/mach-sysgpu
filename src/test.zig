@@ -275,11 +275,11 @@ test "integer/float literals" {
 
     const toInst = struct {
         fn toInst(air: Air, i: Air.InstIndex) Air.Inst {
-            return air.instructions[air.instructions[i].global_var.expr];
+            return air.instructions[@enumToInt(air.instructions[@enumToInt(i)].global_var.expr)];
         }
     }.toInst;
 
-    const vars = std.mem.sliceTo(ir.refs[ir.globals_index..], Air.null_inst);
+    const vars = std.mem.sliceTo(ir.refs[@enumToInt(ir.globals_index)..], .none);
     try expectEqual(toInst(ir, vars[0]).int, .{ .type = .u32, .value = .{ .literal = .{ .value = 1, .base = 10 } } });
     try expectEqual(toInst(ir, vars[1]).int, .{ .type = .abstract, .value = .{ .literal = .{ .value = 123, .base = 10 } } });
     try expectEqual(toInst(ir, vars[2]).int, .{ .type = .abstract, .value = .{ .literal = .{ .value = 0, .base = 10 } } });

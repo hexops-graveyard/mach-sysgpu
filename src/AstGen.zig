@@ -2,8 +2,6 @@ const std = @import("std");
 const Ast = @import("Ast.zig");
 const Air = @import("Air.zig");
 const ErrorList = @import("ErrorList.zig");
-const null_inst = Air.null_inst;
-const null_ref = Air.null_ref;
 const null_node = Ast.null_node;
 const Inst = Air.Inst;
 const Node = Ast.Node;
@@ -15,11 +13,12 @@ const TokenIndex = Ast.TokenIndex;
 const TokenTag = @import("Token.zig").Tag;
 const Loc = @import("Token.zig").Loc;
 const stringToEnum = std.meta.stringToEnum;
+const sliceTo = std.mem.sliceTo;
 
 const AstGen = @This();
 
 const basic_types = struct {
-    const bool_inst = 0;
+    const bool_inst = @intToEnum(Air.InstIndex, 0);
 };
 
 allocator: std.mem.Allocator,
@@ -69,7 +68,7 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
 
     for (global_nodes) |node| {
         var global = root_scope.decls.get(node).? catch continue;
-        if (global == null_inst) {
+        if (global == .none) {
             // declaration has not analysed
             global = astgen.genGlobalDecl(root_scope, node) catch |err| switch (err) {
                 error.AnalysisFail => continue,
@@ -107,7 +106,7 @@ fn scanDecls(astgen: *AstGen, scope: *Scope, nodes: []const NodeIndex) !void {
             }
         }
 
-        try scope.decls.putNoClobber(astgen.scope_pool.arena.allocator(), decl_node, null_inst);
+        try scope.decls.putNoClobber(astgen.scope_pool.arena.allocator(), decl_node, .none);
     }
 }
 
@@ -138,7 +137,7 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const name_loc = astgen.tree.declNameLoc(node).?;
 
     var is_resource = false;
-    var var_type = null_inst;
+    var var_type = InstIndex.none;
     if (extra.type != null_node) {
         var_type = try astgen.genType(scope, extra.type);
 
@@ -185,8 +184,8 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         };
     }
 
-    var binding = null_inst;
-    var group = null_inst;
+    var binding = InstIndex.none;
+    var group = InstIndex.none;
     if (extra.attrs != null_node) {
         for (astgen.tree.spanToList(extra.attrs)) |attr| {
             if (!is_resource) {
@@ -215,7 +214,7 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
-    if (is_resource and (binding == null_inst or group == null_inst)) {
+    if (is_resource and (binding == .none or group == .none)) {
         try astgen.errors.add(
             astgen.tree.nodeLoc(node),
             "resource variable must specify binding and group",
@@ -225,13 +224,13 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    var expr = null_inst;
+    var expr = InstIndex.none;
     if (node_rhs != null_node) {
         expr = try astgen.genExpr(scope, node_rhs);
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
-    astgen.instructions.items[var_decl] = .{
+    astgen.instructions.items[@enumToInt(var_decl)] = .{
         .global_var = .{
             .name = name,
             .type = var_type,
@@ -251,7 +250,7 @@ fn genOverride(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const extra = astgen.tree.extraData(Node.Override, astgen.tree.nodeLHS(node));
     const name_loc = astgen.tree.declNameLoc(node).?;
 
-    var override_type = null_inst;
+    var override_type = InstIndex.none;
     if (extra.type != null_node) {
         override_type = try astgen.genType(scope, extra.type);
         switch (astgen.getInst(override_type)) {
@@ -271,7 +270,7 @@ fn genOverride(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
-    var id = null_inst;
+    var id = InstIndex.none;
     if (extra.attrs != null_node) {
         for (astgen.tree.spanToList(extra.attrs)) |attr| {
             switch (astgen.tree.nodeTag(attr)) {
@@ -289,13 +288,13 @@ fn genOverride(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
-    var expr = null_inst;
+    var expr = InstIndex.none;
     if (node_rhs != null_node) {
         expr = try astgen.genExpr(scope, node_rhs);
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
-    astgen.instructions.items[override] = .{
+    astgen.instructions.items[@enumToInt(override)] = .{
         .override = .{
             .name = name,
             .type = override_type,
@@ -311,7 +310,7 @@ fn genStruct(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const name_str = astgen.tree.declNameLoc(node).?.slice(astgen.tree.source);
     const name = try astgen.addString(name_str);
     const members = try astgen.genStructMembers(scope, astgen.tree.nodeLHS(node));
-    astgen.instructions.items[struct_decl] = .{
+    astgen.instructions.items[@enumToInt(struct_decl)] = .{
         .@"struct" = .{
             .name = name,
             .members = members,
@@ -320,7 +319,7 @@ fn genStruct(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     return struct_decl;
 }
 
-fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
@@ -366,7 +365,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
 
         if (member_type_inst == .array_type) {
             const array_size = member_type_inst.array_type.size;
-            if (array_size == null_inst and i + 1 != member_nodes_list.len) {
+            if (array_size == .none and i + 1 != member_nodes_list.len) {
                 try astgen.errors.add(
                     member_name_loc,
                     "struct member with runtime-sized array type, must be the last member of the structure",
@@ -380,7 +379,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
         var @"align": ?u29 = null;
         var size: ?u32 = null;
         var builtin: Inst.Builtin = .none;
-        var location: InstIndex = null_inst;
+        var location = InstIndex.none;
         var interpolate: ?Inst.Interpolate = null;
         if (member_attrs_node != null_node) {
             for (astgen.tree.spanToList(member_attrs_node)) |attr| {
@@ -404,7 +403,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
         }
 
         const name = try astgen.addString(member_name_loc.slice(astgen.tree.source));
-        astgen.instructions.items[member] = .{
+        astgen.instructions.items[@enumToInt(member)] = .{
             .struct_member = .{
                 .name = name,
                 .type = member_type,
@@ -427,10 +426,10 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
     const node_rhs = astgen.tree.nodeRHS(node);
     const node_loc = astgen.tree.nodeLoc(node);
 
-    var return_type = null_inst;
+    var return_type = InstIndex.none;
     var return_attrs = Inst.Fn.ReturnAttrs{
         .builtin = .none,
-        .location = null_inst,
+        .location = .none,
         .interpolate = null,
         .invariant = false,
     };
@@ -496,7 +495,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     if (stage == .compute) {
-        if (return_type != null_inst) {
+        if (return_type != .none) {
             try astgen.errors.add(
                 astgen.tree.nodeLoc(fn_proto.return_type),
                 "return type on compute function",
@@ -579,7 +578,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
         .parent = root_scope,
     };
 
-    var params = null_ref;
+    var params = RefIndex.none;
     if (fn_proto.params != null_node) {
         params = try astgen.genFnParams(scope, fn_proto.params);
     }
@@ -588,12 +587,12 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
     const block = try astgen.genBlock(scope, node_rhs);
 
-    if (return_type != null_inst and !scope.tag.@"fn".returned) {
+    if (return_type != .none and !scope.tag.@"fn".returned) {
         try astgen.errors.add(node_loc, "function does not return", .{}, null);
         return error.AnalysisFail;
     }
 
-    astgen.instructions.items[fn_decl] = .{
+    astgen.instructions.items[@enumToInt(fn_decl)] = .{
         .@"fn" = .{
             .name = name,
             .stage = stage,
@@ -631,7 +630,7 @@ fn genFnParams(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
 
         var builtin = Inst.Builtin.none;
         var inter: ?Inst.Interpolate = null;
-        var location = null_inst;
+        var location = InstIndex.none;
         var invariant = false;
 
         if (param_node_lhs != null_node) {
@@ -655,7 +654,7 @@ fn genFnParams(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
         }
 
         const name = try astgen.addString(param_name_loc.slice(astgen.tree.source));
-        astgen.instructions.items[param] = .{
+        astgen.instructions.items[@enumToInt(param)] = .{
             .fn_param = .{
                 .name = name,
                 .type = param_type,
@@ -859,9 +858,9 @@ fn attrInterpolate(astgen: *AstGen, node: NodeIndex) Inst.Interpolate {
     return inter;
 }
 
-fn genBlock(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ OutOfMemory, AnalysisFail }!RefIndex {
+fn genBlock(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ OutOfMemory, AnalysisFail }!InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
-    if (node_lhs == null_node) return null_ref;
+    if (node_lhs == null_node) return .none;
 
     const block = try astgen.allocInst();
     const stmnt_nodes = astgen.tree.spanToList(node_lhs);
@@ -885,7 +884,7 @@ fn genBlock(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ OutOfMemory,
     }
 
     const statements = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-    astgen.instructions.items[block] = .{ .block = statements };
+    astgen.instructions.items[@enumToInt(block)] = .{ .block = statements };
     return block;
 }
 
@@ -940,7 +939,7 @@ fn genLoop(astgen: *AstGen, parent_scope: *Scope, node: NodeIndex) !InstIndex {
 
     const loop = try astgen.allocInst();
     const block = try astgen.genBlock(scope, astgen.tree.nodeLHS(node));
-    astgen.instructions.items[loop] = .{ .loop = block };
+    astgen.instructions.items[@enumToInt(loop)] = .{ .loop = block };
     return loop;
 }
 
@@ -950,14 +949,14 @@ fn genContinuing(astgen: *AstGen, parent_scope: *Scope, node: NodeIndex) !InstIn
 
     const continuing = try astgen.allocInst();
     const block = try astgen.genBlock(scope, astgen.tree.nodeLHS(node));
-    astgen.instructions.items[continuing] = .{ .continuing = block };
+    astgen.instructions.items[@enumToInt(continuing)] = .{ .continuing = block };
     return continuing;
 }
 
 fn genBreakIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const break_if = try astgen.allocInst();
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
-    astgen.instructions.items[break_if] = .{ .break_if = expr };
+    astgen.instructions.items[@enumToInt(break_if)] = .{ .break_if = expr };
     return break_if;
 }
 
@@ -975,11 +974,11 @@ fn genIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const block = try astgen.genBlock(scope, node_rhs);
-    astgen.instructions.items[inst] = .{
+    astgen.instructions.items[@enumToInt(inst)] = .{
         .@"if" = .{
             .cond = cond,
             .body = block,
-            .@"else" = null_inst,
+            .@"else" = .none,
         },
     };
     return inst;
@@ -991,7 +990,7 @@ fn genIfElse(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const cond = try astgen.genExpr(scope, astgen.tree.nodeLHS(if_node));
     const if_block = try astgen.genBlock(scope, astgen.tree.nodeRHS(if_node));
     const else_block = try astgen.genBlock(scope, astgen.tree.nodeRHS(node));
-    astgen.instructions.items[inst] = .{
+    astgen.instructions.items[@enumToInt(inst)] = .{
         .@"if" = .{
             .cond = cond,
             .body = if_block,
@@ -1013,7 +1012,7 @@ fn genIfElseIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .if_else_if => try astgen.genIfElseIf(scope, node_rhs),
         else => unreachable,
     };
-    astgen.instructions.items[inst] = .{
+    astgen.instructions.items[@enumToInt(inst)] = .{
         .@"if" = .{
             .cond = cond,
             .body = block,
@@ -1037,7 +1036,7 @@ fn genWhile(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const block = try astgen.genBlock(scope, node_rhs);
-    astgen.instructions.items[inst] = .{ .@"while" = .{ .lhs = cond, .rhs = block } };
+    astgen.instructions.items[@enumToInt(inst)] = .{ .@"while" = .{ .lhs = cond, .rhs = block } };
     return inst;
 }
 
@@ -1078,7 +1077,7 @@ fn genFor(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     const block = try astgen.genBlock(for_scope, node_rhs);
 
-    astgen.instructions.items[inst] = .{
+    astgen.instructions.items[@enumToInt(inst)] = .{
         .@"for" = .{
             .init = init,
             .cond = cond,
@@ -1104,7 +1103,7 @@ fn genSwitch(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         var cases_scope = try astgen.scope_pool.create();
         cases_scope.* = .{ .tag = .switch_case, .parent = scope };
 
-        var cases = null_ref;
+        var cases = RefIndex.none;
         const body = try astgen.genBlock(cases_scope, astgen.tree.nodeRHS(cases_node));
         var default = cases_node_tag == .switch_default or cases_node_tag == .switch_case_default;
 
@@ -1142,10 +1141,10 @@ fn genSwitch(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const cases_list = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-    astgen.instructions.items[inst] = .{
+    astgen.instructions.items[@enumToInt(inst)] = .{
         .@"switch" = .{
-            .lhs = switch_on,
-            .rhs = cases_list,
+            .switch_on = switch_on,
+            .cases_list = cases_list,
         },
     };
     return inst;
@@ -1193,7 +1192,7 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
         .angle_bracket_angle_bracket_right_equal => .{ .assign_shr = .{ .lhs = lhs, .rhs = rhs } },
         else => unreachable,
     };
-    astgen.instructions.items[inst] = inst_data;
+    astgen.instructions.items[@enumToInt(inst)] = inst_data;
     return inst;
 }
 
@@ -1201,7 +1200,7 @@ fn genPhonyAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const inst = try astgen.allocInst();
     const node_lhs = astgen.tree.nodeLHS(node);
     const lhs = try astgen.genExpr(scope, node_lhs);
-    astgen.instructions.items[inst] = .{ .assign_phony = lhs };
+    astgen.instructions.items[@enumToInt(inst)] = .{ .assign_phony = lhs };
     return inst;
 }
 
@@ -1222,11 +1221,7 @@ fn genIncreaseDecrease(astgen: *AstGen, scope: *Scope, node: NodeIndex, increase
         return error.AnalysisFail;
     }
 
-    if (increase) {
-        astgen.instructions.items[inst] = .{ .increase = lhs };
-    } else {
-        astgen.instructions.items[inst] = .{ .decrease = lhs };
-    }
+    astgen.instructions.items[@enumToInt(inst)] = if (increase) .{ .increase = lhs } else .{ .decrease = lhs };
     return inst;
 }
 
@@ -1237,7 +1232,7 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const name_loc = astgen.tree.declNameLoc(node).?;
 
     var is_resource = false;
-    var var_type = null_inst;
+    var var_type = InstIndex.none;
     if (extra.type != null_node) {
         var_type = try astgen.genType(scope, extra.type);
 
@@ -1284,13 +1279,13 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         };
     }
 
-    var expr = null_inst;
+    var expr = InstIndex.none;
     if (node_rhs != null_node) {
         expr = try astgen.genExpr(scope, node_rhs);
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
-    astgen.instructions.items[var_decl] = .{
+    astgen.instructions.items[@enumToInt(var_decl)] = .{
         .@"var" = .{
             .name = name,
             .type = var_type,
@@ -1308,7 +1303,7 @@ fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_rhs = astgen.tree.nodeRHS(node);
     const name_loc = astgen.tree.declNameLoc(node).?;
 
-    var var_type = null_inst;
+    var var_type = InstIndex.none;
     if (node_lhs != null_node) {
         var_type = try astgen.genType(scope, node_lhs);
     }
@@ -1325,7 +1320,7 @@ fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
-    astgen.instructions.items[const_decl] = .{
+    astgen.instructions.items[@enumToInt(const_decl)] = .{
         .@"const" = .{
             .name = name,
             .type = var_type,
@@ -1341,7 +1336,7 @@ fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_rhs = astgen.tree.nodeRHS(node);
     const name_loc = astgen.tree.declNameLoc(node).?;
 
-    var var_type = null_inst;
+    var var_type = InstIndex.none;
     if (node_lhs != null_node) {
         var_type = try astgen.genType(scope, node_lhs);
     }
@@ -1359,7 +1354,7 @@ fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
-    astgen.instructions.items[let] = .{
+    astgen.instructions.items[@enumToInt(let)] = .{
         .let = .{
             .name = name,
             .type = var_type,
@@ -1651,17 +1646,17 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .greater_than_equal => .{ .greater_than_equal = .{ .lhs = lhs, .rhs = rhs } },
         else => unreachable,
     };
-    astgen.instructions.items[inst] = inst_data;
+    astgen.instructions.items[@enumToInt(inst)] = inst_data;
     return inst;
 }
 
 fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
-    const null_vec = @Vector(4, InstIndex){ null_inst, null_inst, null_inst, null_inst };
-    const null_mat = @Vector(4 * 4, InstIndex){
-        null_inst, null_inst, null_inst, null_inst,
-        null_inst, null_inst, null_inst, null_inst,
-        null_inst, null_inst, null_inst, null_inst,
-        null_inst, null_inst, null_inst, null_inst,
+    const null_vec = [4]InstIndex{ .none, .none, .none, .none };
+    const null_mat = [4 * 4]InstIndex{
+        .none, .none, .none, .none,
+        .none, .none, .none, .none,
+        .none, .none, .none, .none,
+        .none, .none, .none, .none,
     };
 
     const token = astgen.tree.nodeToken(node);
@@ -1900,7 +1895,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     }
                 },
                 2 => blk: {
-                    var arg0_res = null_inst;
+                    var arg0_res = InstIndex.none;
                     for (arg_nodes, 0..) |arg_node, i| {
                         const arg = try astgen.genExpr(scope, arg_node);
                         const arg_res = astgen.resolve(arg);
@@ -1999,7 +1994,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     }
                 },
                 3 => blk: {
-                    var arg0_res = null_inst;
+                    var arg0_res = InstIndex.none;
                     for (arg_nodes, 0..) |arg_node, i| {
                         const arg = try astgen.genExpr(scope, arg_node);
                         const arg_res = astgen.resolve(arg);
@@ -2105,9 +2100,9 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     }
                 },
                 3 => blk: {
-                    var vector_arg = null_inst;
-                    var scalar_arg0 = null_inst;
-                    var scalar_arg1 = null_inst;
+                    var vector_arg = InstIndex.none;
+                    var scalar_arg0 = InstIndex.none;
+                    var scalar_arg1 = InstIndex.none;
                     var vector_arg_offset: ?usize = null;
                     var scalar_arg0_offset: ?usize = null;
                     var scalar_arg1_offset: ?usize = null;
@@ -2121,10 +2116,10 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                             vector_arg_offset = i;
                             if (astgen.getInst(arg_res).vector.size != .two) break :blk;
                         } else {
-                            if (scalar_arg0 == null_inst) {
+                            if (scalar_arg0 == .none) {
                                 scalar_arg0 = arg;
                                 scalar_arg0_offset = i + if (vector_arg_offset) |vec_off| @boolToInt(vec_off < i) else 0;
-                            } else if (scalar_arg1 == null_inst) {
+                            } else if (scalar_arg1 == .none) {
                                 scalar_arg1 = arg;
                                 scalar_arg1_offset = i + if (vector_arg_offset) |vec_off| @boolToInt(vec_off < i) else 0;
                             } else break :blk;
@@ -2148,7 +2143,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     }
                 },
                 4 => blk: {
-                    var arg0_res = null_inst;
+                    var arg0_res = InstIndex.none;
                     for (arg_nodes, 0..) |arg_node, i| {
                         const arg = try astgen.genExpr(scope, arg_node);
                         const arg_res = astgen.resolve(arg);
@@ -2212,7 +2207,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 }
             } else if (arg_nodes.len == @enumToInt(cols)) blk: {
                 const offset = @enumToInt(rows);
-                var arg0_res = null_inst;
+                var arg0_res = InstIndex.none;
                 for (arg_nodes, 0..) |arg_node, i| {
                     const arg = try astgen.genExpr(scope, arg_node);
                     const arg_res = astgen.resolve(arg);
@@ -2240,7 +2235,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     return mat;
                 }
             } else if (arg_nodes.len == @enumToInt(cols) * @enumToInt(rows)) blk: {
-                var arg0_res = null_inst;
+                var arg0_res = InstIndex.none;
                 for (arg_nodes, 0..) |arg_node, i| {
                     const arg = try astgen.genExpr(scope, arg_node);
                     const arg_res = astgen.resolve(arg);
@@ -2270,9 +2265,9 @@ fn genReturn(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const return_stmnt = try astgen.allocInst();
 
     var fn_scope = findFnScope(scope);
-    var value = null_inst;
+    var value = InstIndex.none;
     if (node_lhs != null_node) {
-        if (fn_scope.tag.@"fn".return_type == null_inst) {
+        if (fn_scope.tag.@"fn".return_type == .none) {
             try astgen.errors.add(node_loc, "cannot return value", .{}, null);
             return error.AnalysisFail;
         }
@@ -2284,14 +2279,14 @@ fn genReturn(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             return error.AnalysisFail;
         }
     } else {
-        if (fn_scope.tag.@"fn".return_type != null_inst) {
+        if (fn_scope.tag.@"fn".return_type != .none) {
             try astgen.errors.add(node_loc, "return value not specified", .{}, null);
             return error.AnalysisFail;
         }
     }
 
     fn_scope.tag.@"fn".returned = true;
-    astgen.instructions.items[return_stmnt] = .{ .@"return" = value };
+    astgen.instructions.items[@enumToInt(return_stmnt)] = .{ .@"return" = value };
     return return_stmnt;
 }
 
@@ -2326,11 +2321,11 @@ fn genFnCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
-    var args = null_ref;
+    var args = RefIndex.none;
     if (node_lhs != null_node) {
-        const params = std.mem.sliceTo(
-            astgen.refs.items[astgen.getInst(decl).@"fn".params..],
-            null_inst,
+        const params = sliceTo(
+            astgen.refs.items[@enumToInt(astgen.getInst(decl).@"fn".params)..],
+            .none,
         );
         const arg_nodes = astgen.tree.spanToList(node_lhs);
         if (params.len != arg_nodes.len) {
@@ -2354,13 +2349,13 @@ fn genFnCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
         args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
     } else {
-        if (astgen.getInst(decl).@"fn".params != null_node) {
+        if (astgen.getInst(decl).@"fn".params != .none) {
             try astgen.errors.add(node_loc, "function params count mismatch", .{}, null);
             return error.AnalysisFail;
         }
     }
 
-    astgen.instructions.items[fn_call] = .{ .call = .{ .@"fn" = decl, .args = args } };
+    astgen.instructions.items[@enumToInt(fn_call)] = .{ .call = .{ .@"fn" = decl, .args = args } };
     return fn_call;
 }
 
@@ -2372,9 +2367,9 @@ fn genStructConstruct(astgen: *AstGen, scope: *Scope, decl: InstIndex, node: Nod
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
-    const struct_members = std.mem.sliceTo(
-        astgen.refs.items[astgen.getInst(decl).@"struct".members..],
-        null_inst,
+    const struct_members = sliceTo(
+        astgen.refs.items[@enumToInt(astgen.getInst(decl).@"struct".members)..],
+        .none,
     );
     if (node_lhs != null_node) {
         const arg_nodes = astgen.tree.spanToList(node_lhs);
@@ -2405,7 +2400,7 @@ fn genStructConstruct(astgen: *AstGen, scope: *Scope, decl: InstIndex, node: Nod
     }
 
     const members = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-    astgen.instructions.items[struct_construct] = .{
+    astgen.instructions.items[@enumToInt(struct_construct)] = .{
         .struct_construct = .{
             .@"struct" = decl,
             .members = members,
@@ -2424,7 +2419,7 @@ fn genBitcast(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const rhs = try astgen.genExpr(scope, node_rhs);
     const rhs_res = astgen.resolve(rhs);
     const rhs_res_inst = astgen.getInst(rhs_res);
-    var result_type = null_inst;
+    var result_type = InstIndex.none;
 
     const lhs_is_32bit = switch (lhs_inst) {
         .int => |int| int.type == .u32 or int.type == .i32,
@@ -2507,7 +2502,7 @@ fn genBitcast(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
-    if (result_type != null_inst) {
+    if (result_type != .none) {
         const inst = try astgen.addInst(.{
             .bitcast = .{
                 .type = lhs,
@@ -2754,12 +2749,12 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     const base_struct = astgen.getInst(base_type).struct_ref;
     const struct_members = astgen.getInst(base_struct).@"struct".members;
-    for (std.mem.sliceTo(astgen.refs.items[struct_members..], null_inst)) |member| {
+    for (sliceTo(astgen.refs.items[@enumToInt(struct_members)..], .none)) |member| {
         const member_data = astgen.getInst(member).struct_member;
         if (std.mem.eql(
             u8,
             astgen.tree.tokenLoc(astgen.tree.nodeRHS(node)).slice(astgen.tree.source),
-            std.mem.sliceTo(astgen.strings.items[member_data.name..], 0),
+            sliceTo(astgen.strings.items[@enumToInt(member_data.name)..], 0),
         )) {
             const inst = try astgen.addInst(.{
                 .field_access = .{
@@ -2776,7 +2771,7 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         astgen.tree.nodeLoc(node),
         "struct '{s}' has no member named '{s}'",
         .{
-            std.mem.sliceTo(astgen.strings.items[astgen.getInst(base_struct).@"struct".name..], 0),
+            sliceTo(astgen.strings.items[@enumToInt(astgen.getInst(base_struct).@"struct".name)..], 0),
             astgen.tree.tokenLoc(astgen.tree.nodeRHS(node)).slice(astgen.tree.source),
         },
         null,
@@ -2788,8 +2783,8 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
     return switch (astgen.tree.nodeTag(node)) {
         .bool_type => try astgen.addInst(.{ .bool = .{ .value = null } }),
         .number_type => try astgen.genNumberType(node),
-        .vector_type => try astgen.genVector(scope, node, null_inst, null),
-        .matrix_type => try astgen.genMatrix(scope, node, null_inst, null),
+        .vector_type => try astgen.genVector(scope, node, .none, null),
+        .matrix_type => try astgen.genMatrix(scope, node, .none, null),
         .atomic_type => try astgen.genAtomicType(scope, node),
         .array_type => try astgen.genArrayType(scope, node),
         .ptr_type => try astgen.genPtrType(scope, node),
@@ -2879,7 +2874,7 @@ fn genVector(astgen: *AstGen, scope: *Scope, node: NodeIndex, element_type: Inst
     }
 
     const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-    astgen.instructions.items[inst] = .{
+    astgen.instructions.items[@enumToInt(inst)] = .{
         .vector = .{
             .size = switch (token_tag) {
                 .k_vec2 => .two,
@@ -2919,7 +2914,7 @@ fn genMatrix(astgen: *AstGen, scope: *Scope, node: NodeIndex, element_type: Inst
     }
 
     const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-    astgen.instructions.items[inst] = .{
+    astgen.instructions.items[@enumToInt(inst)] = .{
         .matrix = .{
             .cols = matrixCols(token_tag),
             .rows = matrixRows(token_tag),
@@ -2956,7 +2951,7 @@ fn genAtomicType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const elem_type = try astgen.genType(scope, node_lhs);
 
     if (astgen.getInst(elem_type) == .int) {
-        astgen.instructions.items[inst] = .{ .atomic_type = .{ .elem_type = elem_type } };
+        astgen.instructions.items[@enumToInt(inst)] = .{ .atomic_type = .{ .elem_type = elem_type } };
         return inst;
     }
 
@@ -3009,14 +3004,13 @@ fn genPtrType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 };
             }
 
-            astgen.instructions.items[inst] = .{
+            astgen.instructions.items[@enumToInt(inst)] = .{
                 .ptr_type = .{
                     .elem_type = elem_type,
                     .addr_space = addr_space,
                     .access_mode = access_mode,
                 },
             };
-
             return inst;
         },
         else => {},
@@ -3047,7 +3041,7 @@ fn genArrayType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .matrix,
         => {
             if (astgen.getInst(elem_type) == .array_type) {
-                if (astgen.getInst(elem_type).array_type.size == null_inst) {
+                if (astgen.getInst(elem_type).array_type.size == .none) {
                     try astgen.errors.add(
                         astgen.tree.nodeLoc(node_lhs),
                         "array component type can not be a runtime-sized array",
@@ -3059,12 +3053,12 @@ fn genArrayType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             }
 
             const size_node = astgen.tree.nodeRHS(node);
-            var size = null_inst;
+            var size = InstIndex.none;
             if (size_node != null_node) {
                 size = try astgen.genExpr(scope, size_node);
             }
 
-            astgen.instructions.items[inst] = .{
+            astgen.instructions.items[@enumToInt(inst)] = .{
                 .array_type = .{
                     .elem_type = elem_type,
                     .size = size,
@@ -3103,7 +3097,7 @@ fn genSampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstI
 
     if (elem_type_inst == .int or (elem_type_inst == .float and elem_type_inst.float.type == .f32)) {
         const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-        astgen.instructions.items[inst] = .{
+        astgen.instructions.items[@enumToInt(inst)] = .{
             .sampled_texture_type = .{
                 .kind = switch (token_tag) {
                     .k_texture_1d => .@"1d",
@@ -3136,7 +3130,7 @@ fn genSampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstI
 fn genMultisampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const inst = try astgen.allocInst();
     const node_lhs = astgen.tree.nodeLHS(node);
-    var elem_type = null_inst;
+    var elem_type = InstIndex.none;
 
     if (node_lhs != null_node) {
         elem_type = try astgen.genType(scope, node_lhs);
@@ -3158,7 +3152,7 @@ fn genMultisampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !
     }
 
     const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-    astgen.instructions.items[inst] = .{
+    astgen.instructions.items[@enumToInt(inst)] = .{
         .multisampled_texture_type = .{
             .kind = switch (token_tag) {
                 .k_texture_multisampled_2d => .@"2d",
@@ -3261,7 +3255,7 @@ fn findSymbol(astgen: *AstGen, scope: *Scope, token: TokenIndex) error{ OutOfMem
             const decl_node = decl.key_ptr.*;
             const decl_inst = try decl.value_ptr.*;
             if (std.mem.eql(u8, name, astgen.tree.declNameLoc(decl_node).?.slice(astgen.tree.source))) {
-                if (decl_inst == null_inst) {
+                if (decl_inst == .none) {
                     // declaration has not analysed
                     switch (s.tag) {
                         .root => return astgen.genGlobalDecl(s, decl_node),
@@ -3379,7 +3373,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) InstIndex {
 
                 const decl_type = decl.type;
                 const decl_expr = decl.expr;
-                if (decl_type != null_inst) {
+                if (decl_type != .none) {
                     if (in_deref) {
                         return astgen.getInst(decl_type).ptr_type.elem_type;
                     }
@@ -3568,20 +3562,20 @@ fn eqlMatrix(astgen: *AstGen, a: Air.Inst.Matrix, b: Air.Inst.Matrix) bool {
 
 fn allocInst(astgen: *AstGen) error{OutOfMemory}!InstIndex {
     try astgen.instructions.append(astgen.allocator, undefined);
-    return @intCast(InstIndex, astgen.instructions.items.len - 1);
+    return @intToEnum(InstIndex, astgen.instructions.items.len - 1);
 }
 
 fn addInst(astgen: *AstGen, inst: Inst) error{OutOfMemory}!InstIndex {
     try astgen.instructions.append(astgen.allocator, inst);
-    return @intCast(InstIndex, astgen.instructions.items.len - 1);
+    return @intToEnum(InstIndex, astgen.instructions.items.len - 1);
 }
 
 fn addRefList(astgen: *AstGen, list: []const InstIndex) error{OutOfMemory}!RefIndex {
     const len = list.len + 1;
     try astgen.refs.ensureUnusedCapacity(astgen.allocator, len);
     astgen.refs.appendSliceAssumeCapacity(list);
-    astgen.refs.appendAssumeCapacity(null_inst);
-    return @intCast(RefIndex, astgen.refs.items.len - len);
+    astgen.refs.appendAssumeCapacity(.none);
+    return @intToEnum(RefIndex, astgen.refs.items.len - len);
 }
 
 fn addString(astgen: *AstGen, str: []const u8) error{OutOfMemory}!StringIndex {
@@ -3589,11 +3583,11 @@ fn addString(astgen: *AstGen, str: []const u8) error{OutOfMemory}!StringIndex {
     try astgen.strings.ensureUnusedCapacity(astgen.allocator, len);
     astgen.strings.appendSliceAssumeCapacity(str);
     astgen.strings.appendAssumeCapacity(0);
-    return @intCast(StringIndex, astgen.strings.items.len - len);
+    return @intToEnum(StringIndex, astgen.strings.items.len - len);
 }
 
 fn getInst(astgen: *AstGen, inst: InstIndex) Inst {
-    return astgen.instructions.items[inst];
+    return astgen.instructions.items[@enumToInt(inst)];
 }
 
 fn failArgCountMismatch(
