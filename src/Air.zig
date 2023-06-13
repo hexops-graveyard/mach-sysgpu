@@ -1,5 +1,5 @@
 //! Analyzed Intermediate Representation.
-//! This data is produced by AstGen and consumed by codegen.
+//! This data is produced by AstGen and consumed by CodeGen.
 
 const std = @import("std");
 const AstGen = @import("AstGen.zig");
@@ -147,6 +147,7 @@ pub const Inst = union(enum) {
     @"continue",
 
     field_access: FieldAccess,
+    swizzle_access: SwizzleAccess,
     index_access: IndexAccess,
     call: FnCall,
     struct_construct: StructConstruct,
@@ -155,6 +156,41 @@ pub const Inst = union(enum) {
     builtin_any: InstIndex,
     builtin_select: BuiltinSelect,
     builtin_abs: InstIndex,
+    builtin_acos: InstIndex,
+    builtin_acosh: InstIndex,
+    builtin_asin: InstIndex,
+    builtin_asinh: InstIndex,
+    builtin_atan: InstIndex,
+    builtin_atanh: InstIndex,
+    builtin_ceil: InstIndex,
+    builtin_cos: InstIndex,
+    builtin_cosh: InstIndex,
+    builtin_count_leading_zeros: InstIndex,
+    builtin_count_one_bits: InstIndex,
+    builtin_count_trailing_zeros: InstIndex,
+    builtin_degrees: InstIndex,
+    builtin_exp: InstIndex,
+    builtin_exp2: InstIndex,
+    builtin_first_leading_bit: InstIndex,
+    builtin_first_trailing_bit: InstIndex,
+    builtin_floor: InstIndex,
+    builtin_fract: InstIndex,
+    builtin_inverse_sqrt: InstIndex,
+    builtin_length: InstIndex,
+    builtin_log: InstIndex,
+    builtin_log2: InstIndex,
+    builtin_quantize_to_F16: InstIndex,
+    builtin_radians: InstIndex,
+    builtin_reverseBits: InstIndex,
+    builtin_round: InstIndex,
+    builtin_saturate: InstIndex,
+    builtin_sign: InstIndex,
+    builtin_sin: InstIndex,
+    builtin_sinh: InstIndex,
+    builtin_sqrt: InstIndex,
+    builtin_tan: InstIndex,
+    builtin_tanh: InstIndex,
+    builtin_trunc: InstIndex,
     builtin_dpdx: InstIndex,
     builtin_dpdx_coarse: InstIndex,
     builtin_dpdx_fine: InstIndex,
@@ -330,8 +366,10 @@ pub const Inst = union(enum) {
     };
 
     pub const Int = struct {
-        type: enum { u32, i32, abstract },
+        type: Type,
         value: ?Value,
+
+        pub const Type = enum { u32, i32, abstract };
 
         pub const Value = union(enum) {
             literal: Literal,
@@ -345,8 +383,10 @@ pub const Inst = union(enum) {
     };
 
     pub const Float = struct {
-        type: enum { f32, f16, abstract },
+        type: Type,
         value: ?Value,
+
+        pub const Type = enum { f32, f16, abstract };
 
         pub const Value = union(enum) {
             literal: Literal,
@@ -479,6 +519,20 @@ pub const Inst = union(enum) {
         base: InstIndex,
         field: InstIndex,
         name: StringIndex,
+    };
+
+    pub const SwizzleAccess = struct {
+        base: InstIndex,
+        size: Size,
+        pattern: [4]Component,
+
+        pub const Size = enum(u3) {
+            one = 1,
+            two = 2,
+            three = 3,
+            four = 4,
+        };
+        pub const Component = enum { x, y, z, w };
     };
 
     pub const IndexAccess = struct {
