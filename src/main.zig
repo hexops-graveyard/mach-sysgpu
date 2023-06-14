@@ -21,5 +21,5 @@ test {
     std.testing.refAllDecls(Token);
     std.testing.refAllDecls(Tokenizer);
     std.testing.refAllDecls(ErrorList);
-    std.testing.refAllDecls(@import("print_air.zig"));
+    _ = printAir;
 }

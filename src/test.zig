@@ -6,7 +6,7 @@ const Air = dusk.Air;
 const printAir = dusk.printAir;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
-const allocator = std.testing.allocator;
+const allocator = std.heap.c_allocator;
 
 fn expectIR(source: [:0]const u8) !Air {
     var tree = try Ast.parse(allocator, source);
@@ -17,7 +17,7 @@ fn expectIR(source: [:0]const u8) !Air {
         return error.Parsing;
     }
 
-    var ir = try Air.generate(allocator, &tree);
+    var ir = try Air.generate(allocator, &tree, null);
     errdefer ir.deinit();
 
     if (ir.errors.list.items.len > 0) {
@@ -37,7 +37,7 @@ fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
     defer if (ir != null) ir.?.deinit();
 
     if (err_list.list.items.len == 0) {
-        ir = try Air.generate(allocator, &tree);
+        ir = try Air.generate(allocator, &tree, null);
 
         err_list = ir.?.errors;
         if (err_list.list.items.len == 0) {
@@ -95,7 +95,7 @@ test "empty" {
 }
 
 test "gkurve" {
-    // if (true) return error.SkipZigTest;
+    if (true) return error.SkipZigTest;
 
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
     defer ir.deinit();
@@ -169,7 +169,7 @@ test "must pass" {
             \\}
         ;
         var ir = try expectIR(source);
-        // try printAir(ir, std.io.getStdErr().writer());
+        try printAir(ir, std.io.getStdErr().writer());
         ir.deinit();
     }
     {

@@ -9,6 +9,7 @@ const Air = @This();
 
 allocator: std.mem.Allocator,
 globals_index: RefIndex,
+entry_point: InstIndex,
 instructions: []const Inst,
 refs: []const InstIndex,
 strings: []const u8,
@@ -22,12 +23,13 @@ pub fn deinit(self: *Air) void {
     self.* = undefined;
 }
 
-pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemory}!Air {
+pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]const u8) error{OutOfMemory}!Air {
     var astgen = AstGen{
         .allocator = allocator,
         .tree = tree,
-        .errors = try ErrorList.init(allocator),
         .scope_pool = std.heap.MemoryPool(AstGen.Scope).init(allocator),
+        .entry_point_name = entry_point,
+        .errors = try ErrorList.init(allocator),
     };
     defer {
         astgen.scope_pool.deinit();
@@ -48,6 +50,7 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast) error{OutOfMemor
         .refs = try astgen.refs.toOwnedSlice(allocator),
         .strings = try astgen.strings.toOwnedSlice(allocator),
         .errors = astgen.errors,
+        .entry_point = astgen.entry_point,
     };
 }
 

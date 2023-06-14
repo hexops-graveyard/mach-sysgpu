@@ -23,8 +23,10 @@ instructions: std.ArrayListUnmanaged(Inst) = .{},
 refs: std.ArrayListUnmanaged(InstIndex) = .{},
 strings: std.ArrayListUnmanaged(u8) = .{},
 scratch: std.ArrayListUnmanaged(InstIndex) = .{},
-errors: ErrorList,
+entry_point: InstIndex = .none,
+entry_point_name: ?[]const u8 = null,
 scope_pool: std.heap.MemoryPool(Scope),
+errors: ErrorList,
 
 pub const Scope = struct {
     tag: Tag,
@@ -71,6 +73,10 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
         }
 
         try astgen.scratch.append(astgen.allocator, global);
+    }
+
+    if (astgen.entry_point_name != null and astgen.entry_point == .none) {
+        try astgen.errors.add(Loc{ .start = 0, .end = 0 }, "entry point not found", .{}, null);
     }
 
     return astgen.addRefList(astgen.scratch.items[scratch_top..]);
@@ -577,8 +583,14 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
         params = try astgen.genFnParams(scope, fn_proto.params);
     }
 
-    const name_loc = astgen.tree.declNameLoc(node).?;
-    const name = try astgen.addString(name_loc.slice(astgen.tree.source));
+    const name_slice = astgen.tree.declNameLoc(node).?.slice(astgen.tree.source);
+    const name = try astgen.addString(name_slice);
+    if (astgen.entry_point_name) |entry_point_name| {
+        if (std.mem.eql(u8, name_slice, entry_point_name)) {
+            astgen.entry_point = fn_decl;
+        }
+    }
+
     const block = try astgen.genBlock(scope, node_rhs);
 
     if (return_type != .none and !scope.tag.@"fn".returned) {
