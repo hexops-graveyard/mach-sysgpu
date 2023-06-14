@@ -1,6 +1,5 @@
 const std = @import("std");
 const Air = @import("Air.zig");
-const sliceTo = std.mem.sliceTo;
 
 const indention_size = 2;
 
@@ -10,7 +9,7 @@ pub fn printAir(ir: Air, writer: anytype) !void {
         .writer = writer,
         .tty = std.io.tty.Config{ .escape_codes = {} },
     };
-    const globals = sliceTo(ir.refs[@enumToInt(ir.globals_index)..], .none);
+    const globals = ir.refToList(ir.globals_index);
     for (globals) |ref| {
         try p.printInst(0, ref);
     }
@@ -185,7 +184,7 @@ fn Printer(comptime Writer: type) type {
             try self.printFieldString(indent + 1, "name", inst.@"struct".name);
             try self.printFieldName(indent + 1, "members");
             try self.listStart();
-            const members = sliceTo(self.ir.refs[@enumToInt(inst.@"struct".members)..], .none);
+            const members = self.refToList(inst.@"struct".members);
             for (members) |member| {
                 const member_index = member;
                 const member_inst = self.ir.instructions[@enumToInt(member_index)];
@@ -221,7 +220,7 @@ fn Printer(comptime Writer: type) type {
             if (inst.@"fn".params != .none) {
                 try self.printFieldName(indent + 1, "params");
                 try self.listStart();
-                const params = sliceTo(self.ir.refs[@enumToInt(inst.@"fn".params)..], .none);
+                const params = self.refToList(inst.@"fn".params);
                 for (params) |arg| {
                     const arg_index = arg;
                     const arg_inst = self.ir.instructions[@enumToInt(arg_index)];
@@ -266,7 +265,7 @@ fn Printer(comptime Writer: type) type {
 
         fn printBlock(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[@enumToInt(index)].block;
-            const statements = sliceTo(self.ir.refs[@enumToInt(inst)..], .none);
+            const statements = self.refToList(inst);
             try self.listStart();
             for (statements) |statement| {
                 try self.printIndent(indent + 1);

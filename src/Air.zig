@@ -54,6 +54,10 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
     };
 }
 
+pub fn refToList(self: Air, ref: RefIndex) []const InstIndex {
+    return std.mem.sliceTo(self.refs[ref..], .none);
+}
+
 pub fn getStr(self: Air, index: StringIndex) []const u8 {
     return std.mem.sliceTo(self.strings[@enumToInt(index)..], 0);
 }
