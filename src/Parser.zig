@@ -6,17 +6,17 @@ const Extension = @import("main.zig").Extension;
 const ErrorList = @import("ErrorList.zig");
 const Node = Ast.Node;
 const NodeIndex = Ast.NodeIndex;
-const null_node = Ast.null_node;
+const TokenIndex = Ast.TokenIndex;
 const fieldNames = std.meta.fieldNames;
 const Parser = @This();
 
 allocator: std.mem.Allocator,
 source: []const u8,
-tok_i: NodeIndex,
+tok_i: TokenIndex = @intToEnum(TokenIndex, 0),
 tokens: std.MultiArrayList(Token),
-nodes: std.MultiArrayList(Node),
-extra: std.ArrayListUnmanaged(NodeIndex),
-scratch: std.ArrayListUnmanaged(NodeIndex),
+nodes: std.MultiArrayList(Node) = .{},
+extra: std.ArrayListUnmanaged(u32) = .{},
+scratch: std.ArrayListUnmanaged(NodeIndex) = .{},
 errors: ErrorList,
 extensions: Extension.Array,
 
@@ -37,9 +37,9 @@ pub fn translationUnit(p: *Parser) !void {
         try p.scratch.append(p.allocator, decl);
     }
 
-    try p.extra.appendSlice(p.allocator, p.scratch.items);
-    p.nodes.items(.lhs)[root] = @intCast(NodeIndex, p.extra.items.len - p.scratch.items.len);
-    p.nodes.items(.rhs)[root] = @intCast(NodeIndex, p.extra.items.len);
+    try p.extra.appendSlice(p.allocator, @ptrCast([]const u32, p.scratch.items));
+    p.nodes.items(.lhs)[@enumToInt(root)] = @intToEnum(NodeIndex, p.extra.items.len - p.scratch.items.len);
+    p.nodes.items(.rhs)[@enumToInt(root)] = @intToEnum(NodeIndex, p.extra.items.len);
 }
 
 // Based on https://gpuweb.github.io/gpuweb/wgsl/#template-lists-sec
@@ -330,7 +330,7 @@ fn attribute(p: *Parser) !?NodeIndex {
         .builtin => {
             _ = try p.expectToken(.paren_left);
             node.tag = .attr_builtin;
-            node.lhs = try p.expectBuiltin();
+            node.lhs = (try p.expectBuiltin()).asNodeIndex();
             _ = p.eatToken(.comma);
             _ = try p.expectToken(.paren_right);
         },
@@ -364,9 +364,9 @@ fn attribute(p: *Parser) !?NodeIndex {
         .interpolate => {
             _ = try p.expectToken(.paren_left);
             node.tag = .attr_interpolate;
-            node.lhs = try p.expectInterpolationType();
+            node.lhs = (try p.expectInterpolationType()).asNodeIndex();
             if (p.eatToken(.comma) != null and p.peekToken(.tag, 0) != .paren_right) {
-                node.rhs = try p.expectInterpolationSample();
+                node.rhs = (try p.expectInterpolationSample()).asNodeIndex();
                 _ = p.eatToken(.comma);
             }
             _ = try p.expectToken(.paren_right);
@@ -376,7 +376,7 @@ fn attribute(p: *Parser) !?NodeIndex {
     return try p.addNode(node);
 }
 
-fn expectBuiltin(p: *Parser) !NodeIndex {
+fn expectBuiltin(p: *Parser) !TokenIndex {
     const token = p.advanceToken();
     if (p.getToken(.tag, token) == .ident) {
         const str = p.getToken(.loc, token).slice(p.source);
@@ -392,7 +392,7 @@ fn expectBuiltin(p: *Parser) !NodeIndex {
     return error.Parsing;
 }
 
-fn expectInterpolationType(p: *Parser) !NodeIndex {
+fn expectInterpolationType(p: *Parser) !TokenIndex {
     const token = p.advanceToken();
     if (p.getToken(.tag, token) == .ident) {
         const str = p.getToken(.loc, token).slice(p.source);
@@ -408,7 +408,7 @@ fn expectInterpolationType(p: *Parser) !NodeIndex {
     return error.Parsing;
 }
 
-fn expectInterpolationSample(p: *Parser) !NodeIndex {
+fn expectInterpolationSample(p: *Parser) !TokenIndex {
     const token = p.advanceToken();
     if (p.getToken(.tag, token) == .ident) {
         const str = p.getToken(.loc, token).slice(p.source);
@@ -428,25 +428,22 @@ fn globalVar(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     const var_token = p.eatToken(.k_var) orelse return null;
 
     // qualifier
-    var addr_space = null_node;
-    var access_mode = null_node;
+    var addr_space = TokenIndex.none;
+    var access_mode = TokenIndex.none;
     if (p.eatToken(.template_left)) |_| {
         addr_space = try p.expectAddressSpace();
-        access_mode = if (p.eatToken(.comma)) |_|
-            try p.expectAccessMode()
-        else
-            null_node;
+        if (p.eatToken(.comma)) |_| access_mode = try p.expectAccessMode();
         _ = try p.expectToken(.template_right);
     }
 
     // name, type
     const name_token = try p.expectToken(.ident);
-    var var_type = null_node;
+    var var_type = NodeIndex.none;
     if (p.eatToken(.colon)) |_| {
         var_type = try p.expectTypeSpecifier();
     }
 
-    var initializer = null_node;
+    var initializer = NodeIndex.none;
     if (p.eatToken(.equal)) |_| {
         initializer = try p.expression() orelse {
             try p.errors.add(
@@ -459,7 +456,7 @@ fn globalVar(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
         };
     }
 
-    if (initializer == null_node and var_type == null_node) {
+    if (initializer == .none and var_type == .none) {
         try p.errors.add(
             p.getToken(.loc, var_token),
             "initializer expression is required while type is unknown",
@@ -470,7 +467,7 @@ fn globalVar(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     }
 
     const extra = try p.addExtra(Node.GlobalVar{
-        .attrs = attrs orelse null_node,
+        .attrs = attrs orelse .none,
         .name = name_token,
         .addr_space = addr_space,
         .access_mode = access_mode,
@@ -489,12 +486,12 @@ fn globalOverrideDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
 
     // name, type
     _ = try p.expectToken(.ident);
-    var override_type = null_node;
+    var override_type = NodeIndex.none;
     if (p.eatToken(.colon)) |_| {
         override_type = try p.expectTypeSpecifier();
     }
 
-    var initializer = null_node;
+    var initializer = NodeIndex.none;
     if (p.eatToken(.equal)) |_| {
         initializer = try p.expression() orelse {
             try p.errors.add(
@@ -508,7 +505,7 @@ fn globalOverrideDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     }
 
     const extra = try p.addExtra(Node.Override{
-        .attrs = attrs orelse null_node,
+        .attrs = attrs orelse .none,
         .type = override_type,
     });
     return try p.addNode(.{
@@ -583,7 +580,7 @@ fn structMember(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     return try p.addNode(.{
         .tag = .struct_member,
         .main_token = name_token,
-        .lhs = attrs orelse null_node,
+        .lhs = attrs orelse .none,
         .rhs = member_type,
     });
 }
@@ -611,13 +608,13 @@ fn fnDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     _ = try p.expectToken(.ident);
 
     _ = try p.expectToken(.paren_left);
-    const params = try p.parameterList() orelse null_node;
+    const params = try p.parameterList() orelse .none;
     _ = try p.expectToken(.paren_right);
 
-    var return_attrs = null_node;
-    var return_type = null_node;
+    var return_attrs = NodeIndex.none;
+    var return_type = NodeIndex.none;
     if (p.eatToken(.arrow)) |_| {
-        return_attrs = try p.attributeList() orelse null_node;
+        return_attrs = try p.attributeList() orelse .none;
         return_type = try p.expectTypeSpecifier();
     }
 
@@ -632,7 +629,7 @@ fn fnDecl(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     };
 
     const fn_proto = try p.addExtra(Node.FnProto{
-        .attrs = attrs orelse null_node,
+        .attrs = attrs orelse .none,
         .params = params,
         .return_attrs = return_attrs,
         .return_type = return_type,
@@ -677,7 +674,7 @@ fn parameter(p: *Parser, attrs: ?NodeIndex) !?NodeIndex {
     return try p.addNode(.{
         .tag = .fn_param,
         .main_token = main_token,
-        .lhs = attrs orelse null_node,
+        .lhs = attrs orelse .none,
         .rhs = param_type,
     });
 }
@@ -745,7 +742,7 @@ fn expectBlock(p: *Parser) error{ OutOfMemory, Parsing }!NodeIndex {
 
 fn block(p: *Parser) error{ OutOfMemory, Parsing }!?NodeIndex {
     const main_token = p.eatToken(.brace_left) orelse return null;
-    const statements = try p.statementList() orelse null_node;
+    const statements = try p.statementList() orelse .none;
     _ = try p.expectToken(.brace_right);
     return try p.addNode(.{
         .tag = .block,
@@ -836,16 +833,16 @@ fn forStatement(p: *Parser) !?NodeIndex {
         try p.constDecl() orelse
         try p.letDecl() orelse
         try p.varUpdateStatement() orelse
-        null_node;
+        .none;
     _ = try p.expectToken(.semicolon);
 
-    const for_cond = try p.expression() orelse null_node;
+    const for_cond = try p.expression() orelse .none;
     _ = try p.expectToken(.semicolon);
 
     // for update
     const for_update = try p.callExpr() orelse
         try p.varUpdateStatement() orelse
-        null_node;
+        .none;
 
     _ = try p.expectToken(.paren_right);
     const body = try p.expectBlock();
@@ -941,7 +938,7 @@ fn loopStatement(p: *Parser) !?NodeIndex {
 
 fn returnStatement(p: *Parser) !?NodeIndex {
     const main_token = p.eatToken(.k_return) orelse return null;
-    const expr = try p.expression() orelse null_node;
+    const expr = try p.expression() orelse .none;
     return try p.addNode(.{
         .tag = .@"return",
         .main_token = main_token,
@@ -995,7 +992,7 @@ fn switchStatement(p: *Parser) !?NodeIndex {
             try p.scratch.append(p.allocator, try p.addNode(.{
                 .tag = if (has_default) .switch_case_default else .switch_case,
                 .main_token = case_token,
-                .lhs = if (case_expr_list.len == 0) null_node else try p.listToSpan(case_expr_list),
+                .lhs = if (case_expr_list.len == 0) .none else try p.listToSpan(case_expr_list),
                 .rhs = default_body,
             }));
             p.scratch.shrinkRetainingCapacity(cases_scratch_top);
@@ -1011,31 +1008,28 @@ fn switchStatement(p: *Parser) !?NodeIndex {
         .tag = .@"switch",
         .main_token = main_token,
         .lhs = expr,
-        .rhs = if (case_list.len == 0) null_node else try p.listToSpan(case_list),
+        .rhs = if (case_list.len == 0) .none else try p.listToSpan(case_list),
     });
 }
 
 fn varDecl(p: *Parser) !?NodeIndex {
     const main_token = p.eatToken(.k_var) orelse return null;
 
-    var addr_space = null_node;
-    var access_mode = null_node;
+    var addr_space = TokenIndex.none;
+    var access_mode = TokenIndex.none;
     if (p.eatToken(.template_left)) |_| {
         addr_space = try p.expectAddressSpace();
-        access_mode = if (p.eatToken(.comma)) |_|
-            try p.expectAccessMode()
-        else
-            null_node;
+        if (p.eatToken(.comma)) |_| access_mode = try p.expectAccessMode();
         _ = try p.expectToken(.template_right);
     }
 
     const name_token = try p.expectToken(.ident);
-    var var_type = null_node;
+    var var_type = NodeIndex.none;
     if (p.eatToken(.colon)) |_| {
         var_type = try p.expectTypeSpecifier();
     }
 
-    var initializer = null_node;
+    var initializer = NodeIndex.none;
     if (p.eatToken(.equal)) |_| {
         initializer = try p.expression() orelse {
             try p.errors.add(
@@ -1066,7 +1060,7 @@ fn constDecl(p: *Parser) !?NodeIndex {
     const const_token = p.eatToken(.k_const) orelse return null;
 
     _ = try p.expectToken(.ident);
-    var const_type = null_node;
+    var const_type = NodeIndex.none;
     if (p.eatToken(.colon)) |_| {
         const_type = try p.expectTypeSpecifier();
     }
@@ -1094,7 +1088,7 @@ fn letDecl(p: *Parser) !?NodeIndex {
     const const_token = p.eatToken(.k_let) orelse return null;
 
     _ = try p.expectToken(.ident);
-    var const_type = null_node;
+    var const_type = NodeIndex.none;
     if (p.eatToken(.colon)) |_| {
         const_type = try p.expectTypeSpecifier();
     }
@@ -1245,7 +1239,7 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
         .k_f16,
         => return try p.addNode(.{ .tag = .number_type, .main_token = main_token }),
         .k_vec2, .k_vec3, .k_vec4 => {
-            var elem_type = null_node;
+            var elem_type = NodeIndex.none;
 
             if (p.eatToken(.template_left)) |_| {
                 elem_type = try p.expectTypeSpecifier();
@@ -1268,7 +1262,7 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
         .k_mat4x3,
         .k_mat4x4,
         => {
-            var elem_type = null_node;
+            var elem_type = NodeIndex.none;
 
             if (p.eatToken(.template_left)) |_| {
                 elem_type = try p.expectTypeSpecifier();
@@ -1295,8 +1289,8 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
             });
         },
         .k_array => {
-            var elem_type = null_node;
-            var size = null_node;
+            var elem_type = NodeIndex.none;
+            var size = NodeIndex.none;
 
             if (p.eatToken(.template_left)) |_| {
                 elem_type = try p.expectTypeSpecifier();
@@ -1327,7 +1321,7 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
             const addr_space = try p.expectAddressSpace();
             _ = try p.expectToken(.comma);
             const elem_type = try p.expectTypeSpecifier();
-            var access_mode = null_node;
+            var access_mode = TokenIndex.none;
             if (p.eatToken(.comma)) |_| {
                 access_mode = try p.expectAccessMode();
             }
@@ -1405,19 +1399,21 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
             return try p.addNode(.{
                 .tag = .storage_texture_type,
                 .main_token = main_token,
-                .lhs = texel_format,
-                .rhs = access_mode,
+                .lhs = texel_format.asNodeIndex(),
+                .rhs = access_mode.asNodeIndex(),
             });
         },
         else => return null,
     }
 }
 
-fn expectAddressSpace(p: *Parser) !NodeIndex {
+fn expectAddressSpace(p: *Parser) !TokenIndex {
     const token = p.advanceToken();
     if (p.getToken(.tag, token) == .ident) {
         const str = p.getToken(.loc, token).slice(p.source);
-        if (std.meta.stringToEnum(Ast.AddressSpace, str)) |_| return token;
+        if (std.meta.stringToEnum(Ast.AddressSpace, str)) |_| {
+            return token;
+        }
     }
 
     try p.errors.add(
@@ -1429,11 +1425,13 @@ fn expectAddressSpace(p: *Parser) !NodeIndex {
     return error.Parsing;
 }
 
-fn expectAccessMode(p: *Parser) !NodeIndex {
+fn expectAccessMode(p: *Parser) !TokenIndex {
     const token = p.advanceToken();
     if (p.getToken(.tag, token) == .ident) {
         const str = p.getToken(.loc, token).slice(p.source);
-        if (std.meta.stringToEnum(Ast.AccessMode, str)) |_| return token;
+        if (std.meta.stringToEnum(Ast.AccessMode, str)) |_| {
+            return token;
+        }
     }
 
     try p.errors.add(
@@ -1445,11 +1443,13 @@ fn expectAccessMode(p: *Parser) !NodeIndex {
     return error.Parsing;
 }
 
-fn expectTexelFormat(p: *Parser) !NodeIndex {
+fn expectTexelFormat(p: *Parser) !TokenIndex {
     const token = p.advanceToken();
     if (p.getToken(.tag, token) == .ident) {
         const str = p.getToken(.loc, token).slice(p.source);
-        if (std.meta.stringToEnum(Ast.TexelFormat, str)) |_| return token;
+        if (std.meta.stringToEnum(Ast.TexelFormat, str)) |_| {
+            return token;
+        }
     }
 
     try p.errors.add(
@@ -1478,7 +1478,7 @@ fn expectParenExpr(p: *Parser) !NodeIndex {
 
 fn callExpr(p: *Parser) !?NodeIndex {
     const main_token = p.tok_i;
-    var rhs = null_node;
+    var rhs = NodeIndex.none;
 
     switch (p.peekToken(.tag, 0)) {
         // fn call or struct construct
@@ -1528,7 +1528,7 @@ fn callExpr(p: *Parser) !?NodeIndex {
     return try p.addNode(.{
         .tag = .call,
         .main_token = main_token,
-        .lhs = if (args.len == 0) null_node else try p.listToSpan(args),
+        .lhs = if (args.len == 0) .none else try p.listToSpan(args),
         .rhs = rhs,
     });
 }
@@ -1874,7 +1874,7 @@ fn componentOrSwizzleSpecifier(p: *Parser, prefix: NodeIndex) !NodeIndex {
                 .tag = .field_access,
                 .main_token = dot_token,
                 .lhs = prefix_result,
-                .rhs = member_token,
+                .rhs = member_token.asNodeIndex(),
             });
         } else if (p.eatToken(.bracket_left)) |bracket_left_token| {
             const index_expr = try p.expression() orelse {
@@ -1911,7 +1911,7 @@ fn findNextGlobalDirective(p: *Parser) void {
 }
 
 fn findNextGlobalDecl(p: *Parser) void {
-    var level: NodeIndex = 0;
+    var level: u32 = 0;
     while (true) {
         switch (p.peekToken(.tag, 0)) {
             .k_fn,
@@ -1980,17 +1980,17 @@ fn findNextStmt(p: *Parser) void {
 }
 
 fn listToSpan(p: *Parser, list: []const NodeIndex) !NodeIndex {
-    try p.extra.appendSlice(p.allocator, list);
+    try p.extra.appendSlice(p.allocator, @ptrCast([]const u32, list));
     return p.addNode(.{
         .tag = .span,
         .main_token = undefined,
-        .lhs = @intCast(NodeIndex, p.extra.items.len - list.len),
-        .rhs = @intCast(NodeIndex, p.extra.items.len),
+        .lhs = @intToEnum(NodeIndex, p.extra.items.len - list.len),
+        .rhs = @intToEnum(NodeIndex, p.extra.items.len),
     });
 }
 
 fn addNode(p: *Parser, node: Node) error{OutOfMemory}!NodeIndex {
-    const i = @intCast(NodeIndex, p.nodes.len);
+    const i = @intToEnum(NodeIndex, p.nodes.len);
     try p.nodes.append(p.allocator, node);
     return i;
 }
@@ -1998,10 +1998,10 @@ fn addNode(p: *Parser, node: Node) error{OutOfMemory}!NodeIndex {
 fn addExtra(p: *Parser, extra: anytype) error{OutOfMemory}!NodeIndex {
     const fields = std.meta.fields(@TypeOf(extra));
     try p.extra.ensureUnusedCapacity(p.allocator, fields.len);
-    const result = @intCast(NodeIndex, p.extra.items.len);
+    const result = @intToEnum(NodeIndex, p.extra.items.len);
     inline for (fields) |field| {
-        comptime std.debug.assert(field.type == NodeIndex);
-        p.extra.appendAssumeCapacity(@field(extra, field.name));
+        comptime std.debug.assert(field.type == NodeIndex or field.type == TokenIndex);
+        p.extra.appendAssumeCapacity(@enumToInt(@field(extra, field.name)));
     }
     return result;
 }
@@ -2009,30 +2009,30 @@ fn addExtra(p: *Parser, extra: anytype) error{OutOfMemory}!NodeIndex {
 fn getToken(
     p: Parser,
     comptime field: Ast.TokenList.Field,
-    index: NodeIndex,
+    index: TokenIndex,
 ) std.meta.fieldInfo(Token, field).type {
-    return p.tokens.items(field)[index];
+    return p.tokens.items(field)[@enumToInt(index)];
 }
 
 fn peekToken(
     p: Parser,
     comptime field: Ast.TokenList.Field,
-    offset: NodeIndex,
+    offset: isize,
 ) std.meta.fieldInfo(Token, field).type {
-    return p.getToken(field, p.tok_i + offset);
+    return p.tokens.items(field)[@intCast(usize, @intCast(isize, @enumToInt(p.tok_i)) + offset)];
 }
 
-fn advanceToken(p: *Parser) NodeIndex {
+fn advanceToken(p: *Parser) TokenIndex {
     const prev = p.tok_i;
-    p.tok_i = std.math.min(prev +| 1, p.tokens.len);
+    p.tok_i = @intToEnum(TokenIndex, std.math.min(@enumToInt(prev) + 1, p.tokens.len));
     return prev;
 }
 
-fn eatToken(p: *Parser, tag: Token.Tag) ?NodeIndex {
+fn eatToken(p: *Parser, tag: Token.Tag) ?TokenIndex {
     return if (p.peekToken(.tag, 0) == tag) p.advanceToken() else null;
 }
 
-fn expectToken(p: *Parser, tag: Token.Tag) !NodeIndex {
+fn expectToken(p: *Parser, tag: Token.Tag) !TokenIndex {
     const token = p.advanceToken();
     if (p.getToken(.tag, token) == tag) return token;
 
