@@ -13,7 +13,7 @@ pub const TokenList = std.MultiArrayList(Token);
 source: []const u8,
 tokens: TokenList.Slice,
 nodes: NodeList.Slice,
-extra: []const NodeIndex,
+extra: []const u32,
 errors: ErrorList,
 
 pub fn deinit(tree: *Ast, allocator: std.mem.Allocator) void {
@@ -29,7 +29,6 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
     var p = Parser{
         .allocator = allocator,
         .source = source,
-        .tok_i = 0,
         .tokens = blk: {
             const estimated_tokens = source.len / 8;
 
@@ -47,9 +46,6 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
 
             break :blk tokens;
         },
-        .nodes = .{},
-        .extra = .{},
-        .scratch = .{},
         .errors = try ErrorList.init(allocator),
         .extensions = Extension.Array.initFill(false),
     };
@@ -77,41 +73,40 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
 
 pub fn spanToList(tree: Ast, span: NodeIndex) []const NodeIndex {
     std.debug.assert(tree.nodeTag(span) == .span);
-    return tree.extra[tree.nodeLHS(span)..tree.nodeRHS(span)];
+    return @ptrCast([]const NodeIndex, tree.extra[@enumToInt(tree.nodeLHS(span))..@enumToInt(tree.nodeRHS(span))]);
 }
 
 pub fn extraData(tree: Ast, comptime T: type, index: NodeIndex) T {
     const fields = std.meta.fields(T);
     var result: T = undefined;
     inline for (fields, 0..) |field, i| {
-        comptime std.debug.assert(field.type == NodeIndex);
-        @field(result, field.name) = tree.extra[index + i];
+        @field(result, field.name) = @intToEnum(field.type, tree.extra[@enumToInt(index) + i]);
     }
     return result;
 }
 
-pub fn tokenTag(tree: Ast, i: NodeIndex) Token.Tag {
-    return tree.tokens.items(.tag)[i];
+pub fn tokenTag(tree: Ast, i: TokenIndex) Token.Tag {
+    return tree.tokens.items(.tag)[@enumToInt(i)];
 }
 
-pub fn tokenLoc(tree: Ast, i: NodeIndex) Token.Loc {
-    return tree.tokens.items(.loc)[i];
+pub fn tokenLoc(tree: Ast, i: TokenIndex) Token.Loc {
+    return tree.tokens.items(.loc)[@enumToInt(i)];
 }
 
 pub fn nodeTag(tree: Ast, i: NodeIndex) Node.Tag {
-    return tree.nodes.items(.tag)[i];
+    return tree.nodes.items(.tag)[@enumToInt(i)];
 }
 
-pub fn nodeToken(tree: Ast, i: NodeIndex) NodeIndex {
-    return tree.nodes.items(.main_token)[i];
+pub fn nodeToken(tree: Ast, i: NodeIndex) TokenIndex {
+    return tree.nodes.items(.main_token)[@enumToInt(i)];
 }
 
 pub fn nodeLHS(tree: Ast, i: NodeIndex) NodeIndex {
-    return tree.nodes.items(.lhs)[i];
+    return tree.nodes.items(.lhs)[@enumToInt(i)];
 }
 
 pub fn nodeRHS(tree: Ast, i: NodeIndex) NodeIndex {
-    return tree.nodes.items(.rhs)[i];
+    return tree.nodes.items(.rhs)[@enumToInt(i)];
 }
 
 pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
@@ -122,7 +117,7 @@ pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
             loc.end = lhs_loc.end;
         },
         .field_access => {
-            const component_loc = tree.tokenLoc(tree.nodeToken(i) + 1);
+            const component_loc = tree.tokenLoc(@intToEnum(TokenIndex, @enumToInt(tree.nodeToken(i)) + 1));
             loc.end = component_loc.end;
         },
         else => {},
@@ -140,21 +135,37 @@ pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
         .let,
         .override,
         .type_alias,
-        => tree.nodeToken(node) + 1,
+        => @intToEnum(TokenIndex, @enumToInt(tree.nodeToken(node)) + 1),
         .struct_member, .fn_param => tree.nodeToken(node),
         else => return null,
     };
     return tree.tokenLoc(token);
 }
 
-pub const NodeIndex = u32;
-pub const TokenIndex = u32;
-pub const null_node: NodeIndex = std.math.maxInt(NodeIndex);
+pub const NodeIndex = enum(u32) {
+    none = std.math.maxInt(u32),
+    globals = 0,
+    _,
+
+    pub fn asTokenIndex(self: NodeIndex) TokenIndex {
+        return @intToEnum(TokenIndex, @enumToInt(self));
+    }
+};
+
+pub const TokenIndex = enum(u32) {
+    none = std.math.maxInt(u32),
+    _,
+
+    pub fn asNodeIndex(self: TokenIndex) NodeIndex {
+        return @intToEnum(NodeIndex, @enumToInt(self));
+    }
+};
+
 pub const Node = struct {
     tag: Tag,
-    main_token: NodeIndex,
-    lhs: NodeIndex = null_node,
-    rhs: NodeIndex = null_node,
+    main_token: TokenIndex,
+    lhs: NodeIndex = .none,
+    rhs: NodeIndex = .none,
 
     pub const Tag = enum {
         /// an slice NodeIndex in extra [LHS..RHS]
@@ -610,69 +621,69 @@ pub const Node = struct {
 
     pub const GlobalVar = struct {
         /// span(Attr)?
-        attrs: NodeIndex = null_node,
+        attrs: NodeIndex = .none,
         /// Token(ident)
-        name: NodeIndex,
+        name: TokenIndex,
         /// Token(AddressSpace)?
-        addr_space: NodeIndex = null_node,
+        addr_space: TokenIndex = .none,
         /// Token(AccessMode)?
-        access_mode: NodeIndex = null_node,
+        access_mode: TokenIndex = .none,
         /// Type?
-        type: NodeIndex = null_node,
+        type: NodeIndex = .none,
     };
 
     pub const Var = struct {
         /// Token(ident)
-        name: NodeIndex,
+        name: TokenIndex,
         /// Token(AddressSpace)?
-        addr_space: NodeIndex = null_node,
+        addr_space: TokenIndex = .none,
         /// Token(AccessMode)?
-        access_mode: NodeIndex = null_node,
+        access_mode: TokenIndex = .none,
         /// Type?
-        type: NodeIndex = null_node,
+        type: NodeIndex = .none,
     };
 
     pub const Override = struct {
         /// span(Attr)?
-        attrs: NodeIndex = null_node,
+        attrs: NodeIndex = .none,
         /// Type?
-        type: NodeIndex = null_node,
+        type: NodeIndex = .none,
     };
 
     pub const PtrType = struct {
         /// Token(AddressSpace)
-        addr_space: NodeIndex,
+        addr_space: TokenIndex,
         /// Token(AccessMode)?
-        access_mode: NodeIndex = null_node,
+        access_mode: TokenIndex = .none,
     };
 
     pub const WorkgroupSize = struct {
         /// Expr
         x: NodeIndex,
         /// Expr?
-        y: NodeIndex = null_node,
+        y: NodeIndex = .none,
         /// Expr?
-        z: NodeIndex = null_node,
+        z: NodeIndex = .none,
     };
 
     pub const FnProto = struct {
         /// span(Attr)?
-        attrs: NodeIndex = null_node,
+        attrs: NodeIndex = .none,
         /// span(fn_param)?
-        params: NodeIndex = null_node,
+        params: NodeIndex = .none,
         /// span(Attr)?
-        return_attrs: NodeIndex = null_node,
+        return_attrs: NodeIndex = .none,
         /// Type?
-        return_type: NodeIndex = null_node,
+        return_type: NodeIndex = .none,
     };
 
     pub const ForHeader = struct {
         /// var, const, let, phony_assign, compound_assign
-        init: NodeIndex = null_node,
+        init: NodeIndex = .none,
         /// Expr
-        cond: NodeIndex = null_node,
+        cond: NodeIndex = .none,
         /// call, phony_assign, compound_assign
-        update: NodeIndex = null_node,
+        update: NodeIndex = .none,
     };
 };
 
