@@ -107,7 +107,7 @@ fn Printer(comptime Writer: type) type {
                 .struct_ref, .var_ref => |ref| {
                     try self.instStart(index);
                     try self.tty.setColor(self.writer, .yellow);
-                    try self.writer.print("{d}", .{ref});
+                    try self.writer.print("{d}", .{@enumToInt(ref)});
                     try self.tty.setColor(self.writer, .reset);
                     try self.instEnd();
                 },
@@ -444,7 +444,7 @@ fn Printer(comptime Writer: type) type {
             try self.writer.writeAll("<");
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .blue);
-            try self.writer.print("{d}", .{index});
+            try self.writer.print("{d}", .{@enumToInt(index)});
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .dim);
             try self.writer.writeAll(">");
@@ -467,7 +467,7 @@ fn Printer(comptime Writer: type) type {
             try self.writer.writeAll("<");
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .blue);
-            try self.writer.print("{d}", .{index});
+            try self.writer.print("{d}", .{@enumToInt(index)});
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .dim);
             try self.writer.writeAll(">");
