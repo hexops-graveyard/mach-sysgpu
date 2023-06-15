@@ -246,53 +246,62 @@ test "must pass" {
 }
 
 test "integer/float literals" {
-    // TODO
-    // const source =
-    //     \\var a = 1u;
-    //     \\var b = +123;
-    //     \\var c = 0;
-    //     \\var d = 0i;
-    //     \\
-    //     \\var e = 0x123;
-    //     \\var f = 0X123u;
-    //     \\//var g = 0x3f;
-    //     \\
-    //     \\var h = 0.e+4f;
-    //     \\var i = .01;
-    //     \\var j = 12.34;
-    //     \\var k = .0f;
-    //     \\var l = 0h;
-    //     \\var m = 1e-3;
-    //     \\
-    //     \\//var n = 0xa.fp+2;
-    //     \\//var o = 0x1P+4f;
-    //     \\//var p = 0X.3;
-    //     \\//var q = 0x3p+2h;
-    //     \\//var r = 0X1.fp-4;
-    //     \\//var s = 0x3.2p+2h;
-    // ;
-    // var ir = try expectIR(source);
-    // defer ir.deinit();
+    const source =
+        \\var a = 1u;
+        \\var b = +123;
+        \\var c = 0;
+        \\var d = 0i;
+        \\
+        \\var e = 0x123;
+        \\var f = 0X123u;
+        \\//var g = 0x3f;
+        \\
+        \\var h = 0.e+4f;
+        \\var i = .01;
+        \\var j = 12.34;
+        \\var k = .0f;
+        \\var l = 0h;
+        \\var m = 1e-3;
+        \\
+        \\//var n = 0xa.fp+2;
+        \\//var o = 0x1P+4f;
+        \\//var p = 0X.3;
+        \\//var q = 0x3p+2h;
+        \\//var r = 0X1.fp-4;
+        \\//var s = 0x3.2p+2h;
+    ;
+    var ir = try expectIR(source);
+    defer ir.deinit();
 
-    // const toInst = struct {
-    //     fn toInst(air: Air, i: Air.InstIndex) Air.Inst {
-    //         return air.instructions[@enumToInt(air.instructions[@enumToInt(i)].global_var.expr)];
-    //     }
-    // }.toInst;
+    const helper = struct {
+        fn getIntValue(air: Air, i: Air.InstIndex) Air.Inst.Int.Value {
+            return air.getValue(
+                Air.Inst.Int.Value,
+                air.instructions[@enumToInt(air.instructions[@enumToInt(i)].global_var.expr)].int.value.?,
+            );
+        }
 
-    // const vars = std.mem.sliceTo(ir.refs[@enumToInt(ir.globals_index)..], .none);
-    // try expectEqual(toInst(ir, vars[0]).int, .{ .type = .u32, .value = .{ .literal = .{ .value = 1, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[1]).int, .{ .type = .abstract, .value = .{ .literal = .{ .value = 123, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[2]).int, .{ .type = .abstract, .value = .{ .literal = .{ .value = 0, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[3]).int, .{ .type = .i32, .value = .{ .literal = .{ .value = 0, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[4]).int, .{ .type = .abstract, .value = .{ .literal = .{ .value = 0x123, .base = 16 } } });
-    // try expectEqual(toInst(ir, vars[5]).int, .{ .type = .u32, .value = .{ .literal = .{ .value = 0x123, .base = 16 } } });
-    // try expectEqual(toInst(ir, vars[6]).float, .{ .type = .f32, .value = .{ .literal = .{ .value = 0.e+4, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[7]).float, .{ .type = .abstract, .value = .{ .literal = .{ .value = 0.01, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[8]).float, .{ .type = .abstract, .value = .{ .literal = .{ .value = 12.34, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[9]).float, .{ .type = .f32, .value = .{ .literal = .{ .value = 0, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[10]).float, .{ .type = .f16, .value = .{ .literal = .{ .value = 0, .base = 10 } } });
-    // try expectEqual(toInst(ir, vars[11]).float, .{ .type = .abstract, .value = .{ .literal = .{ .value = 1e-3, .base = 10 } } });
+        fn getFloatValue(air: Air, i: Air.InstIndex) Air.Inst.Float.Value {
+            return air.getValue(
+                Air.Inst.Float.Value,
+                air.instructions[@enumToInt(air.instructions[@enumToInt(i)].global_var.expr)].float.value.?,
+            );
+        }
+    };
+
+    const vars = ir.refToList(ir.globals_index);
+    try expectEqual(helper.getIntValue(ir, vars[0]), .{ .literal = .{ .value = 1, .base = 10 } });
+    try expectEqual(helper.getIntValue(ir, vars[1]), .{ .literal = .{ .value = 123, .base = 10 } });
+    try expectEqual(helper.getIntValue(ir, vars[2]), .{ .literal = .{ .value = 0, .base = 10 } });
+    try expectEqual(helper.getIntValue(ir, vars[3]), .{ .literal = .{ .value = 0, .base = 10 } });
+    try expectEqual(helper.getIntValue(ir, vars[4]), .{ .literal = .{ .value = 0x123, .base = 16 } });
+    try expectEqual(helper.getIntValue(ir, vars[5]), .{ .literal = .{ .value = 0x123, .base = 16 } });
+    try expectEqual(helper.getFloatValue(ir, vars[6]), .{ .literal = .{ .value = 0.e+4, .base = 10 } });
+    try expectEqual(helper.getFloatValue(ir, vars[7]), .{ .literal = .{ .value = 0.01, .base = 10 } });
+    try expectEqual(helper.getFloatValue(ir, vars[8]), .{ .literal = .{ .value = 12.34, .base = 10 } });
+    try expectEqual(helper.getFloatValue(ir, vars[9]), .{ .literal = .{ .value = 0, .base = 10 } });
+    try expectEqual(helper.getFloatValue(ir, vars[10]), .{ .literal = .{ .value = 0, .base = 10 } });
+    try expectEqual(helper.getFloatValue(ir, vars[11]), .{ .literal = .{ .value = 1e-3, .base = 10 } });
 }
 
 test "must error" {
