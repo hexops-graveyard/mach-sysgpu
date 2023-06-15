@@ -13,7 +13,6 @@ const TokenIndex = Ast.TokenIndex;
 const TokenTag = @import("Token.zig").Tag;
 const Loc = @import("Token.zig").Loc;
 const stringToEnum = std.meta.stringToEnum;
-const sliceTo = std.mem.sliceTo;
 
 const AstGen = @This();
 
@@ -2419,10 +2418,7 @@ fn genFnCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     var args = RefIndex.none;
     if (node_lhs != .none) {
-        const params = sliceTo(
-            astgen.refs.items[@enumToInt(astgen.getInst(decl).@"fn".params)..],
-            .none,
-        );
+        const params = astgen.refToList(astgen.getInst(decl).@"fn".params);
         const arg_nodes = astgen.tree.spanToList(node_lhs);
         if (params.len != arg_nodes.len) {
             try astgen.errors.add(node_loc, "function params count mismatch", .{}, null);
@@ -2461,10 +2457,7 @@ fn genStructConstruct(astgen: *AstGen, scope: *Scope, decl: InstIndex, node: Nod
     const scratch_top = astgen.scratch.items.len;
     defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
-    const struct_members = sliceTo(
-        astgen.refs.items[@enumToInt(astgen.getInst(decl).@"struct".members)..],
-        .none,
-    );
+    const struct_members = astgen.refToList(astgen.getInst(decl).@"struct".members);
     if (node_lhs != .none) {
         const arg_nodes = astgen.tree.spanToList(node_lhs);
         if (struct_members.len != arg_nodes.len) {
@@ -2978,13 +2971,9 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         },
         .struct_ref => |base_struct| {
             const struct_members = astgen.getInst(base_struct).@"struct".members;
-            for (sliceTo(astgen.refs.items[@enumToInt(struct_members)..], .none)) |member| {
+            for (astgen.refToList(struct_members)) |member| {
                 const member_data = astgen.getInst(member).struct_member;
-                if (std.mem.eql(
-                    u8,
-                    field_name,
-                    sliceTo(astgen.strings.items[@enumToInt(member_data.name)..], 0),
-                )) {
+                if (std.mem.eql(u8, field_name, astgen.getStr(member_data.name))) {
                     const inst = try astgen.addInst(.{
                         .field_access = .{
                             .base = base,
@@ -3000,7 +2989,7 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 astgen.tree.nodeLoc(node),
                 "struct '{s}' has no member named '{s}'",
                 .{
-                    sliceTo(astgen.strings.items[@enumToInt(astgen.getInst(base_struct).@"struct".name)..], 0),
+                    astgen.getStr(astgen.getInst(base_struct).@"struct".name),
                     field_name,
                 },
                 null,
@@ -3883,7 +3872,15 @@ fn getInst(astgen: *AstGen, inst: InstIndex) Inst {
 }
 
 fn getValue(astgen: *AstGen, comptime T: type, value: ValueIndex) T {
-    return std.mem.bytesToValue(T, astgen.values.items[@enumToInt(value)..][0..@sizeOf(T)]);
+    return std.mem.bytesAsValue(T, astgen.values.items[@enumToInt(value)..][0..@sizeOf(T)]).*;
+}
+
+fn getStr(astgen: *AstGen, index: StringIndex) []const u8 {
+    return std.mem.sliceTo(astgen.strings.items[@enumToInt(index)..], 0);
+}
+
+fn refToList(astgen: *AstGen, ref: RefIndex) []const InstIndex {
+    return std.mem.sliceTo(astgen.refs.items[@enumToInt(ref)..], .none);
 }
 
 fn failArgCountMismatch(
