@@ -13,12 +13,14 @@ entry_point: InstIndex,
 instructions: []const Inst,
 refs: []const InstIndex,
 strings: []const u8,
+values: []const u8,
 errors: ErrorList,
 
 pub fn deinit(self: *Air) void {
     self.allocator.free(self.instructions);
     self.allocator.free(self.refs);
     self.allocator.free(self.strings);
+    self.allocator.free(self.values);
     self.errors.deinit();
     self.* = undefined;
 }
@@ -32,13 +34,14 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
         .errors = try ErrorList.init(allocator),
     };
     defer {
-        astgen.scope_pool.deinit();
+        astgen.instructions.deinit(allocator);
         astgen.scratch.deinit(allocator);
+        astgen.scope_pool.deinit();
     }
     errdefer {
-        astgen.instructions.deinit(allocator);
         astgen.refs.deinit(allocator);
         astgen.strings.deinit(allocator);
+        astgen.values.deinit(allocator);
     }
 
     const globals_index = try astgen.genTranslationUnit();
@@ -46,20 +49,25 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
     return .{
         .allocator = allocator,
         .globals_index = globals_index,
-        .instructions = try astgen.instructions.toOwnedSlice(allocator),
+        .instructions = try allocator.dupe(Inst, astgen.instructions.keys()),
         .refs = try astgen.refs.toOwnedSlice(allocator),
         .strings = try astgen.strings.toOwnedSlice(allocator),
+        .values = try astgen.values.toOwnedSlice(allocator),
         .errors = astgen.errors,
         .entry_point = astgen.entry_point,
     };
 }
 
 pub fn refToList(self: Air, ref: RefIndex) []const InstIndex {
-    return std.mem.sliceTo(self.refs[ref..], .none);
+    return std.mem.sliceTo(self.refs[@enumToInt(ref)..], .none);
 }
 
 pub fn getStr(self: Air, index: StringIndex) []const u8 {
     return std.mem.sliceTo(self.strings[@enumToInt(index)..], 0);
+}
+
+pub fn getValue(self: Air, comptime T: type, value: ValueIndex) T {
+    return std.mem.bytesAsValue(T, self.values[@enumToInt(value)..][0..@sizeOf(T)]).*;
 }
 
 pub const InstIndex = enum(u32) {
@@ -71,6 +79,7 @@ pub const RefIndex = enum(u32) {
     _,
 };
 pub const StringIndex = enum(u32) { _ };
+pub const ValueIndex = enum(u32) { _ };
 
 pub const Inst = union(enum) {
     global_var: GlobalVar,
@@ -377,7 +386,7 @@ pub const Inst = union(enum) {
 
     pub const Int = struct {
         type: Type,
-        value: ?Value,
+        value: ?ValueIndex,
 
         pub const Type = enum { u32, i32, abstract };
 
@@ -394,7 +403,7 @@ pub const Inst = union(enum) {
 
     pub const Float = struct {
         type: Type,
-        value: ?Value,
+        value: ?ValueIndex,
 
         pub const Type = enum { f32, f16, abstract };
 
@@ -412,7 +421,7 @@ pub const Inst = union(enum) {
     pub const Vector = struct {
         elem_type: InstIndex,
         size: Size,
-        value: ?Value,
+        value: ?ValueIndex,
 
         pub const Size = enum(u5) { two = 2, three = 3, four = 4 };
         pub const Value = union(enum) {
@@ -425,7 +434,7 @@ pub const Inst = union(enum) {
         elem_type: InstIndex,
         cols: Vector.Size,
         rows: Vector.Size,
-        value: ?Value,
+        value: ?ValueIndex,
 
         pub const Value = union(enum) {
             literal: [4 * 4]u32,
@@ -605,7 +614,6 @@ pub const Inst = union(enum) {
     };
 
     comptime {
-        // TODO: this is very large!
-        std.debug.assert(@sizeOf(Inst) <= 512);
+        std.debug.assert(@sizeOf(Inst) <= 64);
     }
 };

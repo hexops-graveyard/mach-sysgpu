@@ -184,7 +184,7 @@ fn Printer(comptime Writer: type) type {
             try self.printFieldString(indent + 1, "name", inst.@"struct".name);
             try self.printFieldName(indent + 1, "members");
             try self.listStart();
-            const members = self.refToList(inst.@"struct".members);
+            const members = self.ir.refToList(inst.@"struct".members);
             for (members) |member| {
                 const member_index = member;
                 const member_inst = self.ir.instructions[@enumToInt(member_index)];
@@ -220,7 +220,7 @@ fn Printer(comptime Writer: type) type {
             if (inst.@"fn".params != .none) {
                 try self.printFieldName(indent + 1, "params");
                 try self.listStart();
-                const params = self.refToList(inst.@"fn".params);
+                const params = self.ir.refToList(inst.@"fn".params);
                 for (params) |arg| {
                     const arg_index = arg;
                     const arg_inst = self.ir.instructions[@enumToInt(arg_index)];
@@ -265,7 +265,7 @@ fn Printer(comptime Writer: type) type {
 
         fn printBlock(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.instructions[@enumToInt(index)].block;
-            const statements = self.refToList(inst);
+            const statements = self.ir.refToList(inst);
             try self.listStart();
             for (statements) |statement| {
                 try self.printIndent(indent + 1);
@@ -318,10 +318,22 @@ fn Printer(comptime Writer: type) type {
             const inst = self.ir.instructions[@enumToInt(index)];
             try self.instBlockStart(index);
             switch (inst) {
-                inline .int, .float => |num| {
-                    try self.printFieldEnum(indent + 1, "type", num.type);
-                    if (num.value) |value| {
-                        switch (value) {
+                .int => |int| {
+                    try self.printFieldEnum(indent + 1, "type", int.type);
+                    if (int.value) |value| {
+                        switch (self.ir.getValue(Air.Inst.Int.Value, value)) {
+                            .literal => |lit| {
+                                try self.printFieldAny(indent + 1, "value", lit.value);
+                                try self.printFieldAny(indent + 1, "base", lit.base);
+                            },
+                            .inst => |cast| try self.printFieldInst(indent + 1, "cast", cast),
+                        }
+                    }
+                },
+                .float => |float| {
+                    try self.printFieldEnum(indent + 1, "type", float.type);
+                    if (float.value) |value| {
+                        switch (self.ir.getValue(Air.Inst.Float.Value, value)) {
                             .literal => |lit| {
                                 try self.printFieldAny(indent + 1, "value", lit.value);
                                 try self.printFieldAny(indent + 1, "base", lit.base);
@@ -340,7 +352,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "type", vec.elem_type);
             if (vec.value) |value| {
-                switch (value) {
+                switch (self.ir.getValue(Air.Inst.Vector.Value, value)) {
                     .literal => |lit| {
                         try self.printFieldName(indent + 1, "literal");
                         try self.tty.setColor(self.writer, .dim);
@@ -381,7 +393,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "type", mat.elem_type);
             if (mat.value) |value| {
-                switch (value) {
+                switch (self.ir.getValue(Air.Inst.Matrix.Value, value)) {
                     .literal => |lit| {
                         try self.printFieldName(indent + 1, "literal");
                         try self.tty.setColor(self.writer, .dim);
