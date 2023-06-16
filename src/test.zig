@@ -18,7 +18,7 @@ fn expectIR(source: [:0]const u8) !Air {
     }
 
     var ir = try Air.generate(allocator, &tree, null);
-    errdefer ir.deinit();
+    errdefer ir.deinit(allocator);
 
     if (ir.errors.list.items.len > 0) {
         try ir.errors.print(source, null);
@@ -34,7 +34,7 @@ fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
     var err_list = tree.errors;
 
     var ir: ?Air = null;
-    defer if (ir != null) ir.?.deinit();
+    defer if (ir != null) ir.?.deinit(allocator);
 
     if (err_list.list.items.len == 0) {
         ir = try Air.generate(allocator, &tree, null);
@@ -91,14 +91,14 @@ fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
 test "empty" {
     const source = "";
     var ir = try expectIR(source);
-    defer ir.deinit();
+    defer ir.deinit(allocator);
 }
 
 test "gkurve" {
     if (true) return error.SkipZigTest;
 
     var ir = try expectIR(@embedFile("test/gkurve.wgsl"));
-    defer ir.deinit();
+    defer ir.deinit(allocator);
     try printAir(ir, std.io.getStdErr().writer());
 }
 
@@ -170,7 +170,7 @@ test "must pass" {
         ;
         var ir = try expectIR(source);
         try printAir(ir, std.io.getStdErr().writer());
-        ir.deinit();
+        ir.deinit(allocator);
     }
     {
         const source =
@@ -179,14 +179,14 @@ test "must pass" {
             \\var v2 = v1 * 4;
         ;
         var ir = try expectIR(source);
-        ir.deinit();
+        ir.deinit(allocator);
     }
     {
         const source =
             \\var v0: array<u32, 4>;
         ;
         var ir = try expectIR(source);
-        ir.deinit();
+        ir.deinit(allocator);
     }
     {
         const source =
@@ -194,7 +194,7 @@ test "must pass" {
             \\var v1 = v0[0];
         ;
         var ir = try expectIR(source);
-        ir.deinit();
+        ir.deinit(allocator);
     }
     {
         const source =
@@ -203,7 +203,7 @@ test "must pass" {
             \\var v1 = v0.f;
         ;
         var ir = try expectIR(source);
-        ir.deinit();
+        ir.deinit(allocator);
     }
     {
         const source =
@@ -211,7 +211,7 @@ test "must pass" {
             \\var v1 = bitcast<u32>(v0);
         ;
         var ir = try expectIR(source);
-        ir.deinit();
+        ir.deinit(allocator);
     }
     {
         const source =
@@ -219,7 +219,7 @@ test "must pass" {
             \\var v1 = bitcast<vec2<u32>>(v0);
         ;
         var ir = try expectIR(source);
-        ir.deinit();
+        ir.deinit(allocator);
     }
     {
         const source =
@@ -228,7 +228,7 @@ test "must pass" {
             \\var v2 = f32(v0);
         ;
         var ir = try expectIR(source);
-        ir.deinit();
+        ir.deinit(allocator);
     }
     {
         const source =
@@ -241,7 +241,7 @@ test "must pass" {
             \\var v6 = vec4<u32>(v0, v1, v0);
         ;
         var ir = try expectIR(source);
-        ir.deinit();
+        ir.deinit(allocator);
     }
 }
 
@@ -271,7 +271,7 @@ test "integer/float literals" {
         \\//var s = 0x3.2p+2h;
     ;
     var ir = try expectIR(source);
-    defer ir.deinit();
+    defer ir.deinit(allocator);
 
     const helper = struct {
         fn getIntValue(air: Air, i: Air.InstIndex) Air.Inst.Int.Value {
@@ -485,7 +485,7 @@ test "must error" {
             \\var v1 = vec2<f32>(v0);
         ;
         try expectError(source, .{
-            .msg = "cannot cast into vec2",
+            .msg = "cannot construct vec2",
             .loc = .{ .start = 31, .end = 35 },
         });
     }
@@ -495,7 +495,7 @@ test "must error" {
             \\var v1 = vec3<f32>(v0, v0);
         ;
         try expectError(source, .{
-            .msg = "cannot cast into vec3",
+            .msg = "cannot construct vec3",
             .loc = .{ .start = 31, .end = 35 },
         });
     }
@@ -554,4 +554,19 @@ test "must error" {
             .loc = .{ .start = 34, .end = 35 },
         });
     }
+}
+
+test "spirv" {
+    const triangle = @embedFile("test/triangle.wgsl");
+
+    var ast = try Ast.parse(allocator, triangle);
+    defer ast.deinit(allocator);
+
+    var ir = try Air.generate(allocator, &ast, "frag_main");
+    defer ir.deinit(allocator);
+
+    const out = try dusk.CodeGen.generate(allocator, &ir, .spirv);
+    defer allocator.free(out);
+
+    try std.fs.cwd().writeFile("triangle.spv", out);
 }
