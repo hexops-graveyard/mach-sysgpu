@@ -20,6 +20,7 @@ allocator: std.mem.Allocator,
 tree: *const Ast,
 instructions: std.AutoArrayHashMapUnmanaged(Inst, void) = .{},
 refs: std.ArrayListUnmanaged(InstIndex) = .{},
+types: std.ArrayListUnmanaged(InstIndex) = .{},
 strings: std.ArrayListUnmanaged(u8) = .{},
 values: std.ArrayListUnmanaged(u8) = .{},
 scratch: std.ArrayListUnmanaged(InstIndex) = .{},
@@ -330,7 +331,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
         const member_type_inst = astgen.getInst(member_type);
 
         switch (member_type_inst) {
-            .array_type,
+            .array,
             .atomic_type,
             .struct_ref,
             => {},
@@ -348,8 +349,8 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
             },
         }
 
-        if (member_type_inst == .array_type) {
-            const array_size = member_type_inst.array_type.size;
+        if (member_type_inst == .array) {
+            const array_size = member_type_inst.array.size;
             if (array_size == .none and i + 1 != member_nodes_list.len) {
                 try astgen.errors.add(
                     member_name_loc,
@@ -1764,13 +1765,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 else => {},
             }
 
-            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
-            try astgen.errors.add(
-                node_loc,
-                "cannot cast '{s}' into bool",
-                .{arg_node_loc.slice(astgen.tree.source)},
-                null,
-            );
+            try astgen.errors.add(node_loc, "cannot construct bool", .{}, null);
             return error.AnalysisFail;
         },
         .k_u32 => {
@@ -1811,13 +1806,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 else => {},
             }
 
-            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
-            try astgen.errors.add(
-                node_loc,
-                "cannot cast '{s}' into u32",
-                .{arg_node_loc.slice(astgen.tree.source)},
-                null,
-            );
+            try astgen.errors.add(node_loc, "cannot construct u32", .{}, null);
             return error.AnalysisFail;
         },
         .k_i32 => {
@@ -1858,13 +1847,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 else => {},
             }
 
-            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
-            try astgen.errors.add(
-                node_loc,
-                "cannot cast '{s}' into i32",
-                .{arg_node_loc.slice(astgen.tree.source)},
-                null,
-            );
+            try astgen.errors.add(node_loc, "cannot construct i32", .{}, null);
             return error.AnalysisFail;
         },
         .k_f32 => {
@@ -1905,13 +1888,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 else => {},
             }
 
-            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
-            try astgen.errors.add(
-                node_loc,
-                "cannot cast '{s}' into f32",
-                .{arg_node_loc.slice(astgen.tree.source)},
-                null,
-            );
+            try astgen.errors.add(node_loc, "cannot construct f32", .{}, null);
             return error.AnalysisFail;
         },
         .k_f16 => {
@@ -1952,13 +1929,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 else => {},
             }
 
-            const arg_node_loc = astgen.tree.nodeLoc(arg_node);
-            try astgen.errors.add(
-                node_loc,
-                "cannot cast '{s}' into f16",
-                .{arg_node_loc.slice(astgen.tree.source)},
-                null,
-            );
+            try astgen.errors.add(node_loc, "cannot construct f16", .{}, null);
             return error.AnalysisFail;
         },
         .k_vec2 => {
@@ -2017,7 +1988,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 else => {},
             }
 
-            try astgen.errors.add(node_loc, "cannot cast into vec2", .{}, null);
+            try astgen.errors.add(node_loc, "cannot construct vec2", .{}, null);
             return error.AnalysisFail;
         },
         .k_vec3 => {
@@ -2110,7 +2081,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 else => {},
             }
 
-            try astgen.errors.add(node_loc, "cannot cast into vec3", .{}, null);
+            try astgen.errors.add(node_loc, "cannot construct vec3", .{}, null);
             return error.AnalysisFail;
         },
         .k_vec4 => {
@@ -2259,7 +2230,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 else => {},
             }
 
-            try astgen.errors.add(node_loc, "cannot cast into vec4", .{}, null);
+            try astgen.errors.add(node_loc, "cannot construct vec4", .{}, null);
             return error.AnalysisFail;
         },
         .k_mat2x2,
@@ -2350,7 +2321,39 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 }
             }
 
-            try astgen.errors.add(node_loc, "cannot cast into matrix", .{}, null);
+            try astgen.errors.add(node_loc, "cannot construct matrix", .{}, null);
+            return error.AnalysisFail;
+        },
+        .k_array => {
+            if (node_lhs == .none) {
+                return astgen.genArray(scope, node_rhs, .none);
+            }
+
+            const scratch_top = astgen.scratch.items.len;
+            defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
+
+            var arg0_res = InstIndex.none;
+            const arg_nodes = astgen.tree.spanToList(node_lhs);
+            for (arg_nodes, 0..) |arg_node, i| {
+                const arg = try astgen.genExpr(scope, arg_node);
+                const arg_res = try astgen.resolve(arg);
+                if (i == 0) {
+                    arg0_res = arg_res;
+                } else if (astgen.eql(arg0_res, arg_res)) {
+                    try astgen.scratch.append(astgen.allocator, arg);
+                } else {
+                    try astgen.errors.add(node_loc, "cannot construct array", .{}, null);
+                    return error.AnalysisFail;
+                }
+            }
+
+            const args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
+            const arr = try astgen.genArray(scope, node_rhs, args);
+            if (astgen.eql(astgen.getInst(arr).array.elem_type, arg0_res)) {
+                return arr;
+            }
+
+            try astgen.errors.add(node_loc, "cannot construct array", .{}, null);
             return error.AnalysisFail;
         },
         else => unreachable,
@@ -2891,7 +2894,7 @@ fn genIndexAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const base = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
     const base_type = try astgen.resolve(base);
 
-    if (astgen.getInst(base_type) != .array_type) {
+    if (astgen.getInst(base_type) != .array) {
         try astgen.errors.add(
             astgen.tree.nodeLoc(astgen.tree.nodeRHS(node)),
             "cannot access index of a non-array",
@@ -2907,7 +2910,7 @@ fn genIndexAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         const inst = try astgen.addInst(.{
             .index_access = .{
                 .base = base,
-                .elem_type = astgen.getInst(base_type).array_type.elem_type,
+                .elem_type = astgen.getInst(base_type).array.elem_type,
                 .index = rhs,
             },
         });
@@ -3009,13 +3012,13 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 }
 
 fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail, OutOfMemory }!InstIndex {
-    return switch (astgen.tree.nodeTag(node)) {
+    const inst = switch (astgen.tree.nodeTag(node)) {
         .bool_type => try astgen.addInst(.{ .bool = .{ .value = null } }),
         .number_type => try astgen.genNumberType(node),
         .vector_type => try astgen.genVector(scope, node, .none, null),
         .matrix_type => try astgen.genMatrix(scope, node, .none, null),
         .atomic_type => try astgen.genAtomicType(scope, node),
-        .array_type => try astgen.genArrayType(scope, node),
+        .array_type => try astgen.genArray(scope, node, null),
         .ptr_type => try astgen.genPtrType(scope, node),
         .sampler_type => try astgen.genSamplerType(node),
         .sampled_texture_type => try astgen.genSampledTextureType(scope, node),
@@ -3033,7 +3036,7 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
                 .vector,
                 .matrix,
                 .atomic_type,
-                .array_type,
+                .array,
                 .ptr_type,
                 .sampler_type,
                 .comparison_sampler_type,
@@ -3061,6 +3064,8 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
         },
         else => unreachable,
     };
+    try astgen.types.append(astgen.allocator, inst);
+    return inst;
 }
 
 fn genNumberType(astgen: *AstGen, node: NodeIndex) !InstIndex {
@@ -3244,55 +3249,74 @@ fn genPtrType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     return error.AnalysisFail;
 }
 
-fn genArrayType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+fn genArray(astgen: *AstGen, scope: *Scope, node: NodeIndex, args: ?RefIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
-    const elem_type = try astgen.genType(scope, node_lhs);
-
-    switch (astgen.getInst(elem_type)) {
-        .array_type,
-        .atomic_type,
-        .struct_ref,
-        .bool,
-        .int,
-        .float,
-        .vector,
-        .matrix,
-        => {
-            if (astgen.getInst(elem_type) == .array_type) {
-                if (astgen.getInst(elem_type).array_type.size == .none) {
-                    try astgen.errors.add(
-                        astgen.tree.nodeLoc(node_lhs),
-                        "array component type can not be a runtime-sized array",
-                        .{},
-                        null,
-                    );
-                    return error.AnalysisFail;
+    var elem_type = InstIndex.none;
+    if (node_lhs != .none) {
+        elem_type = try astgen.genType(scope, node_lhs);
+        switch (astgen.getInst(elem_type)) {
+            .array,
+            .atomic_type,
+            .struct_ref,
+            .bool,
+            .int,
+            .float,
+            .vector,
+            .matrix,
+            => {
+                if (astgen.getInst(elem_type) == .array) {
+                    if (astgen.getInst(elem_type).array.size == .none) {
+                        try astgen.errors.add(
+                            astgen.tree.nodeLoc(node_lhs),
+                            "array component type can not be a runtime-sized array",
+                            .{},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    }
                 }
-            }
-
-            const size_node = astgen.tree.nodeRHS(node);
-            var size = InstIndex.none;
-            if (size_node != .none) {
-                size = try astgen.genExpr(scope, size_node);
-            }
-
-            return astgen.addInst(.{
-                .array_type = .{
-                    .elem_type = elem_type,
-                    .size = size,
-                },
-            });
-        },
-        else => {},
+            },
+            else => {
+                try astgen.errors.add(
+                    astgen.tree.nodeLoc(node_lhs),
+                    "invalid array component type",
+                    .{},
+                    null,
+                );
+                return error.AnalysisFail;
+            },
+        }
     }
 
-    try astgen.errors.add(
-        astgen.tree.nodeLoc(node_lhs),
-        "invalid array component type",
-        .{},
-        null,
-    );
-    return error.AnalysisFail;
+    if (args != null) {
+        if (args.? == .none) {
+            try astgen.errors.add(
+                astgen.tree.nodeLoc(node),
+                "element type not specified",
+                .{},
+                null,
+            );
+            return error.AnalysisFail;
+        }
+
+        if (elem_type == .none) {
+            elem_type = astgen.refToList(args.?)[0];
+        }
+    }
+
+    const size_node = astgen.tree.nodeRHS(node);
+    var size = InstIndex.none;
+    if (size_node != .none) {
+        size = try astgen.genExpr(scope, size_node);
+    }
+
+    return astgen.addInst(.{
+        .array = .{
+            .elem_type = elem_type,
+            .size = size,
+            .value = args,
+        },
+    });
 }
 
 fn genSamplerType(astgen: *AstGen, node: NodeIndex) !InstIndex {
@@ -3507,7 +3531,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
     while (true) {
         const inst = astgen.getInst(idx);
         switch (inst) {
-            inline .bool, .int, .float, .vector, .matrix => |data| {
+            inline .bool, .int, .float, .vector, .matrix, .array => |data| {
                 std.debug.assert(data.value != null);
                 return idx;
             },
@@ -3652,7 +3676,6 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .struct_ref => |struct_ref| return struct_ref,
 
             .atomic_type,
-            .array_type,
             .ptr_type,
             .sampler_type,
             .comparison_sampler_type,

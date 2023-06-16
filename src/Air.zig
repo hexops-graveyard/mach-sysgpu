@@ -7,20 +7,21 @@ const Ast = @import("Ast.zig");
 const ErrorList = @import("ErrorList.zig");
 const Air = @This();
 
-allocator: std.mem.Allocator,
 globals_index: RefIndex,
 entry_point: InstIndex,
 instructions: []const Inst,
 refs: []const InstIndex,
+types: []const InstIndex,
 strings: []const u8,
 values: []const u8,
 errors: ErrorList,
 
-pub fn deinit(self: *Air) void {
-    self.allocator.free(self.instructions);
-    self.allocator.free(self.refs);
-    self.allocator.free(self.strings);
-    self.allocator.free(self.values);
+pub fn deinit(self: *Air, allocator: std.mem.Allocator) void {
+    allocator.free(self.instructions);
+    allocator.free(self.refs);
+    allocator.free(self.types);
+    allocator.free(self.strings);
+    allocator.free(self.values);
     self.errors.deinit();
     self.* = undefined;
 }
@@ -40,6 +41,7 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
     }
     errdefer {
         astgen.refs.deinit(allocator);
+        astgen.types.deinit(allocator);
         astgen.strings.deinit(allocator);
         astgen.values.deinit(allocator);
     }
@@ -47,10 +49,10 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
     const globals_index = try astgen.genTranslationUnit();
 
     return .{
-        .allocator = allocator,
         .globals_index = globals_index,
         .instructions = try allocator.dupe(Inst, astgen.instructions.keys()),
         .refs = try astgen.refs.toOwnedSlice(allocator),
+        .types = try astgen.types.toOwnedSlice(allocator),
         .strings = try astgen.strings.toOwnedSlice(allocator),
         .values = try astgen.values.toOwnedSlice(allocator),
         .errors = astgen.errors,
@@ -96,8 +98,8 @@ pub const Inst = union(enum) {
     float: Float,
     vector: Vector,
     matrix: Matrix,
+    array: Array,
     atomic_type: AtomicType,
-    array_type: ArrayType,
     ptr_type: PointerType,
     sampled_texture_type: SampledTextureType,
     multisampled_texture_type: MultisampledTextureType,
@@ -442,9 +444,13 @@ pub const Inst = union(enum) {
         };
     };
 
-    pub const AtomicType = struct { elem_type: InstIndex };
+    pub const Array = struct {
+        elem_type: InstIndex,
+        size: InstIndex,
+        value: ?RefIndex,
+    };
 
-    pub const ArrayType = struct { elem_type: InstIndex, size: InstIndex };
+    pub const AtomicType = struct { elem_type: InstIndex };
 
     pub const PointerType = struct {
         elem_type: InstIndex,
