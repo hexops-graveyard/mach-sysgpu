@@ -2,26 +2,79 @@ const std = @import("std");
 const Air = @import("../Air.zig");
 const Section = @import("spirv/Section.zig");
 const spec = @import("spirv/spec.zig");
+const InstIndex = Air.InstIndex;
 const Word = spec.Word;
 const Opcode = spec.Opcode;
 const Operand = spec.Operand;
+const IdResult = spec.IdResult;
 
 const SpirV = @This();
 
 air: *const Air,
-section: Section = .{},
 bound: Word = 1,
+compute_stage: ?Stage = null,
+vertex_stage: ?Stage = null,
+fragment_stage: ?Stage = null,
+
+const Stage = struct {
+    name: []const u8,
+    id_result: IdResult,
+};
 
 pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
     var spirv = SpirV{ .air = air };
-    defer spirv.section.words.deinit(allocator);
 
-    try spirv.section.words.ensureUnusedCapacity(allocator, 1);
-    spirv.section.writeWord(spec.magic_number); // magic number
-    spirv.section.writeWord((1 << 16) | (4 << 8)); // Spir-V 1.4
-    spirv.section.writeWord(0); // generator magic number. TODO: register dusk compiler
-    spirv.section.writeWord(spirv.bound); // id's bound
-    spirv.section.writeWord(0); // Reserved for instruction schema, if needed.
+    var module = Section{ .allocator = allocator };
+    defer module.deinit();
 
-    return allocator.dupe(u8, std.mem.sliceAsBytes(spirv.section.words.items));
+    try module.ensureUnusedCapacity(5);
+    module.writeWord(spec.magic_number); // magic number
+    module.writeWord((1 << 16) | (4 << 8)); // Spir-V 1.4
+    module.writeWord(0); // generator magic number. TODO: register dusk compiler
+    module.writeWord(spirv.bound); // id's bound
+    module.writeWord(0); // Reserved for instruction schema, if needed.
+
+    var instructions = Section{ .allocator = allocator };
+    defer instructions.deinit();
+    for (spirv.air.types) |type_inst| {
+        try spirv.emitType(&instructions, type_inst);
+    }
+
+    try spirv.emitModule(&module);
+    try module.append(instructions);
+
+    return allocator.dupe(u8, std.mem.sliceAsBytes(module.words.items));
+}
+
+fn emitModule(spirv: *SpirV, section: *Section) !void {
+    try section.emit(.OpCapability, .{ .capability = .Shader });
+    try section.emit(.OpMemoryModel, .{ .addressing_model = .Logical, .memory_model = .GLSL450 });
+
+    if (spirv.compute_stage) |compute_stage| {
+        try section.emit(.OpEntryPoint, .{
+            .execution_model = .GLCompute,
+            .entry_point = compute_stage.id_result,
+            .name = compute_stage.name,
+        });
+    }
+    if (spirv.vertex_stage) |vertex_stage| {
+        try section.emit(.OpEntryPoint, .{
+            .execution_model = .Vertex,
+            .entry_point = vertex_stage.id_result,
+            .name = vertex_stage.name,
+        });
+    }
+    if (spirv.fragment_stage) |fragment_stage| {
+        try section.emit(.OpEntryPoint, .{
+            .execution_model = .Fragment,
+            .entry_point = fragment_stage.id_result,
+            .name = fragment_stage.name,
+        });
+    }
+}
+
+fn emitType(spirv: *SpirV, section: *Section, inst: InstIndex) !void {
+    _ = spirv;
+    _ = section;
+    _ = inst;
 }

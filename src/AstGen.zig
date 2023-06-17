@@ -24,7 +24,9 @@ types: std.ArrayListUnmanaged(InstIndex) = .{},
 strings: std.ArrayListUnmanaged(u8) = .{},
 values: std.ArrayListUnmanaged(u8) = .{},
 scratch: std.ArrayListUnmanaged(InstIndex) = .{},
-entry_point: InstIndex = .none,
+compute_stage: InstIndex = .none,
+vertex_stage: InstIndex = .none,
+fragment_stage: InstIndex = .none,
 entry_point_name: ?[]const u8 = null,
 scope_pool: std.heap.MemoryPool(Scope),
 errors: ErrorList,
@@ -76,7 +78,11 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
         try astgen.scratch.append(astgen.allocator, global);
     }
 
-    if (astgen.entry_point_name != null and astgen.entry_point == .none) {
+    if (astgen.entry_point_name != null and
+        astgen.compute_stage == .none and
+        astgen.vertex_stage == .none and
+        astgen.fragment_stage == .none)
+    {
         try astgen.errors.add(Loc{ .start = 0, .end = 0 }, "entry point not found", .{}, null);
     }
 
@@ -442,7 +448,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
-    var stage: Inst.Fn.Stage = .normal;
+    var stage: Inst.Fn.Stage = .none;
     var workgroup_size_attr = NodeIndex.none;
     var is_const = false;
     if (fn_proto.attrs != .none) {
@@ -452,7 +458,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
                 .attr_fragment,
                 .attr_compute,
                 => |stage_attr| {
-                    if (stage != .normal) {
+                    if (stage != .none) {
                         try astgen.errors.add(astgen.tree.nodeLoc(attr), "multiple shader stages", .{}, null);
                         return error.AnalysisFail;
                     }
@@ -591,8 +597,21 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
 
     if (astgen.entry_point_name) |entry_point_name| {
         if (std.mem.eql(u8, name_slice, entry_point_name)) {
-            astgen.entry_point = inst;
+            astgen.compute_stage = .none;
+            astgen.vertex_stage = .none;
+            astgen.fragment_stage = .none;
+            if (stage == .none) {
+                try astgen.errors.add(node_loc, "function is not an entry point", .{}, null);
+                return error.AnalysisFail;
+            }
         }
+    }
+
+    switch (stage) {
+        .none => {},
+        .compute => astgen.compute_stage = inst,
+        .vertex => astgen.vertex_stage = inst,
+        .fragment => astgen.fragment_stage = inst,
     }
 
     return inst;

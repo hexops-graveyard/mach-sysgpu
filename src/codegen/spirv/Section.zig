@@ -10,18 +10,30 @@ const Log2Word = std.math.Log2Int(Word);
 
 const Section = @This();
 
+allocator: std.mem.Allocator,
 words: std.ArrayListUnmanaged(Word) = .{},
 
+pub fn deinit(section: *Section) void {
+    section.words.deinit(section.allocator);
+}
+
 pub fn emit(
-    section: Section,
-    allocator: std.mem.Allocator,
+    section: *Section,
     comptime opcode: spec.Opcode,
     operands: opcode.Operands(),
 ) !void {
     const word_count = instructionSize(opcode, operands);
-    try section.words.ensureUnusedCapacity(allocator, word_count);
+    try section.ensureUnusedCapacity(word_count);
     section.writeWord(@intCast(Word, word_count << 16) | @enumToInt(opcode));
     section.writeOperands(opcode.Operands(), operands);
+}
+
+pub fn append(section: *Section, other: Section) !void {
+    try section.words.appendSlice(section.allocator, other.words.items);
+}
+
+pub fn ensureUnusedCapacity(section: *Section, add: usize) !void {
+    try section.words.ensureUnusedCapacity(section.allocator, add);
 }
 
 pub fn writeWord(section: *Section, word: Word) void {
