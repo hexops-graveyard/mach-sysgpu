@@ -1,7 +1,16 @@
-//! Borrowed from Zig compiler codebase.
+//! Borrowed from Zig compiler codebase with some changes.
 //! Licensed under LICENSE-zig
 
-const Version = @import("std").builtin.Version;
+pub const Version = packed struct(Word) {
+    padding: u8 = 0,
+    minor: u8,
+    major: u8,
+    padding0: u8 = 0,
+
+    pub fn toWord(self: @This()) Word {
+        return @bitCast(Word, self);
+    }
+};
 
 pub const Word = u32;
 pub const IdResult = struct {
@@ -54,7 +63,7 @@ pub const Enumerant = struct {
     parameters: []const OperandKind,
 };
 
-pub const version = Version{ .major = 1, .minor = 6, .patch = 1 };
+pub const version = Version{ .major = 1, .minor = 6 };
 pub const magic_number: Word = 0x07230203;
 
 pub const Class = enum {
