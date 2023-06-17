@@ -28,11 +28,16 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
     defer module.deinit();
 
     try module.ensureUnusedCapacity(5);
-    module.writeWord(spec.magic_number); // magic number
-    module.writeWord((1 << 16) | (4 << 8)); // Spir-V 1.4
-    module.writeWord(0); // generator magic number. TODO: register dusk compiler
-    module.writeWord(spirv.bound); // id's bound
-    module.writeWord(0); // Reserved for instruction schema, if needed.
+    // Magic number
+    module.writeWord(spec.magic_number);
+    // Spir-V 1.4
+    module.writeWord((spec.Version{ .major = 1, .minor = 4 }).toWord());
+    // Generator magic number. TODO: register dusk compiler
+    module.writeWord(0);
+    // Id's bound
+    module.writeWord(spirv.bound);
+    // Reserved for instruction schema, if needed
+    module.writeWord(0);
 
     var instructions = Section{ .allocator = allocator };
     defer instructions.deinit();
