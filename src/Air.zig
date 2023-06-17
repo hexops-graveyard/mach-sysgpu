@@ -8,7 +8,9 @@ const ErrorList = @import("ErrorList.zig");
 const Air = @This();
 
 globals_index: RefIndex,
-entry_point: InstIndex,
+compute_stage: InstIndex,
+vertex_stage: InstIndex,
+fragment_stage: InstIndex,
 instructions: []const Inst,
 refs: []const InstIndex,
 types: []const InstIndex,
@@ -50,13 +52,15 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
 
     return .{
         .globals_index = globals_index,
+        .compute_stage = astgen.compute_stage,
+        .vertex_stage = astgen.vertex_stage,
+        .fragment_stage = astgen.fragment_stage,
         .instructions = try allocator.dupe(Inst, astgen.instructions.keys()),
         .refs = try astgen.refs.toOwnedSlice(allocator),
         .types = try astgen.types.toOwnedSlice(allocator),
         .strings = try astgen.strings.toOwnedSlice(allocator),
         .values = try astgen.values.toOwnedSlice(allocator),
         .errors = astgen.errors,
-        .entry_point = astgen.entry_point,
     };
 }
 
@@ -282,7 +286,7 @@ pub const Inst = union(enum) {
         block: InstIndex,
 
         pub const Stage = union(enum) {
-            normal,
+            none,
             vertex,
             fragment,
             compute: WorkgroupSize,
