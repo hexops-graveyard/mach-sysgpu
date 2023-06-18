@@ -2024,7 +2024,7 @@ fn peekToken(
 
 fn advanceToken(p: *Parser) TokenIndex {
     const prev = p.tok_i;
-    p.tok_i = @intToEnum(TokenIndex, std.math.min(@enumToInt(prev) + 1, p.tokens.len));
+    p.tok_i = @intToEnum(TokenIndex, @min(@enumToInt(prev) + 1, p.tokens.len));
     return prev;
 }
 
