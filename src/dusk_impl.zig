@@ -705,12 +705,12 @@ pub const Interface = struct {
         adapter.* = .{
             .item = Implementation.Adapter.create(
                 &instance.item,
-                options orelse gpu.RequestAdapterOptions{
+                (options orelse &gpu.RequestAdapterOptions{
                     .compatible_surface = null,
                     .force_fallback_adapter = false,
                     .next_in_chain = null,
                     .power_preference = .high_performance,
-                },
+                }).*,
                 allocator,
             ) catch @panic("TODO: PROPGATE ERRORS"),
         };
