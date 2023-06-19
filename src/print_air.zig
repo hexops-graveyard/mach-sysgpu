@@ -22,7 +22,7 @@ fn Printer(comptime Writer: type) type {
         tty: std.io.tty.Config,
 
         fn printInst(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             switch (inst) {
                 .global_var => {
                     std.debug.assert(indent == 0);
@@ -119,7 +119,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printGlobalVar(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)].global_var;
+            const inst = self.ir.getInst(index).global_var;
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.name);
             if (inst.addr_space != .none) {
@@ -138,7 +138,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printVar(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)].@"var";
+            const inst = self.ir.getInst(index).@"var";
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.name);
             if (inst.addr_space != .none) {
@@ -157,7 +157,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printConst(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)].@"const";
+            const inst = self.ir.getInst(index).@"const";
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.name);
             if (inst.type != .none) {
@@ -168,7 +168,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printLet(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)].let;
+            const inst = self.ir.getInst(index).let;
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.name);
             if (inst.type != .none) {
@@ -179,7 +179,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printStruct(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.@"struct".name);
             try self.printFieldName(indent + 1, "members");
@@ -187,7 +187,7 @@ fn Printer(comptime Writer: type) type {
             const members = self.ir.refToList(inst.@"struct".members);
             for (members) |member| {
                 const member_index = member;
-                const member_inst = self.ir.instructions[@enumToInt(member_index)];
+                const member_inst = self.ir.getInst(member_index);
                 try self.printIndent(indent + 2);
                 try self.instBlockStart(member_index);
                 try self.printFieldString(indent + 3, "name", member_inst.struct_member.name);
@@ -213,7 +213,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printFn(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.@"fn".name);
 
@@ -223,7 +223,7 @@ fn Printer(comptime Writer: type) type {
                 const params = self.ir.refToList(inst.@"fn".params);
                 for (params) |arg| {
                     const arg_index = arg;
-                    const arg_inst = self.ir.instructions[@enumToInt(arg_index)];
+                    const arg_inst = self.ir.getInst(arg_index);
                     try self.printIndent(indent + 2);
                     try self.instBlockStart(arg_index);
                     try self.printFieldString(indent + 3, "name", arg_inst.fn_param.name);
@@ -264,7 +264,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printBlock(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)].block;
+            const inst = self.ir.getInst(index).block;
             const statements = self.ir.refToList(inst);
             try self.listStart();
             for (statements) |statement| {
@@ -276,7 +276,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printIf(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)].@"if";
+            const inst = self.ir.getInst(index).@"if";
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "cond", inst.cond);
             if (inst.body != .none) {
@@ -289,7 +289,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printWhile(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)].@"while";
+            const inst = self.ir.getInst(index).@"while";
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "cond", inst.lhs);
             if (inst.rhs != .none) {
@@ -299,7 +299,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printBool(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             try self.instStart(index);
             if (inst.bool.value) |value| {
                 switch (value) {
@@ -315,7 +315,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printNumber(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             try self.instBlockStart(index);
             switch (inst) {
                 .int => |int| {
@@ -348,7 +348,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printVector(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const vec = self.ir.instructions[@enumToInt(index)].vector;
+            const vec = self.ir.getInst(index).vector;
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "type", vec.elem_type);
             if (vec.value) |value| {
@@ -389,7 +389,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printMatrix(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const mat = self.ir.instructions[@enumToInt(index)].matrix;
+            const mat = self.ir.getInst(index).matrix;
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "type", mat.elem_type);
             if (mat.value) |value| {
@@ -430,7 +430,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printFieldAccess(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "base", inst.field_access.base);
             try self.printFieldString(indent + 1, "name", inst.field_access.name);
@@ -438,7 +438,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn printIndexAccess(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "base", inst.index_access.base);
             try self.printFieldInst(indent + 1, "elem_type", inst.index_access.elem_type);
@@ -447,7 +447,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn instStart(self: @This(), index: Air.InstIndex) !void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             try self.tty.setColor(self.writer, .bold);
             try self.writer.print("{s}", .{@tagName(inst)});
             try self.tty.setColor(self.writer, .reset);
@@ -470,7 +470,7 @@ fn Printer(comptime Writer: type) type {
         }
 
         fn instBlockStart(self: @This(), index: Air.InstIndex) !void {
-            const inst = self.ir.instructions[@enumToInt(index)];
+            const inst = self.ir.getInst(index);
             try self.tty.setColor(self.writer, .bold);
             try self.writer.print("{s}", .{@tagName(inst)});
             try self.tty.setColor(self.writer, .reset);
