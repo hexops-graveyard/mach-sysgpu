@@ -30,6 +30,7 @@ fn RefCounted(comptime T: type) type {
 }
 
 const Instance = RefCounted(Implementation.Instance);
+const Adapter = RefCounted(Implementation.Adapter);
 
 /// The Dusk implementation of the gpu.Interface, which has some shared code, and calls into the various implementations for everything else.
 ///
@@ -100,14 +101,20 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn adapterReference(adapter: *gpu.Adapter) void {
-        _ = adapter;
-        unreachable;
+    pub inline fn adapterReference(adapter_raw: *gpu.Adapter) void {
+        var adapter = @ptrCast(*Adapter, @alignCast(@alignOf(Instance), adapter_raw));
+
+        std.debug.print("referencing adapter\n", .{});
+
+        adapter.reference();
     }
 
-    pub inline fn adapterRelease(adapter: *gpu.Adapter) void {
-        _ = adapter;
-        unreachable;
+    pub inline fn adapterRelease(adapter_raw: *gpu.Adapter) void {
+        var adapter = @ptrCast(*Adapter, @alignCast(@alignOf(Instance), adapter_raw));
+
+        std.debug.print("releasing adapter\n", .{});
+
+        adapter.dereference();
     }
 
     pub inline fn bindGroupSetLabel(bind_group: *gpu.BindGroup, label: [*:0]const u8) void {
@@ -690,12 +697,30 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn instanceRequestAdapter(instance: *gpu.Instance, options: ?*const gpu.RequestAdapterOptions, callback: gpu.RequestAdapterCallback, userdata: ?*anyopaque) void {
-        _ = instance;
-        _ = options;
-        _ = callback;
-        _ = userdata;
-        unreachable;
+    pub inline fn instanceRequestAdapter(instance_raw: *gpu.Instance, options: ?*const gpu.RequestAdapterOptions, callback: gpu.RequestAdapterCallback, userdata: ?*anyopaque) void {
+        var instance = @ptrCast(*Instance, @alignCast(@alignOf(Instance), instance_raw));
+
+        var adapter = allocator.create(Adapter) catch @panic("TODO: PROPOGATE ERRORS");
+
+        adapter.* = .{
+            .item = Implementation.Adapter.create(
+                &instance.item,
+                options orelse gpu.RequestAdapterOptions{
+                    .compatible_surface = null,
+                    .force_fallback_adapter = false,
+                    .next_in_chain = null,
+                    .power_preference = .high_performance,
+                },
+                allocator,
+            ) catch @panic("TODO: PROPGATE ERRORS"),
+        };
+
+        std.debug.print("created adapter {*}\n", .{adapter});
+
+        adapter.reference();
+
+        //TODO: propgate the errors from `create` into here
+        callback(.success, @ptrCast(*gpu.Adapter, adapter), null, userdata);
     }
 
     pub inline fn instanceReference(instance_raw: *gpu.Instance) void {
