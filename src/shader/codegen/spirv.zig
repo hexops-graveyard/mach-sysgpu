@@ -15,14 +15,20 @@ const SpirV = @This();
 
 air: *const Air,
 allocator: std.mem.Allocator,
-name_section: Section,
-decor_section: Section,
-type_section: Section,
+/// Debug Information
+debug_section: Section,
+/// Annotations
+annotations_section: Section,
+/// Types, variables and constants
 global_section: Section,
+/// Functions
 main_section: Section,
-cache: std.AutoArrayHashMapUnmanaged(Key, IdRef) = .{},
+/// Cache type and constants
+type_value_map: std.AutoArrayHashMapUnmanaged(Key, IdRef) = .{},
+/// Map Air Instruction Index to IdRefs to prevent duplicated declarations
 decl_map: std.AutoHashMapUnmanaged(InstIndex, IdRef) = .{},
-capabilities: std.ArrayListUnmanaged(spec.Capability) = .{},
+/// Required Capabilities
+capabilities: std.AutoHashMapUnmanaged(spec.Capability, void) = .{},
 next_result_id: Word = 1,
 compute_stage: ?ComputeStage = null,
 vertex_stage: ?VertexStage = null,
@@ -52,19 +58,17 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
     var spirv = SpirV{
         .air = air,
         .allocator = allocator,
-        .name_section = .{ .allocator = allocator },
-        .decor_section = .{ .allocator = allocator },
-        .type_section = .{ .allocator = allocator },
+        .debug_section = .{ .allocator = allocator },
+        .annotations_section = .{ .allocator = allocator },
         .global_section = .{ .allocator = allocator },
         .main_section = .{ .allocator = allocator },
     };
     defer {
-        spirv.name_section.deinit();
-        spirv.decor_section.deinit();
-        spirv.type_section.deinit();
+        spirv.debug_section.deinit();
+        spirv.annotations_section.deinit();
         spirv.global_section.deinit();
         spirv.main_section.deinit();
-        spirv.cache.deinit(allocator);
+        spirv.type_value_map.deinit(allocator);
         spirv.decl_map.deinit(allocator);
         spirv.capabilities.deinit(allocator);
     }
@@ -77,9 +81,8 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
     }
 
     try spirv.emitModule(&module_section);
-    try module_section.append(spirv.name_section);
-    try module_section.append(spirv.decor_section);
-    try module_section.append(spirv.type_section);
+    try module_section.append(spirv.debug_section);
+    try module_section.append(spirv.annotations_section);
     try module_section.append(spirv.global_section);
     try module_section.append(spirv.main_section);
 
@@ -103,8 +106,9 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
     section.writeWords(header);
 
     try section.emit(.OpCapability, .{ .capability = .Shader });
-    for (spirv.capabilities.items) |capability| {
-        try section.emit(.OpCapability, .{ .capability = capability });
+    var cap_iter = spirv.capabilities.keyIterator();
+    while (cap_iter.next()) |capability| {
+        try section.emit(.OpCapability, .{ .capability = capability.* });
     }
 
     try section.emit(.OpMemoryModel, .{ .addressing_model = .Logical, .memory_model = .GLSL450 });
@@ -174,13 +178,13 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
             const param_type_id = try spirv.emitType(param_inst.type);
 
             const param_id = spirv.allocId();
-            try spirv.name_section.emit(.OpName, .{
+            try spirv.debug_section.emit(.OpName, .{
                 .target = param_id,
                 .name = spirv.air.getStr(param_inst.name),
             });
 
             if (param_inst.builtin != .none) {
-                try spirv.decor_section.emit(.OpDecorate, .{
+                try spirv.annotations_section.emit(.OpDecorate, .{
                     .target = param_id,
                     .decoration = .{ .BuiltIn = .{
                         .built_in = switch (param_inst.builtin) {
@@ -225,7 +229,7 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
     try fn_section.emit(.OpFunctionEnd, {});
 
     const name_slice = spirv.air.getStr(inst.name);
-    try spirv.name_section.emit(.OpName, .{
+    try spirv.debug_section.emit(.OpName, .{
         .target = id,
         .name = name_slice,
     });
@@ -434,41 +438,41 @@ const Key = union(enum) {
 };
 
 pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
-    var gop = try spirv.cache.getOrPut(spirv.allocator, key);
+    var gop = try spirv.type_value_map.getOrPut(spirv.allocator, key);
     if (gop.found_existing) return gop.value_ptr.*;
 
     const id = spirv.allocId();
     switch (key) {
-        .void_type => try spirv.type_section.emit(.OpTypeVoid, .{ .id_result = id }),
-        .int_type => |int| try spirv.type_section.emit(.OpTypeInt, .{
+        .void_type => try spirv.global_section.emit(.OpTypeVoid, .{ .id_result = id }),
+        .int_type => |int| try spirv.global_section.emit(.OpTypeInt, .{
             .id_result = id,
             .width = int.width,
             .signedness = @boolToInt(int.signedness),
         }),
         .float_type => |float| {
             switch (float.width) {
-                16 => try spirv.capabilities.append(spirv.allocator, .Float16),
-                64 => try spirv.capabilities.append(spirv.allocator, .Float64),
+                16 => try spirv.capabilities.put(spirv.allocator, .Float16, {}),
+                64 => try spirv.capabilities.put(spirv.allocator, .Float64, {}),
                 else => {},
             }
-            try spirv.type_section.emit(.OpTypeFloat, .{
+            try spirv.global_section.emit(.OpTypeFloat, .{
                 .id_result = id,
                 .width = float.width,
             });
         },
-        .vector_type => |vector| try spirv.type_section.emit(.OpTypeVector, .{
+        .vector_type => |vector| try spirv.global_section.emit(.OpTypeVector, .{
             .id_result = id,
             .component_type = vector.elem_type,
             .component_count = vector.size,
         }),
-        .matrix_type => |matrix| try spirv.type_section.emit(.OpTypeMatrix, .{
+        .matrix_type => |matrix| try spirv.global_section.emit(.OpTypeMatrix, .{
             .id_result = id,
             .column_type = matrix.elem_type,
             .column_count = matrix.cols,
         }),
         .array_type => |array| {
             if (array.len) |len| {
-                try spirv.type_section.emit(.OpTypeArray, .{
+                try spirv.global_section.emit(.OpTypeArray, .{
                     .id_result = id,
                     .element_type = array.elem_type,
                     .length = len,
