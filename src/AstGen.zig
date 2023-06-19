@@ -20,7 +20,6 @@ allocator: std.mem.Allocator,
 tree: *const Ast,
 instructions: std.AutoArrayHashMapUnmanaged(Inst, void) = .{},
 refs: std.ArrayListUnmanaged(InstIndex) = .{},
-types: std.ArrayListUnmanaged(InstIndex) = .{},
 strings: std.ArrayListUnmanaged(u8) = .{},
 values: std.ArrayListUnmanaged(u8) = .{},
 scratch: std.ArrayListUnmanaged(InstIndex) = .{},
@@ -83,7 +82,7 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
         astgen.vertex_stage == .none and
         astgen.fragment_stage == .none)
     {
-        try astgen.errors.add(Loc{ .start = 0, .end = 0 }, "entry point not found", .{}, null);
+        try astgen.errors.add(Loc{ .start = 0, .end = 1 }, "entry point not found", .{}, null);
     }
 
     return astgen.addRefList(astgen.scratch.items[scratch_top..]);
@@ -356,8 +355,8 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
         }
 
         if (member_type_inst == .array) {
-            const array_size = member_type_inst.array.size;
-            if (array_size == .none and i + 1 != member_nodes_list.len) {
+            const array_len = member_type_inst.array.len;
+            if (array_len == .none and i + 1 != member_nodes_list.len) {
                 try astgen.errors.add(
                     member_name_loc,
                     "struct member with runtime-sized array type, must be the last member of the structure",
@@ -522,6 +521,8 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
                 break :blk x;
             },
             .y = blk: {
+                if (workgroup_size_data.y == .none) break :blk .none;
+
                 const y = try astgen.genExpr(root_scope, workgroup_size_data.y);
                 if (try astgen.resolveConstExpr(y) == null) {
                     try astgen.errors.add(
@@ -535,6 +536,8 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
                 break :blk y;
             },
             .z = blk: {
+                if (workgroup_size_data.z == .none) break :blk .none;
+
                 const z = try astgen.genExpr(root_scope, workgroup_size_data.z);
                 if (try astgen.resolveConstExpr(z) == null) {
                     try astgen.errors.add(
@@ -3083,7 +3086,6 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
         },
         else => unreachable,
     };
-    try astgen.types.append(astgen.allocator, inst);
     return inst;
 }
 
@@ -3284,10 +3286,10 @@ fn genArray(astgen: *AstGen, scope: *Scope, node: NodeIndex, args: ?RefIndex) !I
             .matrix,
             => {
                 if (astgen.getInst(elem_type) == .array) {
-                    if (astgen.getInst(elem_type).array.size == .none) {
+                    if (astgen.getInst(elem_type).array.len == .none) {
                         try astgen.errors.add(
                             astgen.tree.nodeLoc(node_lhs),
-                            "array component type can not be a runtime-sized array",
+                            "array component type can not be a runtime-known array",
                             .{},
                             null,
                         );
@@ -3323,16 +3325,25 @@ fn genArray(astgen: *AstGen, scope: *Scope, node: NodeIndex, args: ?RefIndex) !I
         }
     }
 
-    const size_node = astgen.tree.nodeRHS(node);
-    var size = InstIndex.none;
-    if (size_node != .none) {
-        size = try astgen.genExpr(scope, size_node);
+    const len_node = astgen.tree.nodeRHS(node);
+    var len = InstIndex.none;
+    if (len_node != .none) {
+        len = try astgen.genExpr(scope, len_node);
+        if (try astgen.resolveConstExpr(len) == null) {
+            try astgen.errors.add(
+                astgen.tree.nodeLoc(len_node),
+                "expected const-expression",
+                .{},
+                null,
+            );
+            return error.AnalysisFail;
+        }
     }
 
     return astgen.addInst(.{
         .array = .{
             .elem_type = elem_type,
-            .size = size,
+            .len = len,
             .value = args,
         },
     });

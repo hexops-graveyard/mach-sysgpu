@@ -13,7 +13,6 @@ vertex_stage: InstIndex,
 fragment_stage: InstIndex,
 instructions: []const Inst,
 refs: []const InstIndex,
-types: []const InstIndex,
 strings: []const u8,
 values: []const u8,
 errors: ErrorList,
@@ -21,7 +20,6 @@ errors: ErrorList,
 pub fn deinit(self: *Air, allocator: std.mem.Allocator) void {
     allocator.free(self.instructions);
     allocator.free(self.refs);
-    allocator.free(self.types);
     allocator.free(self.strings);
     allocator.free(self.values);
     self.errors.deinit();
@@ -43,7 +41,6 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
     }
     errdefer {
         astgen.refs.deinit(allocator);
-        astgen.types.deinit(allocator);
         astgen.strings.deinit(allocator);
         astgen.values.deinit(allocator);
     }
@@ -57,7 +54,6 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
         .fragment_stage = astgen.fragment_stage,
         .instructions = try allocator.dupe(Inst, astgen.instructions.keys()),
         .refs = try astgen.refs.toOwnedSlice(allocator),
-        .types = try astgen.types.toOwnedSlice(allocator),
         .strings = try astgen.strings.toOwnedSlice(allocator),
         .values = try astgen.values.toOwnedSlice(allocator),
         .errors = astgen.errors,
@@ -66,6 +62,10 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
 
 pub fn refToList(self: Air, ref: RefIndex) []const InstIndex {
     return std.mem.sliceTo(self.refs[@enumToInt(ref)..], .none);
+}
+
+pub fn getInst(self: Air, index: InstIndex) Inst {
+    return self.instructions[@enumToInt(index)];
 }
 
 pub fn getStr(self: Air, index: StringIndex) []const u8 {
@@ -394,7 +394,25 @@ pub const Inst = union(enum) {
         type: Type,
         value: ?ValueIndex,
 
-        pub const Type = enum { u32, i32, abstract };
+        pub const Type = enum {
+            u32,
+            i32,
+            abstract,
+
+            pub fn width(self: Type) u8 {
+                return switch (self) {
+                    .u32, .i32 => 32,
+                    .abstract => 64,
+                };
+            }
+
+            pub fn signedness(self: Type) bool {
+                return switch (self) {
+                    .u32 => false,
+                    .i32, .abstract => true,
+                };
+            }
+        };
 
         pub const Value = union(enum) {
             literal: Literal,
@@ -411,7 +429,19 @@ pub const Inst = union(enum) {
         type: Type,
         value: ?ValueIndex,
 
-        pub const Type = enum { f32, f16, abstract };
+        pub const Type = enum {
+            f32,
+            f16,
+            abstract,
+
+            pub fn width(self: Type) u8 {
+                return switch (self) {
+                    .f32 => 32,
+                    .f16 => 16,
+                    .abstract => 64,
+                };
+            }
+        };
 
         pub const Value = union(enum) {
             literal: Literal,
@@ -450,7 +480,7 @@ pub const Inst = union(enum) {
 
     pub const Array = struct {
         elem_type: InstIndex,
-        size: InstIndex,
+        len: InstIndex,
         value: ?RefIndex,
     };
 
