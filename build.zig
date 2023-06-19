@@ -4,14 +4,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/test.zig" },
+    const shader_compiler = b.addTest(.{
+        .root_source_file = .{ .path = "src/shader/test.zig" },
         .target = target,
         .optimize = optimize,
     });
-    b.installArtifact(main_tests);
+    b.installArtifact(shader_compiler);
 
-    const run_main_tests = b.addRunArtifact(main_tests);
+    const run_shader_compiler = b.addRunArtifact(shader_compiler);
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&run_main_tests.step);
+    test_step.dependOn(&run_shader_compiler.step);
 }
