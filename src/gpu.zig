@@ -36,14 +36,6 @@ pub const StubInterface = interface.StubInterface;
 pub const Export = interface.Export;
 pub const Interface = interface.Interface;
 
-pub inline fn createInstance(descriptor: ?*const instance.Instance.Descriptor) ?*instance.Instance {
-    return Impl.createInstance(descriptor);
-}
-
-pub inline fn getProcAddress(_device: *device.Device, proc_name: [*:0]const u8) ?Proc {
-    return Impl.getProcAddress(_device, proc_name);
-}
-
 pub const array_layer_count_undef = 0xffffffff;
 pub const copy_stride_undef = 0xffffffff;
 pub const limit_u32_undef = 0xffffffff;

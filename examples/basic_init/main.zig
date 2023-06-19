@@ -11,6 +11,6 @@ pub fn main() !void {
 
     gpu.Impl.init();
 
-    var instance = gpu.createInstance(null);
+    var instance = gpu.Impl.createInstance(null);
     defer gpu.Impl.instanceRelease(instance.?);
 }
