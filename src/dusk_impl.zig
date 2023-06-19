@@ -3,8 +3,7 @@ const gpu = @import("gpu.zig");
 const builtin = @import("builtin");
 
 var didInit = false;
-
-const allocator: std.mem.Allocator = std.heap.c_allocator;
+var allocator: std.mem.Allocator = undefined;
 
 const Implementation = @import("vulkan/impl.zig");
 
@@ -36,8 +35,9 @@ const Instance = RefCounted(Implementation.Instance);
 ///
 /// Before use, it must be `.init()`ialized in order to set the global proc table.
 pub const Interface = struct {
-    pub fn init() void {
+    pub fn init(passed_allocator: std.mem.Allocator) void {
         didInit = true;
+        allocator = passed_allocator;
     }
 
     pub inline fn createInstance(descriptor: ?*const gpu.Instance.Descriptor) ?*gpu.Instance {

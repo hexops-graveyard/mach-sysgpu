@@ -14,15 +14,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .root_source_file = .{ .path = "examples/basic_init/main.zig" },
     });
-
-    if (target.getOsTag() == .linux) {
-        basic_init_example.linkSystemLibrary("vulkan");
-    } else {
-        @panic("TODO");
-    }
-
-    basic_init_example.linkLibC();
-
+    linkDeps(basic_init_example);
     basic_init_example.addModule("gpu", module);
     b.installArtifact(basic_init_example);
 
@@ -35,6 +27,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    linkDeps(shader_tests);
     b.installArtifact(shader_tests);
 
     const stub_impl_tests = b.addTest(.{
@@ -42,6 +35,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    linkDeps(stub_impl_tests);
     b.installArtifact(stub_impl_tests);
 
     const run_shader_tests = b.addRunArtifact(shader_tests);
@@ -50,4 +44,13 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_shader_tests.step);
     test_step.dependOn(&run_stub_impl_tests.step);
+}
+
+fn linkDeps(step: *std.Build.Step.Compile) void {
+    if (step.target.getOsTag() == .linux) {
+        step.linkSystemLibrary("vulkan");
+    } else {
+        @panic("TODO");
+    }
+    step.linkLibC();
 }
