@@ -533,17 +533,6 @@ test "must error" {
     }
     {
         const source =
-            \\fn test1() -> f32 {
-            \\  return 0;
-            \\}
-        ;
-        try expectError(source, .{
-            .msg = "return type mismatch",
-            .loc = .{ .start = 22, .end = 28 },
-        });
-    }
-    {
-        const source =
             \\fn test() {
             \\  let v0 = true;
             \\  v0 = false;

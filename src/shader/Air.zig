@@ -232,8 +232,8 @@ pub const Inst = union(enum) {
     pub const GlobalVar = struct {
         name: StringIndex,
         type: InstIndex,
-        addr_space: Var.AddressSpace,
-        access_mode: Var.AccessMode,
+        addr_space: ?PointerType.AddressSpace,
+        access_mode: ?PointerType.AccessMode,
         binding: InstIndex,
         group: InstIndex,
         expr: InstIndex,
@@ -242,25 +242,9 @@ pub const Inst = union(enum) {
     pub const Var = struct {
         name: StringIndex,
         type: InstIndex,
-        addr_space: AddressSpace,
-        access_mode: AccessMode,
+        addr_space: ?PointerType.AddressSpace,
+        access_mode: ?PointerType.AccessMode,
         expr: InstIndex,
-
-        pub const AddressSpace = enum {
-            none,
-            function,
-            private,
-            workgroup,
-            uniform,
-            storage,
-        };
-
-        pub const AccessMode = enum {
-            none,
-            read,
-            write,
-            read_write,
-        };
     };
 
     pub const Override = struct {
@@ -460,10 +444,7 @@ pub const Inst = union(enum) {
         value: ?ValueIndex,
 
         pub const Size = enum(u5) { two = 2, three = 3, four = 4 };
-        pub const Value = union(enum) {
-            literal: [4]u32,
-            inst: [4]InstIndex,
-        };
+        pub const Value = [4]InstIndex;
     };
 
     pub const Matrix = struct {
@@ -472,10 +453,7 @@ pub const Inst = union(enum) {
         rows: Vector.Size,
         value: ?ValueIndex,
 
-        pub const Value = union(enum) {
-            literal: [4 * 4]u32,
-            inst: [4 * 4]InstIndex,
-        };
+        pub const Value = [4 * 4]InstIndex;
     };
 
     pub const Array = struct {
@@ -489,7 +467,7 @@ pub const Inst = union(enum) {
     pub const PointerType = struct {
         elem_type: InstIndex,
         addr_space: AddressSpace,
-        access_mode: AccessMode,
+        access_mode: ?AccessMode,
 
         pub const AddressSpace = enum {
             function,
@@ -500,7 +478,6 @@ pub const Inst = union(enum) {
         };
 
         pub const AccessMode = enum {
-            none,
             read,
             write,
             read_write,
