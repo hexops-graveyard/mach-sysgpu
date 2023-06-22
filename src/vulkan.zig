@@ -1,8 +1,6 @@
 const std = @import("std");
-
-const vk = @import("vk.zig");
-
-const gpu = @import("../gpu.zig");
+const vk = @import("vulkan");
+const gpu = @import("mach-gpu");
 
 const BaseDispatch = vk.BaseWrapper(.{
     .createInstance = true,
@@ -21,9 +19,7 @@ const InstanceDispatch = vk.InstanceWrapper(.{
     .getPhysicalDeviceQueueFamilyProperties = true,
 });
 
-const c = @cImport({
-    @cInclude("vulkan/vulkan.h");
-});
+const c = @cImport(@cInclude("vulkan/vulkan.h"));
 
 pub const Instance = struct {
     vulkan_instance: vk.Instance,
@@ -40,7 +36,7 @@ pub const Instance = struct {
             .application_version = vk.makeApiVersion(0, 0, 0, 0),
             .p_engine_name = "Dusk",
             .engine_version = vk.makeApiVersion(0, 0, 0, 0),
-            .api_version = vk.API_VERSION_1_2,
+            .api_version = vk.makeApiVersion(0, 0, 0, 0),
         };
 
         //NOTE: Theoretically we dont always need KHR_surface, but for loading simplicity, lets assume we will always be using vulkan drivers with it

@@ -1,0 +1,3 @@
+[submodule "libs/mach-gpu"]
+	path = libs/mach-gpu
+	url = https://github.com/hexops/mach-gpu

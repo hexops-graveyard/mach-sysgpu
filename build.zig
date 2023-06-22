@@ -4,8 +4,24 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const module = b.addModule("gpu", .{
-        .source_file = .{ .path = "src/gpu.zig" },
+    const vulkan_dep = b.dependency("vulkan-zig-generated", .{});
+    const vulkan_mod = vulkan_dep.module("vulkan-zig-generated");
+    const mach_gpu_mod = b.addModule("mach-gpu", .{
+        .source_file = .{ .path = "libs/mach-gpu/src/main.zig" },
+    });
+
+    const module = b.addModule("dusk", .{
+        .source_file = .{ .path = "src/main.zig" },
+        .dependencies = &.{
+            .{
+                .name = "vulkan",
+                .module = vulkan_mod,
+            },
+            .{
+                .name = "mach-gpu",
+                .module = mach_gpu_mod,
+            },
+        },
     });
 
     const basic_init_example = b.addExecutable(.{
@@ -14,9 +30,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .root_source_file = .{ .path = "examples/basic_init/main.zig" },
     });
-    linkDeps(basic_init_example);
-    basic_init_example.addModule("gpu", module);
+    basic_init_example.addModule("mach-dusk", module);
+    basic_init_example.addModule("mach-gpu", mach_gpu_mod);
     b.installArtifact(basic_init_example);
+    linkDeps(basic_init_example);
 
     const run_basic_init_example = b.addRunArtifact(basic_init_example);
     const run_basic_init_example_step = b.step("basic_init", "Run the basic init example");
@@ -27,23 +44,11 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    linkDeps(shader_tests);
     b.installArtifact(shader_tests);
 
-    const stub_impl_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/interface.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    linkDeps(stub_impl_tests);
-    b.installArtifact(stub_impl_tests);
-
     const run_shader_tests = b.addRunArtifact(shader_tests);
-    const run_stub_impl_tests = b.addRunArtifact(stub_impl_tests);
-
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_shader_tests.step);
-    test_step.dependOn(&run_stub_impl_tests.step);
 }
 
 fn linkDeps(step: *std.Build.Step.Compile) void {

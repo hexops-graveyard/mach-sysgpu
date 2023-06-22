@@ -1,11 +1,10 @@
 const std = @import("std");
-const gpu = @import("gpu.zig");
 const builtin = @import("builtin");
+const gpu = @import("mach-gpu");
+const vulkan = @import("vulkan.zig");
 
-var didInit = false;
+var inited = false;
 var allocator: std.mem.Allocator = undefined;
-
-const Implementation = @import("vulkan/impl.zig");
 
 fn RefCounted(comptime T: type) type {
     return struct {
@@ -29,31 +28,25 @@ fn RefCounted(comptime T: type) type {
     };
 }
 
-const Instance = RefCounted(Implementation.Instance);
-const Adapter = RefCounted(Implementation.Adapter);
+const Instance = RefCounted(vulkan.Instance);
+const Adapter = RefCounted(vulkan.Adapter);
 
-/// The Dusk implementation of the gpu.Interface, which has some shared code, and calls into the various implementations for everything else.
-///
-/// Before use, it must be `.init()`ialized in order to set the global proc table.
 pub const Interface = struct {
     pub fn init(passed_allocator: std.mem.Allocator) void {
-        didInit = true;
+        inited = true;
         allocator = passed_allocator;
     }
 
     pub inline fn createInstance(descriptor: ?*const gpu.Instance.Descriptor) ?*gpu.Instance {
-        if (builtin.mode == .Debug and !didInit) @panic("dusk: not initialized; did you forget to call gpu.Impl.init()?");
+        if (builtin.mode == .Debug and !inited) @panic("dusk: not initialized; did you forget to call gpu.Impl.init()?");
 
         var instance = allocator.create(Instance) catch @panic("TODO: PROPOGATE ERRORS");
 
         instance.* = .{
-            .item = Implementation.Instance.create(descriptor) catch @panic("TODO: PROPOGATE ERRORS"),
+            .item = vulkan.Instance.create(descriptor) catch @panic("TODO: PROPOGATE ERRORS"),
         };
 
         instance.reference();
-
-        std.debug.print("created instance {*}\n", .{instance});
-
         return @ptrCast(*gpu.Instance, instance);
     }
 
@@ -102,18 +95,12 @@ pub const Interface = struct {
     }
 
     pub inline fn adapterReference(adapter_raw: *gpu.Adapter) void {
-        var adapter = @ptrCast(*Adapter, @alignCast(@alignOf(Instance), adapter_raw));
-
-        std.debug.print("referencing adapter\n", .{});
-
+        var adapter = @ptrCast(*Adapter, @alignCast(@alignOf(Adapter), adapter_raw));
         adapter.reference();
     }
 
     pub inline fn adapterRelease(adapter_raw: *gpu.Adapter) void {
-        var adapter = @ptrCast(*Adapter, @alignCast(@alignOf(Instance), adapter_raw));
-
-        std.debug.print("releasing adapter\n", .{});
-
+        var adapter = @ptrCast(*Adapter, @alignCast(@alignOf(Adapter), adapter_raw));
         adapter.dereference();
     }
 
@@ -154,6 +141,7 @@ pub const Interface = struct {
         unreachable;
     }
 
+    // TODO: dawn: return value not marked as nullable in dawn.json but in fact is.
     pub inline fn bufferGetConstMappedRange(buffer: *gpu.Buffer, offset: usize, size: usize) ?*const anyopaque {
         _ = buffer;
         _ = offset;
@@ -161,6 +149,7 @@ pub const Interface = struct {
         unreachable;
     }
 
+    // TODO: dawn: return value not marked as nullable in dawn.json but in fact is.
     pub inline fn bufferGetMappedRange(buffer: *gpu.Buffer, offset: usize, size: usize) ?*anyopaque {
         _ = buffer;
         _ = offset;
@@ -703,7 +692,7 @@ pub const Interface = struct {
         var adapter = allocator.create(Adapter) catch @panic("TODO: PROPOGATE ERRORS");
 
         adapter.* = .{
-            .item = Implementation.Adapter.create(
+            .item = vulkan.Adapter.create(
                 &instance.item,
                 (options orelse &gpu.RequestAdapterOptions{
                     .compatible_surface = null,

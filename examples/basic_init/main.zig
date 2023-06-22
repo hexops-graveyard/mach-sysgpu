@@ -1,8 +1,8 @@
 const std = @import("std");
+const gpu = @import("mach-gpu");
+const dusk = @import("mach-dusk");
 
-const gpu = @import("gpu");
-
-pub const GPUInterface = gpu.dusk;
+pub const GPUInterface = dusk.Interface;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
