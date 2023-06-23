@@ -3,7 +3,7 @@ const Parser = @import("Parser.zig");
 const Token = @import("Token.zig");
 const Tokenizer = @import("Tokenizer.zig");
 const ErrorList = @import("ErrorList.zig");
-const Extension = @import("main.zig").Extension;
+const Extension = @import("shader.zig").Extension;
 
 const Ast = @This();
 
