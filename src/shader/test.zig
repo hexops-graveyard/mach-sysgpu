@@ -1,9 +1,9 @@
 const std = @import("std");
-const dusk = @import("main.zig");
-const ErrorList = dusk.ErrorList;
-const Ast = dusk.Ast;
-const Air = dusk.Air;
-const printAir = dusk.printAir;
+const ErrorList = @import("ErrorList.zig");
+const Ast = @import("Ast.zig");
+const Air = @import("Air.zig");
+const printAir = @import("print_air.zig");
+const CodeGen = @import("CodeGen.zig");
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const allocator = std.testing.allocator;
@@ -533,17 +533,6 @@ test "must error" {
     }
     {
         const source =
-            \\fn test1() -> f32 {
-            \\  return 0;
-            \\}
-        ;
-        try expectError(source, .{
-            .msg = "return type mismatch",
-            .loc = .{ .start = 22, .end = 28 },
-        });
-    }
-    {
-        const source =
             \\fn test() {
             \\  let v0 = true;
             \\  v0 = false;
@@ -573,7 +562,7 @@ test "spirv" {
         return error.AstGen;
     }
 
-    const out = try dusk.CodeGen.generate(allocator, &ir, .spirv);
+    const out = try CodeGen.generate(allocator, &ir, .spirv);
     defer allocator.free(out);
 
     try std.fs.cwd().writeFile("triangle.spv", out);

@@ -1,6 +1,6 @@
 const std = @import("std");
 const Air = @import("Air.zig");
-const Backend = @import("main.zig").Backend;
+const Backend = @import("shader.zig").Backend;
 const genSpirv = @import("codegen/spirv.zig").gen;
 
 pub fn generate(allocator: std.mem.Allocator, air: *const Air, backend: Backend) ![]const u8 {
