@@ -1,5 +1,5 @@
 const std = @import("std");
-const dusk = @import("main.zig");
+const dusk = @import("../main.zig");
 const ErrorList = dusk.ErrorList;
 const Ast = dusk.Ast;
 const Air = dusk.Air;
