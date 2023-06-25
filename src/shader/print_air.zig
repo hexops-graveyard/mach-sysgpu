@@ -106,7 +106,7 @@ fn Printer(comptime Writer: type) type {
                 .struct_ref, .var_ref => |ref| {
                     try self.instStart(index);
                     try self.tty.setColor(self.writer, .yellow);
-                    try self.writer.print("{d}", .{@enumToInt(ref)});
+                    try self.writer.print("{d}", .{@intFromEnum(ref)});
                     try self.tty.setColor(self.writer, .reset);
                     try self.instEnd();
                 },
@@ -358,12 +358,12 @@ fn Printer(comptime Writer: type) type {
                         try self.tty.setColor(self.writer, .dim);
                         try self.writer.writeAll("[");
                         try self.tty.setColor(self.writer, .reset);
-                        for (0..@enumToInt(vec.size)) |i| {
+                        for (0..@intFromEnum(vec.size)) |i| {
                             try self.tty.setColor(self.writer, .cyan);
                             try self.writer.print("{d}", .{lit[i]});
                             try self.tty.setColor(self.writer, .reset);
                             try self.tty.setColor(self.writer, .dim);
-                            if (i < @enumToInt(vec.size) - 1) try self.writer.writeAll(", ");
+                            if (i < @intFromEnum(vec.size) - 1) try self.writer.writeAll(", ");
                             try self.tty.setColor(self.writer, .reset);
                         }
                         try self.tty.setColor(self.writer, .dim);
@@ -374,7 +374,7 @@ fn Printer(comptime Writer: type) type {
                     .inst => |cast| {
                         try self.printFieldName(indent + 1, "cast");
                         try self.listStart();
-                        for (0..@enumToInt(vec.size)) |i| {
+                        for (0..@intFromEnum(vec.size)) |i| {
                             if (cast[i] == .none) continue;
                             try self.printIndent(indent + 2);
                             try self.printInst(indent + 2, cast[i]);
@@ -399,12 +399,12 @@ fn Printer(comptime Writer: type) type {
                         try self.tty.setColor(self.writer, .dim);
                         try self.writer.writeAll("[");
                         try self.tty.setColor(self.writer, .reset);
-                        for (0..@enumToInt(mat.cols) * @enumToInt(mat.rows)) |i| {
+                        for (0..@intFromEnum(mat.cols) * @intFromEnum(mat.rows)) |i| {
                             try self.tty.setColor(self.writer, .cyan);
                             try self.writer.print("{d}", .{lit[i]});
                             try self.tty.setColor(self.writer, .reset);
                             try self.tty.setColor(self.writer, .dim);
-                            if (i < @enumToInt(mat.cols) * @enumToInt(mat.rows) - 1) try self.writer.writeAll(", ");
+                            if (i < @intFromEnum(mat.cols) * @intFromEnum(mat.rows) - 1) try self.writer.writeAll(", ");
                             try self.tty.setColor(self.writer, .reset);
                         }
                         try self.tty.setColor(self.writer, .dim);
@@ -415,7 +415,7 @@ fn Printer(comptime Writer: type) type {
                     .inst => |cast| {
                         try self.printFieldName(indent + 1, "cast");
                         try self.listStart();
-                        for (0..@enumToInt(mat.cols) * @enumToInt(mat.rows)) |i| {
+                        for (0..@intFromEnum(mat.cols) * @intFromEnum(mat.rows)) |i| {
                             if (cast[i] == .none) continue;
                             try self.printIndent(indent + 2);
                             try self.printInst(indent + 2, cast[i]);
@@ -455,7 +455,7 @@ fn Printer(comptime Writer: type) type {
             try self.writer.writeAll("<");
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .blue);
-            try self.writer.print("{d}", .{@enumToInt(index)});
+            try self.writer.print("{d}", .{@intFromEnum(index)});
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .dim);
             try self.writer.writeAll(">");
@@ -478,7 +478,7 @@ fn Printer(comptime Writer: type) type {
             try self.writer.writeAll("<");
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .blue);
-            try self.writer.print("{d}", .{@enumToInt(index)});
+            try self.writer.print("{d}", .{@intFromEnum(index)});
             try self.tty.setColor(self.writer, .reset);
             try self.tty.setColor(self.writer, .dim);
             try self.writer.writeAll(">");

@@ -43,7 +43,7 @@ pub fn emitRaw(
 ) !void {
     const word_count = 1 + operand_words;
     try section.words.ensureUnusedCapacity(word_count);
-    section.writeWord((@intCast(Word, word_count << 16)) | @enumToInt(opcode));
+    section.writeWord((@intCast(Word, word_count << 16)) | @intFromEnum(opcode));
 }
 
 pub fn emit(
@@ -53,7 +53,7 @@ pub fn emit(
 ) !void {
     const word_count = instructionSize(opcode, operands);
     try section.ensureUnusedCapacity(word_count);
-    section.writeWord(@intCast(Word, word_count << 16) | @enumToInt(opcode));
+    section.writeWord(@intCast(Word, word_count << 16) | @intFromEnum(opcode));
     section.writeOperands(opcode.Operands(), operands);
 }
 
@@ -117,14 +117,14 @@ pub fn writeOperand(section: *Section, comptime Operand: type, operand: Operand)
         // TODO: Where this type is used (OpSpecConstantOp) is currently not correct in the spec json,
         // so it most likely needs to be altered into something that can actually describe the entire
         // instruction in which it is used.
-        spec.LiteralSpecConstantOpInteger => section.writeWord(@enumToInt(operand.opcode)),
+        spec.LiteralSpecConstantOpInteger => section.writeWord(@intFromEnum(operand.opcode)),
 
         spec.PairLiteralIntegerIdRef => section.writeWords(&.{ operand.value, operand.label.id }),
         spec.PairIdRefLiteralInteger => section.writeWords(&.{ operand.target.id, operand.member }),
         spec.PairIdRefIdRef => section.writeWords(&.{ operand[0].id, operand[1].id }),
 
         else => switch (@typeInfo(Operand)) {
-            .Enum => section.writeWord(@enumToInt(operand)),
+            .Enum => section.writeWord(@intFromEnum(operand)),
             .Optional => |info| if (operand) |child| {
                 section.writeOperand(info.child, child);
             },
@@ -208,7 +208,7 @@ fn writeExtendedMask(section: *Section, comptime Operand: type, operand: Operand
 
 fn writeExtendedUnion(section: *Section, comptime Operand: type, operand: Operand) void {
     const tag = std.meta.activeTag(operand);
-    section.writeWord(@enumToInt(tag));
+    section.writeWord(@intFromEnum(tag));
 
     inline for (@typeInfo(Operand).Union.fields) |field| {
         if (@field(Operand, field.name) == tag) {

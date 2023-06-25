@@ -61,19 +61,19 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
 }
 
 pub fn refToList(self: Air, ref: RefIndex) []const InstIndex {
-    return std.mem.sliceTo(self.refs[@enumToInt(ref)..], .none);
+    return std.mem.sliceTo(self.refs[@intFromEnum(ref)..], .none);
 }
 
 pub fn getInst(self: Air, index: InstIndex) Inst {
-    return self.instructions[@enumToInt(index)];
+    return self.instructions[@intFromEnum(index)];
 }
 
 pub fn getStr(self: Air, index: StringIndex) []const u8 {
-    return std.mem.sliceTo(self.strings[@enumToInt(index)..], 0);
+    return std.mem.sliceTo(self.strings[@intFromEnum(index)..], 0);
 }
 
 pub fn getValue(self: Air, comptime T: type, value: ValueIndex) T {
-    return std.mem.bytesAsValue(T, self.values[@enumToInt(value)..][0..@sizeOf(T)]).*;
+    return std.mem.bytesAsValue(T, self.values[@intFromEnum(value)..][0..@sizeOf(T)]).*;
 }
 
 pub const InstIndex = enum(u32) {

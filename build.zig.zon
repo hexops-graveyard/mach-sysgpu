@@ -3,8 +3,8 @@
     .version = "0.0.1",
     .dependencies = .{
         .@"vulkan-zig-generated" = .{
-            .url = "https://github.com/alichraghi/vulkan-zig-generated/archive/823b88a3269e4c039a32b540d5ec78a9c59c0752.tar.gz",
-            .hash = "1220aa3cb9f56a95819dfc9ad006592e6691ee11745939bd1132ec4bedd54450c3dd",
+            .url = "https://github.com/hexops/vulkan-zig-generated/archive/1d6c7a998dbaf268db005f8ab779ed23b30bbd68.tar.gz",
+            .hash = "12206a54e457ea02d45f9671059cd645f99e210cf8e09958ae075bc7320c8cf4640c",
         },
     },
 }
