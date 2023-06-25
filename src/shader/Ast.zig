@@ -73,40 +73,40 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
 
 pub fn spanToList(tree: Ast, span: NodeIndex) []const NodeIndex {
     std.debug.assert(tree.nodeTag(span) == .span);
-    return @ptrCast([]const NodeIndex, tree.extra[@enumToInt(tree.nodeLHS(span))..@enumToInt(tree.nodeRHS(span))]);
+    return @ptrCast([]const NodeIndex, tree.extra[@intFromEnum(tree.nodeLHS(span))..@intFromEnum(tree.nodeRHS(span))]);
 }
 
 pub fn extraData(tree: Ast, comptime T: type, index: NodeIndex) T {
     const fields = std.meta.fields(T);
     var result: T = undefined;
     inline for (fields, 0..) |field, i| {
-        @field(result, field.name) = @intToEnum(field.type, tree.extra[@enumToInt(index) + i]);
+        @field(result, field.name) = @enumFromInt(field.type, tree.extra[@intFromEnum(index) + i]);
     }
     return result;
 }
 
 pub fn tokenTag(tree: Ast, i: TokenIndex) Token.Tag {
-    return tree.tokens.items(.tag)[@enumToInt(i)];
+    return tree.tokens.items(.tag)[@intFromEnum(i)];
 }
 
 pub fn tokenLoc(tree: Ast, i: TokenIndex) Token.Loc {
-    return tree.tokens.items(.loc)[@enumToInt(i)];
+    return tree.tokens.items(.loc)[@intFromEnum(i)];
 }
 
 pub fn nodeTag(tree: Ast, i: NodeIndex) Node.Tag {
-    return tree.nodes.items(.tag)[@enumToInt(i)];
+    return tree.nodes.items(.tag)[@intFromEnum(i)];
 }
 
 pub fn nodeToken(tree: Ast, i: NodeIndex) TokenIndex {
-    return tree.nodes.items(.main_token)[@enumToInt(i)];
+    return tree.nodes.items(.main_token)[@intFromEnum(i)];
 }
 
 pub fn nodeLHS(tree: Ast, i: NodeIndex) NodeIndex {
-    return tree.nodes.items(.lhs)[@enumToInt(i)];
+    return tree.nodes.items(.lhs)[@intFromEnum(i)];
 }
 
 pub fn nodeRHS(tree: Ast, i: NodeIndex) NodeIndex {
-    return tree.nodes.items(.rhs)[@enumToInt(i)];
+    return tree.nodes.items(.rhs)[@intFromEnum(i)];
 }
 
 pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
@@ -117,7 +117,7 @@ pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
             loc.end = lhs_loc.end;
         },
         .field_access => {
-            const component_loc = tree.tokenLoc(@intToEnum(TokenIndex, @enumToInt(tree.nodeToken(i)) + 1));
+            const component_loc = tree.tokenLoc(@enumFromInt(TokenIndex, @intFromEnum(tree.nodeToken(i)) + 1));
             loc.end = component_loc.end;
         },
         else => {},
@@ -135,7 +135,7 @@ pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
         .let,
         .override,
         .type_alias,
-        => @intToEnum(TokenIndex, @enumToInt(tree.nodeToken(node)) + 1),
+        => @enumFromInt(TokenIndex, @intFromEnum(tree.nodeToken(node)) + 1),
         .struct_member, .fn_param => tree.nodeToken(node),
         else => return null,
     };
@@ -148,7 +148,7 @@ pub const NodeIndex = enum(u32) {
     _,
 
     pub fn asTokenIndex(self: NodeIndex) TokenIndex {
-        return @intToEnum(TokenIndex, @enumToInt(self));
+        return @enumFromInt(TokenIndex, @intFromEnum(self));
     }
 };
 
@@ -157,7 +157,7 @@ pub const TokenIndex = enum(u32) {
     _,
 
     pub fn asNodeIndex(self: TokenIndex) NodeIndex {
-        return @intToEnum(NodeIndex, @enumToInt(self));
+        return @enumFromInt(NodeIndex, @intFromEnum(self));
     }
 };
 

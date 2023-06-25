@@ -449,7 +449,7 @@ fn emitVector(spirv: *SpirV, section: *Section, inst: Inst.Vector) !IdRef {
 
     var constituents = std.ArrayList(IdRef).init(spirv.allocator);
     defer constituents.deinit();
-    try constituents.ensureTotalCapacityPrecise(@enumToInt(inst.size));
+    try constituents.ensureTotalCapacityPrecise(@intFromEnum(inst.size));
 
     const ty: Key = switch (spirv.air.getInst(inst.elem_type)) {
         .bool => .bool_type,
@@ -458,7 +458,7 @@ fn emitVector(spirv: *SpirV, section: *Section, inst: Inst.Vector) !IdRef {
         else => unreachable,
     };
 
-    for (value[0..@enumToInt(inst.size)]) |val| {
+    for (value[0..@intFromEnum(inst.size)]) |val| {
         var val_id: IdRef = undefined;
         if (val != .none) {
             switch (spirv.air.getInst(val)) {
@@ -591,7 +591,7 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
         .int_type => |int| try spirv.global_section.emit(.OpTypeInt, .{
             .id_result = id,
             .width = int.width(),
-            .signedness = @boolToInt(int.signedness()),
+            .signedness = @intFromBool(int.signedness()),
         }),
         .float_type => |float| {
             switch (float) {
@@ -607,12 +607,12 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
         .vector_type => |vector| try spirv.global_section.emit(.OpTypeVector, .{
             .id_result = id,
             .component_type = vector.elem_type,
-            .component_count = @enumToInt(vector.size),
+            .component_count = @intFromEnum(vector.size),
         }),
         .matrix_type => |matrix| try spirv.global_section.emit(.OpTypeMatrix, .{
             .id_result = id,
             .column_type = matrix.elem_type,
-            .column_count = @enumToInt(matrix.cols),
+            .column_count = @intFromEnum(matrix.cols),
         }),
         .array_type => |array| {
             if (array.len) |len| {

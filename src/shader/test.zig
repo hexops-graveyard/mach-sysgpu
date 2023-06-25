@@ -277,14 +277,14 @@ test "integer/float literals" {
         fn getIntValue(air: Air, i: Air.InstIndex) Air.Inst.Int.Value {
             return air.getValue(
                 Air.Inst.Int.Value,
-                air.instructions[@enumToInt(air.instructions[@enumToInt(i)].global_var.expr)].int.value.?,
+                air.instructions[@intFromEnum(air.instructions[@intFromEnum(i)].global_var.expr)].int.value.?,
             );
         }
 
         fn getFloatValue(air: Air, i: Air.InstIndex) Air.Inst.Float.Value {
             return air.getValue(
                 Air.Inst.Float.Value,
-                air.instructions[@enumToInt(air.instructions[@enumToInt(i)].global_var.expr)].float.value.?,
+                air.instructions[@intFromEnum(air.instructions[@intFromEnum(i)].global_var.expr)].float.value.?,
             );
         }
     };

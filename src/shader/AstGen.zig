@@ -1443,7 +1443,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
             return error.AnalysisFail;
         }
 
-        const value = std.fmt.parseFloat(f64, bytes[0 .. bytes.len - @boolToInt(suffix != 0)]) catch |err| {
+        const value = std.fmt.parseFloat(f64, bytes[0 .. bytes.len - @intFromBool(suffix != 0)]) catch |err| {
             try astgen.errors.add(
                 node_loc,
                 "cannot parse float literal ({s})",
@@ -1474,7 +1474,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
             },
         };
     } else {
-        const value = std.fmt.parseInt(i64, bytes[0 .. bytes.len - @boolToInt(suffix != 0)], 0) catch |err| {
+        const value = std.fmt.parseInt(i64, bytes[0 .. bytes.len - @intFromBool(suffix != 0)], 0) catch |err| {
             try astgen.errors.add(
                 node_loc,
                 "cannot parse integer literal ({s})",
@@ -1960,7 +1960,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     scope,
                     node_rhs,
                     try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    std.mem.zeroes([4]InstIndex),
+                    null_vec,
                 );
             }
 
@@ -1969,6 +1969,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             switch (arg_nodes.len) {
                 1 => {
                     args[0] = try astgen.genExpr(scope, arg_nodes[0]);
+                    args[1] = args[0];
                     const arg_res = try astgen.resolve(args[0]);
                     if (astgen.getInst(arg_res) == .vector) {
                         const vector = astgen.getInst(arg_res).vector;
@@ -2019,7 +2020,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     scope,
                     node_rhs,
                     try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    std.mem.zeroes([4]InstIndex),
+                    null_vec,
                 );
             }
 
@@ -2028,6 +2029,8 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             switch (arg_nodes.len) {
                 1 => {
                     args[0] = try astgen.genExpr(scope, arg_nodes[0]);
+                    args[1] = args[0];
+                    args[2] = args[0];
                     const arg_res = try astgen.resolve(args[0]);
                     if (astgen.getInst(arg_res) == .vector) {
                         const vector = astgen.getInst(arg_res).vector;
@@ -2113,7 +2116,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     scope,
                     node_rhs,
                     try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    std.mem.zeroes([4]InstIndex),
+                    null_vec,
                 );
             }
 
@@ -2122,6 +2125,9 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             switch (arg_nodes.len) {
                 1 => {
                     args[0] = try astgen.genExpr(scope, arg_nodes[0]);
+                    args[1] = args[0];
+                    args[2] = args[0];
+                    args[3] = args[0];
                     const arg_res = try astgen.resolve(args[0]);
                     if (astgen.getInst(arg_res) == .vector) {
                         const vector = astgen.getInst(arg_res).vector;
@@ -2210,10 +2216,10 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         } else {
                             if (scalar_arg0 == .none) {
                                 scalar_arg0 = arg;
-                                scalar_arg0_offset = i + if (vector_arg_offset) |vec_off| @boolToInt(vec_off < i) else 0;
+                                scalar_arg0_offset = i + if (vector_arg_offset) |vec_off| @intFromBool(vec_off < i) else 0;
                             } else if (scalar_arg1 == .none) {
                                 scalar_arg1 = arg;
-                                scalar_arg1_offset = i + if (vector_arg_offset) |vec_off| @boolToInt(vec_off < i) else 0;
+                                scalar_arg1_offset = i + if (vector_arg_offset) |vec_off| @intFromBool(vec_off < i) else 0;
                             } else break :blk;
                         }
                     }
@@ -2298,8 +2304,8 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     },
                     else => {},
                 }
-            } else if (arg_nodes.len == @enumToInt(cols)) blk: {
-                const offset = @enumToInt(rows);
+            } else if (arg_nodes.len == @intFromEnum(cols)) blk: {
+                const offset = @intFromEnum(rows);
                 var arg0_res = InstIndex.none;
                 for (arg_nodes, 0..) |arg_node, i| {
                     const arg = try astgen.genExpr(scope, arg_node);
@@ -2327,7 +2333,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 if (astgen.eql(astgen.getInst(mat).matrix.elem_type, astgen.getInst(arg0_res).vector.elem_type)) {
                     return mat;
                 }
-            } else if (arg_nodes.len == @enumToInt(cols) * @enumToInt(rows)) blk: {
+            } else if (arg_nodes.len == @intFromEnum(cols) * @intFromEnum(rows)) blk: {
                 var arg0_res = InstIndex.none;
                 for (arg_nodes, 0..) |arg_node, i| {
                     const arg = try astgen.genExpr(scope, arg_node);
@@ -2958,7 +2964,7 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     switch (astgen.getInst(base_type)) {
         .vector => |base_vec| {
-            if (field_name.len > 4 or field_name.len > @enumToInt(base_vec.size)) {
+            if (field_name.len > 4 or field_name.len > @intFromEnum(base_vec.size)) {
                 try astgen.errors.add(
                     astgen.tree.tokenLoc(field_node),
                     "invalid swizzle name",
@@ -2990,7 +2996,7 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             const inst = try astgen.addInst(.{
                 .swizzle_access = .{
                     .base = base,
-                    .size = @intToEnum(Inst.SwizzleAccess.Size, field_name.len),
+                    .size = @enumFromInt(Inst.SwizzleAccess.Size, field_name.len),
                     .pattern = pattern,
                 },
             });
@@ -3676,7 +3682,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
                 return astgen.addInst(.{
                     .vector = .{
                         .elem_type = elem_type,
-                        .size = @intToEnum(Inst.Vector.Size, @enumToInt(swizzle_access.size)),
+                        .size = @enumFromInt(Inst.Vector.Size, @intFromEnum(swizzle_access.size)),
                         .value = null,
                     },
                 });
@@ -3896,7 +3902,7 @@ fn eqlMatrix(astgen: *AstGen, a: Air.Inst.Matrix, b: Air.Inst.Matrix) bool {
 
 fn addInst(astgen: *AstGen, inst: Inst) error{OutOfMemory}!InstIndex {
     try astgen.instructions.put(astgen.allocator, inst, {});
-    return @intToEnum(InstIndex, astgen.instructions.getIndex(inst).?);
+    return @enumFromInt(InstIndex, astgen.instructions.getIndex(inst).?);
 }
 
 fn addRefList(astgen: *AstGen, list: []const InstIndex) error{OutOfMemory}!RefIndex {
@@ -3904,7 +3910,7 @@ fn addRefList(astgen: *AstGen, list: []const InstIndex) error{OutOfMemory}!RefIn
     try astgen.refs.ensureUnusedCapacity(astgen.allocator, len);
     astgen.refs.appendSliceAssumeCapacity(list);
     astgen.refs.appendAssumeCapacity(.none);
-    return @intToEnum(RefIndex, astgen.refs.items.len - len);
+    return @enumFromInt(RefIndex, astgen.refs.items.len - len);
 }
 
 fn addString(astgen: *AstGen, str: []const u8) error{OutOfMemory}!StringIndex {
@@ -3912,30 +3918,30 @@ fn addString(astgen: *AstGen, str: []const u8) error{OutOfMemory}!StringIndex {
     try astgen.strings.ensureUnusedCapacity(astgen.allocator, len);
     astgen.strings.appendSliceAssumeCapacity(str);
     astgen.strings.appendAssumeCapacity(0);
-    return @intToEnum(StringIndex, astgen.strings.items.len - len);
+    return @enumFromInt(StringIndex, astgen.strings.items.len - len);
 }
 
 fn addValue(astgen: *AstGen, comptime T: type, value: T) error{OutOfMemory}!ValueIndex {
     const value_bytes = std.mem.asBytes(&value);
     try astgen.values.appendSlice(astgen.allocator, value_bytes);
     std.testing.expectEqual(value, std.mem.bytesToValue(T, value_bytes)) catch unreachable;
-    return @intToEnum(ValueIndex, astgen.values.items.len - value_bytes.len);
+    return @enumFromInt(ValueIndex, astgen.values.items.len - value_bytes.len);
 }
 
 fn getInst(astgen: *AstGen, inst: InstIndex) Inst {
-    return astgen.instructions.entries.slice().items(.key)[@enumToInt(inst)];
+    return astgen.instructions.entries.slice().items(.key)[@intFromEnum(inst)];
 }
 
 fn getValue(astgen: *AstGen, comptime T: type, value: ValueIndex) T {
-    return std.mem.bytesAsValue(T, astgen.values.items[@enumToInt(value)..][0..@sizeOf(T)]).*;
+    return std.mem.bytesAsValue(T, astgen.values.items[@intFromEnum(value)..][0..@sizeOf(T)]).*;
 }
 
 fn getStr(astgen: *AstGen, index: StringIndex) []const u8 {
-    return std.mem.sliceTo(astgen.strings.items[@enumToInt(index)..], 0);
+    return std.mem.sliceTo(astgen.strings.items[@intFromEnum(index)..], 0);
 }
 
 fn refToList(astgen: *AstGen, ref: RefIndex) []const InstIndex {
-    return std.mem.sliceTo(astgen.refs.items[@enumToInt(ref)..], .none);
+    return std.mem.sliceTo(astgen.refs.items[@intFromEnum(ref)..], .none);
 }
 
 fn failArgCountMismatch(
