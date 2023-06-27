@@ -32,8 +32,8 @@ pub fn build(b: *std.Build) void {
     });
     basic_init_example.addModule("mach-dusk", module);
     basic_init_example.addModule("mach-gpu", mach_gpu_mod);
+    basic_init_example.linkLibC();
     b.installArtifact(basic_init_example);
-    linkDeps(basic_init_example);
 
     const run_basic_init_example = b.addRunArtifact(basic_init_example);
     const run_basic_init_example_step = b.step("basic_init", "Run the basic init example");
@@ -49,13 +49,4 @@ pub fn build(b: *std.Build) void {
     const run_shader_tests = b.addRunArtifact(shader_tests);
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_shader_tests.step);
-}
-
-fn linkDeps(step: *std.Build.Step.Compile) void {
-    if (step.target.getOsTag() == .linux) {
-        step.linkSystemLibrary("vulkan");
-    } else {
-        @panic("TODO");
-    }
-    step.linkLibC();
 }

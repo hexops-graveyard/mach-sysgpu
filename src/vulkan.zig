@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const vk = @import("vulkan");
 const gpu = @import("mach-gpu");
 
@@ -19,9 +20,8 @@ const InstanceDispatch = vk.InstanceWrapper(.{
     .getPhysicalDeviceQueueFamilyProperties = true,
 });
 
-const c = @cImport(@cInclude("vulkan/vulkan.h"));
-
 pub const Instance = struct {
+    vulkan_loader: std.DynLib,
     vulkan_instance: vk.Instance,
     vkb: BaseDispatch,
     vki: InstanceDispatch,
@@ -29,7 +29,17 @@ pub const Instance = struct {
     pub fn create(descriptor: ?*const gpu.Instance.Descriptor) !Instance {
         if (descriptor != null) @panic("TODO");
 
-        var vkb = try BaseDispatch.load(@ptrCast(vk.PfnGetInstanceProcAddr, &c.vkGetInstanceProcAddr));
+        // NOTE: ElfDynLib is unable to find vulkan, so forcing libc means we always use DlDynlib even on Linux
+        if (!builtin.link_libc) @compileError("You must link libc!");
+
+        var vulkan_loader = try std.DynLib.open(switch (builtin.os.tag) {
+            .windows => "vulkan-1.dll",
+            .linux => "libvulkan.so.1",
+            .macos => "libvulkan.1.dylib",
+            else => @compileError("Unknown OS!"),
+        });
+
+        var vkb = try BaseDispatch.load(vulkan_loader.lookup(vk.PfnGetInstanceProcAddr, "vkGetInstanceProcAddr").?);
 
         const app_info = vk.ApplicationInfo{
             .p_application_name = "Dusk",
@@ -53,6 +63,7 @@ pub const Instance = struct {
         const vki = try InstanceDispatch.load(vulkan_instance, vkb.dispatch.vkGetInstanceProcAddr);
 
         return Instance{
+            .vulkan_loader = vulkan_loader,
             .vulkan_instance = vulkan_instance,
             .vkb = vkb,
             .vki = vki,
@@ -61,6 +72,7 @@ pub const Instance = struct {
 
     pub fn deinit(self: *Instance) void {
         self.vki.destroyInstance(self.vulkan_instance, null);
+        self.vulkan_loader.close();
     }
 };
 
