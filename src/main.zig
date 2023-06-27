@@ -74,6 +74,11 @@ pub const Interface = struct {
         unreachable;
     }
 
+    pub inline fn adapterGetInstance(adapter: *gpu.Adapter) *gpu.Instance {
+        _ = adapter;
+        unreachable;
+    }
+
     pub inline fn adapterGetProperties(adapter: *gpu.Adapter, properties: *gpu.Adapter.Properties) void {
         _ = adapter;
         _ = properties;
@@ -384,7 +389,7 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn computePassEncoderSetBindGroup(compute_pass_encoder: *gpu.ComputePassEncoder, group_index: u32, group: *gpu.BindGroup, dynamic_offset_count: u32, dynamic_offsets: ?[*]const u32) void {
+    pub inline fn computePassEncoderSetBindGroup(compute_pass_encoder: *gpu.ComputePassEncoder, group_index: u32, group: *gpu.BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) void {
         _ = compute_pass_encoder;
         _ = group_index;
         _ = group;
@@ -604,7 +609,7 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn devicePopErrorScope(device: *gpu.Device, callback: gpu.ErrorCallback, userdata: ?*anyopaque) bool {
+    pub inline fn devicePopErrorScope(device: *gpu.Device, callback: gpu.ErrorCallback, userdata: ?*anyopaque) void {
         _ = device;
         _ = callback;
         _ = userdata;
@@ -683,6 +688,11 @@ pub const Interface = struct {
     pub inline fn instanceCreateSurface(instance: *gpu.Instance, descriptor: *const gpu.Surface.Descriptor) *gpu.Surface {
         _ = instance;
         _ = descriptor;
+        unreachable;
+    }
+
+    pub inline fn instanceProcessEvents(instance: *gpu.Instance) void {
+        _ = instance;
         unreachable;
     }
 
@@ -798,7 +808,7 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn queueSubmit(queue: *gpu.Queue, command_count: u32, commands: [*]const *const gpu.CommandBuffer) void {
+    pub inline fn queueSubmit(queue: *gpu.Queue, command_count: usize, commands: [*]const *const gpu.CommandBuffer) void {
         _ = queue;
         _ = command_count;
         _ = commands;
@@ -840,6 +850,12 @@ pub const Interface = struct {
     }
 
     pub inline fn renderBundleRelease(render_bundle: *gpu.RenderBundle) void {
+        _ = render_bundle;
+        unreachable;
+    }
+
+    pub inline fn renderBundleSetLabel(render_bundle: *gpu.RenderBundle, name: [*:0]const u8) void {
+        _ = name;
         _ = render_bundle;
         unreachable;
     }
@@ -900,7 +916,7 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn renderBundleEncoderSetBindGroup(render_bundle_encoder: *gpu.RenderBundleEncoder, group_index: u32, group: *gpu.BindGroup, dynamic_offset_count: u32, dynamic_offsets: ?[*]const u32) void {
+    pub inline fn renderBundleEncoderSetBindGroup(render_bundle_encoder: *gpu.RenderBundleEncoder, group_index: u32, group: *gpu.BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) void {
         _ = render_bundle_encoder;
         _ = group_index;
         _ = group;
@@ -998,7 +1014,7 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn renderPassEncoderExecuteBundles(render_pass_encoder: *gpu.RenderPassEncoder, bundles_count: u32, bundles: [*]const *const gpu.RenderBundle) void {
+    pub inline fn renderPassEncoderExecuteBundles(render_pass_encoder: *gpu.RenderPassEncoder, bundles_count: usize, bundles: [*]const *const gpu.RenderBundle) void {
         _ = render_pass_encoder;
         _ = bundles_count;
         _ = bundles;
@@ -1022,7 +1038,7 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn renderPassEncoderSetBindGroup(render_pass_encoder: *gpu.RenderPassEncoder, group_index: u32, group: *gpu.BindGroup, dynamic_offset_count: u32, dynamic_offsets: ?[*]const u32) void {
+    pub inline fn renderPassEncoderSetBindGroup(render_pass_encoder: *gpu.RenderPassEncoder, group_index: u32, group: *gpu.BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) void {
         _ = render_pass_encoder;
         _ = group_index;
         _ = group;
@@ -1187,6 +1203,11 @@ pub const Interface = struct {
         _ = allowed_usage;
         _ = width;
         _ = height;
+        unreachable;
+    }
+
+    pub inline fn swapChainGetCurrentTexture(swap_chain: *gpu.SwapChain) ?*gpu.Texture {
+        _ = swap_chain;
         unreachable;
     }
 
