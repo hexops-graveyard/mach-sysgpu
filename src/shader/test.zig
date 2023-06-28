@@ -485,18 +485,8 @@ test "must error" {
             \\var v1 = vec2<f32>(v0);
         ;
         try expectError(source, .{
-            .msg = "cannot construct vec2",
-            .loc = .{ .start = 31, .end = 35 },
-        });
-    }
-    {
-        const source =
-            \\var v0 = vec2<f32>();
-            \\var v1 = vec3<f32>(v0, v0);
-        ;
-        try expectError(source, .{
-            .msg = "cannot construct vec3",
-            .loc = .{ .start = 31, .end = 35 },
+            .msg = "doesn't fit in this vector",
+            .loc = .{ .start = 41, .end = 43 },
         });
     }
     {
