@@ -76,19 +76,54 @@ pub fn getValue(self: Air, comptime T: type, value: ValueIndex) T {
     return std.mem.bytesAsValue(T, self.values[@intFromEnum(value)..][0..@sizeOf(T)]).*;
 }
 
-pub const InstIndex = enum(u32) {
-    none = std.math.maxInt(u32),
-    _,
-};
-pub const RefIndex = enum(u32) {
-    none = std.math.maxInt(u32),
-    _,
-};
+pub fn isConst(self: Air, value: InstIndex) bool {
+    return switch (self.getInst(value)) {
+        .bool => |boolean| boolean.value.? == .literal,
+        .int => |int| self.getValue(Inst.Int.Value, int.value.?) == .literal,
+        .float => |float| self.getValue(Inst.Float.Value, float.value.?) == .literal,
+        .vector => |vec| {
+            var is_const = true;
+            for (self.getValue(Inst.Vector.Value, vec.value.?)) |elem_val| {
+                if (elem_val != .none and !self.isConst(elem_val)) {
+                    is_const = false;
+                }
+            }
+            return is_const;
+        },
+        .matrix => |mat| {
+            var is_const = true;
+            for (self.getValue(Inst.Matrix.Value, mat.value.?)) |elem_val| {
+                if (elem_val != .none and !self.isConst(elem_val)) {
+                    is_const = false;
+                }
+            }
+            return is_const;
+        },
+        inline .field_access, .swizzle_access, .index_access => |access| self.isConst(access.base),
+        else => isMutable(self.instructions, value),
+    };
+}
+
+pub fn isMutable(instructions: []const Inst, index: InstIndex) bool {
+    var idx = index;
+    while (true) switch (instructions[@intFromEnum(idx)]) {
+        .deref => |deref| idx = deref,
+        .var_ref => |var_ref| idx = var_ref,
+        inline .field_access, .swizzle_access, .index_access => |access| idx = access.base,
+        .global_var, .@"var" => return true,
+        .global_const, .@"const", .let, .override, .fn_param, .vector => return false,
+        else => unreachable,
+    };
+}
+
+pub const InstIndex = enum(u32) { none = std.math.maxInt(u32), _ };
+pub const RefIndex = enum(u32) { none = std.math.maxInt(u32), _ };
+pub const ValueIndex = enum(u32) { none = std.math.maxInt(u32), _ };
 pub const StringIndex = enum(u32) { _ };
-pub const ValueIndex = enum(u32) { _ };
 
 pub const Inst = union(enum) {
     global_var: GlobalVar,
+    global_const: Const,
     override: Override,
 
     @"fn": Fn,
@@ -242,7 +277,7 @@ pub const Inst = union(enum) {
     pub const Var = struct {
         name: StringIndex,
         type: InstIndex,
-        addr_space: ?PointerType.AddressSpace,
+        addr_space: PointerType.AddressSpace,
         access_mode: ?PointerType.AccessMode,
         expr: InstIndex,
     };
@@ -385,8 +420,8 @@ pub const Inst = union(enum) {
 
             pub fn width(self: Type) u8 {
                 return switch (self) {
-                    .u32, .i32 => 32,
-                    .abstract => 64,
+                    .u32, .i32, .abstract => 32,
+                    // .abstract => 64, TODO
                 };
             }
 
@@ -443,7 +478,7 @@ pub const Inst = union(enum) {
         size: Size,
         value: ?ValueIndex,
 
-        pub const Size = enum(u5) { two = 2, three = 3, four = 4 };
+        pub const Size = enum(u3) { two = 2, three = 3, four = 4 };
         pub const Value = [4]InstIndex;
     };
 
@@ -559,6 +594,7 @@ pub const Inst = union(enum) {
 
     pub const SwizzleAccess = struct {
         base: InstIndex,
+        type: InstIndex,
         size: Size,
         pattern: [4]Component,
 
@@ -568,12 +604,12 @@ pub const Inst = union(enum) {
             three = 3,
             four = 4,
         };
-        pub const Component = enum { x, y, z, w };
+        pub const Component = enum(u3) { x, y, z, w };
     };
 
     pub const IndexAccess = struct {
         base: InstIndex,
-        elem_type: InstIndex,
+        type: InstIndex,
         index: InstIndex,
     };
 

@@ -2,6 +2,8 @@ const std = @import("std");
 const Ast = @import("Ast.zig");
 const Air = @import("Air.zig");
 const ErrorList = @import("ErrorList.zig");
+const TokenTag = @import("Token.zig").Tag;
+const Loc = @import("Token.zig").Loc;
 const Inst = Air.Inst;
 const InstIndex = Air.InstIndex;
 const RefIndex = Air.RefIndex;
@@ -10,8 +12,6 @@ const ValueIndex = Air.ValueIndex;
 const Node = Ast.Node;
 const NodeIndex = Ast.NodeIndex;
 const TokenIndex = Ast.TokenIndex;
-const TokenTag = @import("Token.zig").Tag;
-const Loc = @import("Token.zig").Loc;
 const stringToEnum = std.meta.stringToEnum;
 
 const AstGen = @This();
@@ -120,7 +120,7 @@ fn genGlobalDecl(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const decl = switch (astgen.tree.nodeTag(node)) {
         .global_var => astgen.genGlobalVar(scope, node),
         .override => astgen.genOverride(scope, node),
-        .@"const" => astgen.genConst(scope, node),
+        .@"const" => astgen.genConst(scope, node, true),
         .@"struct" => astgen.genStruct(scope, node),
         .@"fn" => astgen.genFn(scope, node),
         .type_alias => astgen.genTypeAlias(scope, node),
@@ -933,7 +933,7 @@ fn genStatement(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             break :blk decl;
         },
         .@"const" => blk: {
-            const decl = try astgen.genConst(scope, node);
+            const decl = try astgen.genConst(scope, node, false);
             scope.decls.putAssumeCapacity(node, decl);
             break :blk decl;
         },
@@ -1060,7 +1060,7 @@ fn genFor(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     try astgen.scanDecls(for_scope, &.{extra.init});
     const init = switch (astgen.tree.nodeTag(extra.init)) {
         .@"var" => try astgen.genVar(for_scope, extra.init),
-        .@"const" => try astgen.genConst(for_scope, extra.init),
+        .@"const" => try astgen.genConst(for_scope, extra.init, false),
         .let => try astgen.genLet(for_scope, extra.init),
         else => unreachable,
     };
@@ -1162,10 +1162,11 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
     const rhs = try astgen.genExpr(scope, node_rhs);
     const lhs_type = try astgen.resolve(lhs);
     const rhs_type = try astgen.resolve(rhs);
-    astgen.checkMutability(lhs) catch {
+
+    if (!Air.isMutable(astgen.instructions.keys(), lhs)) {
         try astgen.errors.add(astgen.tree.nodeLoc(node), "cannot assign to constant", .{}, null);
         return error.AnalysisFail;
-    };
+    }
 
     if (!astgen.eql(lhs_type, rhs_type)) {
         try astgen.errors.add(astgen.tree.nodeLoc(node), "type mismatch", .{}, null);
@@ -1186,21 +1187,6 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
         .angle_bracket_angle_bracket_right_equal => .{ .assign_shr = .{ .lhs = lhs, .rhs = rhs } },
         else => unreachable,
     });
-}
-
-fn checkMutability(astgen: *AstGen, index: InstIndex) error{Immutable}!void {
-    var idx = index;
-    while (true) {
-        const inst = astgen.getInst(idx);
-        switch (inst) {
-            .deref => idx = inst.deref,
-            .var_ref => |var_ref| idx = var_ref,
-            inline .field_access, .swizzle_access, .index_access => |access| idx = access.base,
-            .@"const", .let, .override, .fn_param, .vector => return error.Immutable,
-            .global_var, .@"var" => return,
-            else => unreachable,
-        }
-    }
 }
 
 fn genPhonyAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -1253,7 +1239,7 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
-    var addr_space: ?Inst.PointerType.AddressSpace = null;
+    var addr_space = Inst.PointerType.AddressSpace.function;
     if (extra.addr_space != .none) {
         const addr_space_loc = astgen.tree.tokenLoc(extra.addr_space);
         const ast_addr_space = stringToEnum(Ast.AddressSpace, addr_space_loc.slice(astgen.tree.source)).?;
@@ -1298,7 +1284,7 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     });
 }
 
-fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex, global: bool) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_rhs = astgen.tree.nodeRHS(node);
     const name_loc = astgen.tree.declNameLoc(node).?;
@@ -1320,13 +1306,24 @@ fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
-    return astgen.addInst(.{
-        .@"const" = .{
-            .name = name,
-            .type = var_type,
-            .expr = expr,
-        },
-    });
+
+    if (global) {
+        return astgen.addInst(.{
+            .global_const = .{
+                .name = name,
+                .type = var_type,
+                .expr = expr,
+            },
+        });
+    } else {
+        return astgen.addInst(.{
+            .@"const" = .{
+                .name = name,
+                .type = var_type,
+                .expr = expr,
+            },
+        });
+    }
 }
 
 fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -1352,14 +1349,14 @@ fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
 fn genExpr(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_tag = astgen.tree.nodeTag(node);
-    switch (node_tag) {
-        .number => return astgen.genNumber(node),
-        .true => return astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }),
-        .false => return astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }),
-        .not => return astgen.genNot(scope, node),
-        .negate => return astgen.genNegate(scope, node),
-        .deref => return astgen.genDeref(scope, node),
-        .addr_of => return astgen.genAddrOf(scope, node),
+    return switch (node_tag) {
+        .number => astgen.genNumber(node),
+        .true => astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }),
+        .false => astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }),
+        .not => astgen.genNot(scope, node),
+        .negate => astgen.genNegate(scope, node),
+        .deref => astgen.genDeref(scope, node),
+        .addr_of => astgen.genAddrOf(scope, node),
         .mul,
         .div,
         .mod,
@@ -1378,14 +1375,14 @@ fn genExpr(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .less_than_equal,
         .greater_than,
         .greater_than_equal,
-        => return astgen.genBinary(scope, node),
-        .index_access => return astgen.genIndexAccess(scope, node),
-        .field_access => return astgen.genFieldAccess(scope, node),
-        .call => return astgen.genCall(scope, node),
-        .bitcast => return astgen.genBitcast(scope, node),
-        .ident => return astgen.genVarRef(scope, node),
+        => astgen.genBinary(scope, node),
+        .index_access => astgen.genIndexAccess(scope, node),
+        .field_access => astgen.genFieldAccess(scope, node),
+        .call => astgen.genCall(scope, node),
+        .bitcast => astgen.genBitcast(scope, node),
+        .ident => astgen.genVarRef(scope, node),
         else => unreachable,
-    }
+    };
 }
 
 fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
@@ -1790,478 +1787,228 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             try astgen.errors.add(node_loc, "cannot construct bool", .{}, null);
             return error.AnalysisFail;
         },
-        .k_u32 => {
+        .k_u32, .k_i32 => {
+            const ty: Inst.Int.Type = switch (token_tag) {
+                .k_u32 => .u32,
+                .k_i32 => .i32,
+                else => unreachable,
+            };
+
             if (node_lhs == .none) {
-                return astgen.addInst(.{
-                    .int = .{
-                        .value = try astgen.addValue(Inst.Int.Value, .{ .literal = .{ .value = 0, .base = 10 } }),
-                        .type = .u32,
-                    },
-                });
+                const zero_value = try astgen.addValue(Inst.Int.Value, .{ .literal = .{ .value = 0, .base = 10 } });
+                return astgen.addInst(.{ .int = .{ .value = zero_value, .type = ty } });
             }
 
-            const arg_node = astgen.tree.spanToList(node_lhs)[0];
-            const lhs = try astgen.genExpr(scope, arg_node);
-            const lhs_res = try astgen.resolve(lhs);
-            switch (astgen.getInst(lhs_res)) {
-                .bool => return astgen.addInst(.{
-                    .int = .{
-                        .value = try astgen.addValue(Inst.Int.Value, .{ .inst = lhs }),
-                        .type = .u32,
-                    },
-                }),
-                .int => |int| switch (int.type) {
-                    .u32 => return lhs,
-                    .i32, .abstract => return astgen.addInst(.{
-                        .int = .{
-                            .value = try astgen.addValue(Inst.Int.Value, .{ .inst = lhs }),
-                            .type = .u32,
-                        },
-                    }),
-                },
-                .float => return astgen.addInst(.{
-                    .int = .{
-                        .value = try astgen.addValue(Inst.Int.Value, .{ .inst = lhs }),
-                        .type = .u32,
-                    },
-                }),
-                else => {},
-            }
-
-            try astgen.errors.add(node_loc, "cannot construct u32", .{}, null);
-            return error.AnalysisFail;
-        },
-        .k_i32 => {
-            if (node_lhs == .none) {
-                return astgen.addInst(.{
-                    .int = .{
-                        .value = try astgen.addValue(Inst.Int.Value, .{ .literal = .{ .value = 0, .base = 10 } }),
-                        .type = .i32,
-                    },
-                });
-            }
-
-            const arg_node = astgen.tree.spanToList(node_lhs)[0];
-            const lhs = try astgen.genExpr(scope, arg_node);
-            const lhs_res = try astgen.resolve(lhs);
-            switch (astgen.getInst(lhs_res)) {
-                .bool => return astgen.addInst(.{
-                    .int = .{
-                        .value = try astgen.addValue(Inst.Int.Value, .{ .inst = lhs }),
-                        .type = .i32,
-                    },
-                }),
-                .int => |int| switch (int.type) {
-                    .i32 => return lhs,
-                    .u32, .abstract => return astgen.addInst(.{
-                        .int = .{
-                            .value = try astgen.addValue(Inst.Int.Value, .{ .inst = lhs }),
-                            .type = .i32,
-                        },
-                    }),
-                },
-                .float => return astgen.addInst(.{
-                    .int = .{
-                        .value = try astgen.addValue(Inst.Int.Value, .{ .inst = lhs }),
-                        .type = .i32,
-                    },
-                }),
-                else => {},
-            }
-
-            try astgen.errors.add(node_loc, "cannot construct i32", .{}, null);
-            return error.AnalysisFail;
-        },
-        .k_f32 => {
-            if (node_lhs == .none) {
-                return astgen.addInst(.{
-                    .float = .{
-                        .value = try astgen.addValue(Inst.Float.Value, .{ .literal = .{ .value = 0, .base = 10 } }),
-                        .type = .f32,
-                    },
-                });
-            }
-
-            const arg_node = astgen.tree.spanToList(node_lhs)[0];
-            const lhs = try astgen.genExpr(scope, arg_node);
-            const lhs_res = try astgen.resolve(lhs);
-            switch (astgen.getInst(lhs_res)) {
-                .bool => return astgen.addInst(.{
-                    .float = .{
-                        .value = try astgen.addValue(Inst.Float.Value, .{ .inst = lhs }),
-                        .type = .f32,
-                    },
-                }),
-                .int => return astgen.addInst(.{
-                    .float = .{
-                        .value = try astgen.addValue(Inst.Float.Value, .{ .inst = lhs }),
-                        .type = .f32,
-                    },
-                }),
-                .float => |float| switch (float.type) {
-                    .f32 => return lhs,
-                    .f16, .abstract => return astgen.addInst(.{
-                        .float = .{
-                            .value = try astgen.addValue(Inst.Float.Value, .{ .inst = lhs }),
-                            .type = .f32,
-                        },
-                    }),
-                },
-                else => {},
-            }
-
-            try astgen.errors.add(node_loc, "cannot construct f32", .{}, null);
-            return error.AnalysisFail;
-        },
-        .k_f16 => {
-            if (node_lhs == .none) {
-                return astgen.addInst(.{
-                    .float = .{
-                        .value = try astgen.addValue(Inst.Float.Value, .{ .literal = .{ .value = 0, .base = 10 } }),
-                        .type = .f16,
-                    },
-                });
-            }
-
-            const arg_node = astgen.tree.spanToList(node_lhs)[0];
-            const lhs = try astgen.genExpr(scope, arg_node);
-            const lhs_res = try astgen.resolve(lhs);
-            switch (astgen.getInst(lhs_res)) {
-                .bool => return astgen.addInst(.{
-                    .float = .{
-                        .value = try astgen.addValue(Inst.Float.Value, .{ .inst = lhs }),
-                        .type = .f16,
-                    },
-                }),
-                .int => return astgen.addInst(.{
-                    .float = .{
-                        .value = try astgen.addValue(Inst.Float.Value, .{ .inst = lhs }),
-                        .type = .f16,
-                    },
-                }),
-                .float => |float| switch (float.type) {
-                    .f16 => return lhs,
-                    .f32, .abstract => return astgen.addInst(.{
-                        .float = .{
-                            .value = try astgen.addValue(Inst.Float.Value, .{ .inst = lhs }),
-                            .type = .f16,
-                        },
-                    }),
-                },
-                else => {},
-            }
-
-            try astgen.errors.add(node_loc, "cannot construct f16", .{}, null);
-            return error.AnalysisFail;
-        },
-        .k_vec2 => {
-            if (node_lhs == .none) {
-                return astgen.genVector(
-                    scope,
-                    node_rhs,
-                    try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    null_vec,
-                );
-            }
-
-            var args = null_vec;
             const arg_nodes = astgen.tree.spanToList(node_lhs);
-            switch (arg_nodes.len) {
-                1 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    args[1] = args[0];
-                    const arg_res = try astgen.resolve(args[0]);
-                    if (astgen.getInst(arg_res) == .vector) {
-                        const vector = astgen.getInst(arg_res).vector;
-                        if (vector.size == .two) {
-                            const vec = try astgen.genVector(scope, node_rhs, vector.elem_type, args);
-                            if (astgen.eql(astgen.getInst(vec).vector.elem_type, vector.elem_type)) {
-                                return vec;
-                            }
-                        }
-                    } else {
-                        const vec = try astgen.genVector(scope, node_rhs, arg_res, args);
-                        if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg_res)) {
-                            return vec;
-                        }
-                    }
-                },
-                2 => blk: {
-                    var arg0_res = InstIndex.none;
-                    for (arg_nodes, 0..) |arg_node, i| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        const arg_res = try astgen.resolve(arg);
-                        switch (astgen.getInst(arg_res)) {
-                            .bool, .int, .float => {
-                                if (i == 0) {
-                                    args[i] = arg;
-                                    arg0_res = arg_res;
-                                } else if (astgen.eql(arg0_res, arg_res)) {
-                                    args[i] = arg;
-                                } else break :blk;
-                            },
-                            else => break :blk,
-                        }
-                    }
-                    const vec = try astgen.genVector(scope, node_rhs, arg0_res, args);
-                    if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
-                        return vec;
-                    }
-                },
-                else => {},
+            if (arg_nodes.len > 1) {
+                try astgen.errors.add(node_loc, "too many arguments", .{}, null);
+                return error.AnalysisFail;
             }
 
-            try astgen.errors.add(node_loc, "cannot construct vec2", .{}, null);
-            return error.AnalysisFail;
+            const arg_node = arg_nodes[0];
+            const expr = try astgen.genExpr(scope, arg_node);
+            const expr_res = try astgen.resolve(expr);
+            const value = try astgen.addValue(Inst.Int.Value, .{ .inst = expr });
+
+            switch (astgen.getInst(expr_res)) {
+                .bool, .float => {},
+                .int => |int| {
+                    if (int.type == ty) {
+                        return expr;
+                    }
+                },
+                else => {
+                    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+                    return error.AnalysisFail;
+                },
+            }
+
+            return astgen.addInst(.{ .int = .{ .value = value, .type = ty } });
         },
-        .k_vec3 => {
+        .k_f32, .k_f16 => {
+            const ty: Inst.Float.Type = switch (token_tag) {
+                .k_f32 => .f32,
+                .k_f16 => .f16,
+                else => unreachable,
+            };
+
             if (node_lhs == .none) {
-                return astgen.genVector(
-                    scope,
-                    node_rhs,
-                    try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    null_vec,
-                );
+                const zero_value = try astgen.addValue(Inst.Float.Value, .{ .literal = .{ .value = 0, .base = 10 } });
+                return astgen.addInst(.{ .float = .{ .value = zero_value, .type = ty } });
             }
 
-            var args = null_vec;
             const arg_nodes = astgen.tree.spanToList(node_lhs);
-            switch (arg_nodes.len) {
-                1 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    args[1] = args[0];
-                    args[2] = args[0];
-                    const arg_res = try astgen.resolve(args[0]);
-                    if (astgen.getInst(arg_res) == .vector) {
-                        const vector = astgen.getInst(arg_res).vector;
-                        if (vector.size == .three) {
-                            const vec = try astgen.genVector(
-                                scope,
-                                node_rhs,
-                                astgen.getInst(arg_res).vector.elem_type,
-                                args,
-                            );
-                            if (astgen.eql(astgen.getInst(vec).vector.elem_type, vector.elem_type)) {
-                                return vec;
-                            }
-                        }
-                    } else {
-                        const vec = try astgen.genVector(scope, node_rhs, arg_res, args);
-                        if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg_res)) {
-                            return vec;
-                        }
-                    }
-                },
-                2 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    const arg0_res = try astgen.resolve(args[0]);
-                    if (astgen.getInst(arg0_res) == .vector) {
-                        const vector = astgen.getInst(arg0_res).vector;
-                        if (vector.size == .two) {
-                            args[2] = try astgen.genExpr(scope, arg_nodes[1]);
-                            const arg1_res = try astgen.resolve(args[2]);
-                            if (astgen.eql(arg1_res, vector.elem_type)) {
-                                const vec = try astgen.genVector(
-                                    scope,
-                                    node_rhs,
-                                    vector.elem_type,
-                                    args,
-                                );
-
-                                if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
-                                    return vec;
-                                }
-                            }
-                        }
-                    } else {
-                        args[1] = try astgen.genExpr(scope, arg_nodes[1]);
-                        const arg1_res = try astgen.resolve(args[1]);
-                        if (astgen.getInst(arg1_res) == .vector and
-                            astgen.getInst(arg1_res).vector.size == .two and
-                            astgen.eql(arg0_res, astgen.getInst(arg1_res).vector.elem_type))
-                        {
-                            const vec = try astgen.genVector(scope, node_rhs, arg0_res, args);
-                            if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
-                                return vec;
-                            }
-                        }
-                    }
-                },
-                3 => blk: {
-                    var arg0_res = InstIndex.none;
-                    for (arg_nodes, 0..) |arg_node, i| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        const arg_res = try astgen.resolve(arg);
-                        if (i == 0) {
-                            args[i] = arg;
-                            arg0_res = arg_res;
-                        } else if (astgen.eql(arg0_res, arg_res)) {
-                            args[i] = arg;
-                        } else break :blk;
-                    }
-                    const vec = try astgen.genVector(scope, node_rhs, arg0_res, args);
-                    if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
-                        return vec;
-                    }
-                },
-                else => {},
+            if (arg_nodes.len > 1) {
+                try astgen.errors.add(node_loc, "too many arguments", .{}, null);
+                return error.AnalysisFail;
             }
 
-            try astgen.errors.add(node_loc, "cannot construct vec3", .{}, null);
-            return error.AnalysisFail;
+            const arg_node = arg_nodes[0];
+            const expr = try astgen.genExpr(scope, arg_node);
+            const expr_res = try astgen.resolve(expr);
+            const value = try astgen.addValue(Inst.Float.Value, .{ .inst = expr });
+
+            switch (astgen.getInst(expr_res)) {
+                .bool, .int => {},
+                .float => |float| {
+                    if (float.type == ty) {
+                        return expr;
+                    }
+                },
+                else => {
+                    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+                    return error.AnalysisFail;
+                },
+            }
+
+            return astgen.addInst(.{ .float = .{ .value = value, .type = ty } });
         },
-        .k_vec4 => {
-            if (node_lhs == .none) {
-                return astgen.genVector(
-                    scope,
-                    node_rhs,
-                    try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    null_vec,
-                );
-            }
+        .k_vec2, .k_vec3, .k_vec4 => {
+            const elem_type_node = astgen.tree.nodeLHS(node_rhs);
+            const size: Inst.Vector.Size = switch (token_tag) {
+                .k_vec2 => .two,
+                .k_vec3 => .three,
+                .k_vec4 => .four,
+                else => unreachable,
+            };
+            var elem_type = InstIndex.none;
 
-            var args = null_vec;
-            const arg_nodes = astgen.tree.spanToList(node_lhs);
-            switch (arg_nodes.len) {
-                1 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    args[1] = args[0];
-                    args[2] = args[0];
-                    args[3] = args[0];
-                    const arg_res = try astgen.resolve(args[0]);
-                    if (astgen.getInst(arg_res) == .vector) {
-                        const vector = astgen.getInst(arg_res).vector;
-                        if (vector.size == .four) {
-                            const vec = try astgen.genVector(
-                                scope,
-                                node_rhs,
-                                astgen.getInst(arg_res).vector.elem_type,
-                                args,
-                            );
-
-                            if (astgen.eql(astgen.getInst(vec).vector.elem_type, vector.elem_type)) {
-                                return vec;
-                            }
-                        }
-                    } else {
-                        const vec = try astgen.genVector(
-                            scope,
-                            node_rhs,
-                            arg_res,
-                            args,
+            if (elem_type_node != .none) {
+                elem_type = try astgen.genType(scope, elem_type_node);
+                switch (astgen.getInst(elem_type)) {
+                    .bool, .int, .float => {},
+                    else => {
+                        try astgen.errors.add(
+                            astgen.tree.nodeLoc(elem_type_node),
+                            "invalid vector component type",
+                            .{},
+                            try astgen.errors.createNote(
+                                null,
+                                "must be 'i32', 'u32', 'f32', 'f16' or 'bool'",
+                                .{},
+                            ),
                         );
-
-                        if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg_res)) {
-                            return vec;
-                        }
-                    }
-                },
-                2 => {
-                    args[0] = try astgen.genExpr(scope, arg_nodes[0]);
-                    const arg0_res = try astgen.resolve(args[0]);
-                    if (astgen.getInst(arg0_res) == .vector) {
-                        args[2] = try astgen.genExpr(scope, arg_nodes[1]);
-                        const arg1_res = try astgen.resolve(args[2]);
-                        const vector0 = astgen.getInst(arg0_res).vector;
-                        if (astgen.getInst(arg1_res) == .vector) {
-                            const vector1 = astgen.getInst(arg1_res).vector;
-                            if (vector0.size == .two and astgen.eqlVector(vector0, vector1)) {
-                                const vec = try astgen.genVector(scope, node_rhs, vector0.elem_type, args);
-                                if (astgen.eql(astgen.getInst(vec).vector.elem_type, vector0.elem_type)) {
-                                    return vec;
-                                }
-                            }
-                        } else {
-                            if (vector0.size == .three) {
-                                if (astgen.eql(arg1_res, vector0.elem_type)) {
-                                    const vec = try astgen.genVector(scope, node_rhs, arg1_res, args);
-                                    if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg1_res)) {
-                                        return vec;
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        args[1] = try astgen.genExpr(scope, arg_nodes[1]);
-                        const arg1_res = try astgen.resolve(args[1]);
-                        if (astgen.getInst(arg1_res) == .vector) {
-                            const vector = astgen.getInst(arg1_res).vector;
-                            if (vector.size == .three and
-                                astgen.eql(arg0_res, vector.elem_type))
-                            {
-                                const vec = try astgen.genVector(scope, node_rhs, arg0_res, args);
-                                if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
-                                    return vec;
-                                }
-                            }
-                        }
-                    }
-                },
-                3 => blk: {
-                    var vector_arg = InstIndex.none;
-                    var scalar_arg0 = InstIndex.none;
-                    var scalar_arg1 = InstIndex.none;
-                    var vector_arg_offset: ?usize = null;
-                    var scalar_arg0_offset: ?usize = null;
-                    var scalar_arg1_offset: ?usize = null;
-
-                    for (arg_nodes, 0..) |arg_node, i| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        const arg_res = try astgen.resolve(arg);
-                        if (astgen.getInst(arg_res) == .vector) {
-                            if (vector_arg_offset) |_| break :blk;
-                            vector_arg = arg;
-                            vector_arg_offset = i;
-                            if (astgen.getInst(arg_res).vector.size != .two) break :blk;
-                        } else {
-                            if (scalar_arg0 == .none) {
-                                scalar_arg0 = arg;
-                                scalar_arg0_offset = i + if (vector_arg_offset) |vec_off| @intFromBool(vec_off < i) else 0;
-                            } else if (scalar_arg1 == .none) {
-                                scalar_arg1 = arg;
-                                scalar_arg1_offset = i + if (vector_arg_offset) |vec_off| @intFromBool(vec_off < i) else 0;
-                            } else break :blk;
-                        }
-                    }
-
-                    const vector_arg_res = try astgen.resolve(vector_arg);
-                    const scalar_arg0_res = try astgen.resolve(scalar_arg0);
-                    const scalar_arg1_res = try astgen.resolve(scalar_arg1);
-                    if (astgen.eql(scalar_arg0_res, scalar_arg1_res) and
-                        astgen.eql(astgen.getInst(vector_arg_res).vector.elem_type, scalar_arg0_res))
-                    {
-                        args[vector_arg_offset.?] = vector_arg;
-                        args[scalar_arg0_offset.?] = scalar_arg0;
-                        args[scalar_arg1_offset.?] = scalar_arg1;
-
-                        const vec = try astgen.genVector(scope, node_rhs, scalar_arg0, args);
-                        if (astgen.eql(astgen.getInst(vec).vector.elem_type, scalar_arg0_res)) {
-                            return vec;
-                        }
-                    }
-                },
-                4 => blk: {
-                    var arg0_res = InstIndex.none;
-                    for (arg_nodes, 0..) |arg_node, i| {
-                        const arg = try astgen.genExpr(scope, arg_node);
-                        const arg_res = try astgen.resolve(arg);
-                        if (i == 0) {
-                            args[i] = arg;
-                            arg0_res = arg_res;
-                        } else if (astgen.eql(arg0_res, arg_res)) {
-                            args[i] = arg;
-                        } else break :blk;
-                    }
-                    const vec = try astgen.genVector(scope, node_rhs, arg0_res, args);
-                    if (astgen.eql(astgen.getInst(vec).vector.elem_type, arg0_res)) {
-                        return vec;
-                    }
-                },
-                else => {},
+                        return error.AnalysisFail;
+                    },
+                }
             }
 
-            try astgen.errors.add(node_loc, "cannot construct vec4", .{}, null);
-            return error.AnalysisFail;
+            if (node_lhs == .none) {
+                if (elem_type_node == .none) {
+                    try astgen.errors.add(node_loc, "cannot infer vector type", .{}, null);
+                    return error.AnalysisFail;
+                }
+
+                return astgen.addInst(.{
+                    .vector = .{
+                        .elem_type = elem_type,
+                        .size = size,
+                        .value = .none,
+                    },
+                });
+            }
+
+            const arg_nodes = astgen.tree.spanToList(node_lhs);
+            var args = null_vec;
+
+            var capacity = @intFromEnum(size);
+            for (arg_nodes) |arg_node| {
+                const i = @intFromEnum(size) - capacity;
+                const arg = try astgen.genExpr(scope, arg_node);
+                const arg_loc = astgen.tree.nodeLoc(arg_node);
+                const arg_res = try astgen.resolve(arg);
+
+                if (capacity == 0) {
+                    try astgen.errors.add(
+                        arg_loc,
+                        "doesn't fit in this vector",
+                        .{},
+                        null,
+                    );
+                    return error.AnalysisFail;
+                }
+
+                switch (astgen.getInst(arg_res)) {
+                    .vector => |arg_vec| {
+                        if (elem_type == .none) {
+                            elem_type = arg_vec.elem_type;
+                        } else {
+                            if (!astgen.eql(elem_type, arg_vec.elem_type)) {
+                                try astgen.errors.add(
+                                    arg_loc,
+                                    "type mismatch",
+                                    .{},
+                                    null,
+                                );
+                                return error.AnalysisFail;
+                            }
+                        }
+
+                        const arg_vec_capacity = @intFromEnum(arg_vec.size);
+                        if (arg_nodes.len == 1 and arg_vec_capacity == capacity) {
+                            return arg;
+                        }
+
+                        if (capacity > arg_vec_capacity) {
+                            for (0..@intFromEnum(arg_vec.size)) |component_i| {
+                                args[i + component_i] =
+                                    astgen.resolveVectorValue(arg, @intCast(u3, component_i)) orelse
+                                    try astgen.addInst(.{
+                                    .swizzle_access = .{
+                                        .base = arg,
+                                        .type = astgen.getInst(arg_res).vector.elem_type,
+                                        .size = .one,
+                                        .pattern = .{
+                                            @enumFromInt(Inst.SwizzleAccess.Component, component_i),
+                                            undefined,
+                                            undefined,
+                                            undefined,
+                                        },
+                                    },
+                                });
+                            }
+                            capacity -= arg_vec_capacity;
+                        } else {
+                            try astgen.errors.add(
+                                arg_loc,
+                                "doesn't fit in this vector",
+                                .{},
+                                null,
+                            );
+                            return error.AnalysisFail;
+                        }
+                    },
+                    .bool, .int, .float => {
+                        if (elem_type == .none) {
+                            elem_type = arg_res;
+                        } else {
+                            if (!astgen.eql(elem_type, arg_res)) {
+                                try astgen.errors.add(arg_loc, "type mismatch", .{}, null);
+                                return error.AnalysisFail;
+                            }
+                        }
+
+                        if (arg_nodes.len == 1) {
+                            @memset(args[i + 1 .. @intFromEnum(size)], arg);
+                        }
+
+                        args[i] = arg;
+                        capacity -= 1;
+                    },
+                    else => {
+                        try astgen.errors.add(arg_loc, "type mismatch", .{}, null);
+                        return error.AnalysisFail;
+                    },
+                }
+            }
+
+            return astgen.addInst(.{
+                .vector = .{
+                    .elem_type = elem_type,
+                    .size = size,
+                    .value = try astgen.addValue(Inst.Vector.Value, args),
+                },
+            });
         },
         .k_mat2x2,
         .k_mat2x3,
@@ -2278,7 +2025,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     scope,
                     node_rhs,
                     try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
-                    std.mem.zeroes([4 * 4]InstIndex),
+                    null_mat,
                 );
             }
 
@@ -2288,10 +2035,23 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             var args = null_mat;
             const arg_nodes = astgen.tree.spanToList(node_lhs);
             if (arg_nodes.len == 1) {
-                args[0] = try astgen.genExpr(scope, arg_nodes[0]);
+                const arg = try astgen.genExpr(scope, arg_nodes[0]);
                 const arg_res = try astgen.resolve(args[0]);
                 switch (astgen.getInst(arg_res)) {
                     .matrix => |matrix| if (matrix.cols == cols and matrix.rows == rows) {
+                        for (0..@intFromEnum(cols) * @intFromEnum(rows)) |i| {
+                            args[i] = try astgen.addInst(.{ .index_access = .{
+                                .base = arg,
+                                .type = astgen.getInst(arg_res).matrix.elem_type,
+                                .index = try astgen.addInst(.{ .int = .{
+                                    .type = .abstract,
+                                    .value = try astgen.addValue(
+                                        Inst.Int.Value,
+                                        .{ .literal = .{ .value = @intCast(i64, i), .base = 10 } },
+                                    ),
+                                } }),
+                            } });
+                        }
                         const mat = try astgen.genMatrix(
                             scope,
                             node_rhs,
@@ -2305,23 +2065,35 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     else => {},
                 }
             } else if (arg_nodes.len == @intFromEnum(cols)) blk: {
-                const offset = @intFromEnum(rows);
                 var arg0_res = InstIndex.none;
                 for (arg_nodes, 0..) |arg_node, i| {
                     const arg = try astgen.genExpr(scope, arg_node);
                     const arg_res = try astgen.resolve(arg);
-                    if (i == 0) {
-                        args[0] = arg;
-                        arg0_res = arg_res;
 
+                    if (i == 0) {
+                        arg0_res = arg_res;
                         if (astgen.getInst(arg0_res) != .vector or
                             astgen.getInst(arg0_res).vector.size != rows)
                         {
                             break :blk;
                         }
-                    } else if (astgen.eql(arg0_res, arg_res)) {
-                        args[i * offset] = arg;
-                    } else break :blk;
+                    }
+
+                    if (!astgen.eql(arg0_res, arg_res)) break :blk;
+
+                    for (0..@intFromEnum(rows)) |j| {
+                        args[j] = try astgen.addInst(.{ .index_access = .{
+                            .base = arg,
+                            .type = astgen.getInst(arg0_res).vector.elem_type,
+                            .index = try astgen.addInst(.{ .int = .{
+                                .type = .abstract,
+                                .value = try astgen.addValue(
+                                    Inst.Int.Value,
+                                    .{ .literal = .{ .value = @intCast(i64, j), .base = 10 } },
+                                ),
+                            } }),
+                        } });
+                    }
                 }
 
                 const mat = try astgen.genMatrix(
@@ -2338,12 +2110,23 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 for (arg_nodes, 0..) |arg_node, i| {
                     const arg = try astgen.genExpr(scope, arg_node);
                     const arg_res = try astgen.resolve(arg);
-                    if (i == 0) {
-                        args[i] = arg;
-                        arg0_res = arg_res;
-                    } else if (astgen.eql(arg0_res, arg_res)) {
-                        args[i] = arg;
-                    } else break :blk;
+                    if (i == 0)
+                        arg0_res = arg_res
+                    else if (!astgen.eql(arg0_res, arg_res))
+                        break :blk;
+                    for (0..@intFromEnum(rows)) |j| {
+                        args[j] = try astgen.addInst(.{ .index_access = .{
+                            .base = arg,
+                            .type = astgen.getInst(arg0_res).vector.elem_type,
+                            .index = try astgen.addInst(.{ .int = .{
+                                .type = .abstract,
+                                .value = try astgen.addValue(
+                                    Inst.Int.Value,
+                                    .{ .literal = .{ .value = @intCast(i64, j), .base = 10 } },
+                                ),
+                            } }),
+                        } });
+                    }
                 }
                 const mat = try astgen.genMatrix(scope, node_rhs, arg0_res, args);
                 if (astgen.eql(astgen.getInst(mat).matrix.elem_type, arg0_res)) {
@@ -2369,12 +2152,11 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 const arg_res = try astgen.resolve(arg);
                 if (i == 0) {
                     arg0_res = arg_res;
-                } else if (astgen.eql(arg0_res, arg_res)) {
-                    try astgen.scratch.append(astgen.allocator, arg);
-                } else {
+                } else if (!astgen.eql(arg0_res, arg_res)) {
                     try astgen.errors.add(node_loc, "cannot construct array", .{}, null);
                     return error.AnalysisFail;
                 }
+                try astgen.scratch.append(astgen.allocator, arg);
             }
 
             const args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
@@ -2388,6 +2170,17 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         },
         else => unreachable,
     }
+}
+
+fn resolveVectorValue(astgen: *AstGen, vector_idx: InstIndex, value_idx: u3) ?InstIndex {
+    return switch (astgen.getInst(vector_idx)) {
+        .vector => |vector| astgen.getValue(Inst.Vector.Value, vector.value.?)[value_idx],
+        inline .swizzle_access,
+        .index_access,
+        => |access| astgen.resolveVectorValue(access.base, value_idx),
+        .bool, .int, .float => unreachable, // TODO: debug purpose
+        else => null,
+    };
 }
 
 fn genReturn(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -2940,7 +2733,7 @@ fn genIndexAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         const inst = try astgen.addInst(.{
             .index_access = .{
                 .base = base,
-                .elem_type = astgen.getInst(base_type).array.elem_type,
+                .type = astgen.getInst(base_type).array.elem_type,
                 .index = rhs,
             },
         });
@@ -2996,6 +2789,7 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             const inst = try astgen.addInst(.{
                 .swizzle_access = .{
                     .base = base,
+                    .type = base_vec.elem_type,
                     .size = @enumFromInt(Inst.SwizzleAccess.Size, field_name.len),
                     .pattern = pattern,
                 },
@@ -3045,7 +2839,7 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
     const inst = switch (astgen.tree.nodeTag(node)) {
         .bool_type => try astgen.addInst(.{ .bool = .{ .value = null } }),
         .number_type => try astgen.genNumberType(node),
-        .vector_type => try astgen.genVector(scope, node, .none, null),
+        .vector_type => try astgen.genVectorType(scope, node),
         .matrix_type => try astgen.genMatrix(scope, node, .none, null),
         .atomic_type => try astgen.genAtomicType(scope, node),
         .array_type => try astgen.genArray(scope, node, null),
@@ -3109,20 +2903,29 @@ fn genNumberType(astgen: *AstGen, node: NodeIndex) !InstIndex {
     });
 }
 
-fn genVector(astgen: *AstGen, scope: *Scope, node: NodeIndex, element_type: InstIndex, value: ?Air.Inst.Vector.Value) !InstIndex {
-    const node_lhs = astgen.tree.nodeLHS(node);
-    var loc = astgen.tree.nodeLoc(node);
-    var elem_type = element_type;
-    if (node_lhs != .none) {
-        loc = astgen.tree.nodeLoc(node_lhs);
-        elem_type = try astgen.genType(scope, node_lhs);
-    }
+fn genVectorType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const elem_type_node = astgen.tree.nodeLHS(node);
+    const elem_type = try astgen.genType(scope, elem_type_node);
 
     switch (astgen.getInst(elem_type)) {
-        .bool, .int, .float => {},
+        .bool, .int, .float => {
+            const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
+            return astgen.addInst(.{
+                .vector = .{
+                    .size = switch (token_tag) {
+                        .k_vec2 => .two,
+                        .k_vec3 => .three,
+                        .k_vec4 => .four,
+                        else => unreachable,
+                    },
+                    .elem_type = elem_type,
+                    .value = null,
+                },
+            });
+        },
         else => {
             try astgen.errors.add(
-                loc,
+                astgen.tree.nodeLoc(elem_type_node),
                 "invalid vector component type",
                 .{},
                 try astgen.errors.createNote(
@@ -3134,20 +2937,6 @@ fn genVector(astgen: *AstGen, scope: *Scope, node: NodeIndex, element_type: Inst
             return error.AnalysisFail;
         },
     }
-
-    const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-    return astgen.addInst(.{
-        .vector = .{
-            .size = switch (token_tag) {
-                .k_vec2 => .two,
-                .k_vec3 => .three,
-                .k_vec4 => .four,
-                else => unreachable,
-            },
-            .elem_type = elem_type,
-            .value = if (value) |val| try astgen.addValue(Inst.Vector.Value, val) else null,
-        },
-    });
 }
 
 fn genMatrix(astgen: *AstGen, scope: *Scope, node: NodeIndex, element_type: InstIndex, value: ?Air.Inst.Matrix.Value) !InstIndex {
@@ -3668,34 +3457,29 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
 
             .field_access => |field_access| {
                 const field_type = astgen.getInst(field_access.field).struct_member.type;
-                if (in_deref) {
-                    return astgen.getInst(field_type).ptr_type.elem_type;
-                }
+                if (in_deref) return astgen.getInst(field_type).ptr_type.elem_type;
                 return field_type;
             },
             .swizzle_access => |swizzle_access| {
-                const vector_base = try astgen.resolve(swizzle_access.base);
-                const elem_type = astgen.getInst(vector_base).vector.elem_type;
                 if (swizzle_access.size == .one) {
-                    return elem_type;
+                    if (in_deref) return astgen.getInst(swizzle_access.type).ptr_type.elem_type;
+                    return swizzle_access.type;
                 }
                 return astgen.addInst(.{
                     .vector = .{
-                        .elem_type = elem_type,
+                        .elem_type = swizzle_access.type,
                         .size = @enumFromInt(Inst.Vector.Size, @intFromEnum(swizzle_access.size)),
                         .value = null,
                     },
                 });
             },
             .index_access => |index_access| {
-                const elem_type = index_access.elem_type;
-                if (in_deref) {
-                    return astgen.getInst(elem_type).ptr_type.elem_type;
-                }
-                return elem_type;
+                const ty = index_access.type;
+                if (in_deref) return astgen.getInst(ty).ptr_type.elem_type;
+                return ty;
             },
 
-            inline .global_var, .override, .@"var", .@"const", .let => |decl| {
+            inline .global_var, .global_const, .override, .@"var", .@"const", .let => |decl| {
                 std.debug.assert(index != idx);
 
                 const decl_type = decl.type;
@@ -4137,8 +3921,8 @@ const BuiltinFn = enum {
     length,
     log,
     log2,
-    max, // unimplemented
-    min, // unimplemented
+    max,
+    min,
     mix, // unimplemented
     modf, // unimplemented
     normalize, // unimplemented
@@ -4153,7 +3937,7 @@ const BuiltinFn = enum {
     sign,
     sin,
     sinh,
-    smoothstep, // unimplemented
+    smoothstep,
     sqrt,
     step, // unimplemented
     tan,
