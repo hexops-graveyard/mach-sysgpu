@@ -73,14 +73,14 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
 
 pub fn spanToList(tree: Ast, span: NodeIndex) []const NodeIndex {
     std.debug.assert(tree.nodeTag(span) == .span);
-    return @ptrCast([]const NodeIndex, tree.extra[@intFromEnum(tree.nodeLHS(span))..@intFromEnum(tree.nodeRHS(span))]);
+    return @ptrCast(tree.extra[@intFromEnum(tree.nodeLHS(span))..@intFromEnum(tree.nodeRHS(span))]);
 }
 
 pub fn extraData(tree: Ast, comptime T: type, index: NodeIndex) T {
     const fields = std.meta.fields(T);
     var result: T = undefined;
     inline for (fields, 0..) |field, i| {
-        @field(result, field.name) = @enumFromInt(field.type, tree.extra[@intFromEnum(index) + i]);
+        @field(result, field.name) = @enumFromInt(tree.extra[@intFromEnum(index) + i]);
     }
     return result;
 }
@@ -117,7 +117,7 @@ pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
             loc.end = lhs_loc.end;
         },
         .field_access => {
-            const component_loc = tree.tokenLoc(@enumFromInt(TokenIndex, @intFromEnum(tree.nodeToken(i)) + 1));
+            const component_loc = tree.tokenLoc(@enumFromInt(@intFromEnum(tree.nodeToken(i)) + 1));
             loc.end = component_loc.end;
         },
         else => {},
@@ -126,7 +126,7 @@ pub fn nodeLoc(tree: Ast, i: NodeIndex) Token.Loc {
 }
 
 pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
-    const token = switch (tree.nodeTag(node)) {
+    const token: TokenIndex = switch (tree.nodeTag(node)) {
         .global_var => tree.extraData(Node.GlobalVar, tree.nodeLHS(node)).name,
         .@"var" => tree.extraData(Node.Var, tree.nodeLHS(node)).name,
         .@"struct",
@@ -135,7 +135,7 @@ pub fn declNameLoc(tree: Ast, node: NodeIndex) ?Token.Loc {
         .let,
         .override,
         .type_alias,
-        => @enumFromInt(TokenIndex, @intFromEnum(tree.nodeToken(node)) + 1),
+        => @enumFromInt(@intFromEnum(tree.nodeToken(node)) + 1),
         .struct_member, .fn_param => tree.nodeToken(node),
         else => return null,
     };
@@ -148,7 +148,7 @@ pub const NodeIndex = enum(u32) {
     _,
 
     pub fn asTokenIndex(self: NodeIndex) TokenIndex {
-        return @enumFromInt(TokenIndex, @intFromEnum(self));
+        return @enumFromInt(@intFromEnum(self));
     }
 };
 
@@ -157,7 +157,7 @@ pub const TokenIndex = enum(u32) {
     _,
 
     pub fn asNodeIndex(self: TokenIndex) NodeIndex {
-        return @enumFromInt(NodeIndex, @intFromEnum(self));
+        return @enumFromInt(@intFromEnum(self));
     }
 };
 

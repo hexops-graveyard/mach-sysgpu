@@ -43,7 +43,7 @@ fn extendedStructs(
     kinds: []const g.OperandKind,
 ) !ExtendedStructSet {
     var map = ExtendedStructSet.init(arena);
-    try map.ensureTotalCapacity(@intCast(u32, kinds.len));
+    try map.ensureTotalCapacity(@intCast(kinds.len));
 
     for (kinds) |kind| {
         const enumerants = kind.enumerants orelse continue;
@@ -90,7 +90,7 @@ fn render(writer: anytype, allocator: Allocator, registry: g.CoreRegistry) !void
         \\    padding0: u8 = 0,
         \\
         \\    pub fn toWord(self: @This()) Word {
-        \\        return @bitCast(Word, self);
+        \\        return @bitCast(self);
         \\    }
         \\};
         \\

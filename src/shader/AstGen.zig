@@ -805,7 +805,7 @@ fn attrAlign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u29 {
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
     if (try astgen.resolveConstExpr(expr)) |expr_res| {
         if (expr_res == .int) {
-            return @intCast(u29, expr_res.int);
+            return @intCast(expr_res.int);
         }
     }
 
@@ -822,7 +822,7 @@ fn attrSize(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
     if (try astgen.resolveConstExpr(expr)) |expr_res| {
         if (expr_res == .int) {
-            return @intCast(u32, expr_res.int);
+            return @intCast(expr_res.int);
         }
     }
 
@@ -838,7 +838,7 @@ fn attrSize(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
 fn attrLocation(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u16 {
     const inst_idx = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
     const value_idx = astgen.getInst(inst_idx).int.value.?;
-    return @intCast(u16, astgen.getValue(Inst.Int.Value, value_idx).literal.value);
+    return @intCast(astgen.getValue(Inst.Int.Value, value_idx).literal.value);
 }
 
 fn attrBuiltin(astgen: *AstGen, node: NodeIndex) Inst.Builtin {
@@ -1954,14 +1954,14 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         if (capacity > arg_vec_capacity) {
                             for (0..@intFromEnum(arg_vec.size)) |component_i| {
                                 args[i + component_i] =
-                                    astgen.resolveVectorValue(arg, @intCast(u3, component_i)) orelse
+                                    astgen.resolveVectorValue(arg, @intCast(component_i)) orelse
                                     try astgen.addInst(.{
                                     .swizzle_access = .{
                                         .base = arg,
                                         .type = astgen.getInst(arg_res).vector.elem_type,
                                         .size = .one,
-                                        .pattern = .{
-                                            @enumFromInt(Inst.SwizzleAccess.Component, component_i),
+                                        .pattern = [_]Inst.SwizzleAccess.Component{
+                                            @enumFromInt(component_i),
                                             undefined,
                                             undefined,
                                             undefined,
@@ -2049,7 +2049,12 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                     .type = .abstract,
                                     .value = try astgen.addValue(
                                         Inst.Int.Value,
-                                        .{ .literal = .{ .value = @intCast(i64, i), .base = 10 } },
+                                        Inst.Int.Value{
+                                            .literal = .{
+                                                .value = @intCast(i),
+                                                .base = 10,
+                                            },
+                                        },
                                     ),
                                 } }),
                             } });
@@ -2091,7 +2096,12 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                 .type = .abstract,
                                 .value = try astgen.addValue(
                                     Inst.Int.Value,
-                                    .{ .literal = .{ .value = @intCast(i64, j), .base = 10 } },
+                                    Inst.Int.Value{
+                                        .literal = .{
+                                            .value = @intCast(j),
+                                            .base = 10,
+                                        },
+                                    },
                                 ),
                             } }),
                         } });
@@ -2124,7 +2134,12 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                 .type = .abstract,
                                 .value = try astgen.addValue(
                                     Inst.Int.Value,
-                                    .{ .literal = .{ .value = @intCast(i64, j), .base = 10 } },
+                                    Inst.Int.Value{
+                                        .literal = .{
+                                            .value = @intCast(j),
+                                            .base = 10,
+                                        },
+                                    },
                                 ),
                             } }),
                         } });
@@ -2792,7 +2807,7 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 .swizzle_access = .{
                     .base = base,
                     .type = base_vec.elem_type,
-                    .size = @enumFromInt(Inst.SwizzleAccess.Size, field_name.len),
+                    .size = @enumFromInt(field_name.len),
                     .pattern = pattern,
                 },
             });
@@ -3470,7 +3485,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
                 return astgen.addInst(.{
                     .vector = .{
                         .elem_type = swizzle_access.type,
-                        .size = @enumFromInt(Inst.Vector.Size, @intFromEnum(swizzle_access.size)),
+                        .size = @enumFromInt(@intFromEnum(swizzle_access.size)),
                         .value = null,
                     },
                 });
@@ -3688,7 +3703,7 @@ fn eqlMatrix(astgen: *AstGen, a: Air.Inst.Matrix, b: Air.Inst.Matrix) bool {
 
 fn addInst(astgen: *AstGen, inst: Inst) error{OutOfMemory}!InstIndex {
     try astgen.instructions.put(astgen.allocator, inst, {});
-    return @enumFromInt(InstIndex, astgen.instructions.getIndex(inst).?);
+    return @enumFromInt(astgen.instructions.getIndex(inst).?);
 }
 
 fn addRefList(astgen: *AstGen, list: []const InstIndex) error{OutOfMemory}!RefIndex {
@@ -3696,7 +3711,7 @@ fn addRefList(astgen: *AstGen, list: []const InstIndex) error{OutOfMemory}!RefIn
     try astgen.refs.ensureUnusedCapacity(astgen.allocator, len);
     astgen.refs.appendSliceAssumeCapacity(list);
     astgen.refs.appendAssumeCapacity(.none);
-    return @enumFromInt(RefIndex, astgen.refs.items.len - len);
+    return @as(RefIndex, @enumFromInt(astgen.refs.items.len - len));
 }
 
 fn addString(astgen: *AstGen, str: []const u8) error{OutOfMemory}!StringIndex {
@@ -3704,14 +3719,14 @@ fn addString(astgen: *AstGen, str: []const u8) error{OutOfMemory}!StringIndex {
     try astgen.strings.ensureUnusedCapacity(astgen.allocator, len);
     astgen.strings.appendSliceAssumeCapacity(str);
     astgen.strings.appendAssumeCapacity(0);
-    return @enumFromInt(StringIndex, astgen.strings.items.len - len);
+    return @enumFromInt(astgen.strings.items.len - len);
 }
 
 fn addValue(astgen: *AstGen, comptime T: type, value: T) error{OutOfMemory}!ValueIndex {
     const value_bytes = std.mem.asBytes(&value);
     try astgen.values.appendSlice(astgen.allocator, value_bytes);
     std.testing.expectEqual(value, std.mem.bytesToValue(T, value_bytes)) catch unreachable;
-    return @enumFromInt(ValueIndex, astgen.values.items.len - value_bytes.len);
+    return @enumFromInt(astgen.values.items.len - value_bytes.len);
 }
 
 fn getInst(astgen: *AstGen, inst: InstIndex) Inst {
@@ -3803,11 +3818,11 @@ const Value = union(enum) {
     }
 
     fn shiftLeft(lhs: Value, rhs: Value) Value {
-        return .{ .int = lhs.int << @intCast(u6, rhs.int) };
+        return .{ .int = lhs.int << @intCast(rhs.int) };
     }
 
     fn shiftRight(lhs: Value, rhs: Value) Value {
-        return .{ .int = lhs.int >> @intCast(u6, rhs.int) };
+        return .{ .int = lhs.int >> @intCast(rhs.int) };
     }
 
     fn bitwiseAnd(lhs: Value, rhs: Value) Value {
