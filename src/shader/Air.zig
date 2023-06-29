@@ -111,7 +111,15 @@ pub fn isMutable(instructions: []const Inst, index: InstIndex) bool {
         .var_ref => |var_ref| idx = var_ref,
         inline .field_access, .swizzle_access, .index_access => |access| idx = access.base,
         .global_var, .@"var" => return true,
-        .global_const, .@"const", .let, .override, .fn_param, .vector => return false,
+        .global_const,
+        .@"const",
+        .let,
+        .override,
+        .fn_param,
+        .vector,
+        .matrix,
+        .array,
+        => return false,
         else => unreachable,
     };
 }
@@ -318,8 +326,8 @@ pub const Inst = union(enum) {
         };
 
         pub const ReturnAttrs = struct {
-            builtin: Builtin,
-            location: InstIndex,
+            builtin: ?Builtin,
+            location: ?u16,
             interpolate: ?Interpolate,
             invariant: bool,
         };
@@ -328,14 +336,13 @@ pub const Inst = union(enum) {
     pub const FnParam = struct {
         name: StringIndex,
         type: InstIndex,
-        builtin: Builtin,
-        location: InstIndex,
+        builtin: ?Builtin,
+        location: ?u16,
         interpolate: ?Interpolate,
         invariant: bool,
     };
 
     pub const Builtin = enum {
-        none,
         vertex_index,
         instance_index,
         position,
@@ -395,8 +402,8 @@ pub const Inst = union(enum) {
         type: InstIndex,
         @"align": ?u29,
         size: ?u32,
-        location: InstIndex,
-        builtin: Builtin,
+        location: ?u16,
+        builtin: ?Builtin,
         interpolate: ?Interpolate,
     };
 

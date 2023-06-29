@@ -154,20 +154,16 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
 }
 
 fn emitDecl(spirv: *SpirV, section: ?*Section, inst_idx: InstIndex) !?IdRef {
-    const gop = try spirv.decl_map.getOrPut(spirv.allocator, inst_idx);
-    if (gop.found_existing) return gop.value_ptr.*;
-
+    if (spirv.decl_map.get(inst_idx)) |id| return id;
     const id = switch (spirv.air.getInst(inst_idx)) {
         .@"fn" => |@"fn"| try spirv.emitFn(@"fn"),
         .global_var => IdResult{ .id = 1 }, // TODO
         .global_const => IdResult{ .id = 1 }, // TODO
         .override => IdResult{ .id = 1 }, // TODO
         .@"var" => |@"var"| try spirv.emitVar(section.?, @"var"),
-        else => return null, // TODO: make this unreachable
+        else => return null,
     };
-
-    gop.key_ptr.* = inst_idx;
-    gop.value_ptr.* = id;
+    try spirv.decl_map.put(spirv.allocator, inst_idx, id);
     return id;
 }
 
@@ -177,14 +173,22 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
 
     const fn_id = spirv.allocId();
     const fn_type_id = spirv.allocId();
-    const return_type_id = blk: {
-        if (inst.return_type == .none or inst.stage != .none) {
+    const raw_return_type_id = blk: {
+        if (inst.return_type == .none) {
             break :blk try spirv.resolve(.void_type);
+        } else {
+            break :blk try spirv.emitType(inst.return_type);
         }
-        break :blk try spirv.emitType(inst.return_type); // TODO
     };
-    const name_slice = spirv.air.getStr(inst.name);
+    const return_type_id = blk: {
+        if (inst.stage != .none) {
+            break :blk try spirv.resolve(.void_type);
+        } else {
+            break :blk raw_return_type_id;
+        }
+    };
 
+    const name_slice = spirv.air.getStr(inst.name);
     try spirv.debug_section.emit(.OpName, .{
         .target = fn_id,
         .name = name_slice,
@@ -203,7 +207,6 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
     var return_var_id: ?IdRef = null;
     if (inst.stage != .none and inst.return_type != .none) {
         return_var_id = spirv.allocId();
-        const return_builtin = builtInFromAirBuiltin(inst.return_attrs.builtin);
 
         const return_var_name_slice = try std.mem.concat(
             spirv.allocator,
@@ -218,7 +221,7 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
 
         const return_var_type_id = try spirv.resolve(.{ .ptr_type = .{
             .storage_class = .Output,
-            .elem_type = try spirv.emitType(inst.return_type),
+            .elem_type = raw_return_type_id,
         } });
         try spirv.global_section.emit(.OpVariable, .{
             .id_result_type = return_var_type_id,
@@ -226,10 +229,17 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
             .storage_class = .Output,
         });
 
-        if (return_builtin) |rb| {
+        if (inst.return_attrs.builtin) |builtin| {
             try spirv.annotations_section.emit(.OpDecorate, .{
                 .target = return_var_id.?,
-                .decoration = .{ .BuiltIn = .{ .built_in = rb } },
+                .decoration = .{ .BuiltIn = .{ .built_in = builtInFromAirBuiltin(builtin) } },
+            });
+        }
+
+        if (inst.return_attrs.location) |location| {
+            try spirv.annotations_section.emit(.OpDecorate, .{
+                .target = return_var_id.?,
+                .decoration = .{ .Location = .{ .location = location } },
             });
         }
 
@@ -293,11 +303,11 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
                     .pointer = param_var_id,
                 });
 
-                if (builtInFromAirBuiltin(param_inst.builtin)) |param_builtin| {
+                if (param_inst.builtin) |builtin| {
                     try spirv.annotations_section.emit(.OpDecorate, .{
                         .target = param_var_id,
                         .decoration = .{ .BuiltIn = .{
-                            .built_in = param_builtin,
+                            .built_in = builtInFromAirBuiltin(builtin),
                         } },
                     });
                 }
@@ -318,7 +328,7 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
 
     try spirv.global_section.emit(.OpTypeFunction, .{
         .id_result = fn_type_id,
-        .return_type = if (inst.stage != .none) try spirv.resolve(.void_type) else return_type_id,
+        .return_type = return_type_id,
         .id_ref_2 = params_type.items,
     });
 
@@ -395,11 +405,17 @@ fn emitVar(spirv: *SpirV, section: *Section, inst: Inst.Var) !IdRef {
         .storage_class = storage_class,
     } });
 
+    const initializer = blk: {
+        if (spirv.air.isConst(inst.expr)) {
+            break :blk try spirv.emitExpr(&spirv.global_section, inst.expr);
+        }
+        break :blk null;
+    };
     try section.emit(.OpVariable, .{
         .id_result_type = ptr_type_id,
         .id_result = id,
         .storage_class = storage_class,
-        .initializer = null, // TODO: init if is_const
+        .initializer = initializer,
     });
 
     if (inst.expr != .none) {
@@ -882,21 +898,20 @@ fn allocId(spirv: *SpirV) IdResult {
     return .{ .id = spirv.next_result_id };
 }
 
-fn builtInFromAirBuiltin(builtin: Air.Inst.Builtin) ?spec.BuiltIn {
+fn builtInFromAirBuiltin(builtin: Air.Inst.Builtin) spec.BuiltIn {
     return switch (builtin) {
-        .none => null,
-        .vertex_index => spec.BuiltIn.VertexIndex,
-        .instance_index => spec.BuiltIn.InstanceIndex,
-        .position => spec.BuiltIn.Position,
-        .front_facing => spec.BuiltIn.FrontFacing,
-        .frag_depth => spec.BuiltIn.FragDepth,
-        .local_invocation_id => spec.BuiltIn.LocalInvocationId,
-        .local_invocation_index => spec.BuiltIn.LocalInvocationIndex,
-        .global_invocation_id => spec.BuiltIn.GlobalInvocationId,
-        .workgroup_id => spec.BuiltIn.WorkgroupId,
-        .num_workgroups => spec.BuiltIn.NumWorkgroups,
-        .sample_index => spec.BuiltIn.SampleMask,
-        .sample_mask => spec.BuiltIn.SampleId,
+        .vertex_index => .VertexIndex,
+        .instance_index => .InstanceIndex,
+        .position => .Position,
+        .front_facing => .FrontFacing,
+        .frag_depth => .FragDepth,
+        .local_invocation_id => .LocalInvocationId,
+        .local_invocation_index => .LocalInvocationIndex,
+        .global_invocation_id => .GlobalInvocationId,
+        .workgroup_id => .WorkgroupId,
+        .num_workgroups => .NumWorkgroups,
+        .sample_index => .SampleMask,
+        .sample_mask => .SampleId,
     };
 }
 
