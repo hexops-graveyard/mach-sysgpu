@@ -369,8 +369,8 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
 
         var @"align": ?u29 = null;
         var size: ?u32 = null;
-        var builtin: Inst.Builtin = .none;
-        var location = InstIndex.none;
+        var builtin: ?Inst.Builtin = null;
+        var location: ?u16 = null;
         var interpolate: ?Inst.Interpolate = null;
         if (member_attrs_node != .none) {
             for (astgen.tree.spanToList(member_attrs_node)) |attr| {
@@ -418,8 +418,8 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
 
     var return_type = InstIndex.none;
     var return_attrs = Inst.Fn.ReturnAttrs{
-        .builtin = .none,
-        .location = .none,
+        .builtin = null,
+        .location = null,
         .interpolate = null,
         .invariant = false,
     };
@@ -641,9 +641,9 @@ fn genFnParams(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
             error.OutOfMemory => return error.OutOfMemory,
         };
 
-        var builtin = Inst.Builtin.none;
+        var builtin: ?Inst.Builtin = null;
         var inter: ?Inst.Interpolate = null;
-        var location = InstIndex.none;
+        var location: ?u16 = null;
         var invariant = false;
 
         if (param_node_lhs != .none) {
@@ -835,8 +835,10 @@ fn attrSize(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     return error.AnalysisFail;
 }
 
-fn attrLocation(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
-    return astgen.genExpr(scope, astgen.tree.nodeLHS(node));
+fn attrLocation(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u16 {
+    const inst_idx = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
+    const value_idx = astgen.getInst(inst_idx).int.value.?;
+    return @intCast(u16, astgen.getValue(Inst.Int.Value, value_idx).literal.value);
 }
 
 fn attrBuiltin(astgen: *AstGen, node: NodeIndex) Inst.Builtin {
