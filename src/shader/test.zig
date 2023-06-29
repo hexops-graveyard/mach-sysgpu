@@ -290,18 +290,18 @@ test "integer/float literals" {
     };
 
     const vars = ir.refToList(ir.globals_index);
-    try expectEqual(helper.getIntValue(ir, vars[0]), .{ .literal = .{ .value = 1, .base = 10 } });
-    try expectEqual(helper.getIntValue(ir, vars[1]), .{ .literal = .{ .value = 123, .base = 10 } });
-    try expectEqual(helper.getIntValue(ir, vars[2]), .{ .literal = .{ .value = 0, .base = 10 } });
-    try expectEqual(helper.getIntValue(ir, vars[3]), .{ .literal = .{ .value = 0, .base = 10 } });
-    try expectEqual(helper.getIntValue(ir, vars[4]), .{ .literal = .{ .value = 0x123, .base = 16 } });
-    try expectEqual(helper.getIntValue(ir, vars[5]), .{ .literal = .{ .value = 0x123, .base = 16 } });
-    try expectEqual(helper.getFloatValue(ir, vars[6]), .{ .literal = .{ .value = 0.e+4, .base = 10 } });
-    try expectEqual(helper.getFloatValue(ir, vars[7]), .{ .literal = .{ .value = 0.01, .base = 10 } });
-    try expectEqual(helper.getFloatValue(ir, vars[8]), .{ .literal = .{ .value = 12.34, .base = 10 } });
-    try expectEqual(helper.getFloatValue(ir, vars[9]), .{ .literal = .{ .value = 0, .base = 10 } });
-    try expectEqual(helper.getFloatValue(ir, vars[10]), .{ .literal = .{ .value = 0, .base = 10 } });
-    try expectEqual(helper.getFloatValue(ir, vars[11]), .{ .literal = .{ .value = 1e-3, .base = 10 } });
+    try expectEqual(helper.getIntValue(ir, vars[0]), .{ .literal = 1 });
+    try expectEqual(helper.getIntValue(ir, vars[1]), .{ .literal = 123 });
+    try expectEqual(helper.getIntValue(ir, vars[2]), .{ .literal = 0 });
+    try expectEqual(helper.getIntValue(ir, vars[3]), .{ .literal = 0 });
+    try expectEqual(helper.getIntValue(ir, vars[4]), .{ .literal = 0x123 });
+    try expectEqual(helper.getIntValue(ir, vars[5]), .{ .literal = 0x123 });
+    try expectEqual(helper.getFloatValue(ir, vars[6]), .{ .literal = 0.e+4 });
+    try expectEqual(helper.getFloatValue(ir, vars[7]), .{ .literal = 0.01 });
+    try expectEqual(helper.getFloatValue(ir, vars[8]), .{ .literal = 12.34 });
+    try expectEqual(helper.getFloatValue(ir, vars[9]), .{ .literal = 0 });
+    try expectEqual(helper.getFloatValue(ir, vars[10]), .{ .literal = 0 });
+    try expectEqual(helper.getFloatValue(ir, vars[11]), .{ .literal = 1e-3 });
 }
 
 test "must error" {

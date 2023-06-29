@@ -342,37 +342,7 @@ pub const Inst = union(enum) {
         invariant: bool,
     };
 
-    pub const Builtin = enum {
-        vertex_index,
-        instance_index,
-        position,
-        front_facing,
-        frag_depth,
-        local_invocation_id,
-        local_invocation_index,
-        global_invocation_id,
-        workgroup_id,
-        num_workgroups,
-        sample_index,
-        sample_mask,
-
-        pub fn fromAst(ast: Ast.Builtin) Builtin {
-            return switch (ast) {
-                .vertex_index => .vertex_index,
-                .instance_index => .instance_index,
-                .position => .position,
-                .front_facing => .front_facing,
-                .frag_depth => .frag_depth,
-                .local_invocation_id => .local_invocation_id,
-                .local_invocation_index => .local_invocation_index,
-                .global_invocation_id => .global_invocation_id,
-                .workgroup_id => .workgroup_id,
-                .num_workgroups => .num_workgroups,
-                .sample_index => .sample_index,
-                .sample_mask => .sample_mask,
-            };
-        }
-    };
+    pub const Builtin = Ast.Builtin;
 
     pub const Interpolate = struct {
         type: Type,
@@ -441,13 +411,8 @@ pub const Inst = union(enum) {
         };
 
         pub const Value = union(enum) {
-            literal: Literal,
+            literal: i64,
             inst: InstIndex,
-
-            pub const Literal = struct {
-                value: i64,
-                base: u8,
-            };
         };
     };
 
@@ -470,13 +435,8 @@ pub const Inst = union(enum) {
         };
 
         pub const Value = union(enum) {
-            literal: Literal,
+            literal: f64,
             inst: InstIndex,
-
-            pub const Literal = struct {
-                value: f64,
-                base: u8,
-            };
         };
     };
 

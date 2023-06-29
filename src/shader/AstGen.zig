@@ -710,7 +710,7 @@ fn attrBinding(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    if (astgen.getValue(Inst.Int.Value, astgen.getInst(binding_res).int.value.?).literal.value < 0) {
+    if (astgen.getValue(Inst.Int.Value, astgen.getInst(binding_res).int.value.?).literal < 0) {
         try astgen.errors.add(
             node_lhs_loc,
             "binding value must be a positive",
@@ -749,7 +749,7 @@ fn attrId(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    if (astgen.getValue(Inst.Int.Value, astgen.getInst(id_res).int.value.?).literal.value < 0) {
+    if (astgen.getValue(Inst.Int.Value, astgen.getInst(id_res).int.value.?).literal < 0) {
         try astgen.errors.add(
             node_lhs_loc,
             "id value must be a positive",
@@ -788,7 +788,7 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    if (astgen.getValue(Inst.Int.Value, astgen.getInst(group_res).int.value.?).literal.value < 0) {
+    if (astgen.getValue(Inst.Int.Value, astgen.getInst(group_res).int.value.?).literal < 0) {
         try astgen.errors.add(
             node_lhs_loc,
             "group value must be a positive",
@@ -838,13 +838,12 @@ fn attrSize(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
 fn attrLocation(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u16 {
     const inst_idx = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
     const value_idx = astgen.getInst(inst_idx).int.value.?;
-    return @intCast(astgen.getValue(Inst.Int.Value, value_idx).literal.value);
+    return @intCast(astgen.getValue(Inst.Int.Value, value_idx).literal);
 }
 
 fn attrBuiltin(astgen: *AstGen, node: NodeIndex) Inst.Builtin {
     const builtin_loc = astgen.tree.tokenLoc(astgen.tree.nodeLHS(node).asTokenIndex());
-    const builtin_ast = stringToEnum(Ast.Builtin, builtin_loc.slice(astgen.tree.source)).?;
-    return Inst.Builtin.fromAst(builtin_ast);
+    return stringToEnum(Ast.Builtin, builtin_loc.slice(astgen.tree.source)).?;
 }
 
 fn attrInterpolate(astgen: *AstGen, node: NodeIndex) Inst.Interpolate {
@@ -1464,12 +1463,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
                     'h' => .f16,
                     else => unreachable,
                 },
-                .value = try astgen.addValue(Inst.Float.Value, .{
-                    .literal = .{
-                        .value = value,
-                        .base = base,
-                    },
-                }),
+                .value = try astgen.addValue(Inst.Float.Value, .{ .literal = value }),
             },
         };
     } else {
@@ -1495,12 +1489,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
                     'i' => .i32,
                     else => unreachable,
                 },
-                .value = try astgen.addValue(Inst.Int.Value, .{
-                    .literal = .{
-                        .value = value,
-                        .base = base,
-                    },
-                }),
+                .value = try astgen.addValue(Inst.Int.Value, .{ .literal = value }),
             },
         };
     }
@@ -1797,7 +1786,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             };
 
             if (node_lhs == .none) {
-                const zero_value = try astgen.addValue(Inst.Int.Value, .{ .literal = .{ .value = 0, .base = 10 } });
+                const zero_value = try astgen.addValue(Inst.Int.Value, .{ .literal = 0 });
                 return astgen.addInst(.{ .int = .{ .value = zero_value, .type = ty } });
             }
 
@@ -1835,7 +1824,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             };
 
             if (node_lhs == .none) {
-                const zero_value = try astgen.addValue(Inst.Float.Value, .{ .literal = .{ .value = 0, .base = 10 } });
+                const zero_value = try astgen.addValue(Inst.Float.Value, .{ .literal = 0 });
                 return astgen.addInst(.{ .float = .{ .value = zero_value, .type = ty } });
             }
 
@@ -2049,12 +2038,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                     .type = .abstract,
                                     .value = try astgen.addValue(
                                         Inst.Int.Value,
-                                        Inst.Int.Value{
-                                            .literal = .{
-                                                .value = @intCast(i),
-                                                .base = 10,
-                                            },
-                                        },
+                                        Inst.Int.Value{ .literal = @intCast(i) },
                                     ),
                                 } }),
                             } });
@@ -2096,12 +2080,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                 .type = .abstract,
                                 .value = try astgen.addValue(
                                     Inst.Int.Value,
-                                    Inst.Int.Value{
-                                        .literal = .{
-                                            .value = @intCast(j),
-                                            .base = 10,
-                                        },
-                                    },
+                                    Inst.Int.Value{ .literal = @intCast(j) },
                                 ),
                             } }),
                         } });
@@ -2134,12 +2113,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                 .type = .abstract,
                                 .value = try astgen.addValue(
                                     Inst.Int.Value,
-                                    Inst.Int.Value{
-                                        .literal = .{
-                                            .value = @intCast(j),
-                                            .base = 10,
-                                        },
-                                    },
+                                    Inst.Int.Value{ .literal = @intCast(j) },
                                 ),
                             } }),
                         } });
@@ -3588,7 +3562,7 @@ fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) !?Value {
         .int => |data| {
             if (data.value) |value| {
                 switch (astgen.getValue(Inst.Int.Value, value)) {
-                    .literal => |literal| return .{ .int = literal.value },
+                    .literal => |literal| return .{ .int = literal },
                     .inst => return null,
                 }
             } else {
@@ -3598,7 +3572,7 @@ fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) !?Value {
         .float => |data| {
             if (data.value) |value| {
                 switch (astgen.getValue(Inst.Float.Value, value)) {
-                    .literal => |literal| return .{ .float = literal.value },
+                    .literal => |literal| return .{ .float = literal },
                     .inst => return null,
                 }
             } else {
