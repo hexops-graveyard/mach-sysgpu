@@ -357,21 +357,21 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
                 .x = blk: {
                     const int = spirv.air.getInst(compute.x).int;
                     const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
-                    break :blk @intCast(value.literal.value);
+                    break :blk @intCast(value.literal);
                 },
                 .y = blk: {
                     if (compute.y == .none) break :blk 1;
 
                     const int = spirv.air.getInst(compute.y).int;
                     const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
-                    break :blk @intCast(value.literal.value);
+                    break :blk @intCast(value.literal);
                 },
                 .z = blk: {
                     if (compute.y == .none) break :blk 1;
 
                     const int = spirv.air.getInst(compute.z).int;
                     const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
-                    break :blk @intCast(value.literal.value);
+                    break :blk @intCast(value.literal);
                 },
             },
         },
@@ -501,11 +501,11 @@ fn emitReturn(spirv: *SpirV, section: *Section, inst: InstIndex) !void {
 fn emitExpr(spirv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     return switch (spirv.air.getInst(inst_idx)) {
         .int => |int| switch (spirv.air.getValue(Inst.Int.Value, int.value.?)) {
-            .literal => |lit| spirv.constInt(int.type, lit.value),
+            .literal => |lit| spirv.constInt(int.type, lit),
             .inst => |val_inst| spirv.emitExpr(section, val_inst), // TODO
         },
         .float => |float| switch (spirv.air.getValue(Inst.Float.Value, float.value.?)) {
-            .literal => |lit| spirv.constFloat(float.type, lit.value),
+            .literal => |lit| spirv.constFloat(float.type, lit),
             .inst => |val_inst| spirv.emitExpr(section, val_inst), // TODO
         },
         .vector => |vector| spirv.emitVector(section, vector),
@@ -673,7 +673,7 @@ fn emitIndexAccess(spirv: *SpirV, section: *Section, inst: Inst.IndexAccess) !Id
 
     if (spirv.air.isConst(inst.index)) {
         const index_value_idx = spirv.air.getInst(inst.index).int.value.?;
-        const index_value = spirv.air.getValue(Inst.Int.Value, index_value_idx).literal.value;
+        const index_value = spirv.air.getValue(Inst.Int.Value, index_value_idx).literal;
         try section.emit(.OpCompositeExtract, .{
             .id_result_type = type_id,
             .id_result = id,
