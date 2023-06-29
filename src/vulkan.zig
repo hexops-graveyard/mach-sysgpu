@@ -146,7 +146,7 @@ fn isSuitable(vki: InstanceDispatch, physical_device: vk.PhysicalDevice, options
     }
 
     if (options.compatible_surface) |surface| {
-        var surface_impl = @ptrCast(*Surface, @alignCast(@alignOf(Surface), surface));
+        var surface_impl: *Surface = @ptrCast(@alignCast(surface));
 
         if (!try checkSurfaceSupport(vki, physical_device, surface_impl.vulkan_surface)) {
             std.debug.print("no surface support\n", .{});
@@ -180,7 +180,7 @@ fn allocateQueues(vki: InstanceDispatch, pdev: vk.PhysicalDevice, allocator: std
     var present_family: ?u32 = null;
 
     for (families, 0..) |properties, i| {
-        const family = @intCast(u32, i);
+        const family: u32 = @intCast(i);
 
         if (graphics_family == null and properties.queue_flags.graphics_bit) {
             graphics_family = family;
@@ -191,7 +191,7 @@ fn allocateQueues(vki: InstanceDispatch, pdev: vk.PhysicalDevice, allocator: std
         }
 
         if (options.compatible_surface) |surface| {
-            var surface_impl = @ptrCast(*Surface, @alignCast(@alignOf(Surface), surface));
+            var surface_impl: *Surface = @ptrCast(@alignCast(surface));
 
             if (present_family == null and (try vki.getPhysicalDeviceSurfaceSupportKHR(pdev, family, surface_impl.vulkan_surface)) == vk.TRUE) {
                 present_family = family;

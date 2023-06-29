@@ -20,7 +20,7 @@ pub fn main() !void {
         instance,
         null,
         adapterCallback,
-        @ptrCast(*anyopaque, &adapter),
+        @as(*anyopaque, @ptrCast(&adapter)),
     );
     defer gpu.Impl.adapterRelease(adapter);
 
@@ -36,7 +36,7 @@ fn adapterCallback(
     _ = message;
     _ = status;
 
-    var adapter_ptr = @ptrCast(**gpu.Adapter, @alignCast(@alignOf(*gpu.Adapter), userdata.?));
+    var adapter_ptr: **gpu.Adapter = @ptrCast(@alignCast(userdata.?));
 
     //Set the adapter
     adapter_ptr.* = adapter;

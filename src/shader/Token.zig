@@ -23,19 +23,19 @@ pub const Loc = struct {
             .line = 1,
             .col = 1,
             .line_start = 0,
-            .line_end = @intCast(u32, source.len),
+            .line_end = @intCast(source.len),
         };
 
         for (source[0..self.start], 0..) |c, i| {
             if (c == '\n') {
                 result.line += 1;
-                result.line_start = @intCast(u32, i) + 1;
+                result.line_start = @as(u32, @intCast(i)) + 1;
             }
         }
 
         for (source[self.end..], 0..) |c, i| {
             if (c == '\n') {
-                result.line_end = self.end + @intCast(u32, i);
+                result.line_end = self.end + @as(u32, @intCast(i));
                 break;
             }
         }

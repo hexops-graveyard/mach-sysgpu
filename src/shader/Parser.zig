@@ -12,7 +12,7 @@ const Parser = @This();
 
 allocator: std.mem.Allocator,
 source: []const u8,
-tok_i: TokenIndex = @enumFromInt(TokenIndex, 0),
+tok_i: TokenIndex = @enumFromInt(0),
 tokens: std.MultiArrayList(Token),
 nodes: std.MultiArrayList(Node) = .{},
 extra: std.ArrayListUnmanaged(u32) = .{},
@@ -37,9 +37,9 @@ pub fn translationUnit(p: *Parser) !void {
         try p.scratch.append(p.allocator, decl);
     }
 
-    try p.extra.appendSlice(p.allocator, @ptrCast([]const u32, p.scratch.items));
-    p.nodes.items(.lhs)[@intFromEnum(root)] = @enumFromInt(NodeIndex, p.extra.items.len - p.scratch.items.len);
-    p.nodes.items(.rhs)[@intFromEnum(root)] = @enumFromInt(NodeIndex, p.extra.items.len);
+    try p.extra.appendSlice(p.allocator, @ptrCast(p.scratch.items));
+    p.nodes.items(.lhs)[@intFromEnum(root)] = @enumFromInt(p.extra.items.len - p.scratch.items.len);
+    p.nodes.items(.rhs)[@intFromEnum(root)] = @enumFromInt(p.extra.items.len);
 }
 
 // Based on https://gpuweb.github.io/gpuweb/wgsl/#template-lists-sec
@@ -1980,17 +1980,17 @@ fn findNextStmt(p: *Parser) void {
 }
 
 fn listToSpan(p: *Parser, list: []const NodeIndex) !NodeIndex {
-    try p.extra.appendSlice(p.allocator, @ptrCast([]const u32, list));
+    try p.extra.appendSlice(p.allocator, @ptrCast(list));
     return p.addNode(.{
         .tag = .span,
         .main_token = undefined,
-        .lhs = @enumFromInt(NodeIndex, p.extra.items.len - list.len),
-        .rhs = @enumFromInt(NodeIndex, p.extra.items.len),
+        .lhs = @enumFromInt(p.extra.items.len - list.len),
+        .rhs = @enumFromInt(p.extra.items.len),
     });
 }
 
 fn addNode(p: *Parser, node: Node) error{OutOfMemory}!NodeIndex {
-    const i = @enumFromInt(NodeIndex, p.nodes.len);
+    const i: NodeIndex = @enumFromInt(p.nodes.len);
     try p.nodes.append(p.allocator, node);
     return i;
 }
@@ -1998,7 +1998,7 @@ fn addNode(p: *Parser, node: Node) error{OutOfMemory}!NodeIndex {
 fn addExtra(p: *Parser, extra: anytype) error{OutOfMemory}!NodeIndex {
     const fields = std.meta.fields(@TypeOf(extra));
     try p.extra.ensureUnusedCapacity(p.allocator, fields.len);
-    const result = @enumFromInt(NodeIndex, p.extra.items.len);
+    const result: NodeIndex = @enumFromInt(p.extra.items.len);
     inline for (fields) |field| {
         comptime std.debug.assert(field.type == NodeIndex or field.type == TokenIndex);
         p.extra.appendAssumeCapacity(@intFromEnum(@field(extra, field.name)));
@@ -2019,12 +2019,12 @@ fn peekToken(
     comptime field: Ast.TokenList.Field,
     offset: isize,
 ) std.meta.fieldInfo(Token, field).type {
-    return p.tokens.items(field)[@intCast(usize, @intCast(isize, @intFromEnum(p.tok_i)) + offset)];
+    return p.tokens.items(field)[@intCast(@as(isize, @intCast(@intFromEnum(p.tok_i))) + offset)];
 }
 
 fn advanceToken(p: *Parser) TokenIndex {
     const prev = p.tok_i;
-    p.tok_i = @enumFromInt(TokenIndex, @min(@intFromEnum(prev) + 1, p.tokens.len));
+    p.tok_i = @enumFromInt(@min(@intFromEnum(prev) + 1, p.tokens.len));
     return prev;
 }
 

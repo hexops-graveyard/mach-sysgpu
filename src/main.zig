@@ -47,7 +47,7 @@ pub const Interface = struct {
         };
 
         instance.reference();
-        return @ptrCast(*gpu.Instance, instance);
+        return @as(*gpu.Instance, @ptrCast(instance));
     }
 
     pub inline fn getProcAddress(device: *gpu.Device, proc_name: [*:0]const u8) ?gpu.Proc {
@@ -100,12 +100,12 @@ pub const Interface = struct {
     }
 
     pub inline fn adapterReference(adapter_raw: *gpu.Adapter) void {
-        var adapter = @ptrCast(*Adapter, @alignCast(@alignOf(Adapter), adapter_raw));
+        var adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
         adapter.reference();
     }
 
     pub inline fn adapterRelease(adapter_raw: *gpu.Adapter) void {
-        var adapter = @ptrCast(*Adapter, @alignCast(@alignOf(Adapter), adapter_raw));
+        var adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
         adapter.dereference();
     }
 
@@ -697,7 +697,7 @@ pub const Interface = struct {
     }
 
     pub inline fn instanceRequestAdapter(instance_raw: *gpu.Instance, options: ?*const gpu.RequestAdapterOptions, callback: gpu.RequestAdapterCallback, userdata: ?*anyopaque) void {
-        var instance = @ptrCast(*Instance, @alignCast(@alignOf(Instance), instance_raw));
+        var instance: *Instance = @ptrCast(@alignCast(instance_raw));
 
         var adapter = allocator.create(Adapter) catch @panic("TODO: PROPOGATE ERRORS");
 
@@ -719,11 +719,11 @@ pub const Interface = struct {
         adapter.reference();
 
         //TODO: propgate the errors from `create` into here
-        callback(.success, @ptrCast(*gpu.Adapter, adapter), null, userdata);
+        callback(.success, @as(*gpu.Adapter, @ptrCast(adapter)), null, userdata);
     }
 
     pub inline fn instanceReference(instance_raw: *gpu.Instance) void {
-        var instance = @ptrCast(*Instance, @alignCast(@alignOf(Instance), instance_raw));
+        var instance: *Instance = @ptrCast(@alignCast(instance_raw));
 
         std.debug.print("referencing instance\n", .{});
 
@@ -731,7 +731,7 @@ pub const Interface = struct {
     }
 
     pub inline fn instanceRelease(instance_raw: *gpu.Instance) void {
-        var instance = @ptrCast(*Instance, @alignCast(@alignOf(Instance), instance_raw));
+        var instance: *Instance = @ptrCast(@alignCast(instance_raw));
 
         std.debug.print("releasing instance\n", .{});
 

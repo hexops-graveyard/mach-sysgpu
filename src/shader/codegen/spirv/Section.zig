@@ -43,7 +43,7 @@ pub fn emitRaw(
 ) !void {
     const word_count = 1 + operand_words;
     try section.words.ensureUnusedCapacity(word_count);
-    section.writeWord((@intCast(Word, word_count << 16)) | @intFromEnum(opcode));
+    section.writeWord((@intCast(word_count << 16))) | @intFromEnum(opcode);
 }
 
 pub fn emit(
@@ -53,7 +53,7 @@ pub fn emit(
 ) !void {
     const word_count = instructionSize(opcode, operands);
     try section.ensureUnusedCapacity(word_count);
-    section.writeWord(@intCast(Word, word_count << 16) | @intFromEnum(opcode));
+    section.writeWord(@as(Word, @intCast(word_count << 16)) | @intFromEnum(opcode));
     section.writeOperands(opcode.Operands(), operands);
 }
 
@@ -84,9 +84,9 @@ pub fn writeWords(section: *Section, words: []const Word) void {
 }
 
 pub fn writeDoubleWord(section: *Section, dword: DoubleWord) void {
-    section.writeWords(&.{
-        @truncate(Word, dword),
-        @truncate(Word, dword >> @bitSizeOf(Word)),
+    section.writeWords(&[_]Word{
+        @truncate(dword),
+        @truncate(dword >> @bitSizeOf(Word)),
     });
 }
 
@@ -136,7 +136,7 @@ pub fn writeOperand(section: *Section, comptime Operand: type, operand: Operand)
             },
             .Struct => |info| {
                 if (info.layout == .Packed) {
-                    section.writeWord(@bitCast(Word, operand));
+                    section.writeWord(@bitCast(operand));
                 } else {
                     section.writeExtendedMask(Operand, operand);
                 }
@@ -157,7 +157,7 @@ fn writeString(section: *Section, str: []const u8) void {
 
         var j: usize = 0;
         while (j < @sizeOf(Word) and i + j < str.len) : (j += 1) {
-            word |= @as(Word, str[i + j]) << @intCast(Log2Word, j * @bitSizeOf(u8));
+            word |= @as(Word, str[i + j]) << @as(Log2Word, @intCast(j * @bitSizeOf(u8)));
         }
 
         section.words.appendAssumeCapacity(word);
@@ -166,12 +166,12 @@ fn writeString(section: *Section, str: []const u8) void {
 
 fn writeContextDependentNumber(section: *Section, operand: spec.LiteralContextDependentNumber) void {
     switch (operand) {
-        .int32 => |int| section.writeWord(@bitCast(Word, int)),
-        .uint32 => |int| section.writeWord(@bitCast(Word, int)),
-        .int64 => |int| section.writeDoubleWord(@bitCast(DoubleWord, int)),
-        .uint64 => |int| section.writeDoubleWord(@bitCast(DoubleWord, int)),
-        .float32 => |float| section.writeWord(@bitCast(Word, float)),
-        .float64 => |float| section.writeDoubleWord(@bitCast(DoubleWord, float)),
+        .int32 => |int| section.writeWord(@bitCast(int)),
+        .uint32 => |int| section.writeWord(@bitCast(int)),
+        .int64 => |int| section.writeDoubleWord(@bitCast(int)),
+        .uint64 => |int| section.writeDoubleWord(@bitCast(int)),
+        .float32 => |float| section.writeWord(@bitCast(float)),
+        .float64 => |float| section.writeDoubleWord(@bitCast(float)),
     }
 }
 
@@ -180,10 +180,10 @@ fn writeExtendedMask(section: *Section, comptime Operand: type, operand: Operand
     inline for (@typeInfo(Operand).Struct.fields, 0..) |field, bit| {
         switch (@typeInfo(field.type)) {
             .Optional => if (@field(operand, field.name) != null) {
-                mask |= 1 << @intCast(u5, bit);
+                mask |= 1 << @intCast(bit);
             },
             .Bool => if (@field(operand, field.name)) {
-                mask |= 1 << @intCast(u5, bit);
+                mask |= 1 << @intCast(bit);
             },
             else => unreachable,
         }

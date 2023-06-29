@@ -357,21 +357,21 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
                 .x = blk: {
                     const int = spirv.air.getInst(compute.x).int;
                     const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
-                    break :blk @intCast(Word, value.literal.value);
+                    break :blk @intCast(value.literal.value);
                 },
                 .y = blk: {
                     if (compute.y == .none) break :blk 1;
 
                     const int = spirv.air.getInst(compute.y).int;
                     const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
-                    break :blk @intCast(Word, value.literal.value);
+                    break :blk @intCast(value.literal.value);
                 },
                 .z = blk: {
                     if (compute.y == .none) break :blk 1;
 
                     const int = spirv.air.getInst(compute.z).int;
                     const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
-                    break :blk @intCast(Word, value.literal.value);
+                    break :blk @intCast(value.literal.value);
                 },
             },
         },
@@ -650,7 +650,7 @@ fn emitSwizzleAccess(spirv: *SpirV, section: *Section, inst: Inst.SwizzleAccess)
 
         const vec_type = Key.VectorType{
             .elem_type = try spirv.emitType(inst.type),
-            .size = @enumFromInt(Inst.Vector.Size, @intFromEnum(inst.size)),
+            .size = @enumFromInt(@intFromEnum(inst.size)),
         };
         return spirv.constVector(vec_type, swizzles);
     }
@@ -678,7 +678,7 @@ fn emitIndexAccess(spirv: *SpirV, section: *Section, inst: Inst.IndexAccess) !Id
             .id_result_type = type_id,
             .id_result = id,
             .composite = base_id,
-            .indexes = &.{@intCast(u32, index_value)},
+            .indexes = &[_]u32{@intCast(index_value)},
         });
     }
 
@@ -727,7 +727,7 @@ fn constFloat(spirv: *SpirV, ty: Inst.Float.Type, value: f64) !IdRef {
     return spirv.resolve(.{
         .float = .{
             .type = coerced_type,
-            .value = @bitCast(u64, value),
+            .value = @bitCast(value),
         },
     });
 }
@@ -858,9 +858,9 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
         },
         .int => |int| {
             const value: spec.LiteralContextDependentNumber = switch (int.type) {
-                .u32 => .{ .uint32 = @intCast(u32, int.value) },
-                .i32 => .{ .int32 = @intCast(i32, int.value) },
-                .abstract => .{ .int32 = @intCast(i32, int.value) }, // TODO
+                .u32 => .{ .uint32 = @intCast(int.value) },
+                .i32 => .{ .int32 = @intCast(int.value) },
+                .abstract => .{ .int32 = @intCast(int.value) }, // TODO
             };
             try spirv.global_section.emit(.OpConstant, .{
                 .id_result_type = try spirv.resolve(.{ .int_type = int.type }),
@@ -870,9 +870,9 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
         },
         .float => |float| {
             const value: spec.LiteralContextDependentNumber = switch (float.type) {
-                .f16 => .{ .uint32 = @bitCast(u16, @floatCast(f16, @bitCast(f64, float.value))) },
-                .f32 => .{ .float32 = @floatCast(f32, @bitCast(f64, float.value)) },
-                .abstract => .{ .float64 = @bitCast(f64, float.value) },
+                .f16 => .{ .uint32 = @as(u16, @bitCast(@as(f16, @floatCast(@as(f64, @bitCast(float.value)))))) },
+                .f32 => .{ .float32 = @floatCast(@as(f64, @bitCast(float.value))) },
+                .abstract => .{ .float64 = @bitCast(float.value) },
             };
             try spirv.global_section.emit(.OpConstant, .{
                 .id_result_type = try spirv.resolve(.{ .float_type = float.type }),
