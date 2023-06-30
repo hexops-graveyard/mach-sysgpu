@@ -23,7 +23,9 @@ fn RefCounted(comptime T: type) type {
 
             self.ref_count -= 1;
 
-            self.item.deinit();
+            if (self.ref_count == 0) {
+                self.item.deinit();
+            }
         }
     };
 }
