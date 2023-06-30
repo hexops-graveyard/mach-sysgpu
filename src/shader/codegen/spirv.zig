@@ -80,7 +80,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
     defer module_section.deinit();
 
     for (air.refToList(air.globals_index)) |inst_idx| {
-        _ = try spirv.emitDecl(null, inst_idx) orelse unreachable;
+        _ = try spirv.emitDecl(null, null, inst_idx) orelse unreachable;
     }
 
     try spirv.emitModule(&module_section);
@@ -152,14 +152,14 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
     }
 }
 
-fn emitDecl(spirv: *SpirV, section: ?*Section, inst_idx: InstIndex) !?IdRef {
+fn emitDecl(spirv: *SpirV, section: ?*Section, init_section: ?*Section, inst_idx: InstIndex) !?IdRef {
     if (spirv.decl_map.get(inst_idx)) |id| return id;
     const id = switch (spirv.air.getInst(inst_idx)) {
         .@"fn" => |@"fn"| try spirv.emitFn(@"fn"),
         .global_var => IdResult{ .id = 1 }, // TODO
         .global_const => IdResult{ .id = 1 }, // TODO
         .override => IdResult{ .id = 1 }, // TODO
-        .@"var" => |@"var"| try spirv.emitVar(section.?, @"var"),
+        .@"var" => |@"var"| try spirv.emitVar(section.?, init_section orelse section.?, @"var"),
         else => return null,
     };
     try spirv.decl_map.put(spirv.allocator, inst_idx, id);
@@ -170,10 +170,12 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
     var fn_section = Section{ .allocator = spirv.allocator };
     var fn_params_section = Section{ .allocator = spirv.allocator };
     var fn_params_load_section = Section{ .allocator = spirv.allocator };
+    var fn_vars_init_section = Section{ .allocator = spirv.allocator };
     defer {
         fn_section.deinit();
         fn_params_section.deinit();
         fn_params_load_section.deinit();
+        fn_vars_init_section.deinit();
     }
 
     const fn_id = spirv.allocId();
@@ -332,14 +334,15 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
     const statements_ref = spirv.air.getInst(inst.block).block;
     try fn_section.emit(.OpLabel, .{ .id_result = block_id });
 
-    try fn_section.append(fn_params_load_section);
-
     if (statements_ref != .none) {
         const list = spirv.air.refToList(statements_ref);
         for (list) |statement_idx| {
-            _ = try spirv.emitDecl(&fn_section, statement_idx);
+            _ = try spirv.emitDecl(&fn_section, &fn_vars_init_section, statement_idx);
         }
     }
+
+    try fn_section.append(fn_vars_init_section);
+    try fn_section.append(fn_params_load_section);
 
     if (statements_ref != .none) {
         const list = spirv.air.refToList(statements_ref);
@@ -400,7 +403,7 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
     return fn_id;
 }
 
-fn emitVar(spirv: *SpirV, section: *Section, inst: Inst.Var) !IdRef {
+fn emitVar(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.Var) !IdRef {
     const id = spirv.allocId();
     try spirv.debug_section.emit(.OpName, .{
         .target = id,
@@ -428,9 +431,9 @@ fn emitVar(spirv: *SpirV, section: *Section, inst: Inst.Var) !IdRef {
     });
 
     if (inst.expr != .none) {
-        try section.emit(.OpStore, .{
+        try init_section.emit(.OpStore, .{
             .pointer = id,
-            .object = try spirv.emitExpr(section, inst.expr),
+            .object = try spirv.emitExpr(init_section, inst.expr),
         });
     }
 
@@ -515,7 +518,22 @@ fn emitExpr(spirv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMe
         .vector => |vector| spirv.emitVector(section, vector),
         .array => |array| spirv.emitArray(section, array),
         .call => |call| spirv.emitCall(section, call),
-        .var_ref => |var_ref| try spirv.emitDecl(section, var_ref) orelse unreachable,
+        .var_ref => |var_ref| blk: {
+            const var_id = try spirv.emitDecl(section, null, var_ref) orelse unreachable;
+            switch (spirv.air.getInst(var_ref)) {
+                inline .@"var", .global_var => |@"var"| {
+                    const load_id = spirv.allocId();
+                    const var_type = if (@"var".type != .none) @"var".type else @"var".expr;
+                    try section.emit(.OpLoad, .{
+                        .id_result_type = try spirv.emitType(var_type),
+                        .id_result = load_id,
+                        .pointer = var_id,
+                    });
+                    break :blk load_id;
+                },
+                else => break :blk var_id,
+            }
+        },
         .swizzle_access => |swizzle_access| spirv.emitSwizzleAccess(section, swizzle_access),
         .index_access => |index_access| spirv.emitIndexAccess(section, index_access),
         else => .{ .id = 1 }, // TODO: unreachable
@@ -552,19 +570,11 @@ fn emitIntCast(spirv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast:
     const value_id = try spirv.emitExpr(section, cast.value);
     switch (dest_type) {
         .i32 => switch (source_type) {
-            .int => |int| switch (int.type) {
-                .abstract => try section.emit(.OpSConvert, .{
-                    .id_result_type = dest_type_id,
-                    .id_result = id,
-                    .signed_value = value_id,
-                }),
-                .u32 => try section.emit(.OpUConvert, .{
-                    .id_result_type = dest_type_id,
-                    .id_result = id,
-                    .unsigned_value = value_id,
-                }),
-                .i32 => unreachable,
-            },
+            .int => try section.emit(.OpUConvert, .{
+                .id_result_type = dest_type_id,
+                .id_result = id,
+                .unsigned_value = value_id,
+            }),
             .float => try section.emit(.OpConvertFToS, .{
                 .id_result_type = dest_type_id,
                 .id_result = id,
@@ -573,14 +583,11 @@ fn emitIntCast(spirv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast:
             else => unreachable,
         },
         .u32 => switch (source_type) {
-            .int => |int| switch (int.type) {
-                .i32, .abstract => try section.emit(.OpSConvert, .{
-                    .id_result_type = dest_type_id,
-                    .id_result = id,
-                    .signed_value = value_id,
-                }),
-                .u32 => unreachable,
-            },
+            .int => try section.emit(.OpSConvert, .{
+                .id_result_type = dest_type_id,
+                .id_result = id,
+                .signed_value = value_id,
+            }),
             .float => try section.emit(.OpConvertFToU, .{
                 .id_result_type = dest_type_id,
                 .id_result = id,
@@ -588,7 +595,6 @@ fn emitIntCast(spirv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast:
             }),
             else => unreachable,
         },
-        else => unreachable,
     }
     return id;
 }
@@ -611,7 +617,7 @@ fn emitFloatCast(spirv: *SpirV, section: *Section, dest_type: Inst.Float.Type, c
                     .id_result = id,
                     .unsigned_value = value_id,
                 }),
-                .i32, .abstract => try section.emit(.OpConvertSToF, .{
+                .i32 => try section.emit(.OpConvertSToF, .{
                     .id_result_type = dest_type_id,
                     .id_result = id,
                     .signed_value = value_id,
@@ -619,7 +625,6 @@ fn emitFloatCast(spirv: *SpirV, section: *Section, dest_type: Inst.Float.Type, c
             },
             else => unreachable,
         },
-        else => unreachable,
     }
     return id;
 }
@@ -638,7 +643,7 @@ fn emitCall(spirv: *SpirV, section: *Section, inst: Inst.FnCall) !IdRef {
     try section.emit(.OpFunctionCall, .{
         .id_result_type = try spirv.emitType(spirv.air.getInst(inst.@"fn").@"fn".return_type),
         .id_result = id,
-        .function = try spirv.emitDecl(null, inst.@"fn") orelse unreachable,
+        .function = try spirv.emitDecl(null, null, inst.@"fn") orelse unreachable,
         .id_ref_3 = args.items,
     });
 
@@ -775,7 +780,7 @@ fn emitSwizzleAccess(spirv: *SpirV, section: *Section, inst: Inst.SwizzleAccess)
 fn emitIndexAccess(spirv: *SpirV, section: *Section, inst: Inst.IndexAccess) !IdRef {
     const id = spirv.allocId();
     const type_id = try spirv.emitType(inst.type);
-    const base_id = try spirv.emitExpr(section, inst.base);
+    const base_id = try spirv.emitDecl(section, null, spirv.air.getInst(inst.base).var_ref) orelse unreachable;
 
     if (spirv.air.isConst(inst.index)) {
         const index_value_idx = spirv.air.getInst(inst.index).int.value.?;
@@ -819,7 +824,7 @@ fn constBool(spirv: *SpirV, val: bool) !IdRef {
     return spirv.resolve(.{ .bool = val });
 }
 
-fn constInt(spirv: *SpirV, ty: Inst.Int.Type, value: i64) !IdRef {
+fn constInt(spirv: *SpirV, ty: Inst.Int.Type, value: i33) !IdRef {
     return spirv.resolve(.{
         .int = .{
             .type = ty,
@@ -828,11 +833,10 @@ fn constInt(spirv: *SpirV, ty: Inst.Int.Type, value: i64) !IdRef {
     });
 }
 
-fn constFloat(spirv: *SpirV, ty: Inst.Float.Type, value: f64) !IdRef {
-    const coerced_type = if (value <= std.math.floatMax(f32) and ty == .abstract) .f32 else ty;
+fn constFloat(spirv: *SpirV, ty: Inst.Float.Type, value: f32) !IdRef {
     return spirv.resolve(.{
         .float = .{
-            .type = coerced_type,
+            .type = ty,
             .value = @bitCast(value),
         },
     });
@@ -885,12 +889,12 @@ const Key = union(enum) {
 
     const Int = struct {
         type: Inst.Int.Type,
-        value: i64,
+        value: i33,
     };
 
     const Float = struct {
         type: Inst.Float.Type,
-        value: u64,
+        value: u32,
     };
 
     const Vector = struct {
@@ -980,7 +984,6 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
             const value: spec.LiteralContextDependentNumber = switch (int.type) {
                 .u32 => .{ .uint32 = @intCast(int.value) },
                 .i32 => .{ .int32 = @intCast(int.value) },
-                .abstract => .{ .int32 = @intCast(int.value) }, // TODO
             };
             try spirv.global_section.emit(.OpConstant, .{
                 .id_result_type = try spirv.resolve(.{ .int_type = int.type }),
@@ -990,9 +993,8 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
         },
         .float => |float| {
             const value: spec.LiteralContextDependentNumber = switch (float.type) {
-                .f16 => .{ .uint32 = @as(u16, @bitCast(@as(f16, @floatCast(@as(f64, @bitCast(float.value)))))) },
-                .f32 => .{ .float32 = @floatCast(@as(f64, @bitCast(float.value))) },
-                .abstract => .{ .float64 = @bitCast(float.value) },
+                .f16 => .{ .uint32 = @as(u16, @bitCast(@as(f16, @floatCast(@as(f32, @bitCast(float.value)))))) },
+                .f32 => .{ .float32 = @bitCast(float.value) },
             };
             try spirv.global_section.emit(.OpConstant, .{
                 .id_result_type = try spirv.resolve(.{ .float_type = float.type }),
