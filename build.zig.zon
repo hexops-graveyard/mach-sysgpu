@@ -4,7 +4,7 @@
     .dependencies = .{
         .@"vulkan-zig-generated" = .{
             .url = "https://github.com/hexops/vulkan-zig-generated/archive/b5ee8187817cf620e00d3ccbb48c68cc2a386b28.tar.gz",
-            .hash = "12207fb09aa58efcc6f833cd1ae4b37f2e5082f55a125a1401c93939289bcdcc48fa",
+            .hash = "122000da94e9e5840df150aa512d32a5f630e1df65414e93437e29625bb00a0108da",
         },
     },
 }
