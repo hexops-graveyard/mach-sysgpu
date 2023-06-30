@@ -2,8 +2,8 @@ const std = @import("std");
 const ErrorList = @import("ErrorList.zig");
 const Ast = @import("Ast.zig");
 const Air = @import("Air.zig");
-const printAir = @import("print_air.zig");
 const CodeGen = @import("CodeGen.zig");
+const printAir = @import("print_air.zig").printAir;
 const Extension = @import("shader.zig").Extension;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
@@ -103,7 +103,6 @@ test "gkurve" {
 }
 
 test "must pass" {
-    if (true) return error.SkipZigTest;
     {
         const source =
             \\const expr0 = 5 + 6;
@@ -170,7 +169,6 @@ test "must pass" {
             \\}
         ;
         var ir = try expectIR(source);
-        try printAir(ir, std.io.getStdErr().writer());
         ir.deinit(allocator);
     }
     {

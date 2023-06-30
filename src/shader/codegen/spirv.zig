@@ -160,6 +160,8 @@ fn emitDecl(spirv: *SpirV, section: ?*Section, init_section: ?*Section, inst_idx
         .global_const => IdResult{ .id = 1 }, // TODO
         .override => IdResult{ .id = 1 }, // TODO
         .@"var" => |@"var"| try spirv.emitVar(section.?, init_section orelse section.?, @"var"),
+        .let => |let| try spirv.emitLet(section.?, init_section orelse section.?, let),
+        .@"const" => IdResult{ .id = 1 }, // TODO
         else => return null,
     };
     try spirv.decl_map.put(spirv.allocator, inst_idx, id);
@@ -418,7 +420,7 @@ fn emitVar(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.
     } });
 
     const initializer = blk: {
-        if (spirv.air.isConst(inst.expr)) {
+        if (inst.expr != .none and spirv.air.isConst(inst.expr)) {
             break :blk try spirv.emitExpr(&spirv.global_section, inst.expr);
         }
         break :blk null;
@@ -438,6 +440,36 @@ fn emitVar(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.
     }
 
     return id;
+}
+
+fn emitLet(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.Const) !IdRef {
+    const initializer = try spirv.emitExpr(init_section, inst.expr);
+    const type_id = try spirv.emitType(if (inst.type != .none) inst.type else inst.expr);
+    const ptr_type_id = try spirv.resolve(.{ .ptr_type = .{
+        .elem_type = type_id,
+        .storage_class = .Function,
+    } });
+
+    const var_id = spirv.allocId();
+    try section.emit(.OpVariable, .{
+        .id_result_type = ptr_type_id,
+        .id_result = var_id,
+        .storage_class = .Function,
+        .initializer = initializer,
+    });
+
+    const load_id = spirv.allocId();
+    try spirv.debug_section.emit(.OpName, .{
+        .target = load_id,
+        .name = spirv.air.getStr(inst.name),
+    });
+    try section.emit(.OpLoad, .{
+        .id_result_type = type_id,
+        .id_result = load_id,
+        .pointer = var_id,
+    });
+
+    return load_id;
 }
 
 fn emitType(spirv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
@@ -504,18 +536,19 @@ fn emitReturn(spirv: *SpirV, section: *Section, value: InstIndex) !void {
 fn emitExpr(spirv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     return switch (spirv.air.getInst(inst_idx)) {
         .bool => |boolean| switch (boolean.value.?) {
-            .literal => |lit| spirv.constBool(lit),
+            .literal => |lit| spirv.resolve(.{ .bool = lit }),
             .cast => |cast| spirv.emitBoolCast(section, cast),
         },
         .int => |int| switch (spirv.air.getValue(Inst.Int.Value, int.value.?)) {
-            .literal => |lit| spirv.constInt(int.type, lit),
+            .literal => |lit| spirv.resolve(.{ .int = .{ .type = int.type, .value = lit } }),
             .cast => |cast| spirv.emitIntCast(section, int.type, cast),
         },
         .float => |float| switch (spirv.air.getValue(Inst.Float.Value, float.value.?)) {
-            .literal => |lit| spirv.constFloat(float.type, lit),
+            .literal => |lit| spirv.resolve(.{ .float = .{ .type = float.type, .value = @bitCast(lit) } }),
             .cast => |cast| spirv.emitFloatCast(section, float.type, cast),
         },
         .vector => |vector| spirv.emitVector(section, vector),
+        .matrix => |matrix| spirv.emitMatrix(section, matrix),
         .array => |array| spirv.emitArray(section, array),
         .call => |call| spirv.emitCall(section, call),
         .var_ref => |var_ref| blk: {
@@ -549,13 +582,13 @@ fn emitBoolCast(spirv: *SpirV, section: *Section, cast: Inst.Cast) !IdRef {
         .int => |int| try section.emit(.OpINotEqual, .{
             .id_result_type = dest_type_id,
             .id_result = id,
-            .operand_1 = try spirv.constNull(.{ .int_type = int.type }),
+            .operand_1 = try spirv.resolve(.{ .null = try spirv.resolve(.{ .int_type = int.type }) }),
             .operand_2 = value_id,
         }),
         .float => |float| try section.emit(.OpFUnordNotEqual, .{
             .id_result_type = dest_type_id,
             .id_result = id,
-            .operand_1 = try spirv.constNull(.{ .float_type = float.type }),
+            .operand_1 = try spirv.resolve(.{ .null = try spirv.resolve(.{ .float_type = float.type }) }),
             .operand_2 = value_id,
         }),
         else => unreachable,
@@ -651,62 +684,111 @@ fn emitCall(spirv: *SpirV, section: *Section, inst: Inst.FnCall) !IdRef {
 }
 
 fn emitVector(spirv: *SpirV, section: *Section, inst: Inst.Vector) !IdRef {
-    const ty: Key = switch (spirv.air.getInst(inst.elem_type)) {
+    const elem_type_key: Key = switch (spirv.air.getInst(inst.elem_type)) {
         .bool => .bool_type,
         .float => |float| .{ .float_type = float.type },
         .int => |int| .{ .int_type = int.type },
         else => unreachable,
     };
 
-    // TODO
-    // var is_const = true;
-    const type_key = Key{
+    const type_id = try spirv.resolve(.{
         .vector_type = .{
-            .elem_type = try spirv.resolve(ty),
+            .elem_type = try spirv.resolve(elem_type_key),
             .size = inst.size,
         },
-    };
+    });
+
     if (inst.value.? == .none) {
-        return spirv.constNull(type_key);
+        return spirv.resolve(.{ .null = type_id });
     }
 
-    var constituents = std.ArrayList(IdRef).init(spirv.allocator);
-    defer constituents.deinit();
-    try constituents.ensureTotalCapacityPrecise(@intFromEnum(inst.size));
+    var elem_value = std.ArrayList(IdRef).init(spirv.allocator);
+    defer elem_value.deinit();
+    try elem_value.ensureTotalCapacityPrecise(@intFromEnum(inst.size));
 
     const value = spirv.air.getValue(Inst.Vector.Value, inst.value.?);
     for (value[0..@intFromEnum(inst.size)]) |elem_inst| {
-        // if (!spirv.air.isConst(elem_inst)) {
-        //     is_const = false;
-        // }
         const elem_id = try spirv.emitExpr(section, elem_inst);
-        constituents.appendAssumeCapacity(elem_id);
+        elem_value.appendAssumeCapacity(elem_id);
     }
-
-    // if (is_const) {
-    //     return spirv.constVector(type_key.vector_type, constituents.items);
-    // }
 
     const id = spirv.allocId();
     try section.emit(.OpCompositeConstruct, .{
-        .id_result_type = try spirv.resolve(type_key),
+        .id_result_type = type_id,
         .id_result = id,
-        .constituents = constituents.items,
+        .constituents = elem_value.items,
+    });
+    return id;
+}
+
+fn emitMatrix(spirv: *SpirV, section: *Section, inst: Inst.Matrix) !IdRef {
+    const vec_elem_type_id = try spirv.emitType(inst.elem_type);
+    const elem_type_id = try spirv.resolve(.{
+        .vector_type = .{
+            .elem_type = vec_elem_type_id,
+            .size = inst.rows,
+        },
+    });
+    const type_id = try spirv.resolve(.{
+        .matrix_type = .{
+            .elem_type = elem_type_id,
+            .cols = inst.cols,
+        },
+    });
+
+    if (inst.value.? == .none) {
+        return spirv.resolve(.{ .null = type_id });
+    }
+
+    const cols = @intFromEnum(inst.cols);
+    const rows = @intFromEnum(inst.rows);
+
+    var elem_value = std.ArrayList(IdRef).init(spirv.allocator);
+    defer elem_value.deinit();
+    try elem_value.ensureTotalCapacityPrecise(cols);
+
+    var vec_elem_value = std.ArrayList(IdRef).init(spirv.allocator);
+    defer vec_elem_value.deinit();
+    try vec_elem_value.ensureTotalCapacityPrecise(rows);
+
+    const value = spirv.air.getValue(Inst.Matrix.Value, inst.value.?);
+    var i: u8 = 0;
+    while (i < cols * rows) : (i += rows) {
+        for (value[i .. i + rows]) |vec_elem_inst| {
+            const vec_elem_id = try spirv.emitExpr(section, vec_elem_inst);
+            vec_elem_value.appendAssumeCapacity(vec_elem_id);
+        }
+
+        const elem_id = spirv.allocId();
+        try section.emit(.OpCompositeConstruct, .{
+            .id_result_type = type_id,
+            .id_result = elem_id,
+            .constituents = vec_elem_value.items,
+        });
+        elem_value.appendAssumeCapacity(elem_id);
+        vec_elem_value.clearRetainingCapacity();
+    }
+
+    const id = spirv.allocId();
+    try section.emit(.OpCompositeConstruct, .{
+        .id_result_type = type_id,
+        .id_result = id,
+        .constituents = elem_value.items,
     });
     return id;
 }
 
 fn emitArray(spirv: *SpirV, section: *Section, inst: Inst.Array) !IdRef {
     const len = if (inst.len != .none) try spirv.emitExpr(&spirv.global_section, inst.len) else null;
-    const type_key = Key{
+    const type_id = try spirv.resolve(.{
         .array_type = .{
             .elem_type = try spirv.emitType(inst.elem_type),
             .len = len,
         },
-    };
+    });
 
     if (inst.value.? == .none) {
-        return spirv.constNull(type_key);
+        return spirv.resolve(.{ .null = type_id });
     }
 
     const value = spirv.air.refToList(inst.value.?);
@@ -722,7 +804,7 @@ fn emitArray(spirv: *SpirV, section: *Section, inst: Inst.Array) !IdRef {
 
     const id = spirv.allocId();
     try section.emit(.OpCompositeConstruct, .{
-        .id_result_type = try spirv.resolve(type_key),
+        .id_result_type = type_id,
         .id_result = id,
         .constituents = constituents.items,
     });
@@ -763,7 +845,7 @@ fn emitSwizzleAccess(spirv: *SpirV, section: *Section, inst: Inst.SwizzleAccess)
             .elem_type = try spirv.emitType(inst.type),
             .size = @enumFromInt(@intFromEnum(inst.size)),
         };
-        return spirv.constVector(vec_type, swizzles);
+        return spirv.resolve(.{ .vector = .{ .type = vec_type, .value = swizzles } });
     }
 
     const id = spirv.allocId();
@@ -791,6 +873,7 @@ fn emitIndexAccess(spirv: *SpirV, section: *Section, inst: Inst.IndexAccess) !Id
             .composite = base_id,
             .indexes = &[_]u32{@intCast(index_value)},
         });
+        return id;
     }
 
     const access_chain_id = spirv.allocId();
@@ -814,36 +897,6 @@ fn emitIndexAccess(spirv: *SpirV, section: *Section, inst: Inst.IndexAccess) !Id
     });
 
     return id;
-}
-
-fn constNull(spirv: *SpirV, ty: Key) !IdRef {
-    return spirv.resolve(.{ .null = try spirv.resolve(ty) });
-}
-
-fn constBool(spirv: *SpirV, val: bool) !IdRef {
-    return spirv.resolve(.{ .bool = val });
-}
-
-fn constInt(spirv: *SpirV, ty: Inst.Int.Type, value: i33) !IdRef {
-    return spirv.resolve(.{
-        .int = .{
-            .type = ty,
-            .value = value,
-        },
-    });
-}
-
-fn constFloat(spirv: *SpirV, ty: Inst.Float.Type, value: f32) !IdRef {
-    return spirv.resolve(.{
-        .float = .{
-            .type = ty,
-            .value = @bitCast(value),
-        },
-    });
-}
-
-fn constVector(spirv: *SpirV, ty: Key.VectorType, value: []const IdRef) !IdRef {
-    return spirv.resolve(.{ .vector = .{ .type = ty, .value = value } });
 }
 
 const Key = union(enum) {
