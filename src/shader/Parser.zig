@@ -1236,8 +1236,15 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
         .k_i32,
         .k_u32,
         .k_f32,
-        .k_f16,
         => return try p.addNode(.{ .tag = .number_type, .main_token = main_token }),
+        .k_f16 => {
+            if (p.extensions.get(.f16)) {
+                return try p.addNode(.{ .tag = .number_type, .main_token = main_token });
+            }
+
+            try p.errors.add(p.getToken(.loc, main_token), "f16 extension required", .{}, null);
+            return error.Parsing;
+        },
         .k_vec2, .k_vec3, .k_vec4 => {
             var elem_type = NodeIndex.none;
 
