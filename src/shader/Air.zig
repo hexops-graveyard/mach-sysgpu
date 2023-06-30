@@ -396,7 +396,6 @@ pub const Inst = union(enum) {
         pub const Type = enum {
             u32,
             i32,
-            abstract,
 
             pub fn width(self: Type) u8 {
                 _ = self;
@@ -406,13 +405,13 @@ pub const Inst = union(enum) {
             pub fn signedness(self: Type) bool {
                 return switch (self) {
                     .u32 => false,
-                    .i32, .abstract => true,
+                    .i32 => true,
                 };
             }
         };
 
         pub const Value = union(enum) {
-            literal: i64,
+            literal: i33,
             cast: Cast,
         };
     };
@@ -424,18 +423,17 @@ pub const Inst = union(enum) {
         pub const Type = enum {
             f32,
             f16,
-            abstract,
 
             pub fn width(self: Type) u8 {
                 return switch (self) {
-                    .f32, .abstract => 32,
+                    .f32 => 32,
                     .f16 => 16,
                 };
             }
         };
 
         pub const Value = union(enum) {
-            literal: f64,
+            literal: f32,
             cast: Cast,
         };
     };

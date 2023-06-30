@@ -6,9 +6,7 @@
         vec2<f32>(-0.5, -0.5),
         vec2<f32>( 0.5, -0.5)
     );
-    var x = 1.0;
-    var g = bool(x);
-    return vec4<f32>(pos[VertexIndex], 0.0, x);
+    return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
 }
 
 @fragment fn frag_main() -> @location(0) vec4<f32> {

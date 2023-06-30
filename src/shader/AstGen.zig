@@ -256,21 +256,6 @@ fn genOverride(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     var override_type = InstIndex.none;
     if (extra.type != .none) {
         override_type = try astgen.genType(scope, extra.type);
-        switch (astgen.getInst(override_type)) {
-            .bool => {},
-            inline .int, .float => |num| {
-                if (num.type == .abstract) {
-                    try astgen.errors.add(
-                        astgen.tree.nodeLoc(extra.type),
-                        "only 'u32', 'i32', 'f32' and 'f16' types are allowed",
-                        .{},
-                        null,
-                    );
-                    return error.AnalysisFail;
-                }
-            },
-            else => {},
-        }
     }
 
     var id = InstIndex.none;
@@ -1441,7 +1426,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
             return error.AnalysisFail;
         }
 
-        const value = std.fmt.parseFloat(f64, bytes[0 .. bytes.len - @intFromBool(suffix != 0)]) catch |err| {
+        const value = std.fmt.parseFloat(f32, bytes[0 .. bytes.len - @intFromBool(suffix != 0)]) catch |err| {
             try astgen.errors.add(
                 node_loc,
                 "cannot parse float literal ({s})",
@@ -1458,8 +1443,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
         inst = .{
             .float = .{
                 .type = switch (suffix) {
-                    0 => .abstract,
-                    'f' => .f32,
+                    0, 'f' => .f32,
                     'h' => .f16,
                     else => unreachable,
                 },
@@ -1467,7 +1451,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
             },
         };
     } else {
-        const value = std.fmt.parseInt(i64, bytes[0 .. bytes.len - @intFromBool(suffix != 0)], 0) catch |err| {
+        const value = std.fmt.parseInt(i33, bytes[0 .. bytes.len - @intFromBool(suffix != 0)], 0) catch |err| {
             try astgen.errors.add(
                 node_loc,
                 "cannot parse integer literal ({s})",
@@ -1484,9 +1468,8 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
         inst = .{
             .int = .{
                 .type = switch (suffix) {
-                    0 => .abstract,
+                    0, 'i' => .i32,
                     'u' => .u32,
-                    'i' => .i32,
                     else => unreachable,
                 },
                 .value = try astgen.addValue(Inst.Int.Value, .{ .literal = value }),
@@ -1700,42 +1683,42 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .all => return astgen.genBuiltinAllAny(scope, node, true),
             .any => return astgen.genBuiltinAllAny(scope, node, false),
             .select => return astgen.genBuiltinSelect(scope, node),
-            .abs => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_abs, &.{ .u32, .i32, .abstract }, &.{ .f32, .f16, .abstract }),
-            .acos => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_acos, &.{}, &.{ .f32, .f16, .abstract }),
-            .acosh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_acosh, &.{}, &.{ .f32, .f16, .abstract }),
-            .asin => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_asin, &.{}, &.{ .f32, .f16, .abstract }),
-            .asinh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_asinh, &.{}, &.{ .f32, .f16, .abstract }),
-            .atan => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_atan, &.{}, &.{ .f32, .f16, .abstract }),
-            .atanh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_atanh, &.{}, &.{ .f32, .f16, .abstract }),
-            .ceil => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_ceil, &.{}, &.{ .f32, .f16, .abstract }),
-            .cos => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_cos, &.{}, &.{ .f32, .f16, .abstract }),
-            .cosh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_cosh, &.{}, &.{ .f32, .f16, .abstract }),
+            .abs => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_abs, &.{ .u32, .i32 }, &.{ .f32, .f16 }),
+            .acos => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_acos, &.{}, &.{ .f32, .f16 }),
+            .acosh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_acosh, &.{}, &.{ .f32, .f16 }),
+            .asin => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_asin, &.{}, &.{ .f32, .f16 }),
+            .asinh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_asinh, &.{}, &.{ .f32, .f16 }),
+            .atan => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_atan, &.{}, &.{ .f32, .f16 }),
+            .atanh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_atanh, &.{}, &.{ .f32, .f16 }),
+            .ceil => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_ceil, &.{}, &.{ .f32, .f16 }),
+            .cos => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_cos, &.{}, &.{ .f32, .f16 }),
+            .cosh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_cosh, &.{}, &.{ .f32, .f16 }),
             .countLeadingZeros => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_count_leading_zeros, &.{ .u32, .i32 }, &.{}),
             .countOneBits => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_count_one_bits, &.{ .u32, .i32 }, &.{}),
             .countTrailingZeros => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_count_trailing_zeros, &.{ .u32, .i32 }, &.{}),
-            .degrees => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_degrees, &.{}, &.{ .f32, .f16, .abstract }),
-            .exp => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_exp, &.{}, &.{ .f32, .f16, .abstract }),
-            .exp2 => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_exp2, &.{}, &.{ .f32, .f16, .abstract }),
+            .degrees => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_degrees, &.{}, &.{ .f32, .f16 }),
+            .exp => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_exp, &.{}, &.{ .f32, .f16 }),
+            .exp2 => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_exp2, &.{}, &.{ .f32, .f16 }),
             .firstLeadingBit => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_first_leading_bit, &.{ .u32, .i32 }, &.{}),
             .firstTrailingBit => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_first_trailing_bit, &.{ .u32, .i32 }, &.{}),
-            .floor => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_floor, &.{}, &.{ .f32, .f16, .abstract }),
-            .fract => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_fract, &.{}, &.{ .f32, .f16, .abstract }),
-            .inverseSqrt => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_inverse_sqrt, &.{}, &.{ .f32, .f16, .abstract }),
-            .length => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_length, &.{}, &.{ .f32, .f16, .abstract }),
-            .log => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_log, &.{}, &.{ .f32, .f16, .abstract }),
-            .log2 => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_log2, &.{}, &.{ .f32, .f16, .abstract }),
+            .floor => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_floor, &.{}, &.{ .f32, .f16 }),
+            .fract => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_fract, &.{}, &.{ .f32, .f16 }),
+            .inverseSqrt => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_inverse_sqrt, &.{}, &.{ .f32, .f16 }),
+            .length => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_length, &.{}, &.{ .f32, .f16 }),
+            .log => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_log, &.{}, &.{ .f32, .f16 }),
+            .log2 => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_log2, &.{}, &.{ .f32, .f16 }),
             .quantizeToF16 => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_quantize_to_F16, &.{}, &.{.f32}),
-            .radians => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_radians, &.{}, &.{ .f32, .f16, .abstract }),
+            .radians => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_radians, &.{}, &.{ .f32, .f16 }),
             .reverseBits => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_reverseBits, &.{ .u32, .i32 }, &.{}),
-            .round => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_round, &.{}, &.{ .f32, .f16, .abstract }),
-            .saturate => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_saturate, &.{}, &.{ .f32, .f16, .abstract }),
-            .sign => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_sign, &.{ .u32, .i32, .abstract }, &.{ .f16, .abstract }),
-            .sin => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_sin, &.{}, &.{ .f32, .f16, .abstract }),
-            .sinh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_sinh, &.{}, &.{ .f32, .f16, .abstract }),
-            .sqrt => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_sqrt, &.{}, &.{ .f32, .f16, .abstract }),
-            .tan => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_tan, &.{}, &.{ .f32, .f16, .abstract }),
-            .tanh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_tanh, &.{}, &.{ .f32, .f16, .abstract }),
-            .trunc => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_trunc, &.{}, &.{ .f32, .f16, .abstract }),
+            .round => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_round, &.{}, &.{ .f32, .f16 }),
+            .saturate => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_saturate, &.{}, &.{ .f32, .f16 }),
+            .sign => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_sign, &.{ .u32, .i32 }, &.{.f16}),
+            .sin => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_sin, &.{}, &.{ .f32, .f16 }),
+            .sinh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_sinh, &.{}, &.{ .f32, .f16 }),
+            .sqrt => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_sqrt, &.{}, &.{ .f32, .f16 }),
+            .tan => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_tan, &.{}, &.{ .f32, .f16 }),
+            .tanh => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_tanh, &.{}, &.{ .f32, .f16 }),
+            .trunc => return astgen.genSimpleNumericBuiltin(scope, node, .builtin_trunc, &.{}, &.{ .f32, .f16 }),
             .min => return astgen.genMinMaxBuiltin(scope, node, true),
             .max => return astgen.genMinMaxBuiltin(scope, node, true),
             .smoothstep => return astgen.genSmoothstepBuiltin(scope, node),
@@ -2032,7 +2015,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 return astgen.genMatrix(
                     scope,
                     node_rhs,
-                    try astgen.addInst(.{ .int = .{ .type = .abstract, .value = null } }),
+                    try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),
                     null_mat,
                 );
             }
@@ -2052,7 +2035,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                 .base = arg,
                                 .type = astgen.getInst(arg_res).matrix.elem_type,
                                 .index = try astgen.addInst(.{ .int = .{
-                                    .type = .abstract,
+                                    .type = .u32,
                                     .value = try astgen.addValue(
                                         Inst.Int.Value,
                                         Inst.Int.Value{ .literal = @intCast(i) },
@@ -2094,7 +2077,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                             .base = arg,
                             .type = astgen.getInst(arg0_res).vector.elem_type,
                             .index = try astgen.addInst(.{ .int = .{
-                                .type = .abstract,
+                                .type = .u32,
                                 .value = try astgen.addValue(
                                     Inst.Int.Value,
                                     Inst.Int.Value{ .literal = @intCast(j) },
@@ -2127,7 +2110,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                             .base = arg,
                             .type = astgen.getInst(arg0_res).vector.elem_type,
                             .index = try astgen.addInst(.{ .int = .{
-                                .type = .abstract,
+                                .type = .u32,
                                 .value = try astgen.addValue(
                                     Inst.Int.Value,
                                     Inst.Int.Value{ .literal = @intCast(j) },
@@ -3386,13 +3369,13 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .xor,
             .builtin_min,
             .builtin_max,
-            => |bin| idx = astgen.selectType(&.{ bin.lhs, bin.rhs }),
+            => |bin| idx = selectType(&.{ bin.lhs, bin.rhs }),
 
             .builtin_smoothstep => |smoothstep| {
-                idx = astgen.selectType(&.{ smoothstep.low, smoothstep.high, smoothstep.x });
+                idx = selectType(&.{ smoothstep.low, smoothstep.high, smoothstep.x });
             },
 
-            .builtin_select => |select| idx = astgen.selectType(&.{ select.true, select.false }),
+            .builtin_select => |select| idx = selectType(&.{ select.true, select.false }),
 
             .logical_and,
             .logical_or,
@@ -3549,18 +3532,8 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
     }
 }
 
-fn selectType(astgen: *AstGen, cands: []const InstIndex) InstIndex {
-    for (cands) |cand| {
-        switch (astgen.getInst(cand)) {
-            inline .int, .float => |num| {
-                if (num.type != .abstract) {
-                    return cand;
-                }
-            },
-            else => return cand,
-        }
-    }
-    return cands[0];
+fn selectType(cands: []const InstIndex) InstIndex {
+    return cands[0]; // TODO
 }
 
 fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) !?Value {
@@ -3665,15 +3638,11 @@ fn eql(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
             else => false,
         },
         .int => |int_a| switch (b) {
-            .int => |int_b| int_a.type == int_b.type or
-                int_a.type == .abstract or
-                int_b.type == .abstract,
+            .int => |int_b| int_a.type == int_b.type,
             else => false,
         },
         .float => |float_a| switch (b) {
-            .float => |float_b| float_a.type == float_b.type or
-                float_a.type == .abstract or
-                float_b.type == .abstract,
+            .float => |float_b| float_a.type == float_b.type,
             else => false,
         },
         .matrix => |mat_a| switch (b) {
@@ -3752,8 +3721,8 @@ fn failArgCountMismatch(
 }
 
 const Value = union(enum) {
-    int: i64,
-    float: f64,
+    int: i33,
+    float: f32,
     bool: bool,
 
     fn negate(unary: Value) Value {
