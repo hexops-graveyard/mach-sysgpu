@@ -5,6 +5,7 @@ const std = @import("std");
 const AstGen = @import("AstGen.zig");
 const Ast = @import("Ast.zig");
 const ErrorList = @import("ErrorList.zig");
+const Extension = @import("shader.zig").Extension;
 const Air = @This();
 
 globals_index: RefIndex,
@@ -16,6 +17,7 @@ refs: []const InstIndex,
 strings: []const u8,
 values: []const u8,
 errors: ErrorList,
+extensions: Extension.Array,
 
 pub fn deinit(self: *Air, allocator: std.mem.Allocator) void {
     allocator.free(self.instructions);
@@ -57,6 +59,7 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
         .strings = try astgen.strings.toOwnedSlice(allocator),
         .values = try astgen.values.toOwnedSlice(allocator),
         .errors = astgen.errors,
+        .extensions = tree.extensions,
     };
 }
 
@@ -382,7 +385,7 @@ pub const Inst = union(enum) {
 
         pub const Value = union(enum) {
             literal: bool,
-            inst: InstIndex,
+            cast: Cast,
         };
     };
 
@@ -396,10 +399,8 @@ pub const Inst = union(enum) {
             abstract,
 
             pub fn width(self: Type) u8 {
-                return switch (self) {
-                    .u32, .i32, .abstract => 32,
-                    // .abstract => 64, TODO
-                };
+                _ = self;
+                return 32;
             }
 
             pub fn signedness(self: Type) bool {
@@ -412,7 +413,7 @@ pub const Inst = union(enum) {
 
         pub const Value = union(enum) {
             literal: i64,
-            inst: InstIndex,
+            cast: Cast,
         };
     };
 
@@ -427,17 +428,21 @@ pub const Inst = union(enum) {
 
             pub fn width(self: Type) u8 {
                 return switch (self) {
-                    .f32 => 32,
+                    .f32, .abstract => 32,
                     .f16 => 16,
-                    .abstract => 64,
                 };
             }
         };
 
         pub const Value = union(enum) {
             literal: f64,
-            inst: InstIndex,
+            cast: Cast,
         };
+    };
+
+    pub const Cast = struct {
+        type: InstIndex,
+        value: InstIndex,
     };
 
     pub const Vector = struct {

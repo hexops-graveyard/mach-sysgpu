@@ -1767,11 +1767,18 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             }
 
             const arg_node = astgen.tree.spanToList(node_lhs)[0];
-            const lhs = try astgen.genExpr(scope, arg_node);
-            const lhs_res = try astgen.resolve(lhs);
-            switch (astgen.getInst(lhs_res)) {
-                .bool => return lhs,
-                .int, .float => return astgen.addInst(.{ .bool = .{ .value = .{ .inst = lhs } } }),
+            const expr = try astgen.genExpr(scope, arg_node);
+            const expr_res = try astgen.resolve(expr);
+            switch (astgen.getInst(expr_res)) {
+                .bool => return expr,
+                .int, .float => return astgen.addInst(.{ .bool = .{
+                    .value = .{
+                        .cast = .{
+                            .value = expr,
+                            .type = expr_res,
+                        },
+                    },
+                } }),
                 else => {},
             }
 
@@ -1799,7 +1806,12 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             const arg_node = arg_nodes[0];
             const expr = try astgen.genExpr(scope, arg_node);
             const expr_res = try astgen.resolve(expr);
-            const value = try astgen.addValue(Inst.Int.Value, .{ .inst = expr });
+            const value = try astgen.addValue(Inst.Int.Value, .{
+                .cast = .{
+                    .value = expr,
+                    .type = expr_res,
+                },
+            });
 
             switch (astgen.getInst(expr_res)) {
                 .bool, .float => {},
@@ -1837,7 +1849,12 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             const arg_node = arg_nodes[0];
             const expr = try astgen.genExpr(scope, arg_node);
             const expr_res = try astgen.resolve(expr);
-            const value = try astgen.addValue(Inst.Float.Value, .{ .inst = expr });
+            const value = try astgen.addValue(Inst.Float.Value, .{
+                .cast = .{
+                    .value = expr,
+                    .type = expr_res,
+                },
+            });
 
             switch (astgen.getInst(expr_res)) {
                 .bool, .int => {},
@@ -3553,7 +3570,7 @@ fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) !?Value {
             if (data.value) |value| {
                 switch (value) {
                     .literal => |literal| return .{ .bool = literal },
-                    .inst => return null,
+                    .cast => return null,
                 }
             } else {
                 return null;
@@ -3563,7 +3580,7 @@ fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) !?Value {
             if (data.value) |value| {
                 switch (astgen.getValue(Inst.Int.Value, value)) {
                     .literal => |literal| return .{ .int = literal },
-                    .inst => return null,
+                    .cast => return null,
                 }
             } else {
                 return null;
@@ -3573,7 +3590,7 @@ fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) !?Value {
             if (data.value) |value| {
                 switch (astgen.getValue(Inst.Float.Value, value)) {
                     .literal => |literal| return .{ .float = literal },
-                    .inst => return null,
+                    .cast => return null,
                 }
             } else {
                 return null;
