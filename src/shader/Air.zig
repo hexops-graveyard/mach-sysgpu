@@ -86,8 +86,8 @@ pub fn isConst(self: Air, value: InstIndex) bool {
         .float => |float| self.getValue(Inst.Float.Value, float.value.?) == .literal,
         .vector => |vec| {
             var is_const = true;
-            for (self.getValue(Inst.Vector.Value, vec.value.?)) |elem_val| {
-                if (elem_val != .none and !self.isConst(elem_val)) {
+            for (self.getValue(Inst.Vector.Value, vec.value.?)[0..@intFromEnum(vec.size)]) |elem_val| {
+                if (!self.isConst(elem_val)) {
                     is_const = false;
                 }
             }
@@ -95,8 +95,8 @@ pub fn isConst(self: Air, value: InstIndex) bool {
         },
         .matrix => |mat| {
             var is_const = true;
-            for (self.getValue(Inst.Matrix.Value, mat.value.?)) |elem_val| {
-                if (elem_val != .none and !self.isConst(elem_val)) {
+            for (self.getValue(Inst.Matrix.Value, mat.value.?)[0..@intFromEnum(mat.cols)]) |elem_val| {
+                if (!self.isConst(elem_val)) {
                     is_const = false;
                 }
             }
@@ -458,7 +458,7 @@ pub const Inst = union(enum) {
         rows: Vector.Size,
         value: ?ValueIndex,
 
-        pub const Value = [4 * 4]InstIndex;
+        pub const Value = [4]InstIndex;
     };
 
     pub const Array = struct {

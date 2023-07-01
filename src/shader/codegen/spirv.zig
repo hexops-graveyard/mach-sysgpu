@@ -443,7 +443,6 @@ fn emitVar(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.
 }
 
 fn emitLet(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.Const) !IdRef {
-    const initializer = try spirv.emitExpr(init_section, inst.expr);
     const type_id = try spirv.emitType(if (inst.type != .none) inst.type else inst.expr);
     const ptr_type_id = try spirv.resolve(.{ .ptr_type = .{
         .elem_type = type_id,
@@ -455,7 +454,12 @@ fn emitLet(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.
         .id_result_type = ptr_type_id,
         .id_result = var_id,
         .storage_class = .Function,
-        .initializer = initializer,
+    });
+
+    const initializer = try spirv.emitExpr(init_section, inst.expr);
+    try init_section.emit(.OpStore, .{
+        .pointer = var_id,
+        .object = initializer,
     });
 
     const load_id = spirv.allocId();
@@ -463,7 +467,7 @@ fn emitLet(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.
         .target = load_id,
         .name = spirv.air.getStr(inst.name),
     });
-    try section.emit(.OpLoad, .{
+    try init_section.emit(.OpLoad, .{
         .id_result_type = type_id,
         .id_result = load_id,
         .pointer = var_id,
@@ -740,33 +744,14 @@ fn emitMatrix(spirv: *SpirV, section: *Section, inst: Inst.Matrix) !IdRef {
         return spirv.resolve(.{ .null = type_id });
     }
 
-    const cols = @intFromEnum(inst.cols);
-    const rows = @intFromEnum(inst.rows);
-
     var elem_value = std.ArrayList(IdRef).init(spirv.allocator);
     defer elem_value.deinit();
-    try elem_value.ensureTotalCapacityPrecise(cols);
-
-    var vec_elem_value = std.ArrayList(IdRef).init(spirv.allocator);
-    defer vec_elem_value.deinit();
-    try vec_elem_value.ensureTotalCapacityPrecise(rows);
+    try elem_value.ensureTotalCapacityPrecise(@intFromEnum(inst.cols));
 
     const value = spirv.air.getValue(Inst.Matrix.Value, inst.value.?);
-    var i: u8 = 0;
-    while (i < cols * rows) : (i += rows) {
-        for (value[i .. i + rows]) |vec_elem_inst| {
-            const vec_elem_id = try spirv.emitExpr(section, vec_elem_inst);
-            vec_elem_value.appendAssumeCapacity(vec_elem_id);
-        }
-
-        const elem_id = spirv.allocId();
-        try section.emit(.OpCompositeConstruct, .{
-            .id_result_type = type_id,
-            .id_result = elem_id,
-            .constituents = vec_elem_value.items,
-        });
+    for (value[0..@intFromEnum(inst.cols)]) |elem_inst| {
+        const elem_id = try spirv.emitVector(section, spirv.air.getInst(elem_inst).vector);
         elem_value.appendAssumeCapacity(elem_id);
-        vec_elem_value.clearRetainingCapacity();
     }
 
     const id = spirv.allocId();
@@ -841,11 +826,17 @@ fn emitSwizzleAccess(spirv: *SpirV, section: *Section, inst: Inst.SwizzleAccess)
         const swizzles = try spirv.extractSwizzle(&spirv.global_section, inst);
         defer spirv.allocator.free(swizzles);
 
-        const vec_type = Key.VectorType{
-            .elem_type = try spirv.emitType(inst.type),
-            .size = @enumFromInt(@intFromEnum(inst.size)),
-        };
-        return spirv.resolve(.{ .vector = .{ .type = vec_type, .value = swizzles } });
+        return spirv.resolve(.{
+            .vector = .{
+                .type = try spirv.resolve(.{
+                    .vector_type = .{
+                        .elem_type = try spirv.emitType(inst.type),
+                        .size = @enumFromInt(@intFromEnum(inst.size)),
+                    },
+                }),
+                .value = swizzles,
+            },
+        });
     }
 
     const id = spirv.allocId();
@@ -951,7 +942,7 @@ const Key = union(enum) {
     };
 
     const Vector = struct {
-        type: VectorType,
+        type: IdRef,
         value: []const IdRef,
     };
 
@@ -1057,9 +1048,9 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
         },
         .vector => |vector| {
             try spirv.global_section.emit(.OpConstantComposite, .{
-                .id_result_type = try spirv.resolve(.{ .vector_type = vector.type }),
+                .id_result_type = vector.type,
                 .id_result = id,
-                .constituents = vector.value[0..@intFromEnum(vector.type.size)],
+                .constituents = vector.value,
             });
         },
     }
