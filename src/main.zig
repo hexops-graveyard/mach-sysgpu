@@ -1,37 +1,40 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const gpu = @import("mach-gpu");
-const vulkan = @import("vulkan.zig");
 
 var inited = false;
 var allocator: std.mem.Allocator = undefined;
+const impl = switch (builtin.os.tag) {
+    .linux, .windows => @import("vulkan.zig"),
+    .macos, .ios => @compileError("TODO: unsupported platform"),
+    else => @compileError("unsupported platform"),
+};
 
 fn RefCounted(comptime T: type) type {
     return struct {
         ref_count: usize = 0,
         item: T,
 
-        const This = @This();
-
-        pub fn reference(self: *This) void {
+        pub fn reference(self: *@This()) void {
             self.ref_count += 1;
         }
 
-        pub fn dereference(self: *This) void {
-            //If we try to dereference with no references, something went wrong!
+        pub fn release(self: *@This()) void {
+            // If we try to release with no references, something went wrong!
             std.debug.assert(self.ref_count > 0);
 
             self.ref_count -= 1;
-
-            if (self.ref_count == 0) {
+            if (self.ref_count == 0 and @hasField(T, "deinit")) {
                 self.item.deinit();
             }
         }
     };
 }
 
-const Instance = RefCounted(vulkan.Instance);
-const Adapter = RefCounted(vulkan.Adapter);
+const Instance = RefCounted(impl.Instance);
+const Adapter = RefCounted(impl.Adapter);
+const Device = RefCounted(impl.Device);
+const Surface = RefCounted(impl.Surface);
 
 pub const Interface = struct {
     pub fn init(passed_allocator: std.mem.Allocator) void {
@@ -40,16 +43,17 @@ pub const Interface = struct {
     }
 
     pub inline fn createInstance(descriptor: ?*const gpu.Instance.Descriptor) ?*gpu.Instance {
-        if (builtin.mode == .Debug and !inited) @panic("dusk: not initialized; did you forget to call gpu.Impl.init()?");
+        if (builtin.mode == .Debug and !inited) {
+            @panic("dusk: not initialized; did you forget to call gpu.Impl.init()?");
+        }
 
-        var instance = allocator.create(Instance) catch @panic("TODO: PROPOGATE ERRORS");
+        const instance = impl.Instance.init(descriptor orelse &gpu.Instance.Descriptor{}, allocator) catch return null;
 
-        instance.* = .{
-            .item = vulkan.Instance.create(descriptor) catch @panic("TODO: PROPOGATE ERRORS"),
-        };
+        var instance_rc = allocator.create(Instance) catch return null;
+        instance_rc.* = .{ .item = instance };
+        instance_rc.reference();
 
-        instance.reference();
-        return @as(*gpu.Instance, @ptrCast(instance));
+        return @as(*gpu.Instance, @ptrCast(instance_rc));
     }
 
     pub inline fn getProcAddress(device: *gpu.Device, proc_name: [*:0]const u8) ?gpu.Proc {
@@ -58,10 +62,20 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn adapterCreateDevice(adapter: *gpu.Adapter, descriptor: ?*const gpu.Device.Descriptor) ?*gpu.Device {
-        _ = adapter;
-        _ = descriptor;
-        unreachable;
+    pub inline fn adapterCreateDevice(adapter_raw: *gpu.Adapter, descriptor: ?*const gpu.Device.Descriptor) ?*gpu.Device {
+        const adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
+
+        const default_descriptor = gpu.Device.Descriptor{
+            .device_lost_callback = undefined,
+            .device_lost_userdata = null,
+        };
+        const device = adapter.item.createDevice(descriptor orelse &default_descriptor) catch return null;
+
+        var device_rc = allocator.create(Device) catch return null;
+        device_rc.* = .{ .item = device };
+        device_rc.reference();
+
+        return @as(*gpu.Device, @ptrCast(device_rc));
     }
 
     pub inline fn adapterEnumerateFeatures(adapter: *gpu.Adapter, features: ?[*]gpu.FeatureName) usize {
@@ -81,10 +95,9 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn adapterGetProperties(adapter: *gpu.Adapter, properties: *gpu.Adapter.Properties) void {
-        _ = adapter;
-        _ = properties;
-        unreachable;
+    pub inline fn adapterGetProperties(adapter_raw: *gpu.Adapter, properties: *gpu.Adapter.Properties) void {
+        const adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
+        properties.* = adapter.item.getProperties();
     }
 
     pub inline fn adapterHasFeature(adapter: *gpu.Adapter, feature: gpu.FeatureName) bool {
@@ -108,7 +121,7 @@ pub const Interface = struct {
 
     pub inline fn adapterRelease(adapter_raw: *gpu.Adapter) void {
         var adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
-        adapter.dereference();
+        adapter.release();
     }
 
     pub inline fn bindGroupSetLabel(bind_group: *gpu.BindGroup, label: [*:0]const u8) void {
@@ -148,7 +161,6 @@ pub const Interface = struct {
         unreachable;
     }
 
-    // TODO: dawn: return value not marked as nullable in dawn.json but in fact is.
     pub inline fn bufferGetConstMappedRange(buffer: *gpu.Buffer, offset: usize, size: usize) ?*const anyopaque {
         _ = buffer;
         _ = offset;
@@ -156,7 +168,6 @@ pub const Interface = struct {
         unreachable;
     }
 
-    // TODO: dawn: return value not marked as nullable in dawn.json but in fact is.
     pub inline fn bufferGetMappedRange(buffer: *gpu.Buffer, offset: usize, size: usize) ?*anyopaque {
         _ = buffer;
         _ = offset;
@@ -544,8 +555,6 @@ pub const Interface = struct {
         unreachable;
     }
 
-    // TODO(self-hosted): this cannot be marked as inline for some reason.
-    // https://github.com/ziglang/zig/issues/12545
     pub fn deviceCreateSampler(device: *gpu.Device, descriptor: ?*const gpu.Sampler.Descriptor) *gpu.Sampler {
         _ = device;
         _ = descriptor;
@@ -656,14 +665,14 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceReference(device: *gpu.Device) void {
-        _ = device;
-        unreachable;
+    pub inline fn deviceReference(device_raw: *gpu.Device) void {
+        var device: *Device = @ptrCast(@alignCast(device_raw));
+        device.reference();
     }
 
-    pub inline fn deviceRelease(device: *gpu.Device) void {
-        _ = device;
-        unreachable;
+    pub inline fn deviceRelease(device_raw: *gpu.Device) void {
+        var device: *Device = @ptrCast(@alignCast(device_raw));
+        device.release();
     }
 
     pub inline fn externalTextureDestroy(external_texture: *gpu.ExternalTexture) void {
@@ -687,10 +696,15 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn instanceCreateSurface(instance: *gpu.Instance, descriptor: *const gpu.Surface.Descriptor) *gpu.Surface {
-        _ = instance;
-        _ = descriptor;
-        unreachable;
+    pub inline fn instanceCreateSurface(instance_raw: *gpu.Instance, descriptor: *const gpu.Surface.Descriptor) *gpu.Surface {
+        const instance: *Instance = @ptrCast(@alignCast(instance_raw));
+        const surface = impl.Instance.createSurface(instance.item, descriptor) catch unreachable;
+
+        var surface_rc = allocator.create(Surface) catch unreachable;
+        surface_rc.* = .{ .item = surface };
+        surface_rc.reference();
+
+        return @ptrCast(surface_rc);
     }
 
     pub inline fn instanceProcessEvents(instance: *gpu.Instance) void {
@@ -698,46 +712,34 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn instanceRequestAdapter(instance_raw: *gpu.Instance, options: ?*const gpu.RequestAdapterOptions, callback: gpu.RequestAdapterCallback, userdata: ?*anyopaque) void {
-        var instance: *Instance = @ptrCast(@alignCast(instance_raw));
-
-        var adapter = allocator.create(Adapter) catch @panic("TODO: PROPOGATE ERRORS");
-
-        adapter.* = .{
-            .item = vulkan.Adapter.create(
-                &instance.item,
-                (options orelse &gpu.RequestAdapterOptions{
-                    .compatible_surface = null,
-                    .force_fallback_adapter = false,
-                    .next_in_chain = null,
-                    .power_preference = .high_performance,
-                }).*,
-                allocator,
-            ) catch @panic("TODO: PROPGATE ERRORS"),
+    pub inline fn instanceRequestAdapter(
+        instance_raw: *gpu.Instance,
+        options: ?*const gpu.RequestAdapterOptions,
+        callback: gpu.RequestAdapterCallback,
+        userdata: ?*anyopaque,
+    ) void {
+        const instance: *Instance = @ptrCast(@alignCast(instance_raw));
+        const adapter = impl.Adapter.init(instance.item, options orelse &gpu.RequestAdapterOptions{}) catch |err| {
+            return callback(.err, undefined, @errorName(err), userdata);
         };
 
-        std.debug.print("created adapter {*}\n", .{adapter});
+        var adapter_rc = allocator.create(Adapter) catch |err| {
+            return callback(.err, undefined, @errorName(err), userdata);
+        };
+        adapter_rc.* = .{ .item = adapter };
+        adapter_rc.reference();
 
-        adapter.reference();
-
-        //TODO: propgate the errors from `create` into here
-        callback(.success, @as(*gpu.Adapter, @ptrCast(adapter)), null, userdata);
+        callback(.success, @as(*gpu.Adapter, @ptrCast(adapter_rc)), null, userdata);
     }
 
     pub inline fn instanceReference(instance_raw: *gpu.Instance) void {
         var instance: *Instance = @ptrCast(@alignCast(instance_raw));
-
-        std.debug.print("referencing instance\n", .{});
-
         instance.reference();
     }
 
     pub inline fn instanceRelease(instance_raw: *gpu.Instance) void {
         var instance: *Instance = @ptrCast(@alignCast(instance_raw));
-
-        std.debug.print("releasing instance\n", .{});
-
-        instance.dereference();
+        instance.release();
     }
 
     pub inline fn pipelineLayoutSetLabel(pipeline_layout: *gpu.PipelineLayout, label: [*:0]const u8) void {
@@ -1317,6 +1319,6 @@ pub const Interface = struct {
     }
 };
 
-test "dusk_impl" {
+test "dusk impl" {
     _ = gpu.Export(Interface);
 }
