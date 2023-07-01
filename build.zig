@@ -1,6 +1,7 @@
 const std = @import("std");
+const glfw = @import("libs/mach-glfw/build.zig");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -24,20 +25,22 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const basic_init_example = b.addExecutable(.{
-        .name = "basic_init",
+    const triangle_example = b.addExecutable(.{
+        .name = "triangle",
         .optimize = optimize,
         .target = target,
-        .root_source_file = .{ .path = "examples/basic_init/main.zig" },
+        .root_source_file = .{ .path = "examples/triangle/main.zig" },
     });
-    basic_init_example.addModule("mach-dusk", module);
-    basic_init_example.addModule("mach-gpu", mach_gpu_mod);
-    basic_init_example.linkLibC();
-    b.installArtifact(basic_init_example);
+    triangle_example.addModule("mach-dusk", module);
+    triangle_example.addModule("mach-gpu", mach_gpu_mod);
+    triangle_example.addModule("mach-glfw", glfw.module(b));
+    try glfw.link(b, triangle_example, .{});
 
-    const run_basic_init_example = b.addRunArtifact(basic_init_example);
-    const run_basic_init_example_step = b.step("basic_init", "Run the basic init example");
-    run_basic_init_example_step.dependOn(&run_basic_init_example.step);
+    b.installArtifact(triangle_example);
+
+    const run_triangle_example = b.addRunArtifact(triangle_example);
+    const run_triangle_example_step = b.step("triangle", "Run the basic init example");
+    run_triangle_example_step.dependOn(&run_triangle_example.step);
 
     const shader_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/shader/test.zig" },
