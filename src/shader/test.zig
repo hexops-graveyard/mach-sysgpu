@@ -4,13 +4,12 @@ const Ast = @import("Ast.zig");
 const Air = @import("Air.zig");
 const CodeGen = @import("CodeGen.zig");
 const printAir = @import("print_air.zig").printAir;
-const Extension = @import("shader.zig").Extension;
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const allocator = std.testing.allocator;
 
 fn expectIR(source: [:0]const u8) !Air {
-    var tree = try Ast.parse(allocator, source, Extension.Array.initFill(false));
+    var tree = try Ast.parse(allocator, source);
     defer tree.deinit(allocator);
 
     if (tree.errors.list.items.len > 0) {
@@ -30,7 +29,7 @@ fn expectIR(source: [:0]const u8) !Air {
 }
 
 fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
-    var tree = try Ast.parse(allocator, source, Extension.Array.initFill(false));
+    var tree = try Ast.parse(allocator, source);
     defer tree.deinit(allocator);
     var err_list = tree.errors;
 
@@ -537,7 +536,7 @@ test "must error" {
 test "spirv" {
     const triangle = @embedFile("test/triangle.wgsl");
 
-    var ast = try Ast.parse(allocator, triangle, Extension.Array.initFill(false));
+    var ast = try Ast.parse(allocator, triangle);
     defer ast.deinit(allocator);
     if (ast.errors.list.items.len > 0) {
         try ast.errors.print(triangle, "src/test/triangle.wgsl");

@@ -109,7 +109,7 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
     section.writeWords(header);
 
     try section.emit(.OpCapability, .{ .capability = .Shader });
-    if (spirv.air.extensions.get(.f16)) try section.emit(.OpCapability, .{ .capability = .Float16 });
+    if (spirv.air.extensions.f16) try section.emit(.OpCapability, .{ .capability = .Float16 });
     try section.emit(.OpMemoryModel, .{ .addressing_model = .Logical, .memory_model = .GLSL450 });
 
     if (spirv.compute_stage) |compute_stage| {

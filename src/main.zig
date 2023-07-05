@@ -1,40 +1,22 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const gpu = @import("mach-gpu");
+const shader = @import("shader.zig");
+const helper = @import("helper.zig");
+
+const backend_type: gpu.BackendType = switch (builtin.os.tag) {
+    .linux, .windows => .vulkan,
+    .macos, .ios => .metal,
+    else => @compileError("unsupported platform"),
+};
+const impl = switch (backend_type) {
+    .vulkan => @import("vulkan.zig"),
+    .metal => @compileError("TODO: unsupported platform"),
+    else => unreachable,
+};
 
 var inited = false;
 var allocator: std.mem.Allocator = undefined;
-const impl = switch (builtin.os.tag) {
-    .linux, .windows => @import("vulkan.zig"),
-    .macos, .ios => @compileError("TODO: unsupported platform"),
-    else => @compileError("unsupported platform"),
-};
-
-fn RefCounted(comptime T: type) type {
-    return struct {
-        ref_count: usize = 0,
-        item: T,
-
-        pub fn reference(self: *@This()) void {
-            self.ref_count += 1;
-        }
-
-        pub fn release(self: *@This()) void {
-            // If we try to release with no references, something went wrong!
-            std.debug.assert(self.ref_count > 0);
-
-            self.ref_count -= 1;
-            if (self.ref_count == 0 and @hasField(T, "deinit")) {
-                self.item.deinit();
-            }
-        }
-    };
-}
-
-const Instance = RefCounted(impl.Instance);
-const Adapter = RefCounted(impl.Adapter);
-const Device = RefCounted(impl.Device);
-const Surface = RefCounted(impl.Surface);
 
 pub const Interface = struct {
     pub fn init(passed_allocator: std.mem.Allocator) void {
@@ -47,13 +29,11 @@ pub const Interface = struct {
             @panic("dusk: not initialized; did you forget to call gpu.Impl.init()?");
         }
 
-        const instance = impl.Instance.init(descriptor orelse &gpu.Instance.Descriptor{}, allocator) catch return null;
+        var instance = allocator.create(impl.Instance) catch return null;
+        instance.* = impl.Instance.init(descriptor orelse &gpu.Instance.Descriptor{}, allocator) catch return null;
+        instance.ref_counter.reference();
 
-        var instance_rc = allocator.create(Instance) catch return null;
-        instance_rc.* = .{ .item = instance };
-        instance_rc.reference();
-
-        return @as(*gpu.Instance, @ptrCast(instance_rc));
+        return @as(*gpu.Instance, @ptrCast(instance));
     }
 
     pub inline fn getProcAddress(device: *gpu.Device, proc_name: [*:0]const u8) ?gpu.Proc {
@@ -63,19 +43,17 @@ pub const Interface = struct {
     }
 
     pub inline fn adapterCreateDevice(adapter_raw: *gpu.Adapter, descriptor: ?*const gpu.Device.Descriptor) ?*gpu.Device {
-        const adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
+        const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
 
+        var device = allocator.create(impl.Device) catch return null;
         const default_descriptor = gpu.Device.Descriptor{
             .device_lost_callback = undefined,
             .device_lost_userdata = null,
         };
-        const device = adapter.item.createDevice(descriptor orelse &default_descriptor) catch return null;
+        device.* = adapter.createDevice(descriptor orelse &default_descriptor) catch return null;
+        device.ref_counter.reference();
 
-        var device_rc = allocator.create(Device) catch return null;
-        device_rc.* = .{ .item = device };
-        device_rc.reference();
-
-        return @as(*gpu.Device, @ptrCast(device_rc));
+        return @as(*gpu.Device, @ptrCast(device));
     }
 
     pub inline fn adapterEnumerateFeatures(adapter: *gpu.Adapter, features: ?[*]gpu.FeatureName) usize {
@@ -96,8 +74,8 @@ pub const Interface = struct {
     }
 
     pub inline fn adapterGetProperties(adapter_raw: *gpu.Adapter, properties: *gpu.Adapter.Properties) void {
-        const adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
-        properties.* = adapter.item.getProperties();
+        const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
+        properties.* = adapter.getProperties();
     }
 
     pub inline fn adapterHasFeature(adapter: *gpu.Adapter, feature: gpu.FeatureName) bool {
@@ -115,13 +93,13 @@ pub const Interface = struct {
     }
 
     pub inline fn adapterReference(adapter_raw: *gpu.Adapter) void {
-        var adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
-        adapter.reference();
+        var adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
+        adapter.ref_counter.reference();
     }
 
     pub inline fn adapterRelease(adapter_raw: *gpu.Adapter) void {
-        var adapter: *Adapter = @ptrCast(@alignCast(adapter_raw));
-        adapter.release();
+        var adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
+        adapter.ref_counter.release();
     }
 
     pub inline fn bindGroupSetLabel(bind_group: *gpu.BindGroup, label: [*:0]const u8) void {
@@ -541,10 +519,14 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceCreateRenderPipeline(device: *gpu.Device, descriptor: *const gpu.RenderPipeline.Descriptor) *gpu.RenderPipeline {
-        _ = device;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateRenderPipeline(device_raw: *gpu.Device, descriptor: *const gpu.RenderPipeline.Descriptor) *gpu.RenderPipeline {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+
+        var render_pipeline = allocator.create(impl.RenderPipeline) catch unreachable;
+        render_pipeline.* = impl.Device.createRenderPipeline(device, descriptor) catch unreachable;
+        render_pipeline.ref_counter.reference();
+
+        return @ptrCast(render_pipeline);
     }
 
     pub inline fn deviceCreateRenderPipelineAsync(device: *gpu.Device, descriptor: *const gpu.RenderPipeline.Descriptor, callback: gpu.CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
@@ -561,10 +543,28 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceCreateShaderModule(device: *gpu.Device, descriptor: *const gpu.ShaderModule.Descriptor) *gpu.ShaderModule {
-        _ = device;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateShaderModule(device_raw: *gpu.Device, descriptor: *const gpu.ShaderModule.Descriptor) *gpu.ShaderModule {
+        std.debug.assert(backend_type == .vulkan);
+
+        var output_code: []const u8 = undefined;
+
+        if (helper.findChained(gpu.ShaderModule.WGSLDescriptor, descriptor.next_in_chain.generic)) |wgsl_descriptor| {
+            var ast = shader.Ast.parse(allocator, std.mem.span(wgsl_descriptor.code)) catch unreachable;
+            defer ast.deinit(allocator);
+            var air = shader.Air.generate(allocator, &ast, null) catch unreachable;
+            defer air.deinit(allocator);
+            output_code = shader.CodeGen.generate(allocator, &air, .spirv) catch unreachable;
+        } else if (helper.findChained(gpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
+            output_code = std.mem.sliceAsBytes(spirv_descriptor.code[0..spirv_descriptor.code_size]);
+        } else unreachable;
+
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+
+        var shader_module = allocator.create(impl.ShaderModule) catch unreachable;
+        shader_module.* = impl.Device.createShaderModule(device, output_code) catch unreachable;
+        shader_module.ref_counter.reference();
+
+        return @ptrCast(shader_module);
     }
 
     pub inline fn deviceCreateSwapChain(device: *gpu.Device, surface: ?*gpu.Surface, descriptor: *const gpu.SwapChain.Descriptor) *gpu.SwapChain {
@@ -653,11 +653,10 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceSetUncapturedErrorCallback(device: *gpu.Device, callback: ?gpu.ErrorCallback, userdata: ?*anyopaque) void {
-        _ = device;
-        _ = callback;
-        _ = userdata;
-        unreachable;
+    pub inline fn deviceSetUncapturedErrorCallback(device_raw: *gpu.Device, callback: ?gpu.ErrorCallback, userdata: ?*anyopaque) void {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        device.err_cb = callback;
+        device.err_cb_userdata = userdata;
     }
 
     pub inline fn deviceTick(device: *gpu.Device) void {
@@ -666,13 +665,13 @@ pub const Interface = struct {
     }
 
     pub inline fn deviceReference(device_raw: *gpu.Device) void {
-        var device: *Device = @ptrCast(@alignCast(device_raw));
-        device.reference();
+        var device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        device.ref_counter.reference();
     }
 
     pub inline fn deviceRelease(device_raw: *gpu.Device) void {
-        var device: *Device = @ptrCast(@alignCast(device_raw));
-        device.release();
+        var device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        device.ref_counter.release();
     }
 
     pub inline fn externalTextureDestroy(external_texture: *gpu.ExternalTexture) void {
@@ -697,14 +696,13 @@ pub const Interface = struct {
     }
 
     pub inline fn instanceCreateSurface(instance_raw: *gpu.Instance, descriptor: *const gpu.Surface.Descriptor) *gpu.Surface {
-        const instance: *Instance = @ptrCast(@alignCast(instance_raw));
-        const surface = impl.Instance.createSurface(instance.item, descriptor) catch unreachable;
+        const instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
 
-        var surface_rc = allocator.create(Surface) catch unreachable;
-        surface_rc.* = .{ .item = surface };
-        surface_rc.reference();
+        var surface = allocator.create(impl.Surface) catch unreachable;
+        surface.* = impl.Instance.createSurface(instance, descriptor) catch unreachable;
+        surface.ref_counter.reference();
 
-        return @ptrCast(surface_rc);
+        return @ptrCast(surface);
     }
 
     pub inline fn instanceProcessEvents(instance: *gpu.Instance) void {
@@ -718,28 +716,27 @@ pub const Interface = struct {
         callback: gpu.RequestAdapterCallback,
         userdata: ?*anyopaque,
     ) void {
-        const instance: *Instance = @ptrCast(@alignCast(instance_raw));
-        const adapter = impl.Adapter.init(instance.item, options orelse &gpu.RequestAdapterOptions{}) catch |err| {
+        const instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
+
+        var adapter = allocator.create(impl.Adapter) catch |err| {
             return callback(.err, undefined, @errorName(err), userdata);
         };
-
-        var adapter_rc = allocator.create(Adapter) catch |err| {
+        adapter.* = impl.Adapter.init(instance, options orelse &gpu.RequestAdapterOptions{}) catch |err| {
             return callback(.err, undefined, @errorName(err), userdata);
         };
-        adapter_rc.* = .{ .item = adapter };
-        adapter_rc.reference();
+        adapter.ref_counter.reference();
 
-        callback(.success, @as(*gpu.Adapter, @ptrCast(adapter_rc)), null, userdata);
+        callback(.success, @as(*gpu.Adapter, @ptrCast(adapter)), null, userdata);
     }
 
     pub inline fn instanceReference(instance_raw: *gpu.Instance) void {
-        var instance: *Instance = @ptrCast(@alignCast(instance_raw));
-        instance.reference();
+        var instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
+        instance.ref_counter.reference();
     }
 
     pub inline fn instanceRelease(instance_raw: *gpu.Instance) void {
-        var instance: *Instance = @ptrCast(@alignCast(instance_raw));
-        instance.release();
+        var instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
+        instance.ref_counter.release();
     }
 
     pub inline fn pipelineLayoutSetLabel(pipeline_layout: *gpu.PipelineLayout, label: [*:0]const u8) void {
@@ -1181,24 +1178,24 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn shaderModuleReference(shader_module: *gpu.ShaderModule) void {
-        _ = shader_module;
-        unreachable;
+    pub inline fn shaderModuleReference(shader_module_raw: *gpu.ShaderModule) void {
+        var shader_module: *impl.ShaderModule = @ptrCast(@alignCast(shader_module_raw));
+        shader_module.ref_counter.reference();
     }
 
-    pub inline fn shaderModuleRelease(shader_module: *gpu.ShaderModule) void {
-        _ = shader_module;
-        unreachable;
+    pub inline fn shaderModuleRelease(shader_module_raw: *gpu.ShaderModule) void {
+        var shader_module: *impl.ShaderModule = @ptrCast(@alignCast(shader_module_raw));
+        shader_module.ref_counter.release();
     }
 
-    pub inline fn surfaceReference(surface: *gpu.Surface) void {
-        _ = surface;
-        unreachable;
+    pub inline fn surfaceReference(surface_raw: *gpu.Surface) void {
+        var surface: *impl.Surface = @ptrCast(@alignCast(surface_raw));
+        surface.ref_counter.reference();
     }
 
-    pub inline fn surfaceRelease(surface: *gpu.Surface) void {
-        _ = surface;
-        unreachable;
+    pub inline fn surfaceRelease(surface_raw: *gpu.Surface) void {
+        var surface: *impl.Surface = @ptrCast(@alignCast(surface_raw));
+        surface.ref_counter.release();
     }
 
     pub inline fn swapChainConfigure(swap_chain: *gpu.SwapChain, format: gpu.Texture.Format, allowed_usage: gpu.Texture.UsageFlags, width: u32, height: u32) void {

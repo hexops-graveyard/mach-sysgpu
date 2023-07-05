@@ -4,6 +4,7 @@ const vk = @import("vulkan");
 const Base = @import("Base.zig");
 const Surface = @import("Surface.zig");
 const global = @import("global.zig");
+const RefCounter = @import("../helper.zig").RefCounter;
 
 const Dispatch = vk.InstanceWrapper(.{
     .destroyInstance = true,
@@ -12,6 +13,7 @@ const Dispatch = vk.InstanceWrapper(.{
     .enumeratePhysicalDevices = true,
     .enumerateDeviceExtensionProperties = true,
     .enumerateDeviceLayerProperties = true,
+    .getDeviceProcAddr = true,
     .getPhysicalDeviceProperties = true,
     .getPhysicalDeviceFeatures = true,
     .getPhysicalDeviceQueueFamilyProperties = true,
@@ -20,6 +22,7 @@ const Dispatch = vk.InstanceWrapper(.{
 const Instance = @This();
 
 allocator: std.mem.Allocator,
+ref_counter: RefCounter(Instance) = .{},
 base: Base,
 dispatch: Dispatch,
 instance: vk.Instance,
@@ -60,16 +63,16 @@ pub fn init(descriptor: *const gpu.Instance.Descriptor, allocator: std.mem.Alloc
     };
 }
 
-pub fn deinit(instance: Instance) void {
+pub fn deinit(instance: *Instance) void {
     instance.dispatch.destroyInstance(instance.instance, null);
     instance.base.deinit();
 }
 
-pub fn createSurface(instance: Instance, descriptor: *const gpu.Surface.Descriptor) !Surface {
+pub fn createSurface(instance: *Instance, descriptor: *const gpu.Surface.Descriptor) !Surface {
     return Surface.init(instance, descriptor);
 }
 
-pub fn getLayers(base: Base) ![]const [*:0]const u8 {
+fn getLayers(base: Base) ![]const [*:0]const u8 {
     var layer_count: u32 = 0;
     _ = try base.dispatch.enumerateInstanceLayerProperties(&layer_count, null);
 
