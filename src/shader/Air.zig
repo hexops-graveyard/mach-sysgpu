@@ -5,7 +5,7 @@ const std = @import("std");
 const AstGen = @import("AstGen.zig");
 const Ast = @import("Ast.zig");
 const ErrorList = @import("ErrorList.zig");
-const Extension = @import("shader.zig").Extension;
+const Extensions = @import("wgsl.zig").Extensions;
 const Air = @This();
 
 globals_index: RefIndex,
@@ -17,7 +17,7 @@ refs: []const InstIndex,
 strings: []const u8,
 values: []const u8,
 errors: ErrorList,
-extensions: Extension.Array,
+extensions: Extensions,
 
 pub fn deinit(self: *Air, allocator: std.mem.Allocator) void {
     allocator.free(self.instructions);

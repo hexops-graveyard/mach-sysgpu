@@ -3,7 +3,7 @@ const Parser = @import("Parser.zig");
 const Token = @import("Token.zig");
 const Tokenizer = @import("Tokenizer.zig");
 const ErrorList = @import("ErrorList.zig");
-const Extension = @import("shader.zig").Extension;
+const Extensions = @import("wgsl.zig").Extensions;
 
 const Ast = @This();
 
@@ -15,7 +15,7 @@ tokens: TokenList.Slice,
 nodes: NodeList.Slice,
 extra: []const u32,
 errors: ErrorList,
-extensions: Extension.Array,
+extensions: Extensions,
 
 pub fn deinit(tree: *Ast, allocator: std.mem.Allocator) void {
     tree.tokens.deinit(allocator);
@@ -26,7 +26,7 @@ pub fn deinit(tree: *Ast, allocator: std.mem.Allocator) void {
 }
 
 /// parses a TranslationUnit (WGSL Program)
-pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8, extensions: Extension.Array) error{OutOfMemory}!Ast {
+pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemory}!Ast {
     var p = Parser{
         .allocator = allocator,
         .source = source,
@@ -48,7 +48,6 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8, extensions: Ext
             break :blk tokens;
         },
         .errors = try ErrorList.init(allocator),
-        .extensions = extensions,
     };
     defer p.scratch.deinit(allocator);
     errdefer {
@@ -69,7 +68,7 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8, extensions: Ext
         .nodes = p.nodes.toOwnedSlice(),
         .extra = try p.extra.toOwnedSlice(allocator),
         .errors = p.errors,
-        .extensions = extensions,
+        .extensions = p.extensions,
     };
 }
 

@@ -2,7 +2,7 @@
 const std = @import("std");
 const Ast = @import("Ast.zig");
 const Token = @import("Token.zig");
-const Extension = @import("shader.zig").Extension;
+const Extensions = @import("wgsl.zig").Extensions;
 const ErrorList = @import("ErrorList.zig");
 const Node = Ast.Node;
 const NodeIndex = Ast.NodeIndex;
@@ -17,8 +17,8 @@ tokens: std.MultiArrayList(Token),
 nodes: std.MultiArrayList(Node) = .{},
 extra: std.ArrayListUnmanaged(u32) = .{},
 scratch: std.ArrayListUnmanaged(NodeIndex) = .{},
+extensions: Extensions = .{},
 errors: ErrorList,
-extensions: Extension.Array,
 
 pub fn translationUnit(p: *Parser) !void {
     p.parameterizeTemplates() catch |err| switch (err) {
@@ -28,9 +28,7 @@ pub fn translationUnit(p: *Parser) !void {
 
     const root = try p.addNode(.{ .tag = .span, .main_token = undefined });
 
-    while (try p.globalDirectiveRecoverable()) |ext| {
-        p.extensions.set(ext, true);
-    }
+    while (try p.globalDirectiveRecoverable()) {}
 
     while (p.peekToken(.tag, 0) != .eof) {
         const decl = try p.expectGlobalDeclRecoverable() orelse continue;
@@ -139,24 +137,27 @@ fn parameterizeTemplates(p: *Parser) !void {
     }
 }
 
-fn globalDirectiveRecoverable(p: *Parser) !?Extension {
+fn globalDirectiveRecoverable(p: *Parser) !bool {
     return p.globalDirective() catch |err| switch (err) {
         error.Parsing => {
             p.findNextGlobalDirective();
-            return null;
+            return false;
         },
         error.OutOfMemory => error.OutOfMemory,
     };
 }
 
-fn globalDirective(p: *Parser) !?Extension {
-    _ = p.eatToken(.k_enable) orelse return null;
+fn globalDirective(p: *Parser) !bool {
+    _ = p.eatToken(.k_enable) orelse return false;
     const ext_token = try p.expectToken(.ident);
-    const ext = std.meta.stringToEnum(Extension, p.getToken(.loc, ext_token).slice(p.source)) orelse {
+    const directive = p.getToken(.loc, ext_token).slice(p.source);
+    if (std.mem.eql(u8, directive, "f16")) {
+        p.extensions.f16 = true;
+    } else {
         try p.errors.add(p.getToken(.loc, ext_token), "invalid extension", .{}, null);
         return error.Parsing;
-    };
-    return ext;
+    }
+    return true;
 }
 
 fn expectGlobalDeclRecoverable(p: *Parser) !?NodeIndex {
@@ -1238,7 +1239,7 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
         .k_f32,
         => return try p.addNode(.{ .tag = .number_type, .main_token = main_token }),
         .k_f16 => {
-            if (p.extensions.get(.f16)) {
+            if (p.extensions.f16) {
                 return try p.addNode(.{ .tag = .number_type, .main_token = main_token });
             }
 

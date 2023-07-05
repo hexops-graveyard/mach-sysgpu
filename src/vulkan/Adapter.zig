@@ -4,10 +4,12 @@ const gpu = @import("mach-gpu");
 const Instance = @import("Instance.zig");
 const Device = @import("Device.zig");
 const global = @import("global.zig");
+const RefCounter = @import("../helper.zig").RefCounter;
 
 const Adapter = @This();
 
-instance: Instance,
+ref_counter: RefCounter(Adapter) = .{},
+instance: *Instance,
 device: vk.PhysicalDevice,
 props: vk.PhysicalDeviceProperties,
 queue_families: QueueFamilies,
@@ -15,7 +17,7 @@ extensions: []const vk.ExtensionProperties,
 vendor_id: VendorID,
 driver_descriptor: [:0]const u8,
 
-pub fn init(instance: Instance, options: *const gpu.RequestAdapterOptions) !Adapter {
+pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Adapter {
     var device_count: u32 = 0;
     _ = try instance.dispatch.enumeratePhysicalDevices(instance.instance, &device_count, null);
 
@@ -86,7 +88,7 @@ pub fn deinit(adapter: *Adapter) void {
     adapter.instance.allocator.free(adapter.driver_descriptor);
 }
 
-pub fn getProperties(adapter: *const Adapter) gpu.Adapter.Properties {
+pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
     const adapter_type: gpu.Adapter.Type = switch (adapter.props.device_type) {
         .integrated_gpu => .integrated_gpu,
         .discrete_gpu => .discrete_gpu,
@@ -96,7 +98,7 @@ pub fn getProperties(adapter: *const Adapter) gpu.Adapter.Properties {
 
     return .{
         .vendor_id = @intFromEnum(adapter.vendor_id),
-        .vendor_name = adapter.vendor_id.name(), // TODO: UB
+        .vendor_name = adapter.vendor_id.name(),
         .architecture = "", // TODO
         .device_id = adapter.props.device_id,
         .name = @ptrCast(&adapter.props.device_name),
@@ -153,7 +155,7 @@ const QueueFamilies = struct {
     compute: u32,
 };
 
-fn findQueueFamilies(instance: Instance, device: vk.PhysicalDevice) !?QueueFamilies {
+fn findQueueFamilies(instance: *Instance, device: vk.PhysicalDevice) !?QueueFamilies {
     var queue_family_count: u32 = 0;
     _ = instance.dispatch.getPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, null);
 
@@ -192,7 +194,7 @@ fn findQueueFamilies(instance: Instance, device: vk.PhysicalDevice) !?QueueFamil
     };
 }
 
-pub fn hasExtension(adapter: Adapter, name: []const u8) bool {
+pub fn hasExtension(adapter: *Adapter, name: []const u8) bool {
     for (adapter.extensions) |ext| {
         if (std.mem.eql(u8, name, std.mem.sliceTo(&ext.extension_name, 0))) {
             return true;
@@ -202,7 +204,7 @@ pub fn hasExtension(adapter: Adapter, name: []const u8) bool {
     return false;
 }
 
-pub fn createDevice(adapter: Adapter, descriptor: *const gpu.Device.Descriptor) !Device {
+pub fn createDevice(adapter: *Adapter, descriptor: *const gpu.Device.Descriptor) !Device {
     return Device.init(adapter, descriptor);
 }
 
@@ -233,7 +235,7 @@ const VendorID = enum(u32) {
             .nvidia => "Nvidia",
             .qualcomm => "Qualcomm",
             .samsung => "Samsung",
-            else => "Unknown",
+            _ => "Unknown",
         };
     }
 };

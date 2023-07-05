@@ -1,10 +1,13 @@
 const std = @import("std");
 const Air = @import("Air.zig");
-const Backend = @import("shader.zig").Backend;
 const genSpirv = @import("codegen/spirv.zig").gen;
 
-pub fn generate(allocator: std.mem.Allocator, air: *const Air, backend: Backend) ![]const u8 {
-    return switch (backend) {
+pub const Language = enum {
+    spirv,
+};
+
+pub fn generate(allocator: std.mem.Allocator, air: *const Air, out_lang: Language) ![]const u8 {
+    return switch (out_lang) {
         .spirv => try genSpirv(allocator, air),
     };
 }
