@@ -32,7 +32,6 @@ pub const Interface = struct {
         var instance = allocator.create(impl.Instance) catch return null;
         instance.* = impl.Instance.init(descriptor orelse &gpu.Instance.Descriptor{}, allocator) catch return null;
         instance.ref_counter.reference();
-
         return @as(*gpu.Instance, @ptrCast(instance));
     }
 
@@ -44,7 +43,6 @@ pub const Interface = struct {
 
     pub inline fn adapterCreateDevice(adapter_raw: *gpu.Adapter, descriptor: ?*const gpu.Device.Descriptor) ?*gpu.Device {
         const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
-
         var device = allocator.create(impl.Device) catch return null;
         const default_descriptor = gpu.Device.Descriptor{
             .device_lost_callback = undefined,
@@ -52,7 +50,6 @@ pub const Interface = struct {
         };
         device.* = adapter.createDevice(descriptor orelse &default_descriptor) catch return null;
         device.ref_counter.reference();
-
         return @as(*gpu.Device, @ptrCast(device));
     }
 
@@ -521,11 +518,9 @@ pub const Interface = struct {
 
     pub inline fn deviceCreateRenderPipeline(device_raw: *gpu.Device, descriptor: *const gpu.RenderPipeline.Descriptor) *gpu.RenderPipeline {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
-
         var render_pipeline = allocator.create(impl.RenderPipeline) catch unreachable;
         render_pipeline.* = impl.Device.createRenderPipeline(device, descriptor) catch unreachable;
         render_pipeline.ref_counter.reference();
-
         return @ptrCast(render_pipeline);
     }
 
@@ -547,7 +542,6 @@ pub const Interface = struct {
         std.debug.assert(backend_type == .vulkan);
 
         var output_code: []const u8 = undefined;
-
         if (helper.findChained(gpu.ShaderModule.WGSLDescriptor, descriptor.next_in_chain.generic)) |wgsl_descriptor| {
             var ast = shader.Ast.parse(allocator, std.mem.span(wgsl_descriptor.code)) catch unreachable;
             defer ast.deinit(allocator);
@@ -559,7 +553,6 @@ pub const Interface = struct {
         } else unreachable;
 
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
-
         var shader_module = allocator.create(impl.ShaderModule) catch unreachable;
         shader_module.* = impl.Device.createShaderModule(device, output_code) catch unreachable;
         shader_module.ref_counter.reference();

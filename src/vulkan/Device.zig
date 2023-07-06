@@ -25,27 +25,13 @@ err_cb: ?gpu.ErrorCallback = null,
 err_cb_userdata: ?*anyopaque = null,
 
 pub fn init(adapter: *Adapter, descriptor: *const gpu.Device.Descriptor) !Device {
-    const queue_infos = if (adapter.queue_families.graphics == adapter.queue_families.compute)
-        &[_]vk.DeviceQueueCreateInfo{
-            .{
-                .queue_family_index = adapter.queue_families.graphics,
-                .queue_count = 1,
-                .p_queue_priorities = &[_]f32{1.0},
-            },
-        }
-    else
-        &[_]vk.DeviceQueueCreateInfo{
-            .{
-                .queue_family_index = adapter.queue_families.graphics,
-                .queue_count = 1,
-                .p_queue_priorities = &[_]f32{1.0},
-            },
-            .{
-                .queue_family_index = adapter.queue_families.compute,
-                .queue_count = 1,
-                .p_queue_priorities = &[_]f32{1.0},
-            },
-        };
+    const queue_infos = &[_]vk.DeviceQueueCreateInfo{
+        .{
+            .queue_family_index = adapter.queue_family,
+            .queue_count = 1,
+            .p_queue_priorities = &[_]f32{1.0},
+        },
+    };
 
     var features = vk.PhysicalDeviceFeatures2{ .features = .{ .geometry_shader = vk.TRUE } };
     var feature_chain: *vk.BaseOutStructure = @ptrCast(&features);
@@ -91,7 +77,7 @@ pub fn init(adapter: *Adapter, descriptor: *const gpu.Device.Descriptor) !Device
 
     const device = try adapter.instance.dispatch.createDevice(adapter.device, &create_info, null);
     const dispatch = try Dispatch.load(device, adapter.instance.dispatch.dispatch.vkGetDeviceProcAddr);
-    const pool = try dispatch.createCommandPool(device, &.{ .queue_family_index = adapter.queue_families.graphics }, null);
+    const pool = try dispatch.createCommandPool(device, &.{ .queue_family_index = adapter.queue_family }, null);
 
     return .{
         .device = device,
@@ -100,16 +86,16 @@ pub fn init(adapter: *Adapter, descriptor: *const gpu.Device.Descriptor) !Device
     };
 }
 
+pub fn deinit(device: *Device) void {
+    device.dispatch.destroyDevice(device.device);
+}
+
 pub fn createShaderModule(device: *Device, code: []const u8) !ShaderModule {
     return ShaderModule.init(device, code);
 }
 
 pub fn createRenderPipeline(device: *Device, descriptor: *const gpu.RenderPipeline.Descriptor) !RenderPipeline {
     return RenderPipeline.init(device, descriptor);
-}
-
-pub fn deinit(device: *Device) void {
-    device.dispatch.destroyDevice(device.device);
 }
 
 fn getLayers(adapter: *Adapter) ![]const [*:0]const u8 {
