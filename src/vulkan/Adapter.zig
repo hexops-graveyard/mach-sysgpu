@@ -12,7 +12,7 @@ ref_counter: RefCounter(Adapter) = .{},
 instance: *Instance,
 device: vk.PhysicalDevice,
 props: vk.PhysicalDeviceProperties,
-queue_families: QueueFamilies,
+queue_family: u32,
 extensions: []const vk.ExtensionProperties,
 vendor_id: VendorID,
 driver_descriptor: [:0]const u8,
@@ -28,13 +28,13 @@ pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Ada
     var device_info: ?struct {
         dev: vk.PhysicalDevice,
         props: vk.PhysicalDeviceProperties,
-        queue_families: QueueFamilies,
+        queue_family: u32,
         score: u32,
     } = null;
     for (device_list[0..device_count]) |dev| {
         const props = instance.dispatch.getPhysicalDeviceProperties(dev);
         const features = instance.dispatch.getPhysicalDeviceFeatures(dev);
-        const queue_families = try findQueueFamilies(instance, dev) orelse continue;
+        const queue_family = try findQueueFamily(instance, dev) orelse continue;
 
         if (isDeviceSuitable(props, features)) {
             const score = rateDevice(props, features, options.power_preference);
@@ -44,7 +44,7 @@ pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Ada
                 device_info = .{
                     .dev = dev,
                     .props = props,
-                    .queue_families = queue_families,
+                    .queue_family = queue_family,
                     .score = score,
                 };
             }
@@ -73,7 +73,7 @@ pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Ada
             .instance = instance,
             .device = dev_info.dev,
             .props = dev_info.props,
-            .queue_families = dev_info.queue_families,
+            .queue_family = dev_info.queue_family,
             .extensions = extensions,
             .vendor_id = @enumFromInt(dev_info.props.vendor_id),
             .driver_descriptor = driver_descriptor,
@@ -150,12 +150,7 @@ fn rateDevice(
     return score;
 }
 
-const QueueFamilies = struct {
-    graphics: u32,
-    compute: u32,
-};
-
-fn findQueueFamilies(instance: *Instance, device: vk.PhysicalDevice) !?QueueFamilies {
+fn findQueueFamily(instance: *Instance, device: vk.PhysicalDevice) !?u32 {
     var queue_family_count: u32 = 0;
     _ = instance.dispatch.getPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, null);
 
@@ -163,35 +158,15 @@ fn findQueueFamilies(instance: *Instance, device: vk.PhysicalDevice) !?QueueFami
     defer instance.allocator.free(queue_families);
     _ = instance.dispatch.getPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.ptr);
 
-    var graphics: ?u32 = null;
-    var compute: ?u32 = null;
-
     for (queue_families, 0..) |family, i| {
         if (family.queue_flags.graphics_bit and family.queue_flags.compute_bit) {
-            graphics = @intCast(i);
-            compute = @intCast(i);
-            break;
-        }
-
-        if (family.queue_flags.graphics_bit) {
-            graphics = @intCast(i);
-        }
-
-        if (family.queue_flags.compute_bit) {
-            compute = @intCast(i);
-        }
-
-        if (graphics != null and compute != null) {
-            break;
+            return @intCast(i);
         }
     } else {
         return null;
     }
 
-    return .{
-        .graphics = graphics.?,
-        .compute = compute.?,
-    };
+    return null;
 }
 
 pub fn hasExtension(adapter: *Adapter, name: []const u8) bool {
