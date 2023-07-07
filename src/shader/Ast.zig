@@ -654,8 +654,8 @@ pub const Node = struct {
     pub const PtrType = struct {
         /// Token(AddressSpace)
         addr_space: TokenIndex,
-        /// Token(AccessMode)?
-        access_mode: TokenIndex = .none,
+        /// Token(AccessMode)
+        access_mode: TokenIndex,
     };
 
     pub const WorkgroupSize = struct {

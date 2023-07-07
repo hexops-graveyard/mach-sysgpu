@@ -1329,10 +1329,8 @@ fn typeSpecifierWithoutIdent(p: *Parser) !?NodeIndex {
             const addr_space = try p.expectAddressSpace();
             _ = try p.expectToken(.comma);
             const elem_type = try p.expectTypeSpecifier();
-            var access_mode = TokenIndex.none;
-            if (p.eatToken(.comma)) |_| {
-                access_mode = try p.expectAccessMode();
-            }
+            _ = try p.expectToken(.comma);
+            const access_mode = try p.expectAccessMode();
             _ = try p.expectToken(.template_right);
 
             const extra = try p.addExtra(Node.PtrType{

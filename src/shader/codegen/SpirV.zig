@@ -26,11 +26,17 @@ main_section: Section,
 /// Cache type and constants
 type_value_map: std.ArrayHashMapUnmanaged(Key, IdRef, Key.Adapter, true) = .{},
 /// Map Air Instruction Index to IdRefs to prevent duplicated declarations
-decl_map: std.AutoHashMapUnmanaged(InstIndex, IdRef) = .{},
+decl_map: std.AutoHashMapUnmanaged(InstIndex, Decl) = .{},
 next_result_id: Word = 1,
 compute_stage: ?ComputeStage = null,
 vertex_stage: ?VertexStage = null,
 fragment_stage: ?FragmentStage = null,
+
+const Decl = struct {
+    id: IdRef,
+    type_id: IdRef,
+    is_ptr: bool,
+};
 
 const ComputeStage = struct {
     id: IdResult,
@@ -56,7 +62,7 @@ const FragmentStage = struct {
 };
 
 pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
-    var spirv = SpirV{
+    var spv = SpirV{
         .air = air,
         .allocator = allocator,
         .debug_section = .{ .allocator = allocator },
@@ -65,34 +71,39 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
         .main_section = .{ .allocator = allocator },
     };
     defer {
-        spirv.debug_section.deinit();
-        spirv.annotations_section.deinit();
-        spirv.global_section.deinit();
-        spirv.main_section.deinit();
-        spirv.type_value_map.deinit(allocator);
-        spirv.decl_map.deinit(allocator);
-        if (spirv.compute_stage) |stage| allocator.free(stage.interface);
-        if (spirv.vertex_stage) |stage| allocator.free(stage.interface);
-        if (spirv.fragment_stage) |stage| allocator.free(stage.interface);
+        spv.debug_section.deinit();
+        spv.annotations_section.deinit();
+        spv.global_section.deinit();
+        spv.main_section.deinit();
+        spv.type_value_map.deinit(allocator);
+        spv.decl_map.deinit(allocator);
+        if (spv.compute_stage) |stage| allocator.free(stage.interface);
+        if (spv.vertex_stage) |stage| allocator.free(stage.interface);
+        if (spv.fragment_stage) |stage| allocator.free(stage.interface);
     }
 
     var module_section = Section{ .allocator = allocator };
     defer module_section.deinit();
 
     for (air.refToList(air.globals_index)) |inst_idx| {
-        _ = try spirv.emitDecl(null, null, inst_idx) orelse unreachable;
+        switch (spv.air.getInst(inst_idx)) {
+            .@"fn" => _ = try spv.emitFn(inst_idx),
+            .@"const" => _ = try spv.emitConst(inst_idx),
+            .@"var" => _ = try spv.emitVar(&spv.global_section, &spv.global_section, inst_idx),
+            else => unreachable,
+        }
     }
 
-    try spirv.emitModule(&module_section);
-    try module_section.append(spirv.debug_section);
-    try module_section.append(spirv.annotations_section);
-    try module_section.append(spirv.global_section);
-    try module_section.append(spirv.main_section);
+    try spv.emitModule(&module_section);
+    try module_section.append(spv.debug_section);
+    try module_section.append(spv.annotations_section);
+    try module_section.append(spv.global_section);
+    try module_section.append(spv.main_section);
 
     return allocator.dupe(u8, std.mem.sliceAsBytes(module_section.words.items));
 }
 
-fn emitModule(spirv: *SpirV, section: *Section) !void {
+fn emitModule(spv: *SpirV, section: *Section) !void {
     const header = &[_]Word{
         // Magic number
         spec.magic_number,
@@ -101,7 +112,7 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
         // Generator magic number. TODO: register dusk compiler
         0,
         // Id's bound
-        spirv.next_result_id,
+        spv.next_result_id,
         // Reserved for instruction schema, if needed
         0,
     };
@@ -109,10 +120,10 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
     section.writeWords(header);
 
     try section.emit(.OpCapability, .{ .capability = .Shader });
-    if (spirv.air.extensions.f16) try section.emit(.OpCapability, .{ .capability = .Float16 });
+    if (spv.air.extensions.f16) try section.emit(.OpCapability, .{ .capability = .Float16 });
     try section.emit(.OpMemoryModel, .{ .addressing_model = .Logical, .memory_model = .GLSL450 });
 
-    if (spirv.compute_stage) |compute_stage| {
+    if (spv.compute_stage) |compute_stage| {
         try section.emit(.OpEntryPoint, .{
             .execution_model = .GLCompute,
             .entry_point = compute_stage.id,
@@ -129,7 +140,7 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
         });
     }
 
-    if (spirv.vertex_stage) |vertex_stage| {
+    if (spv.vertex_stage) |vertex_stage| {
         try section.emit(.OpEntryPoint, .{
             .execution_model = .Vertex,
             .entry_point = vertex_stage.id,
@@ -138,7 +149,7 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
         });
     }
 
-    if (spirv.fragment_stage) |fragment_stage| {
+    if (spv.fragment_stage) |fragment_stage| {
         try section.emit(.OpEntryPoint, .{
             .execution_model = .Fragment,
             .entry_point = fragment_stage.id,
@@ -152,93 +163,77 @@ fn emitModule(spirv: *SpirV, section: *Section) !void {
     }
 }
 
-fn emitDecl(spirv: *SpirV, section: ?*Section, init_section: ?*Section, inst_idx: InstIndex) !?IdRef {
-    if (spirv.decl_map.get(inst_idx)) |id| return id;
-    const id = switch (spirv.air.getInst(inst_idx)) {
-        .@"fn" => |@"fn"| try spirv.emitFn(@"fn"),
-        .global_var => IdResult{ .id = 1 }, // TODO
-        .global_const => IdResult{ .id = 1 }, // TODO
-        .override => IdResult{ .id = 1 }, // TODO
-        .@"var" => |@"var"| try spirv.emitVar(section.?, init_section orelse section.?, @"var"),
-        .let => |let| try spirv.emitLet(section.?, init_section orelse section.?, let),
-        .@"const" => IdResult{ .id = 1 }, // TODO
-        else => return null,
-    };
-    try spirv.decl_map.put(spirv.allocator, inst_idx, id);
-    return id;
-}
+fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
+    const inst = spv.air.getInst(inst_idx).@"fn";
 
-fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
-    var fn_section = Section{ .allocator = spirv.allocator };
-    var fn_params_section = Section{ .allocator = spirv.allocator };
-    var fn_params_load_section = Section{ .allocator = spirv.allocator };
-    var fn_vars_init_section = Section{ .allocator = spirv.allocator };
+    var fn_section = Section{ .allocator = spv.allocator };
+    var fn_params_section = Section{ .allocator = spv.allocator };
+    var fn_vars_init_section = Section{ .allocator = spv.allocator };
     defer {
         fn_section.deinit();
         fn_params_section.deinit();
-        fn_params_load_section.deinit();
         fn_vars_init_section.deinit();
     }
 
-    const fn_id = spirv.allocId();
+    const fn_id = spv.allocId();
     const raw_return_type_id = blk: {
         if (inst.return_type == .none) {
-            break :blk try spirv.resolve(.void_type);
+            break :blk try spv.resolve(.void_type);
         } else {
-            break :blk try spirv.emitType(inst.return_type);
+            break :blk try spv.emitType(inst.return_type);
         }
     };
     const return_type_id = blk: {
         if (inst.stage != .none) {
-            break :blk try spirv.resolve(.void_type);
+            break :blk try spv.resolve(.void_type);
         } else {
             break :blk raw_return_type_id;
         }
     };
 
-    const name_slice = spirv.air.getStr(inst.name);
-    try spirv.debug_section.emit(.OpName, .{
+    const name_slice = spv.air.getStr(inst.name);
+    try spv.debug_section.emit(.OpName, .{
         .target = fn_id,
         .name = name_slice,
     });
 
-    var interface = std.ArrayList(IdRef).init(spirv.allocator);
+    var interface = std.ArrayList(IdRef).init(spv.allocator);
     errdefer interface.deinit();
 
     var return_var_id: ?IdRef = null;
     if (inst.stage != .none and inst.return_type != .none) {
-        return_var_id = spirv.allocId();
+        return_var_id = spv.allocId();
 
         const return_var_name_slice = try std.mem.concat(
-            spirv.allocator,
+            spv.allocator,
             u8,
             &.{ name_slice, "_return_output" },
         );
-        defer spirv.allocator.free(return_var_name_slice);
-        try spirv.debug_section.emit(.OpName, .{
+        defer spv.allocator.free(return_var_name_slice);
+        try spv.debug_section.emit(.OpName, .{
             .target = return_var_id.?,
             .name = return_var_name_slice,
         });
 
-        const return_var_type_id = try spirv.resolve(.{ .ptr_type = .{
+        const return_var_type_id = try spv.resolve(.{ .ptr_type = .{
             .storage_class = .Output,
             .elem_type = raw_return_type_id,
         } });
-        try spirv.global_section.emit(.OpVariable, .{
+        try spv.global_section.emit(.OpVariable, .{
             .id_result_type = return_var_type_id,
             .id_result = return_var_id.?,
             .storage_class = .Output,
         });
 
         if (inst.return_attrs.builtin) |builtin| {
-            try spirv.annotations_section.emit(.OpDecorate, .{
+            try spv.annotations_section.emit(.OpDecorate, .{
                 .target = return_var_id.?,
                 .decoration = .{ .BuiltIn = .{ .built_in = builtInFromAirBuiltin(builtin) } },
             });
         }
 
         if (inst.return_attrs.location) |location| {
-            try spirv.annotations_section.emit(.OpDecorate, .{
+            try spv.annotations_section.emit(.OpDecorate, .{
                 .target = return_var_id.?,
                 .decoration = .{ .Location = .{ .location = location } },
             });
@@ -247,76 +242,73 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
         try interface.append(return_var_id.?);
     }
 
-    var params_type = std.ArrayList(IdRef).init(spirv.allocator);
+    var params_type = std.ArrayList(IdRef).init(spv.allocator);
     defer params_type.deinit();
 
     if (inst.params != .none) {
-        const param_list = spirv.air.refToList(inst.params);
+        const param_list = spv.air.refToList(inst.params);
 
         for (param_list) |param_inst_idx| {
-            const param_inst = spirv.air.getInst(param_inst_idx).fn_param;
-            const param_id = spirv.allocId();
+            const param_inst = spv.air.getInst(param_inst_idx).fn_param;
+            const param_id = spv.allocId();
 
-            try spirv.debug_section.emit(.OpName, .{
+            try spv.debug_section.emit(.OpName, .{
                 .target = param_id,
-                .name = spirv.air.getStr(param_inst.name),
+                .name = spv.air.getStr(param_inst.name),
             });
 
             if (inst.stage != .none) {
-                const elem_type_id = try spirv.emitType(param_inst.type);
-                const param_type_id = try spirv.resolve(.{ .ptr_type = .{
+                const elem_type_id = try spv.emitType(param_inst.type);
+                const param_type_id = try spv.resolve(.{ .ptr_type = .{
                     .storage_class = .Input,
                     .elem_type = elem_type_id,
                 } });
 
-                const param_var_id = spirv.allocId();
                 const param_var_name_slice = try std.mem.concat(
-                    spirv.allocator,
+                    spv.allocator,
                     u8,
-                    &.{ name_slice, "_", spirv.air.getStr(param_inst.name), "_input" },
+                    &.{ name_slice, "_", spv.air.getStr(param_inst.name), "_input" },
                 );
-                defer spirv.allocator.free(param_var_name_slice);
-                try spirv.debug_section.emit(.OpName, .{
-                    .target = param_var_id,
-                    .name = param_var_name_slice,
-                });
+                defer spv.allocator.free(param_var_name_slice);
 
-                try spirv.global_section.emit(.OpVariable, .{
+                try spv.global_section.emit(.OpVariable, .{
                     .id_result_type = param_type_id,
-                    .id_result = param_var_id,
+                    .id_result = param_id,
                     .storage_class = .Input,
                 });
 
-                try fn_params_load_section.emit(.OpLoad, .{
-                    .id_result_type = elem_type_id,
-                    .id_result = param_id,
-                    .pointer = param_var_id,
-                });
-
                 if (param_inst.builtin) |builtin| {
-                    try spirv.annotations_section.emit(.OpDecorate, .{
-                        .target = param_var_id,
+                    try spv.annotations_section.emit(.OpDecorate, .{
+                        .target = param_id,
                         .decoration = .{ .BuiltIn = .{
                             .built_in = builtInFromAirBuiltin(builtin),
                         } },
                     });
                 }
 
-                try interface.append(param_var_id);
+                try interface.append(param_id);
+                try spv.decl_map.put(spv.allocator, param_inst_idx, .{
+                    .id = param_id,
+                    .type_id = elem_type_id,
+                    .is_ptr = true,
+                });
             } else {
-                const param_type_id = try spirv.emitType(param_inst.type);
+                const param_type_id = try spv.emitType(param_inst.type);
                 try fn_params_section.emit(.OpFunctionParameter, .{
                     .id_result_type = param_type_id,
                     .id_result = param_id,
                 });
                 try params_type.append(param_type_id);
+                try spv.decl_map.put(spv.allocator, param_inst_idx, .{
+                    .id = param_id,
+                    .type_id = param_type_id,
+                    .is_ptr = false,
+                });
             }
-
-            try spirv.decl_map.put(spirv.allocator, param_inst_idx, param_id);
         }
     }
 
-    const fn_type_id = try spirv.resolve(.{
+    const fn_type_id = try spv.resolve(.{
         .fn_type = .{
             .return_type = return_type_id,
             .params_type = params_type.items,
@@ -332,267 +324,264 @@ fn emitFn(spirv: *SpirV, inst: Inst.Fn) error{OutOfMemory}!IdRef {
 
     try fn_section.append(fn_params_section);
 
-    const block_id = spirv.allocId();
-    const statements_ref = spirv.air.getInst(inst.block).block;
+    const block_id = spv.allocId();
+    const statements_ref = spv.air.getInst(inst.block).block;
     try fn_section.emit(.OpLabel, .{ .id_result = block_id });
 
     if (statements_ref != .none) {
-        const list = spirv.air.refToList(statements_ref);
+        const list = spv.air.refToList(statements_ref);
         for (list) |statement_idx| {
-            _ = try spirv.emitDecl(&fn_section, &fn_vars_init_section, statement_idx);
+            if (spv.air.getInst(statement_idx) == .@"var") {
+                _ = try spv.emitVar(&fn_section, &fn_vars_init_section, statement_idx);
+            }
         }
     }
 
     try fn_section.append(fn_vars_init_section);
-    try fn_section.append(fn_params_load_section);
 
     if (statements_ref != .none) {
-        const list = spirv.air.refToList(statements_ref);
+        const list = spv.air.refToList(statements_ref);
         for (list) |statement_idx| {
-            try spirv.emitStatement(&fn_section, statement_idx, return_var_id);
+            try spv.emitStatement(&fn_section, statement_idx, return_var_id);
         }
 
-        if (spirv.air.getInst(list[list.len - 1]) != .@"return") {
-            try spirv.emitReturn(&fn_section, .none);
+        if (spv.air.getInst(list[list.len - 1]) != .@"return") {
+            try spv.emitReturn(&fn_section, .none);
         }
     } else {
-        try spirv.emitReturn(&fn_section, .none);
+        try spv.emitReturn(&fn_section, .none);
     }
 
     try fn_section.emit(.OpFunctionEnd, {});
 
     switch (inst.stage) {
         .none => {},
-        .compute => |compute| spirv.compute_stage = .{
+        .compute => |compute| spv.compute_stage = .{
             .id = fn_id,
             .name = name_slice,
             .interface = try interface.toOwnedSlice(),
             .workgroup_size = .{
                 .x = blk: {
-                    const int = spirv.air.getInst(compute.x).int;
-                    const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
+                    const int = spv.air.getInst(compute.x).int;
+                    const value = spv.air.getValue(Inst.Int.Value, int.value.?);
                     break :blk @intCast(value.literal);
                 },
                 .y = blk: {
                     if (compute.y == .none) break :blk 1;
 
-                    const int = spirv.air.getInst(compute.y).int;
-                    const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
+                    const int = spv.air.getInst(compute.y).int;
+                    const value = spv.air.getValue(Inst.Int.Value, int.value.?);
                     break :blk @intCast(value.literal);
                 },
                 .z = blk: {
                     if (compute.y == .none) break :blk 1;
 
-                    const int = spirv.air.getInst(compute.z).int;
-                    const value = spirv.air.getValue(Inst.Int.Value, int.value.?);
+                    const int = spv.air.getInst(compute.z).int;
+                    const value = spv.air.getValue(Inst.Int.Value, int.value.?);
                     break :blk @intCast(value.literal);
                 },
             },
         },
-        .vertex => spirv.vertex_stage = .{
+        .vertex => spv.vertex_stage = .{
             .id = fn_id,
             .name = name_slice,
             .interface = try interface.toOwnedSlice(),
         },
-        .fragment => spirv.fragment_stage = .{
+        .fragment => spv.fragment_stage = .{
             .id = fn_id,
             .name = name_slice,
             .interface = try interface.toOwnedSlice(),
         },
     }
 
-    try spirv.main_section.append(fn_section);
+    try spv.main_section.append(fn_section);
+    try spv.decl_map.put(spv.allocator, inst_idx, .{
+        .id = fn_id,
+        .type_id = fn_type_id,
+        .is_ptr = false,
+    });
     return fn_id;
 }
 
-fn emitVar(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.Var) !IdRef {
-    const id = spirv.allocId();
-    try spirv.debug_section.emit(.OpName, .{
+fn emitVar(spv: *SpirV, section: *Section, init_section: *Section, inst_idx: InstIndex) !IdRef {
+    if (spv.decl_map.get(inst_idx)) |decl| return decl.id;
+
+    const inst = spv.air.getInst(inst_idx).@"var";
+    const id = spv.allocId();
+    try spv.debug_section.emit(.OpName, .{
         .target = id,
-        .name = spirv.air.getStr(inst.name),
+        .name = spv.air.getStr(inst.name),
     });
 
     const storage_class = storageClassFromAddrSpace(inst.addr_space);
-    const type_id = try spirv.emitType(if (inst.type != .none) inst.type else inst.expr);
-    const ptr_type_id = try spirv.resolve(.{ .ptr_type = .{
+    const type_id = try spv.emitType(if (inst.type != .none) inst.type else inst.expr);
+    const ptr_type_id = try spv.resolve(.{ .ptr_type = .{
         .elem_type = type_id,
         .storage_class = storage_class,
     } });
 
-    const initializer = blk: {
-        if (inst.expr != .none and spirv.air.isConst(inst.expr)) {
-            break :blk try spirv.emitExpr(&spirv.global_section, inst.expr);
-        }
-        break :blk null;
-    };
+    const zero_id = try spv.resolve(.{ .null = type_id });
+
     try section.emit(.OpVariable, .{
         .id_result_type = ptr_type_id,
         .id_result = id,
         .storage_class = storage_class,
-        .initializer = initializer,
+        .initializer = zero_id,
     });
 
     if (inst.expr != .none) {
         try init_section.emit(.OpStore, .{
             .pointer = id,
-            .object = try spirv.emitExpr(init_section, inst.expr),
+            .object = try spv.emitExpr(init_section, inst.expr),
         });
     }
 
+    try spv.decl_map.put(spv.allocator, inst_idx, .{
+        .id = id,
+        .type_id = type_id,
+        .is_ptr = true,
+    });
     return id;
 }
 
-fn emitLet(spirv: *SpirV, section: *Section, init_section: *Section, inst: Inst.Const) !IdRef {
-    const type_id = try spirv.emitType(if (inst.type != .none) inst.type else inst.expr);
-    const ptr_type_id = try spirv.resolve(.{ .ptr_type = .{
-        .elem_type = type_id,
-        .storage_class = .Function,
-    } });
+fn emitConst(spv: *SpirV, inst_idx: InstIndex) !IdRef {
+    if (spv.decl_map.get(inst_idx)) |decl| return decl.id;
 
-    const var_id = spirv.allocId();
-    try section.emit(.OpVariable, .{
-        .id_result_type = ptr_type_id,
-        .id_result = var_id,
-        .storage_class = .Function,
+    const inst = spv.air.getInst(inst_idx).@"const";
+    const id = try spv.emitExpr(&spv.global_section, inst.expr);
+    try spv.debug_section.emit(.OpName, .{
+        .target = id,
+        .name = spv.air.getStr(inst.name),
     });
-
-    const initializer = try spirv.emitExpr(init_section, inst.expr);
-    try init_section.emit(.OpStore, .{
-        .pointer = var_id,
-        .object = initializer,
-    });
-
-    const load_id = spirv.allocId();
-    try spirv.debug_section.emit(.OpName, .{
-        .target = load_id,
-        .name = spirv.air.getStr(inst.name),
-    });
-    try init_section.emit(.OpLoad, .{
-        .id_result_type = type_id,
-        .id_result = load_id,
-        .pointer = var_id,
-    });
-
-    return load_id;
+    return id;
 }
 
-fn emitType(spirv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
-    return switch (spirv.air.getInst(inst)) {
-        .bool => try spirv.resolve(.bool_type),
-        .int => |int| try spirv.resolve(.{ .int_type = int.type }),
-        .float => |float| try spirv.resolve(.{ .float_type = float.type }),
-        .vector => |vector| try spirv.resolve(.{
+fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
+    return switch (spv.air.getInst(inst)) {
+        .bool => try spv.resolve(.bool_type),
+        .int => |int| try spv.resolve(.{ .int_type = int.type }),
+        .float => |float| try spv.resolve(.{ .float_type = float.type }),
+        .vector => |vector| try spv.resolve(.{
             .vector_type = .{
                 .size = vector.size,
-                .elem_type = try spirv.emitType(vector.elem_type),
+                .elem_type = try spv.emitType(vector.elem_type),
             },
         }),
-        .matrix => |matrix| try spirv.resolve(.{
+        .matrix => |matrix| try spv.resolve(.{
             .matrix_type = .{
                 .cols = matrix.cols,
-                .elem_type = try spirv.resolve(.{
+                .elem_type = try spv.resolve(.{
                     .vector_type = .{
                         .size = matrix.rows,
-                        .elem_type = try spirv.emitType(matrix.elem_type),
+                        .elem_type = try spv.emitType(matrix.elem_type),
                     },
                 }),
             },
         }),
-        .array => |array| try spirv.resolve(.{
+        .array => |array| try spv.resolve(.{
             .array_type = .{
-                .len = try spirv.emitExpr(&spirv.global_section, array.len),
-                .elem_type = try spirv.emitType(array.elem_type),
+                .len = try spv.emitExpr(&spv.global_section, array.len),
+                .elem_type = try spv.emitType(array.elem_type),
             },
         }),
-        .ptr_type => |ptr| try spirv.resolve(.{
+        .ptr_type => |ptr| try spv.resolve(.{
             .ptr_type = .{
                 .storage_class = storageClassFromAddrSpace(ptr.addr_space),
-                .elem_type = try spirv.emitType(ptr.elem_type),
+                .elem_type = try spv.emitType(ptr.elem_type),
             },
         }),
-        else => .{ .id = 1 }, // TODO: make this unreachable
+        else => unreachable, // TODO: make this unreachable
     };
 }
 
-fn emitStatement(spirv: *SpirV, section: *Section, inst_idx: InstIndex, store_return: ?IdRef) !void {
-    switch (spirv.air.getInst(inst_idx)) {
+fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex, store_return: ?IdRef) !void {
+    switch (spv.air.getInst(inst_idx)) {
         .@"return" => |inst| {
             if (store_return) |store_to| {
                 try section.emit(.OpStore, .{
                     .pointer = store_to,
-                    .object = try spirv.emitExpr(section, inst),
+                    .object = try spv.emitExpr(section, inst),
                 });
-                try spirv.emitReturn(section, .none);
+                try spv.emitReturn(section, .none);
             } else {
-                try spirv.emitReturn(section, inst);
+                try spv.emitReturn(section, inst);
             }
         },
-        .call => |inst| _ = try spirv.emitCall(section, inst),
+        .call => |inst| _ = try spv.emitCall(section, inst),
         else => {}, // TODO
     }
 }
 
-fn emitReturn(spirv: *SpirV, section: *Section, value: InstIndex) !void {
+fn emitReturn(spv: *SpirV, section: *Section, value: InstIndex) !void {
     if (value == .none) return section.emit(.OpReturn, {});
-    try section.emit(.OpReturnValue, .{ .value = try spirv.emitExpr(section, value) });
+    try section.emit(.OpReturnValue, .{ .value = try spv.emitExpr(section, value) });
 }
 
-fn emitExpr(spirv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
-    return switch (spirv.air.getInst(inst_idx)) {
-        .bool => |boolean| switch (boolean.value.?) {
-            .literal => |lit| spirv.resolve(.{ .bool = lit }),
-            .cast => |cast| spirv.emitBoolCast(section, cast),
-        },
-        .int => |int| switch (spirv.air.getValue(Inst.Int.Value, int.value.?)) {
-            .literal => |lit| spirv.resolve(.{ .int = .{ .type = int.type, .value = lit } }),
-            .cast => |cast| spirv.emitIntCast(section, int.type, cast),
-        },
-        .float => |float| switch (spirv.air.getValue(Inst.Float.Value, float.value.?)) {
-            .literal => |lit| spirv.resolve(.{ .float = .{ .type = float.type, .value = @bitCast(lit) } }),
-            .cast => |cast| spirv.emitFloatCast(section, float.type, cast),
-        },
-        .vector => |vector| spirv.emitVector(section, vector),
-        .matrix => |matrix| spirv.emitMatrix(section, matrix),
-        .array => |array| spirv.emitArray(section, array),
-        .call => |call| spirv.emitCall(section, call),
+fn emitExpr(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
+    return switch (spv.air.getInst(inst_idx)) {
+        .bool => |boolean| spv.emitBool(section, boolean),
+        .int => |int| spv.emitInt(section, int),
+        .float => |float| spv.emitFloat(section, float),
+        .vector => |vector| spv.emitVector(section, vector),
+        .matrix => |matrix| spv.emitMatrix(section, matrix),
+        .array => |array| spv.emitArray(section, array),
+        .call => |call| spv.emitCall(section, call),
         .var_ref => |var_ref| blk: {
-            const var_id = try spirv.emitDecl(section, null, var_ref) orelse unreachable;
-            switch (spirv.air.getInst(var_ref)) {
-                inline .@"var", .global_var => |@"var"| {
-                    const load_id = spirv.allocId();
-                    const var_type = if (@"var".type != .none) @"var".type else @"var".expr;
-                    try section.emit(.OpLoad, .{
-                        .id_result_type = try spirv.emitType(var_type),
-                        .id_result = load_id,
-                        .pointer = var_id,
-                    });
-                    break :blk load_id;
-                },
-                else => break :blk var_id,
+            const decl = spv.decl_map.get(var_ref).?;
+            if (decl.is_ptr) {
+                const load_id = spv.allocId();
+                try section.emit(.OpLoad, .{
+                    .id_result_type = decl.type_id,
+                    .id_result = load_id,
+                    .pointer = decl.id,
+                });
+                break :blk load_id;
             }
+            break :blk decl.id;
         },
-        .swizzle_access => |swizzle_access| spirv.emitSwizzleAccess(section, swizzle_access),
-        .index_access => |index_access| spirv.emitIndexAccess(section, index_access),
-        else => .{ .id = 1 }, // TODO: unreachable
+        .swizzle_access => |swizzle_access| spv.emitSwizzleAccess(section, swizzle_access),
+        .index_access => |index_access| spv.emitIndexAccess(section, index_access),
+        else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst_idx))}),
     };
 }
 
-fn emitBoolCast(spirv: *SpirV, section: *Section, cast: Inst.Cast) !IdRef {
-    const id = spirv.allocId();
-    const dest_type_id = try spirv.resolve(.bool_type);
-    const source_type = spirv.air.getInst(cast.type);
-    const value_id = try spirv.emitExpr(section, cast.value);
+fn emitBool(spv: *SpirV, section: *Section, boolean: Inst.Bool) !IdRef {
+    return switch (boolean.value.?) {
+        .literal => |lit| spv.resolve(.{ .bool = lit }),
+        .cast => |cast| spv.emitBoolCast(section, cast),
+    };
+}
+
+fn emitInt(spv: *SpirV, section: *Section, int: Inst.Int) !IdRef {
+    return switch (spv.air.getValue(Inst.Int.Value, int.value.?)) {
+        .literal => |lit| spv.resolve(.{ .int = .{ .type = int.type, .value = @bitCast(lit) } }),
+        .cast => |cast| spv.emitIntCast(section, int.type, cast),
+    };
+}
+
+fn emitFloat(spv: *SpirV, section: *Section, float: Inst.Float) !IdRef {
+    return switch (spv.air.getValue(Inst.Float.Value, float.value.?)) {
+        .literal => |lit| spv.resolve(.{ .float = .{ .type = float.type, .value = @bitCast(lit) } }),
+        .cast => |cast| spv.emitFloatCast(section, float.type, cast),
+    };
+}
+
+fn emitBoolCast(spv: *SpirV, section: *Section, cast: Inst.Cast) !IdRef {
+    const id = spv.allocId();
+    const dest_type_id = try spv.resolve(.bool_type);
+    const source_type = spv.air.getInst(cast.type);
+    const value_id = try spv.emitExpr(section, cast.value);
     switch (source_type) {
         .int => |int| try section.emit(.OpINotEqual, .{
             .id_result_type = dest_type_id,
             .id_result = id,
-            .operand_1 = try spirv.resolve(.{ .null = try spirv.resolve(.{ .int_type = int.type }) }),
+            .operand_1 = try spv.resolve(.{ .null = try spv.resolve(.{ .int_type = int.type }) }),
             .operand_2 = value_id,
         }),
         .float => |float| try section.emit(.OpFUnordNotEqual, .{
             .id_result_type = dest_type_id,
             .id_result = id,
-            .operand_1 = try spirv.resolve(.{ .null = try spirv.resolve(.{ .float_type = float.type }) }),
+            .operand_1 = try spv.resolve(.{ .null = try spv.resolve(.{ .float_type = float.type }) }),
             .operand_2 = value_id,
         }),
         else => unreachable,
@@ -600,11 +589,11 @@ fn emitBoolCast(spirv: *SpirV, section: *Section, cast: Inst.Cast) !IdRef {
     return id;
 }
 
-fn emitIntCast(spirv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast: Inst.Cast) !IdRef {
-    const id = spirv.allocId();
-    const source_type = spirv.air.getInst(cast.type);
-    const dest_type_id = try spirv.resolve(.{ .int_type = dest_type });
-    const value_id = try spirv.emitExpr(section, cast.value);
+fn emitIntCast(spv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast: Inst.Cast) !IdRef {
+    const id = spv.allocId();
+    const source_type = spv.air.getInst(cast.type);
+    const dest_type_id = try spv.resolve(.{ .int_type = dest_type });
+    const value_id = try spv.emitExpr(section, cast.value);
     switch (dest_type) {
         .i32 => switch (source_type) {
             .int => try section.emit(.OpUConvert, .{
@@ -636,11 +625,11 @@ fn emitIntCast(spirv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast:
     return id;
 }
 
-fn emitFloatCast(spirv: *SpirV, section: *Section, dest_type: Inst.Float.Type, cast: Inst.Cast) !IdRef {
-    const id = spirv.allocId();
-    const source_type = spirv.air.getInst(cast.type);
-    const dest_type_id = try spirv.resolve(.{ .float_type = dest_type });
-    const value_id = try spirv.emitExpr(section, cast.value);
+fn emitFloatCast(spv: *SpirV, section: *Section, dest_type: Inst.Float.Type, cast: Inst.Cast) !IdRef {
+    const id = spv.allocId();
+    const source_type = spv.air.getInst(cast.type);
+    const dest_type_id = try spv.resolve(.{ .float_type = dest_type });
+    const value_id = try spv.emitExpr(section, cast.value);
     switch (dest_type) {
         .f32, .f16 => switch (source_type) {
             .float => try section.emit(.OpFConvert, .{
@@ -666,57 +655,58 @@ fn emitFloatCast(spirv: *SpirV, section: *Section, dest_type: Inst.Float.Type, c
     return id;
 }
 
-fn emitCall(spirv: *SpirV, section: *Section, inst: Inst.FnCall) !IdRef {
-    var args = std.ArrayList(IdRef).init(spirv.allocator);
+fn emitCall(spv: *SpirV, section: *Section, inst: Inst.FnCall) !IdRef {
+    var args = std.ArrayList(IdRef).init(spv.allocator);
     defer args.deinit();
 
     if (inst.args != .none) {
-        for (spirv.air.refToList(inst.args)) |arg_inst_idx| {
-            try args.append(try spirv.emitExpr(section, arg_inst_idx));
+        for (spv.air.refToList(inst.args)) |arg_inst_idx| {
+            try args.append(try spv.emitExpr(section, arg_inst_idx));
         }
     }
 
-    const id = spirv.allocId();
+    const id = spv.allocId();
+    const function = if (spv.decl_map.get(inst.@"fn")) |decl| decl.id else try spv.emitFn(inst.@"fn");
     try section.emit(.OpFunctionCall, .{
-        .id_result_type = try spirv.emitType(spirv.air.getInst(inst.@"fn").@"fn".return_type),
+        .id_result_type = try spv.emitType(spv.air.getInst(inst.@"fn").@"fn".return_type),
         .id_result = id,
-        .function = try spirv.emitDecl(null, null, inst.@"fn") orelse unreachable,
+        .function = function,
         .id_ref_3 = args.items,
     });
 
     return id;
 }
 
-fn emitVector(spirv: *SpirV, section: *Section, inst: Inst.Vector) !IdRef {
-    const elem_type_key: Key = switch (spirv.air.getInst(inst.elem_type)) {
+fn emitVector(spv: *SpirV, section: *Section, inst: Inst.Vector) !IdRef {
+    const elem_type_key: Key = switch (spv.air.getInst(inst.elem_type)) {
         .bool => .bool_type,
         .float => |float| .{ .float_type = float.type },
         .int => |int| .{ .int_type = int.type },
         else => unreachable,
     };
 
-    const type_id = try spirv.resolve(.{
+    const type_id = try spv.resolve(.{
         .vector_type = .{
-            .elem_type = try spirv.resolve(elem_type_key),
+            .elem_type = try spv.resolve(elem_type_key),
             .size = inst.size,
         },
     });
 
     if (inst.value.? == .none) {
-        return spirv.resolve(.{ .null = type_id });
+        return spv.resolve(.{ .null = type_id });
     }
 
-    var elem_value = std.ArrayList(IdRef).init(spirv.allocator);
+    var elem_value = std.ArrayList(IdRef).init(spv.allocator);
     defer elem_value.deinit();
     try elem_value.ensureTotalCapacityPrecise(@intFromEnum(inst.size));
 
-    const value = spirv.air.getValue(Inst.Vector.Value, inst.value.?);
+    const value = spv.air.getValue(Inst.Vector.Value, inst.value.?);
     for (value[0..@intFromEnum(inst.size)]) |elem_inst| {
-        const elem_id = try spirv.emitExpr(section, elem_inst);
+        const elem_id = try spv.emitExpr(section, elem_inst);
         elem_value.appendAssumeCapacity(elem_id);
     }
 
-    const id = spirv.allocId();
+    const id = spv.allocId();
     try section.emit(.OpCompositeConstruct, .{
         .id_result_type = type_id,
         .id_result = id,
@@ -725,15 +715,15 @@ fn emitVector(spirv: *SpirV, section: *Section, inst: Inst.Vector) !IdRef {
     return id;
 }
 
-fn emitMatrix(spirv: *SpirV, section: *Section, inst: Inst.Matrix) !IdRef {
-    const vec_elem_type_id = try spirv.emitType(inst.elem_type);
-    const elem_type_id = try spirv.resolve(.{
+fn emitMatrix(spv: *SpirV, section: *Section, inst: Inst.Matrix) !IdRef {
+    const vec_elem_type_id = try spv.emitType(inst.elem_type);
+    const elem_type_id = try spv.resolve(.{
         .vector_type = .{
             .elem_type = vec_elem_type_id,
             .size = inst.rows,
         },
     });
-    const type_id = try spirv.resolve(.{
+    const type_id = try spv.resolve(.{
         .matrix_type = .{
             .elem_type = elem_type_id,
             .cols = inst.cols,
@@ -741,20 +731,20 @@ fn emitMatrix(spirv: *SpirV, section: *Section, inst: Inst.Matrix) !IdRef {
     });
 
     if (inst.value.? == .none) {
-        return spirv.resolve(.{ .null = type_id });
+        return spv.resolve(.{ .null = type_id });
     }
 
-    var elem_value = std.ArrayList(IdRef).init(spirv.allocator);
+    var elem_value = std.ArrayList(IdRef).init(spv.allocator);
     defer elem_value.deinit();
     try elem_value.ensureTotalCapacityPrecise(@intFromEnum(inst.cols));
 
-    const value = spirv.air.getValue(Inst.Matrix.Value, inst.value.?);
+    const value = spv.air.getValue(Inst.Matrix.Value, inst.value.?);
     for (value[0..@intFromEnum(inst.cols)]) |elem_inst| {
-        const elem_id = try spirv.emitVector(section, spirv.air.getInst(elem_inst).vector);
+        const elem_id = try spv.emitVector(section, spv.air.getInst(elem_inst).vector);
         elem_value.appendAssumeCapacity(elem_id);
     }
 
-    const id = spirv.allocId();
+    const id = spv.allocId();
     try section.emit(.OpCompositeConstruct, .{
         .id_result_type = type_id,
         .id_result = id,
@@ -763,31 +753,31 @@ fn emitMatrix(spirv: *SpirV, section: *Section, inst: Inst.Matrix) !IdRef {
     return id;
 }
 
-fn emitArray(spirv: *SpirV, section: *Section, inst: Inst.Array) !IdRef {
-    const len = if (inst.len != .none) try spirv.emitExpr(&spirv.global_section, inst.len) else null;
-    const type_id = try spirv.resolve(.{
+fn emitArray(spv: *SpirV, section: *Section, inst: Inst.Array) !IdRef {
+    const len = if (inst.len != .none) try spv.emitExpr(&spv.global_section, inst.len) else null;
+    const type_id = try spv.resolve(.{
         .array_type = .{
-            .elem_type = try spirv.emitType(inst.elem_type),
+            .elem_type = try spv.emitType(inst.elem_type),
             .len = len,
         },
     });
 
     if (inst.value.? == .none) {
-        return spirv.resolve(.{ .null = type_id });
+        return spv.resolve(.{ .null = type_id });
     }
 
-    const value = spirv.air.refToList(inst.value.?);
+    const value = spv.air.refToList(inst.value.?);
 
-    var constituents = std.ArrayList(IdRef).init(spirv.allocator);
+    var constituents = std.ArrayList(IdRef).init(spv.allocator);
     defer constituents.deinit();
     try constituents.ensureTotalCapacityPrecise(value.len);
 
     for (value) |elem_inst| {
-        const elem_id = try spirv.emitExpr(section, elem_inst);
+        const elem_id = try spv.emitExpr(section, elem_inst);
         constituents.appendAssumeCapacity(elem_id);
     }
 
-    const id = spirv.allocId();
+    const id = spv.allocId();
     try section.emit(.OpCompositeConstruct, .{
         .id_result_type = type_id,
         .id_result = id,
@@ -796,41 +786,41 @@ fn emitArray(spirv: *SpirV, section: *Section, inst: Inst.Array) !IdRef {
     return id;
 }
 
-fn extractSwizzle(spirv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) ![]const IdRef {
-    var swizzles = try spirv.allocator.alloc(IdRef, @intFromEnum(inst.size));
+fn extractSwizzle(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) ![]const IdRef {
+    var swizzles = try spv.allocator.alloc(IdRef, @intFromEnum(inst.size));
     for (swizzles, 0..) |*id, i| {
-        id.* = spirv.allocId();
+        id.* = spv.allocId();
         try section.emit(.OpCompositeExtract, .{
-            .id_result_type = try spirv.emitType(inst.type),
+            .id_result_type = try spv.emitType(inst.type),
             .id_result = id.*,
-            .composite = try spirv.emitExpr(section, inst.base),
+            .composite = try spv.emitExpr(section, inst.base),
             .indexes = &.{@intFromEnum(inst.pattern[i])},
         });
     }
     return swizzles;
 }
 
-fn emitSwizzleAccess(spirv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) !IdRef {
+fn emitSwizzleAccess(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) !IdRef {
     if (inst.size == .one) {
-        const id = spirv.allocId();
+        const id = spv.allocId();
         try section.emit(.OpCompositeExtract, .{
-            .id_result_type = try spirv.emitType(inst.type),
+            .id_result_type = try spv.emitType(inst.type),
             .id_result = id,
-            .composite = try spirv.emitExpr(section, inst.base),
+            .composite = try spv.emitExpr(section, inst.base),
             .indexes = &.{@intFromEnum(inst.pattern[0])},
         });
         return id;
     }
 
-    if (spirv.air.isConst(inst.base)) {
-        const swizzles = try spirv.extractSwizzle(&spirv.global_section, inst);
-        defer spirv.allocator.free(swizzles);
+    if (spv.air.resolveConstExpr(inst.base)) |_| {
+        const swizzles = try spv.extractSwizzle(&spv.global_section, inst);
+        defer spv.allocator.free(swizzles);
 
-        return spirv.resolve(.{
+        return spv.resolve(.{
             .vector = .{
-                .type = try spirv.resolve(.{
+                .type = try spv.resolve(.{
                     .vector_type = .{
-                        .elem_type = try spirv.emitType(inst.type),
+                        .elem_type = try spv.emitType(inst.type),
                         .size = @enumFromInt(@intFromEnum(inst.size)),
                     },
                 }),
@@ -839,45 +829,46 @@ fn emitSwizzleAccess(spirv: *SpirV, section: *Section, inst: Inst.SwizzleAccess)
         });
     }
 
-    const id = spirv.allocId();
-    const swizzles = try spirv.extractSwizzle(section, inst);
-    defer spirv.allocator.free(swizzles);
+    const id = spv.allocId();
+    const swizzles = try spv.extractSwizzle(section, inst);
+    defer spv.allocator.free(swizzles);
     try section.emit(.OpCompositeConstruct, .{
-        .id_result_type = try spirv.emitType(inst.type),
+        .id_result_type = try spv.emitType(inst.type),
         .id_result = id,
         .constituents = swizzles,
     });
     return id;
 }
 
-fn emitIndexAccess(spirv: *SpirV, section: *Section, inst: Inst.IndexAccess) !IdRef {
-    const id = spirv.allocId();
-    const type_id = try spirv.emitType(inst.type);
-    const base_id = try spirv.emitDecl(section, null, spirv.air.getInst(inst.base).var_ref) orelse unreachable;
+fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess) !IdRef {
+    const id = spv.allocId();
+    const type_id = try spv.emitType(inst.type);
+    const base_decl = spv.decl_map.get(spv.air.getInst(inst.base).var_ref).?;
+    std.debug.assert(base_decl.is_ptr);
 
-    if (spirv.air.isConst(inst.index)) {
-        const index_value_idx = spirv.air.getInst(inst.index).int.value.?;
-        const index_value = spirv.air.getValue(Inst.Int.Value, index_value_idx).literal;
+    if (spv.air.resolveConstExpr(inst.index)) |_| {
+        const index_value_idx = spv.air.getInst(inst.index).int.value.?;
+        const index_value = spv.air.getValue(Inst.Int.Value, index_value_idx).literal;
         try section.emit(.OpCompositeExtract, .{
             .id_result_type = type_id,
             .id_result = id,
-            .composite = base_id,
+            .composite = base_decl.id,
             .indexes = &[_]u32{@intCast(index_value)},
         });
         return id;
     }
 
-    const access_chain_id = spirv.allocId();
-    const index_id = try spirv.emitExpr(section, inst.index);
+    const access_chain_id = spv.allocId();
+    const index_id = try spv.emitExpr(section, inst.index);
     try section.emit(.OpAccessChain, .{
-        .id_result_type = try spirv.resolve(.{
+        .id_result_type = try spv.resolve(.{
             .ptr_type = .{
                 .elem_type = type_id,
                 .storage_class = .Function,
             },
         }),
         .id_result = access_chain_id,
-        .base = base_id,
+        .base = base_decl.id,
         .indexes = &.{index_id},
     });
 
@@ -962,37 +953,37 @@ const Key = union(enum) {
     };
 };
 
-pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
-    if (spirv.type_value_map.get(key)) |value| {
+pub fn resolve(spv: *SpirV, key: Key) !IdRef {
+    if (spv.type_value_map.get(key)) |value| {
         return value;
     }
 
-    const id = spirv.allocId();
+    const id = spv.allocId();
     switch (key) {
-        .void_type => try spirv.global_section.emit(.OpTypeVoid, .{ .id_result = id }),
-        .bool_type => try spirv.global_section.emit(.OpTypeBool, .{ .id_result = id }),
-        .int_type => |int| try spirv.global_section.emit(.OpTypeInt, .{
+        .void_type => try spv.global_section.emit(.OpTypeVoid, .{ .id_result = id }),
+        .bool_type => try spv.global_section.emit(.OpTypeBool, .{ .id_result = id }),
+        .int_type => |int| try spv.global_section.emit(.OpTypeInt, .{
             .id_result = id,
             .width = int.width(),
             .signedness = @intFromBool(int.signedness()),
         }),
-        .float_type => |float| try spirv.global_section.emit(.OpTypeFloat, .{
+        .float_type => |float| try spv.global_section.emit(.OpTypeFloat, .{
             .id_result = id,
             .width = float.width(),
         }),
-        .vector_type => |vector| try spirv.global_section.emit(.OpTypeVector, .{
+        .vector_type => |vector| try spv.global_section.emit(.OpTypeVector, .{
             .id_result = id,
             .component_type = vector.elem_type,
             .component_count = @intFromEnum(vector.size),
         }),
-        .matrix_type => |matrix| try spirv.global_section.emit(.OpTypeMatrix, .{
+        .matrix_type => |matrix| try spv.global_section.emit(.OpTypeMatrix, .{
             .id_result = id,
             .column_type = matrix.elem_type,
             .column_count = @intFromEnum(matrix.cols),
         }),
         .array_type => |array| {
             if (array.len) |len| {
-                try spirv.global_section.emit(.OpTypeArray, .{
+                try spv.global_section.emit(.OpTypeArray, .{
                     .id_result = id,
                     .element_type = array.elem_type,
                     .length = len,
@@ -1000,28 +991,28 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
             } else unreachable; // TODO
         },
         .ptr_type => |ptr_type| {
-            try spirv.global_section.emit(.OpTypePointer, .{
+            try spv.global_section.emit(.OpTypePointer, .{
                 .id_result = id,
                 .storage_class = ptr_type.storage_class,
                 .type = ptr_type.elem_type,
             });
         },
         .fn_type => |fn_type| {
-            try spirv.global_section.emit(.OpTypeFunction, .{
+            try spv.global_section.emit(.OpTypeFunction, .{
                 .id_result = id,
                 .return_type = fn_type.return_type,
                 .id_ref_2 = fn_type.params_type,
             });
         },
         .null => |nil| {
-            try spirv.global_section.emit(.OpConstantNull, .{ .id_result_type = nil, .id_result = id });
+            try spv.global_section.emit(.OpConstantNull, .{ .id_result_type = nil, .id_result = id });
         },
         .bool => |val| {
-            const type_id = try spirv.resolve(.bool_type);
+            const type_id = try spv.resolve(.bool_type);
             if (val) {
-                try spirv.global_section.emit(.OpConstantTrue, .{ .id_result_type = type_id, .id_result = id });
+                try spv.global_section.emit(.OpConstantTrue, .{ .id_result_type = type_id, .id_result = id });
             } else {
-                try spirv.global_section.emit(.OpConstantFalse, .{ .id_result_type = type_id, .id_result = id });
+                try spv.global_section.emit(.OpConstantFalse, .{ .id_result_type = type_id, .id_result = id });
             }
         },
         .int => |int| {
@@ -1029,8 +1020,8 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
                 .u32 => .{ .uint32 = @intCast(int.value) },
                 .i32 => .{ .int32 = @intCast(int.value) },
             };
-            try spirv.global_section.emit(.OpConstant, .{
-                .id_result_type = try spirv.resolve(.{ .int_type = int.type }),
+            try spv.global_section.emit(.OpConstant, .{
+                .id_result_type = try spv.resolve(.{ .int_type = int.type }),
                 .id_result = id,
                 .value = value,
             });
@@ -1040,14 +1031,14 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
                 .f16 => .{ .uint32 = @as(u16, @bitCast(@as(f16, @floatCast(@as(f32, @bitCast(float.value)))))) },
                 .f32 => .{ .float32 = @bitCast(float.value) },
             };
-            try spirv.global_section.emit(.OpConstant, .{
-                .id_result_type = try spirv.resolve(.{ .float_type = float.type }),
+            try spv.global_section.emit(.OpConstant, .{
+                .id_result_type = try spv.resolve(.{ .float_type = float.type }),
                 .id_result = id,
                 .value = value,
             });
         },
         .vector => |vector| {
-            try spirv.global_section.emit(.OpConstantComposite, .{
+            try spv.global_section.emit(.OpConstantComposite, .{
                 .id_result_type = vector.type,
                 .id_result = id,
                 .constituents = vector.value,
@@ -1055,13 +1046,13 @@ pub fn resolve(spirv: *SpirV, key: Key) !IdRef {
         },
     }
 
-    try spirv.type_value_map.put(spirv.allocator, key, id);
+    try spv.type_value_map.put(spv.allocator, key, id);
     return id;
 }
 
-fn allocId(spirv: *SpirV) IdResult {
-    defer spirv.next_result_id += 1;
-    return .{ .id = spirv.next_result_id };
+fn allocId(spv: *SpirV) IdResult {
+    defer spv.next_result_id += 1;
+    return .{ .id = spv.next_result_id };
 }
 
 fn builtInFromAirBuiltin(builtin: Air.Inst.Builtin) spec.BuiltIn {

@@ -79,52 +79,285 @@ pub fn getValue(self: Air, comptime T: type, value: ValueIndex) T {
     return std.mem.bytesAsValue(T, self.values[@intFromEnum(value)..][0..@sizeOf(T)]).*;
 }
 
-pub fn isConst(self: Air, value: InstIndex) bool {
-    return switch (self.getInst(value)) {
-        .bool => |boolean| boolean.value.? == .literal,
-        .int => |int| self.getValue(Inst.Int.Value, int.value.?) == .literal,
-        .float => |float| self.getValue(Inst.Float.Value, float.value.?) == .literal,
+pub const ConstExpr = union(enum) {
+    guaranteed,
+    bool: bool,
+    int: i33,
+    float: f32,
+
+    fn negate(unary: *ConstExpr) void {
+        switch (unary.*) {
+            .int => unary.int = -unary.int,
+            .float => unary.float = -unary.float,
+            else => unreachable,
+        }
+    }
+
+    fn not(unary: *ConstExpr) void {
+        switch (unary.*) {
+            .bool => unary.bool = !unary.bool,
+            else => unreachable,
+        }
+    }
+
+    fn mul(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int *= rhs.int,
+            .float => lhs.float *= rhs.float,
+            else => unreachable,
+        }
+    }
+
+    fn div(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int = @divExact(lhs.int, rhs.int),
+            .float => lhs.float /= rhs.float,
+            else => unreachable,
+        }
+    }
+
+    fn mod(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int = @rem(lhs.int, rhs.int),
+            .float => lhs.float = @rem(lhs.float, rhs.float),
+            else => unreachable,
+        }
+    }
+
+    fn add(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int += rhs.int,
+            .float => lhs.float += rhs.float,
+            else => unreachable,
+        }
+    }
+
+    fn sub(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int -= rhs.int,
+            .float => lhs.float -= rhs.float,
+            else => unreachable,
+        }
+    }
+
+    fn shiftLeft(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int <<= @intCast(rhs.int),
+            else => unreachable,
+        }
+    }
+
+    fn shiftRight(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int >>= @intCast(rhs.int),
+            else => unreachable,
+        }
+    }
+
+    fn bitwiseAnd(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int &= rhs.int,
+            else => unreachable,
+        }
+    }
+
+    fn bitwiseOr(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int |= rhs.int,
+            else => unreachable,
+        }
+    }
+
+    fn bitwiseXor(lhs: *ConstExpr, rhs: ConstExpr) void {
+        switch (lhs.*) {
+            .int => lhs.int ^= rhs.int,
+            else => unreachable,
+        }
+    }
+
+    fn equal(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        switch (lhs) {
+            .bool => return .{ .bool = lhs.bool == rhs.bool },
+            .int => return .{ .bool = lhs.int == rhs.int },
+            .float => return .{ .bool = lhs.float == rhs.float },
+            .guaranteed => unreachable,
+        }
+    }
+
+    fn notEqual(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return switch (lhs) {
+            .int => .{ .bool = lhs.int != rhs.int },
+            .float => .{ .bool = lhs.float != rhs.float },
+            else => unreachable,
+        };
+    }
+
+    fn lessThan(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return switch (lhs) {
+            .int => .{ .bool = lhs.int < rhs.int },
+            .float => .{ .bool = lhs.float < rhs.float },
+            else => unreachable,
+        };
+    }
+
+    fn greaterThan(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return switch (lhs) {
+            .int => .{ .bool = lhs.int > rhs.int },
+            .float => .{ .bool = lhs.float > rhs.float },
+            else => unreachable,
+        };
+    }
+
+    fn lessThanEqual(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return switch (lhs) {
+            .int => .{ .bool = lhs.int <= rhs.int },
+            .float => .{ .bool = lhs.float <= rhs.float },
+            else => unreachable,
+        };
+    }
+
+    fn greaterThanEqual(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return switch (lhs) {
+            .int => .{ .bool = lhs.int >= rhs.int },
+            .float => .{ .bool = lhs.float >= rhs.float },
+            else => unreachable,
+        };
+    }
+
+    fn logicalAnd(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return .{ .bool = lhs.bool and rhs.bool };
+    }
+
+    fn logicalOr(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return .{ .bool = lhs.bool or rhs.bool };
+    }
+};
+
+pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
+    const inst = air.getInst(inst_idx);
+    switch (inst) {
+        .bool => |data| {
+            if (data.value) |value| {
+                switch (value) {
+                    .literal => |literal| return .{ .bool = literal },
+                    .cast => return null,
+                }
+            } else {
+                return null;
+            }
+        },
+        .int => |data| {
+            if (data.value) |value| {
+                switch (air.getValue(Inst.Int.Value, value)) {
+                    .literal => |literal| return .{ .int = literal },
+                    .cast => return null,
+                }
+            } else {
+                return null;
+            }
+        },
+        .float => |data| {
+            if (data.value) |value| {
+                switch (air.getValue(Inst.Float.Value, value)) {
+                    .literal => |literal| return .{ .float = literal },
+                    .cast => return null,
+                }
+            } else {
+                return null;
+            }
+        },
         .vector => |vec| {
-            var is_const = true;
-            for (self.getValue(Inst.Vector.Value, vec.value.?)[0..@intFromEnum(vec.size)]) |elem_val| {
-                if (!self.isConst(elem_val)) {
-                    is_const = false;
+            if (vec.value.? == .none) return .guaranteed;
+            for (air.getValue(Inst.Vector.Value, vec.value.?)[0..@intFromEnum(vec.size)]) |elem_val| {
+                if (air.resolveConstExpr(elem_val) == null) {
+                    return null;
                 }
             }
-            return is_const;
+            return .guaranteed;
         },
         .matrix => |mat| {
-            var is_const = true;
-            for (self.getValue(Inst.Matrix.Value, mat.value.?)[0..@intFromEnum(mat.cols)]) |elem_val| {
-                if (!self.isConst(elem_val)) {
-                    is_const = false;
+            if (mat.value.? == .none) return .guaranteed;
+            for (air.getValue(Inst.Matrix.Value, mat.value.?)[0..@intFromEnum(mat.cols)]) |elem_val| {
+                if (air.resolveConstExpr(elem_val) == null) {
+                    return null;
                 }
             }
-            return is_const;
+            return .guaranteed;
         },
-        inline .field_access, .swizzle_access, .index_access => |access| self.isConst(access.base),
-        else => isMutable(self.instructions, value),
-    };
-}
-
-pub fn isMutable(instructions: []const Inst, index: InstIndex) bool {
-    var idx = index;
-    while (true) switch (instructions[@intFromEnum(idx)]) {
-        .deref => |deref| idx = deref,
-        .var_ref => |var_ref| idx = var_ref,
-        inline .field_access, .swizzle_access, .index_access => |access| idx = access.base,
-        .global_var, .@"var" => return true,
-        .global_const,
-        .@"const",
-        .let,
-        .override,
-        .fn_param,
-        .vector,
-        .matrix,
-        .array,
-        => return false,
-        else => unreachable,
-    };
+        .array => |arr| {
+            for (air.refToList(arr.value.?)) |elem_val| {
+                if (air.resolveConstExpr(elem_val) == null) {
+                    return null;
+                }
+            }
+            return .guaranteed;
+        },
+        .struct_construct => |sc| {
+            for (air.refToList(sc.members)) |elem_val| {
+                if (air.resolveConstExpr(elem_val) == null) {
+                    return null;
+                }
+            }
+            return .guaranteed;
+        },
+        .negate, .not => |un| {
+            var value = air.resolveConstExpr(un) orelse return null;
+            switch (inst) {
+                .negate => value.negate(),
+                .not => value.not(),
+                else => unreachable,
+            }
+            return value;
+        },
+        .mul,
+        .div,
+        .mod,
+        .add,
+        .sub,
+        .shift_left,
+        .shift_right,
+        .@"and",
+        .@"or",
+        .xor,
+        .equal,
+        .not_equal,
+        .less_than,
+        .less_than_equal,
+        .greater_than,
+        .greater_than_equal,
+        .logical_and,
+        .logical_or,
+        => |bin| {
+            var lhs = air.resolveConstExpr(bin.lhs) orelse return null;
+            const rhs = air.resolveConstExpr(bin.rhs) orelse return null;
+            switch (inst) {
+                .mul => lhs.mul(rhs),
+                .div => lhs.div(rhs),
+                .mod => lhs.mod(rhs),
+                .add => lhs.add(rhs),
+                .sub => lhs.sub(rhs),
+                .shift_left => lhs.shiftLeft(rhs),
+                .shift_right => lhs.shiftRight(rhs),
+                .@"and" => lhs.bitwiseAnd(rhs),
+                .@"or" => lhs.bitwiseOr(rhs),
+                .xor => lhs.bitwiseXor(rhs),
+                .equal => return lhs.equal(rhs),
+                .not_equal => return lhs.notEqual(rhs),
+                .less_than => return lhs.lessThan(rhs),
+                .greater_than => return lhs.greaterThan(rhs),
+                .less_than_equal => return lhs.lessThanEqual(rhs),
+                .greater_than_equal => return lhs.greaterThanEqual(rhs),
+                .logical_and => return lhs.logicalAnd(rhs),
+                .logical_or => return lhs.logicalOr(rhs),
+                else => unreachable,
+            }
+            return lhs;
+        },
+        .var_ref => |var_ref| return air.resolveConstExpr(var_ref),
+        .@"const" => |@"const"| return air.resolveConstExpr(@"const".expr).?,
+        inline .index_access, .field_access, .swizzle_access => |access| return air.resolveConstExpr(access.base),
+        else => return null,
+    }
 }
 
 pub const InstIndex = enum(u32) { none = std.math.maxInt(u32), _ };
@@ -133,9 +366,9 @@ pub const ValueIndex = enum(u32) { none = std.math.maxInt(u32), _ };
 pub const StringIndex = enum(u32) { _ };
 
 pub const Inst = union(enum) {
-    global_var: GlobalVar,
-    global_const: Const,
-    override: Override,
+    @"var": Var,
+    @"const": Const,
+    var_ref: InstIndex,
 
     @"fn": Fn,
     fn_param: FnParam,
@@ -207,9 +440,6 @@ pub const Inst = union(enum) {
     assign_phony: InstIndex,
     increase: InstIndex,
     decrease: InstIndex,
-    @"var": Var,
-    @"const": Const,
-    let: Const,
     discard,
     @"break",
     @"continue",
@@ -272,38 +502,21 @@ pub const Inst = union(enum) {
     builtin_fwidth_coarse: InstIndex,
     builtin_fwidth_fine: InstIndex,
 
-    var_ref: InstIndex,
-    struct_ref: InstIndex,
-
-    pub const GlobalVar = struct {
-        name: StringIndex,
-        type: InstIndex,
-        addr_space: ?PointerType.AddressSpace,
-        access_mode: ?PointerType.AccessMode,
-        binding: InstIndex,
-        group: InstIndex,
-        expr: InstIndex,
-    };
-
     pub const Var = struct {
         name: StringIndex,
         type: InstIndex,
+        expr: InstIndex, // TODO: rename to `init`
         addr_space: PointerType.AddressSpace,
-        access_mode: ?PointerType.AccessMode,
-        expr: InstIndex,
-    };
-
-    pub const Override = struct {
-        name: StringIndex,
-        type: InstIndex,
-        id: InstIndex,
-        expr: InstIndex,
+        access_mode: PointerType.AccessMode,
+        binding: InstIndex = .none,
+        group: InstIndex = .none,
+        id: InstIndex = .none,
     };
 
     pub const Const = struct {
         name: StringIndex,
         type: InstIndex,
-        expr: InstIndex,
+        expr: InstIndex, // TODO: rename to `init`
     };
 
     pub const Fn = struct {
@@ -472,7 +685,7 @@ pub const Inst = union(enum) {
     pub const PointerType = struct {
         elem_type: InstIndex,
         addr_space: AddressSpace,
-        access_mode: ?AccessMode,
+        access_mode: AccessMode,
 
         pub const AddressSpace = enum {
             function,
