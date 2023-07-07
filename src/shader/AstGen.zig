@@ -120,7 +120,7 @@ fn genGlobalDecl(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const decl = switch (astgen.tree.nodeTag(node)) {
         .global_var => astgen.genGlobalVar(scope, node),
         .override => astgen.genOverride(scope, node),
-        .@"const" => astgen.genConst(scope, node, true),
+        .@"const" => astgen.genConst(scope, node),
         .@"struct" => astgen.genStruct(scope, node),
         .@"fn" => astgen.genFn(scope, node),
         .type_alias => astgen.genTypeAlias(scope, node),
@@ -161,24 +161,31 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
-    var addr_space: ?Inst.PointerType.AddressSpace = null;
-    if (extra.addr_space != .none) {
-        const addr_space_loc = astgen.tree.tokenLoc(extra.addr_space);
-        const ast_addr_space = stringToEnum(Ast.AddressSpace, addr_space_loc.slice(astgen.tree.source)).?;
-        addr_space = switch (ast_addr_space) {
-            .function => .function,
-            .private => .private,
-            .workgroup => .workgroup,
-            .uniform => .uniform,
-            .storage => .storage,
-        };
+    if (extra.addr_space == .none) {
+        try astgen.errors.add(
+            astgen.tree.nodeLoc(node),
+            "address space not specified",
+            .{},
+            null,
+        );
+        return error.AnalysisFail;
     }
+
+    const addr_space_loc = astgen.tree.tokenLoc(extra.addr_space);
+    const ast_addr_space = stringToEnum(Ast.AddressSpace, addr_space_loc.slice(astgen.tree.source)).?;
+    const addr_space: Inst.PointerType.AddressSpace = switch (ast_addr_space) {
+        .function => .function,
+        .private => .private,
+        .workgroup => .workgroup,
+        .uniform => .uniform,
+        .storage => .storage,
+    };
 
     if (addr_space == .uniform or addr_space == .storage) {
         is_resource = true;
     }
 
-    var access_mode: ?Inst.PointerType.AccessMode = null;
+    var access_mode = Inst.PointerType.AccessMode.read_write;
     if (extra.access_mode != .none) {
         const access_mode_loc = astgen.tree.tokenLoc(extra.access_mode);
         const ast_access_mode = stringToEnum(Ast.AccessMode, access_mode_loc.slice(astgen.tree.source)).?;
@@ -236,7 +243,7 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
     return astgen.addInst(.{
-        .global_var = .{
+        .@"var" = .{
             .name = name,
             .type = var_type,
             .addr_space = addr_space,
@@ -283,11 +290,13 @@ fn genOverride(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
     return astgen.addInst(.{
-        .override = .{
+        .@"var" = .{
             .name = name,
             .type = override_type,
-            .id = id,
             .expr = expr,
+            .addr_space = .private,
+            .access_mode = .read,
+            .id = id,
         },
     });
 }
@@ -323,7 +332,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
         switch (member_type_inst) {
             .array,
             .atomic_type,
-            .struct_ref,
+            .@"struct",
             => {},
             inline .bool, .int, .float, .vector, .matrix => |data| {
                 std.debug.assert(data.value == null);
@@ -494,7 +503,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
         stage.compute = Inst.Fn.Stage.WorkgroupSize{
             .x = blk: {
                 const x = try astgen.genExpr(root_scope, workgroup_size_data.x);
-                if (try astgen.resolveConstExpr(x) == null) {
+                if (astgen.resolveConstExpr(x) == null) {
                     try astgen.errors.add(
                         astgen.tree.nodeLoc(workgroup_size_data.x),
                         "expected const-expression",
@@ -509,7 +518,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
                 if (workgroup_size_data.y == .none) break :blk .none;
 
                 const y = try astgen.genExpr(root_scope, workgroup_size_data.y);
-                if (try astgen.resolveConstExpr(y) == null) {
+                if (astgen.resolveConstExpr(y) == null) {
                     try astgen.errors.add(
                         astgen.tree.nodeLoc(workgroup_size_data.y),
                         "expected const-expression",
@@ -524,7 +533,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
                 if (workgroup_size_data.z == .none) break :blk .none;
 
                 const z = try astgen.genExpr(root_scope, workgroup_size_data.z);
-                if (try astgen.resolveConstExpr(z) == null) {
+                if (astgen.resolveConstExpr(z) == null) {
                     try astgen.errors.add(
                         astgen.tree.nodeLoc(workgroup_size_data.z),
                         "expected const-expression",
@@ -674,7 +683,7 @@ fn attrBinding(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
     const binding = try astgen.genExpr(scope, node_lhs);
 
-    if (try astgen.resolveConstExpr(binding) == null) {
+    if (astgen.resolveConstExpr(binding) == null) {
         try astgen.errors.add(
             node_lhs_loc,
             "expected const-expression, found '{s}'",
@@ -713,7 +722,7 @@ fn attrId(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
     const id = try astgen.genExpr(scope, node_lhs);
 
-    if (try astgen.resolveConstExpr(id) == null) {
+    if (astgen.resolveConstExpr(id) == null) {
         try astgen.errors.add(
             node_lhs_loc,
             "expected const-expression, found '{s}'",
@@ -752,7 +761,7 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
     const group = try astgen.genExpr(scope, node_lhs);
 
-    if (try astgen.resolveConstExpr(group) == null) {
+    if (astgen.resolveConstExpr(group) == null) {
         try astgen.errors.add(
             node_lhs_loc,
             "expected const-expression, found '{s}'",
@@ -788,7 +797,7 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
 fn attrAlign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u29 {
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
-    if (try astgen.resolveConstExpr(expr)) |expr_res| {
+    if (astgen.resolveConstExpr(expr)) |expr_res| {
         if (expr_res == .int) {
             return @intCast(expr_res.int);
         }
@@ -805,7 +814,7 @@ fn attrAlign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u29 {
 
 fn attrSize(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
-    if (try astgen.resolveConstExpr(expr)) |expr_res| {
+    if (astgen.resolveConstExpr(expr)) |expr_res| {
         if (expr_res == .int) {
             return @intCast(expr_res.int);
         }
@@ -919,7 +928,7 @@ fn genStatement(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             break :blk decl;
         },
         .@"const" => blk: {
-            const decl = try astgen.genConst(scope, node, false);
+            const decl = try astgen.genConst(scope, node);
             scope.decls.putAssumeCapacity(node, decl);
             break :blk decl;
         },
@@ -1046,7 +1055,7 @@ fn genFor(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     try astgen.scanDecls(for_scope, &.{extra.init});
     const init = switch (astgen.tree.nodeTag(extra.init)) {
         .@"var" => try astgen.genVar(for_scope, extra.init),
-        .@"const" => try astgen.genConst(for_scope, extra.init, false),
+        .@"const" => try astgen.genConst(for_scope, extra.init),
         .let => try astgen.genLet(for_scope, extra.init),
         else => unreachable,
     };
@@ -1149,7 +1158,7 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
     const lhs_type = try astgen.resolve(lhs);
     const rhs_type = try astgen.resolve(rhs);
 
-    if (!Air.isMutable(astgen.instructions.keys(), lhs)) {
+    if (!try astgen.isMutable(lhs)) {
         try astgen.errors.add(astgen.tree.nodeLoc(node), "cannot assign to constant", .{}, null);
         return error.AnalysisFail;
     }
@@ -1173,6 +1182,17 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
         .angle_bracket_angle_bracket_right_equal => .{ .assign_shr = .{ .lhs = lhs, .rhs = rhs } },
         else => unreachable,
     });
+}
+
+pub fn isMutable(astgen: *AstGen, index: InstIndex) !bool {
+    var idx = index;
+    while (true) switch (astgen.getInst(idx)) {
+        .deref => |var_ref| return astgen.getInst(try astgen.resolve(var_ref)).ptr_type.access_mode != .read,
+        .var_ref => |var_ref| idx = var_ref,
+        inline .field_access, .swizzle_access, .index_access => |access| idx = access.base,
+        .@"var" => |@"var"| return @"var".access_mode != .read,
+        else => return false,
+    };
 }
 
 fn genPhonyAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -1242,7 +1262,7 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         is_resource = true;
     }
 
-    var access_mode: ?Inst.PointerType.AccessMode = null;
+    var access_mode = Inst.PointerType.AccessMode.read_write;
     if (extra.access_mode != .none) {
         const access_mode_loc = astgen.tree.tokenLoc(extra.access_mode);
         const ast_access_mode = stringToEnum(Ast.AccessMode, access_mode_loc.slice(astgen.tree.source)).?;
@@ -1270,7 +1290,7 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     });
 }
 
-fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex, global: bool) !InstIndex {
+fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_rhs = astgen.tree.nodeRHS(node);
     const name_loc = astgen.tree.declNameLoc(node).?;
@@ -1281,7 +1301,7 @@ fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex, global: bool) !Inst
     }
 
     const expr = try astgen.genExpr(scope, node_rhs);
-    if (try astgen.resolveConstExpr(expr) == null) {
+    if (astgen.resolveConstExpr(expr) == null) {
         try astgen.errors.add(
             name_loc,
             "value of '{s}' must be a const-expression",
@@ -1293,23 +1313,13 @@ fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex, global: bool) !Inst
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
 
-    if (global) {
-        return astgen.addInst(.{
-            .global_const = .{
-                .name = name,
-                .type = var_type,
-                .expr = expr,
-            },
-        });
-    } else {
-        return astgen.addInst(.{
-            .@"const" = .{
-                .name = name,
-                .type = var_type,
-                .expr = expr,
-            },
-        });
-    }
+    return astgen.addInst(.{
+        .@"const" = .{
+            .name = name,
+            .type = var_type,
+            .expr = expr,
+        },
+    });
 }
 
 fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -1325,10 +1335,12 @@ fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const expr = try astgen.genExpr(scope, node_rhs);
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
     return astgen.addInst(.{
-        .let = .{
+        .@"var" = .{
             .name = name,
             .type = var_type,
             .expr = expr,
+            .addr_space = .function,
+            .access_mode = .read,
         },
     });
 }
@@ -2794,8 +2806,8 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             });
             return inst;
         },
-        .struct_ref => |base_struct| {
-            const struct_members = astgen.getInst(base_struct).@"struct".members;
+        .@"struct" => |@"struct"| {
+            const struct_members = @"struct".members;
             for (astgen.refToList(struct_members)) |member| {
                 const member_data = astgen.getInst(member).struct_member;
                 if (std.mem.eql(u8, field_name, astgen.getStr(member_data.name))) {
@@ -2814,7 +2826,7 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 astgen.tree.nodeLoc(node),
                 "struct '{s}' has no member named '{s}'",
                 .{
-                    astgen.getStr(astgen.getInst(base_struct).@"struct".name),
+                    astgen.getStr(@"struct".name),
                     field_name,
                 },
                 null,
@@ -2867,21 +2879,17 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
                 .multisampled_texture_type,
                 .storage_texture_type,
                 .depth_texture_type,
-                .struct_ref,
+                .@"struct",
                 => return decl,
-                else => {},
-            }
-
-            if (astgen.getInst(decl) == .@"struct") {
-                return astgen.addInst(.{ .struct_ref = decl });
-            } else {
-                try astgen.errors.add(
-                    node_loc,
-                    "'{s}' is not a type",
-                    .{node_loc.slice(astgen.tree.source)},
-                    null,
-                );
-                return error.AnalysisFail;
+                else => {
+                    try astgen.errors.add(
+                        node_loc,
+                        "'{s}' is not a type",
+                        .{node_loc.slice(astgen.tree.source)},
+                        null,
+                    );
+                    return error.AnalysisFail;
+                },
             }
         },
         else => unreachable,
@@ -3034,16 +3042,13 @@ fn genPtrType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 .storage => .storage,
             };
 
-            var access_mode: ?Inst.PointerType.AccessMode = null;
-            if (extra.access_mode != .none) {
-                const access_mode_loc = astgen.tree.tokenLoc(extra.access_mode);
-                const ast_access_mode = stringToEnum(Ast.AccessMode, access_mode_loc.slice(astgen.tree.source)).?;
-                access_mode = switch (ast_access_mode) {
-                    .read => .read,
-                    .write => .write,
-                    .read_write => .read_write,
-                };
-            }
+            const access_mode_loc = astgen.tree.tokenLoc(extra.access_mode);
+            const ast_access_mode = stringToEnum(Ast.AccessMode, access_mode_loc.slice(astgen.tree.source)).?;
+            const access_mode: Inst.PointerType.AccessMode = switch (ast_access_mode) {
+                .read => .read,
+                .write => .write,
+                .read_write => .read_write,
+            };
 
             return astgen.addInst(.{
                 .ptr_type = .{
@@ -3073,7 +3078,7 @@ fn genArray(astgen: *AstGen, scope: *Scope, node: NodeIndex, args: ?RefIndex) !I
         switch (astgen.getInst(elem_type)) {
             .array,
             .atomic_type,
-            .struct_ref,
+            .@"struct",
             .bool,
             .int,
             .float,
@@ -3124,7 +3129,7 @@ fn genArray(astgen: *AstGen, scope: *Scope, node: NodeIndex, args: ?RefIndex) !I
     var len = InstIndex.none;
     if (len_node != .none) {
         len = try astgen.genExpr(scope, len_node);
-        if (try astgen.resolveConstExpr(len) == null) {
+        if (astgen.resolveConstExpr(len) == null) {
             try astgen.errors.add(
                 astgen.tree.nodeLoc(len_node),
                 "expected const-expression",
@@ -3476,7 +3481,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
                 return index_access.type;
             },
 
-            inline .global_var, .global_const, .override, .@"var", .@"const", .let => |decl| {
+            inline .@"var", .@"const" => |decl| {
                 std.debug.assert(index != idx);
 
                 const decl_type = decl.type;
@@ -3491,8 +3496,6 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             },
 
             .fn_param => |param| return param.type,
-
-            .struct_ref => |struct_ref| return struct_ref,
 
             .atomic_type,
             .ptr_type,
@@ -3542,96 +3545,19 @@ fn selectType(cands: []const InstIndex) InstIndex {
     return cands[0]; // TODO
 }
 
-fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) !?Value {
-    const inst = astgen.getInst(inst_idx);
-    switch (inst) {
-        .bool => |data| {
-            if (data.value) |value| {
-                switch (value) {
-                    .literal => |literal| return .{ .bool = literal },
-                    .cast => return null,
-                }
-            } else {
-                return null;
-            }
-        },
-        .int => |data| {
-            if (data.value) |value| {
-                switch (astgen.getValue(Inst.Int.Value, value)) {
-                    .literal => |literal| return .{ .int = literal },
-                    .cast => return null,
-                }
-            } else {
-                return null;
-            }
-        },
-        .float => |data| {
-            if (data.value) |value| {
-                switch (astgen.getValue(Inst.Float.Value, value)) {
-                    .literal => |literal| return .{ .float = literal },
-                    .cast => return null,
-                }
-            } else {
-                return null;
-            }
-        },
-        .negate, .not => |un| {
-            const value = try astgen.resolveConstExpr(un) orelse return null;
-            return switch (inst) {
-                .negate => value.negate(),
-                .not => value.not(),
-                else => unreachable,
-            };
-        },
-        .mul,
-        .div,
-        .mod,
-        .add,
-        .sub,
-        .shift_left,
-        .shift_right,
-        .@"and",
-        .@"or",
-        .xor,
-        .equal,
-        .not_equal,
-        .less_than,
-        .less_than_equal,
-        .greater_than,
-        .greater_than_equal,
-        .logical_and,
-        .logical_or,
-        => |bin| {
-            const lhs = try astgen.resolveConstExpr(bin.lhs) orelse return null;
-            const rhs = try astgen.resolveConstExpr(bin.rhs) orelse return null;
-            return switch (inst) {
-                .mul => lhs.mul(rhs),
-                .div => lhs.div(rhs),
-                .mod => lhs.mod(rhs),
-                .add => lhs.add(rhs),
-                .sub => lhs.sub(rhs),
-                .shift_left => lhs.shiftLeft(rhs),
-                .shift_right => lhs.shiftRight(rhs),
-                .@"and" => lhs.bitwiseAnd(rhs),
-                .@"or" => lhs.bitwiseOr(rhs),
-                .xor => lhs.bitwiseXor(rhs),
-                .equal => lhs.equal(rhs),
-                .not_equal => lhs.notEqual(rhs),
-                .less_than => lhs.lessThan(rhs),
-                .greater_than => lhs.greaterThan(rhs),
-                .less_than_equal => lhs.lessThanEqual(rhs),
-                .greater_than_equal => lhs.greaterThanEqual(rhs),
-                .logical_and => lhs.logicalAnd(rhs),
-                .logical_or => lhs.logicalOr(rhs),
-                else => unreachable,
-            };
-        },
-        .var_ref => {
-            const res = try astgen.resolve(inst_idx);
-            return try astgen.resolveConstExpr(res);
-        },
-        else => return null,
-    }
+fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) ?Air.ConstExpr {
+    return Air.resolveConstExpr(.{
+        .globals_index = undefined,
+        .compute_stage = undefined,
+        .vertex_stage = undefined,
+        .fragment_stage = undefined,
+        .strings = undefined,
+        .errors = undefined,
+        .extensions = undefined,
+        .instructions = astgen.instructions.keys(),
+        .refs = astgen.refs.items,
+        .values = astgen.values.items,
+    }, inst_idx);
 }
 
 fn eql(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
@@ -3717,143 +3643,6 @@ fn failArgCountMismatch(
     );
     return error.AnalysisFail;
 }
-
-const Value = union(enum) {
-    int: i33,
-    float: f32,
-    bool: bool,
-
-    fn negate(unary: Value) Value {
-        return switch (unary) {
-            .int => .{ .int = -unary.int },
-            .float => .{ .float = -unary.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn not(unary: Value) Value {
-        return .{ .bool = !unary.bool };
-    }
-
-    fn mul(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .int = lhs.int * rhs.int },
-            .float => .{ .float = lhs.float * rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn div(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .int = @divExact(lhs.int, rhs.int) },
-            .float => .{ .float = lhs.float / rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn mod(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .int = @rem(lhs.int, rhs.int) },
-            .float => .{ .float = @rem(lhs.float, rhs.float) },
-            .bool => unreachable,
-        };
-    }
-
-    fn add(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .int = lhs.int + rhs.int },
-            .float => .{ .float = lhs.float + rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn sub(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .int = lhs.int - rhs.int },
-            .float => .{ .float = lhs.float - rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn shiftLeft(lhs: Value, rhs: Value) Value {
-        return .{ .int = lhs.int << @intCast(rhs.int) };
-    }
-
-    fn shiftRight(lhs: Value, rhs: Value) Value {
-        return .{ .int = lhs.int >> @intCast(rhs.int) };
-    }
-
-    fn bitwiseAnd(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .int = lhs.int & rhs.int },
-            .float, .bool => unreachable,
-        };
-    }
-
-    fn bitwiseOr(lhs: Value, rhs: Value) Value {
-        return .{ .int = lhs.int | rhs.int };
-    }
-
-    fn bitwiseXor(lhs: Value, rhs: Value) Value {
-        return .{ .int = lhs.int ^ rhs.int };
-    }
-
-    fn equal(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .bool = lhs.int == rhs.int },
-            .float => .{ .bool = lhs.float == rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn notEqual(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .bool = lhs.int != rhs.int },
-            .float => .{ .bool = lhs.float != rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn lessThan(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .bool = lhs.int < rhs.int },
-            .float => .{ .bool = lhs.float < rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn greaterThan(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .bool = lhs.int > rhs.int },
-            .float => .{ .bool = lhs.float > rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn lessThanEqual(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .bool = lhs.int <= rhs.int },
-            .float => .{ .bool = lhs.float <= rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn greaterThanEqual(lhs: Value, rhs: Value) Value {
-        return switch (lhs) {
-            .int => .{ .bool = lhs.int >= rhs.int },
-            .float => .{ .bool = lhs.float >= rhs.float },
-            .bool => unreachable,
-        };
-    }
-
-    fn logicalAnd(lhs: Value, rhs: Value) Value {
-        return .{ .bool = lhs.bool and rhs.bool };
-    }
-
-    fn logicalOr(lhs: Value, rhs: Value) Value {
-        return .{ .bool = lhs.bool or rhs.bool };
-    }
-};
 
 const BuiltinFn = enum {
     all,

@@ -1,6 +1,6 @@
 const std = @import("std");
 const Air = @import("Air.zig");
-const genSpirv = @import("codegen/spirv.zig").gen;
+const genSpirv = @import("codegen/SpirV.zig").gen;
 
 pub const Language = enum {
     spirv,
