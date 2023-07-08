@@ -8,6 +8,7 @@ pub const GPUInterface = dusk.Interface;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
     var allocator = gpa.allocator();
 
     gpu.Impl.init(allocator);

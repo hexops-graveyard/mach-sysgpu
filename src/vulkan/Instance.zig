@@ -17,6 +17,8 @@ const Dispatch = vk.InstanceWrapper(.{
     .getPhysicalDeviceProperties = true,
     .getPhysicalDeviceFeatures = true,
     .getPhysicalDeviceQueueFamilyProperties = true,
+    .getPhysicalDeviceSurfaceCapabilitiesKHR = true,
+    .getPhysicalDeviceSurfaceFormatsKHR = true,
 });
 
 const Instance = @This();
@@ -27,8 +29,8 @@ base: Base,
 dispatch: Dispatch,
 instance: vk.Instance,
 
-pub fn init(descriptor: *const gpu.Instance.Descriptor, allocator: std.mem.Allocator) !Instance {
-    _ = descriptor;
+pub fn init(desc: *const gpu.Instance.Descriptor, allocator: std.mem.Allocator) !Instance {
+    _ = desc;
 
     const base = try Base.init(allocator);
 
@@ -68,8 +70,8 @@ pub fn deinit(instance: *Instance) void {
     instance.base.deinit();
 }
 
-pub fn createSurface(instance: *Instance, descriptor: *const gpu.Surface.Descriptor) !Surface {
-    return Surface.init(instance, descriptor);
+pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !Surface {
+    return Surface.init(instance, desc);
 }
 
 fn getLayers(base: Base) ![]const [*:0]const u8 {
