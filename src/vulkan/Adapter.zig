@@ -15,7 +15,7 @@ props: vk.PhysicalDeviceProperties,
 queue_family: u32,
 extensions: []const vk.ExtensionProperties,
 vendor_id: VendorID,
-driver_descriptor: [:0]const u8,
+driver_desc: [:0]const u8,
 
 pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Adapter {
     var device_count: u32 = 0;
@@ -59,7 +59,7 @@ pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Ada
         errdefer instance.allocator.free(extensions);
         _ = try instance.dispatch.enumerateDeviceExtensionProperties(dev_info.dev, null, &extensions_count, extensions.ptr);
 
-        const driver_descriptor = try std.fmt.allocPrintZ(
+        const driver_desc = try std.fmt.allocPrintZ(
             instance.allocator,
             "Vulkan driver version {}.{}.{}",
             .{
@@ -76,7 +76,7 @@ pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Ada
             .queue_family = dev_info.queue_family,
             .extensions = extensions,
             .vendor_id = @enumFromInt(dev_info.props.vendor_id),
-            .driver_descriptor = driver_descriptor,
+            .driver_desc = driver_desc,
         };
     }
 
@@ -85,7 +85,7 @@ pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Ada
 
 pub fn deinit(adapter: *Adapter) void {
     adapter.instance.allocator.free(adapter.extensions);
-    adapter.instance.allocator.free(adapter.driver_descriptor);
+    adapter.instance.allocator.free(adapter.driver_desc);
 }
 
 pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
@@ -102,7 +102,7 @@ pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
         .architecture = "", // TODO
         .device_id = adapter.props.device_id,
         .name = @ptrCast(&adapter.props.device_name),
-        .driver_description = adapter.driver_descriptor,
+        .driver_description = adapter.driver_desc,
         .adapter_type = adapter_type,
         .backend_type = .vulkan,
         .compatibility_mode = false, // TODO
@@ -179,8 +179,8 @@ pub fn hasExtension(adapter: *Adapter, name: []const u8) bool {
     return false;
 }
 
-pub fn createDevice(adapter: *Adapter, descriptor: *const gpu.Device.Descriptor) !Device {
-    return Device.init(adapter, descriptor);
+pub fn createDevice(adapter: *Adapter, desc: *const gpu.Device.Descriptor) !Device {
+    return Device.init(adapter, desc);
 }
 
 const VendorID = enum(u32) {

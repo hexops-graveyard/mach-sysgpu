@@ -560,11 +560,13 @@ pub const Interface = struct {
         return @ptrCast(shader_module);
     }
 
-    pub inline fn deviceCreateSwapChain(device: *gpu.Device, surface: ?*gpu.Surface, descriptor: *const gpu.SwapChain.Descriptor) *gpu.SwapChain {
-        _ = device;
-        _ = surface;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateSwapChain(device_raw: *gpu.Device, surface_raw: ?*gpu.Surface, descriptor: *const gpu.SwapChain.Descriptor) *gpu.SwapChain {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const surface: *impl.Surface = @ptrCast(@alignCast(surface_raw.?));
+        var swapchain = allocator.create(impl.SwapChain) catch unreachable;
+        swapchain.* = impl.Device.createSwapChain(device, surface, descriptor) catch unreachable;
+        swapchain.ref_counter.reference();
+        return @ptrCast(swapchain);
     }
 
     pub inline fn deviceCreateTexture(device: *gpu.Device, descriptor: *const gpu.Texture.Descriptor) *gpu.Texture {
@@ -590,9 +592,10 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceGetQueue(device: *gpu.Device) *gpu.Queue {
-        _ = device;
-        unreachable;
+    pub inline fn deviceGetQueue(device_raw: *gpu.Device) *gpu.Queue {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const queue = device.getQueue() catch unreachable;
+        return @ptrCast(queue);
     }
 
     pub inline fn deviceHasFeature(device: *gpu.Device, feature: gpu.FeatureName) bool {
@@ -1205,24 +1208,27 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn swapChainGetCurrentTextureView(swap_chain: *gpu.SwapChain) ?*gpu.TextureView {
-        _ = swap_chain;
-        unreachable;
+    pub inline fn swapChainGetCurrentTextureView(swap_chain_raw: *gpu.SwapChain) ?*gpu.TextureView {
+        const swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
+        var texture_view = allocator.create(impl.TextureView) catch unreachable;
+        texture_view.* = swap_chain.getCurrentTextureView() catch unreachable;
+        texture_view.ref_counter.reference();
+        return @ptrCast(texture_view);
     }
 
-    pub inline fn swapChainPresent(swap_chain: *gpu.SwapChain) void {
-        _ = swap_chain;
-        unreachable;
+    pub inline fn swapChainPresent(swap_chain_raw: *gpu.SwapChain) void {
+        const swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
+        swap_chain.present() catch unreachable;
     }
 
-    pub inline fn swapChainReference(swap_chain: *gpu.SwapChain) void {
-        _ = swap_chain;
-        unreachable;
+    pub inline fn swapChainReference(swap_chain_raw: *gpu.SwapChain) void {
+        var swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
+        swap_chain.ref_counter.reference();
     }
 
-    pub inline fn swapChainRelease(swap_chain: *gpu.SwapChain) void {
-        _ = swap_chain;
-        unreachable;
+    pub inline fn swapChainRelease(swap_chain_raw: *gpu.SwapChain) void {
+        var swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
+        swap_chain.ref_counter.release();
     }
 
     pub inline fn textureCreateView(texture: *gpu.Texture, descriptor: ?*const gpu.TextureView.Descriptor) *gpu.TextureView {
