@@ -1,10 +1,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const vk = @import("vulkan");
-const global = @import("global.zig");
 
-const Dispatch = vk.BaseWrapper(.{
+pub const Dispatch = vk.BaseWrapper(.{
     .createInstance = true,
+    .enumerateInstanceExtensionProperties = true,
     .enumerateInstanceLayerProperties = true,
     .getInstanceProcAddr = true,
 });

@@ -1,14 +1,10 @@
-const std = @import("std");
-const builtin = @import("builtin");
 const vk = @import("vulkan");
-const gpu = @import("mach-gpu");
 const Device = @import("Device.zig");
-const global = @import("global.zig");
-const RefCounter = @import("../helper.zig").RefCounter;
+const Manager = @import("../helper.zig").Manager;
 
 const ShaderModule = @This();
 
-ref_counter: RefCounter(ShaderModule) = .{},
+manager: Manager(ShaderModule) = .{},
 shader_module: vk.ShaderModule,
 device: *Device,
 

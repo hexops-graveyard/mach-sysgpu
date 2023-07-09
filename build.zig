@@ -1,17 +1,18 @@
 const std = @import("std");
-const glfw = @import("libs/mach-glfw/build.zig");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const vulkan_dep = b.dependency("vulkan-zig-generated", .{});
+    const vulkan_dep = b.dependency("vulkan", .{});
     const vulkan_mod = vulkan_dep.module("vulkan-zig-generated");
-    const mach_gpu_mod = b.addModule("mach-gpu", .{
+    const glfw_dep = b.dependency("mach-glfw", .{});
+    const glfw_mod = glfw_dep.module("mach-glfw");
+    const mach_gpu_mod = b.addModule("gpu", .{
         .source_file = .{ .path = "libs/mach-gpu/src/main.zig" },
     });
 
-    const module = b.addModule("dusk", .{
+    const module = b.addModule("mach-dusk", .{
         .source_file = .{ .path = "src/main.zig" },
         .dependencies = &.{
             .{
@@ -19,7 +20,7 @@ pub fn build(b: *std.Build) !void {
                 .module = vulkan_mod,
             },
             .{
-                .name = "mach-gpu",
+                .name = "gpu",
                 .module = mach_gpu_mod,
             },
         },
@@ -31,10 +32,10 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .root_source_file = .{ .path = "examples/triangle/main.zig" },
     });
-    triangle_example.addModule("mach-dusk", module);
-    triangle_example.addModule("mach-gpu", mach_gpu_mod);
-    triangle_example.addModule("mach-glfw", glfw.module(b));
-    try glfw.link(b, triangle_example, .{});
+    glfwLink(b, triangle_example);
+    triangle_example.addModule("dusk", module);
+    triangle_example.addModule("gpu", mach_gpu_mod);
+    triangle_example.addModule("glfw", glfw_mod);
 
     b.installArtifact(triangle_example);
 
@@ -52,4 +53,29 @@ pub fn build(b: *std.Build) !void {
     const run_shader_tests = b.addRunArtifact(shader_tests);
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_shader_tests.step);
+}
+
+fn glfwLink(b: *std.Build, step: *std.build.CompileStep) void {
+    const glfw_dep = b.dependency("mach-glfw", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    });
+    step.linkLibrary(glfw_dep.artifact("mach-glfw"));
+    step.addModule("glfw", glfw_dep.module("mach-glfw"));
+
+    // TODO(build-system): Zig package manager currently can't handle transitive deps like this, so we need to use
+    // these explicitly here:
+    @import("glfw").addPaths(step);
+    step.linkLibrary(b.dependency("vulkan_headers", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("vulkan-headers"));
+    step.linkLibrary(b.dependency("x11_headers", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("x11-headers"));
+    step.linkLibrary(b.dependency("wayland_headers", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("wayland-headers"));
 }

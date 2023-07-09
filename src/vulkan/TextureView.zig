@@ -1,21 +1,19 @@
 const std = @import("std");
-const builtin = @import("builtin");
 const vk = @import("vulkan");
-const gpu = @import("mach-gpu");
-const Device = @import("Device.zig");
+const gpu = @import("gpu");
 const Texture = @import("Texture.zig");
 const global = @import("global.zig");
-const RefCounter = @import("../helper.zig").RefCounter;
+const Manager = @import("../helper.zig").Manager;
 
 const TextureView = @This();
 
-ref_counter: RefCounter(TextureView) = .{},
+manager: Manager(TextureView) = .{},
 view: vk.ImageView,
 format: vk.Format,
 texture: *Texture,
 
 pub fn init(texture: *Texture, desc: *const gpu.TextureView.Descriptor) !TextureView {
-    const format = global.vkFormatFromTextureFormat(desc.format);
+    const format = global.vulkanFormatFromTextureFormat(desc.format);
     const aspect: vk.ImageAspectFlags = if (desc.aspect == .all)
         switch (desc.format) {
             .stencil8 => .{ .stencil_bit = true },
@@ -64,6 +62,6 @@ pub fn init(texture: *Texture, desc: *const gpu.TextureView.Descriptor) !Texture
     };
 }
 
-pub fn deinit(self: *TextureView) void {
-    self.texture.device.dispatch.destroyImageView(self.texture.device.device, self.view, null);
+pub fn deinit(view: *TextureView) void {
+    view.texture.device.dispatch.destroyImageView(view.texture.device.device, view.view, null);
 }
