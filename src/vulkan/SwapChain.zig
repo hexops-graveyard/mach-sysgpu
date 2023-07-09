@@ -1,49 +1,46 @@
 const std = @import("std");
-const gpu = @import("mach-gpu");
+const gpu = @import("gpu");
 const vk = @import("vulkan");
 const Device = @import("Device.zig");
 const Surface = @import("Surface.zig");
 const Texture = @import("Texture.zig");
 const TextureView = @import("TextureView.zig");
-const RefCounter = @import("../helper.zig").RefCounter;
+const Manager = @import("../helper.zig").Manager;
 const global = @import("global.zig");
 
 const SwapChain = @This();
 
-ref_counter: RefCounter(SwapChain) = .{},
-swapchain: vk.SwapchainKHR,
+manager: Manager(SwapChain) = .{},
 device: *Device,
+swapchain: vk.SwapchainKHR,
 textures: []Texture,
 texture_index: u32 = 0,
 format: gpu.Texture.Format,
 
 pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !SwapChain {
-    const capabilities = try device.adapter.instance.dispatch.getPhysicalDeviceSurfaceCapabilitiesKHR(
-        device.adapter.device,
-        surface.surface,
-    );
-
-    // var format_count: usize = 0;
-    // _ = try device.adapter.instance.dispatch.getPhysicalDeviceSurfaceFormatsKHR(
-    //     device.adapter.device,
-    //     surface.surface,
-    //     &format_count,
-    //     null,
-    // );
-    // var formats = device.adapter.instance.allocator.alloc(vk.SurfaceFormatKHR, format_count);
-    // defer device.adapter.instance.allocator.free(formats);
-    // _ = try device.adapter.instance.dispatch.getPhysicalDeviceSurfaceFormatsKHR(
-    //     device.adapter.device,
-    //     surface.surface,
-    //     &format_count,
-    //     formats,
-    // );
-
+    const format = global.vulkanFormatFromTextureFormat(desc.format);
     const extent = vk.Extent2D{
         .width = desc.width,
         .height = desc.height,
     };
-    const format = global.vkFormatFromTextureFormat(desc.format);
+    const capabilities = try device.adapter.instance.dispatch.getPhysicalDeviceSurfaceCapabilitiesKHR(
+        device.adapter.physical_device,
+        surface.surface,
+    );
+    const composite_alpha = blk: {
+        const composite_alpha_flags = [_]vk.CompositeAlphaFlagsKHR{
+            .{ .opaque_bit_khr = true },
+            .{ .pre_multiplied_bit_khr = true },
+            .{ .post_multiplied_bit_khr = true },
+            .{ .inherit_bit_khr = true },
+        };
+        for (composite_alpha_flags) |flag| {
+            if (@as(vk.Flags, @bitCast(flag)) & @as(vk.Flags, @bitCast(capabilities.supported_composite_alpha)) != 0) {
+                break :blk flag;
+            }
+        }
+        break :blk vk.CompositeAlphaFlagsKHR{};
+    };
     const swapchain = try device.dispatch.createSwapchainKHR(device.device, &.{
         .surface = surface.surface,
         .min_image_count = @max(2, capabilities.min_image_count),
@@ -61,66 +58,53 @@ pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descr
         },
         .image_sharing_mode = .exclusive,
         .pre_transform = .{ .identity_bit_khr = true },
-        .composite_alpha = .{
-            .opaque_bit_khr = capabilities.supported_composite_alpha.opaque_bit_khr,
-            .pre_multiplied_bit_khr = capabilities.supported_composite_alpha.pre_multiplied_bit_khr,
-            .post_multiplied_bit_khr = capabilities.supported_composite_alpha.post_multiplied_bit_khr,
-            .inherit_bit_khr = capabilities.supported_composite_alpha.inherit_bit_khr,
-        },
+        .composite_alpha = composite_alpha,
         .present_mode = switch (desc.present_mode) {
             .immediate => vk.PresentModeKHR.immediate_khr,
-            .mailbox => .mailbox_khr,
-            .fifo => .fifo_khr,
+            .mailbox => vk.PresentModeKHR.mailbox_khr,
+            .fifo => vk.PresentModeKHR.fifo_khr,
         },
         .clipped = vk.FALSE,
     }, null);
 
     var image_count: u32 = 0;
     _ = try device.dispatch.getSwapchainImagesKHR(device.device, swapchain, &image_count, null);
-    var images = try device.adapter.instance.allocator.alloc(vk.Image, image_count);
-    defer device.adapter.instance.allocator.free(images);
+    var images = try device.allocator.alloc(vk.Image, image_count);
+    defer device.allocator.free(images);
     _ = try device.dispatch.getSwapchainImagesKHR(device.device, swapchain, &image_count, images.ptr);
 
-    const textures = try device.adapter.instance.allocator.alloc(Texture, image_count);
+    const textures = try device.allocator.alloc(Texture, image_count);
     for (images, 0..) |image, i| {
         textures[i] = .{
+            .device = device,
             .image = image,
             .extent = extent,
-            .samples = 1,
-            .device = device,
         };
     }
 
     return .{
-        .swapchain = swapchain,
         .device = device,
+        .swapchain = swapchain,
         .format = desc.format,
         .textures = textures,
     };
 }
 
 pub fn deinit(swapchain: *SwapChain) void {
-    for (swapchain.semaphores) |semaphore| {
-        swapchain.device.dispatch.destroySemaphore(swapchain.device.device, semaphore, null);
-    }
-    swapchain.device.adapter.instance.allocator.free(swapchain.semaphores);
-    swapchain.device.dispatch.destroySwapchainKHR(swapchain.device.device, swapchain.swapchain);
+    swapchain.device.dispatch.destroySwapchainKHR(swapchain.device.device, swapchain.swapchain, null);
 }
 
 pub fn getCurrentTextureView(swapchain: *SwapChain) !TextureView {
-    const semaphore = try swapchain.device.dispatch.createSemaphore(swapchain.device.device, &.{}, null);
-    defer swapchain.device.dispatch.destroySemaphore(swapchain.device.device, semaphore, null);
-
     const result = try swapchain.device.dispatch.acquireNextImageKHR(
         swapchain.device.device,
         swapchain.swapchain,
         std.math.maxInt(u64),
-        semaphore,
+        swapchain.device.queue.image_available_semaphore,
         .null_handle,
     );
     switch (result.result) {
-        .success => {},
-        .suboptimal_khr => {},
+        .success, .suboptimal_khr => {},
+        .error_out_of_date_khr => return swapchain.getCurrentTextureView(),
         .not_ready => return error.NotReady,
         .timeout => unreachable,
         else => unreachable,
@@ -133,16 +117,13 @@ pub fn getCurrentTextureView(swapchain: *SwapChain) !TextureView {
     });
 }
 
-pub fn present(self: *SwapChain) !void {
-    try self.device.queue.waitUncapped();
-
-    _ = try self.device.dispatch.queuePresentKHR(self.device.queue.graphics, &.{
-        .wait_semaphore_count = 0,
-        .p_wait_semaphores = undefined,
+pub fn present(swapchain: *SwapChain) !void {
+    _ = try swapchain.device.dispatch.queuePresentKHR(swapchain.device.queue.queue, &.{
+        .wait_semaphore_count = 1,
+        .p_wait_semaphores = &[_]vk.Semaphore{swapchain.device.queue.render_finished_semaphore},
         .swapchain_count = 1,
-        .p_swapchains = &[_]vk.SwapchainKHR{self.swapchain},
-        .p_image_indices = &[_]u32{self.current_tex},
-        .p_results = null,
+        .p_swapchains = &[_]vk.SwapchainKHR{swapchain.swapchain},
+        .p_image_indices = &[_]u32{swapchain.texture_index},
     });
-    self.current_tex = undefined;
+    swapchain.texture_index = undefined;
 }

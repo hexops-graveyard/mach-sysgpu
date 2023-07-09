@@ -1,12 +1,12 @@
-const gpu = @import("mach-gpu");
+const gpu = @import("gpu");
 const vk = @import("vulkan");
 const Instance = @import("Instance.zig");
-const RefCounter = @import("../helper.zig").RefCounter;
+const Manager = @import("../helper.zig").Manager;
 const findChained = @import("../helper.zig").findChained;
 
 const Surface = @This();
 
-ref_counter: RefCounter(Surface) = .{},
+manager: Manager(Surface) = .{},
 surface: vk.SurfaceKHR,
 
 pub fn init(instance: *Instance, desc: *const gpu.Surface.Descriptor) !Surface {

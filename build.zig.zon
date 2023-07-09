@@ -1,10 +1,34 @@
 .{
     .name = "mach-dusk",
-    .version = "0.0.1",
+    .version = "0.1.0",
     .dependencies = .{
-        .@"vulkan-zig-generated" = .{
+        .vulkan = .{
             .url = "https://github.com/hexops/vulkan-zig-generated/archive/b5ee8187817cf620e00d3ccbb48c68cc2a386b28.tar.gz",
             .hash = "12207fb09aa58efcc6f833cd1ae4b37f2e5082f55a125a1401c93939289bcdcc48fa",
+        },
+        .@"mach-glfw" = .{
+            .url = "https://github.com/hexops/mach-glfw/archive/c2b814963e7aa37d0138b111c9e05acc491f61e8.tar.gz",
+            .hash = "122014acdd8545ebfa583c8d3e92bfd90a6b84fde0fcfde9f510f7ad1c47d05c6039",
+        },
+        .glfw = .{
+            .url = "https://github.com/hexops/glfw/archive/0e4cdba4216c6def0423462a2f21fef80683d56d.tar.gz",
+            .hash = "1220a0b036095c2c54af347c86514ed9dab431299f0140b0e434ed119f85a976c32b",
+        },
+        .direct3d_headers = .{
+            .url = "https://github.com/hexops/direct3d-headers/archive/773dce3f079eecdccc7c71d1318a0741649d568b.tar.gz",
+            .hash = "12200d2155216c5eb5f111282cd355b5433cad6a68fd040294e695149cba329f7c12",
+        },
+        .vulkan_headers = .{
+            .url = "https://github.com/hexops/vulkan-headers/archive/e1b061ff624531e82a7daea5dbd56c07e08bf0be.tar.gz",
+            .hash = "12204967f9d07fda3af6a21d6ab71fb832da2186176c530a7a14aa96043537399e6b",
+        },
+        .wayland_headers = .{
+            .url = "https://github.com/hexops/wayland-headers/archive/7bf46f3d60edab2171643ff85770c392ef62704d.tar.gz",
+            .hash = "1220689912c40c0880b094f748199c490810d4fa4c58ce1ef9058ce97f46ee28496a",
+        },
+        .x11_headers = .{
+            .url = "https://github.com/hexops/x11-headers/archive/99af89c7bfdc7db503f3a7003571f8e81bcd09f3.tar.gz",
+            .hash = "1220e6bd3186841c1da38d862d52ba88dec9633d24f409eda27627321937419a0ddb",
         },
     },
 }

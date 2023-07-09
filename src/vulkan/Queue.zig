@@ -1,70 +1,58 @@
 const std = @import("std");
-const gpu = @import("gpu");
 const vk = @import("vulkan");
 const Device = @import("Device.zig");
 const CommandBuffer = @import("CommandBuffer.zig");
-const RefCounter = @import("../helper.zig").RefCounter;
+const Manager = @import("../helper.zig").Manager;
 
 const Queue = @This();
 
-ref_counter: RefCounter(Queue) = .{},
-device: *Device,
+manager: Manager(Queue) = .{},
+allocator: std.mem.Allocator,
+device_dispatch: Device.Dispatch,
+device_raw: vk.Device,
 queue: vk.Queue,
+image_available_semaphore: vk.Semaphore,
+render_finished_semaphore: vk.Semaphore,
 fence: vk.Fence,
-commands: std.ArrayListUnmanaged(*CommandBuffer) = .{},
 
-pub fn init(device: *Device, queue_family: u32) !Queue {
-    const fence = try device.dispatch.createFence(device.device, &.{ .flags = .{ .signaled_bit = true } }, null);
+pub fn init(allocator: std.mem.Allocator, device_dispatch: Device.Dispatch, device_raw: vk.Device, queue_family: u32) !Queue {
+    const queue = device_dispatch.getDeviceQueue(device_raw, queue_family, 0);
+    const image_available_semaphore = try device_dispatch.createSemaphore(device_raw, &.{}, null);
+    const render_finished_semaphore = try device_dispatch.createSemaphore(device_raw, &.{}, null);
+    const fence = try device_dispatch.createFence(device_raw, &.{ .flags = .{ .signaled_bit = true } }, null);
     return .{
-        .device = device,
-        .queue = device.dispatch.getDeviceQueue(device.device, queue_family, 0),
+        .allocator = allocator,
+        .device_dispatch = device_dispatch,
+        .device_raw = device_raw,
+        .queue = queue,
+        .image_available_semaphore = image_available_semaphore,
+        .render_finished_semaphore = render_finished_semaphore,
         .fence = fence,
     };
 }
 
 pub fn deinit(queue: *Queue) void {
-    for (queue.commands.items) |buf| {
-        buf.ref_counter.release();
-    }
-    queue.commands.deinit(queue.device.adapter.instance.allocator);
-    queue.device.dispatch.destroyFence(queue.device.device, queue.fence, null);
+    queue.device_dispatch.destroyFence(queue.device_raw, queue.fence, null);
+    queue.device_dispatch.destroySemaphore(queue.device_raw, queue.image_available_semaphore, null);
+    queue.device_dispatch.destroySemaphore(queue.device_raw, queue.render_finished_semaphore, null);
 }
 
 pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
-    try queue.waitUncapped();
-    for (queue.commands.items) |buf| {
-        buf.manager.release();
-    }
-    errdefer queue.commands.clearRetainingCapacity();
+    _ = try queue.device_dispatch.waitForFences(queue.device_raw, 1, &[_]vk.Fence{queue.fence}, vk.TRUE, std.math.maxInt(u64));
+    try queue.device_dispatch.resetFences(queue.device_raw, 1, &[_]vk.Fence{queue.fence});
 
-    try queue.commands.resize(queue.device.adapter.instance.allocator, commands.len);
-    std.mem.copy(*CommandBuffer, queue.commands.items, commands);
-
-    const submits = try queue.adapter.instance.allocator.alloc(vk.SubmitInfo, commands.len);
-    defer queue.adapter.instance.allocator.free(submits);
+    const submits = try queue.allocator.alloc(vk.SubmitInfo, commands.len);
+    defer queue.allocator.free(submits);
     for (commands, 0..) |buf, i| {
-        buf.manager.reference();
         submits[i] = .{
             .command_buffer_count = 1,
-            .p_command_buffers = @as(*const [1]vk.CommandBuffer, &buf.buffer),
+            .p_command_buffers = &[_]vk.CommandBuffer{buf.buffer},
+            .wait_semaphore_count = 1,
+            .p_wait_semaphores = &[_]vk.Semaphore{queue.image_available_semaphore},
+            .signal_semaphore_count = 1,
+            .p_signal_semaphores = &[_]vk.Semaphore{queue.render_finished_semaphore},
         };
     }
 
-    try queue.device.dispatch.resetFences(queue.device.device, 1, &[1]vk.Fence{queue.fence});
-    try queue.device.dispatch.queueSubmit(queue.queue, @intCast(submits.len), submits.ptr, queue.fence);
-}
-
-pub fn waitUncapped(self: *Queue) !void {
-    while (!try self.waitTimeout(std.math.maxInt(u64))) {}
-}
-
-pub fn waitTimeout(queue: *Queue, timeout: u64) !bool {
-    const res = try queue.device.dispatch.waitForFences(
-        queue.device.device,
-        1,
-        &[_]vk.Fence{queue.fence},
-        vk.TRUE,
-        timeout,
-    );
-    return res == .success;
+    try queue.device_dispatch.queueSubmit(queue.queue, @intCast(submits.len), submits.ptr, queue.fence);
 }

@@ -1,6 +1,3 @@
 [submodule "libs/mach-gpu"]
 	path = libs/mach-gpu
 	url = https://github.com/hexops/mach-gpu
-[submodule "libs/mach-glfw"]
-	path = libs/mach-glfw
-	url = https://github.com/hexops/mach-glfw

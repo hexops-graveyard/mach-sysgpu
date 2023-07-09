@@ -1,48 +1,49 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const gpu = @import("mach-gpu");
+const gpu = @import("gpu");
 const Instance = @import("Instance.zig");
 const Device = @import("Device.zig");
 const global = @import("global.zig");
-const RefCounter = @import("../helper.zig").RefCounter;
+const Manager = @import("../helper.zig").Manager;
 
 const Adapter = @This();
 
-ref_counter: RefCounter(Adapter) = .{},
+manager: Manager(Adapter) = .{},
+allocator: std.mem.Allocator,
 instance: *Instance,
-device: vk.PhysicalDevice,
+physical_device: vk.PhysicalDevice,
 props: vk.PhysicalDeviceProperties,
 queue_family: u32,
 extensions: []const vk.ExtensionProperties,
-vendor_id: VendorID,
 driver_desc: [:0]const u8,
+vendor_id: VendorID,
 
 pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Adapter {
     var device_count: u32 = 0;
     _ = try instance.dispatch.enumeratePhysicalDevices(instance.instance, &device_count, null);
 
-    var device_list = try instance.allocator.alloc(vk.PhysicalDevice, device_count);
-    defer instance.allocator.free(device_list);
-    _ = try instance.dispatch.enumeratePhysicalDevices(instance.instance, &device_count, device_list.ptr);
+    var physical_devices = try instance.allocator.alloc(vk.PhysicalDevice, device_count);
+    defer instance.allocator.free(physical_devices);
+    _ = try instance.dispatch.enumeratePhysicalDevices(instance.instance, &device_count, physical_devices.ptr);
 
-    var device_info: ?struct {
-        dev: vk.PhysicalDevice,
+    var physical_device_info: ?struct {
+        physical_device: vk.PhysicalDevice,
         props: vk.PhysicalDeviceProperties,
         queue_family: u32,
         score: u32,
     } = null;
-    for (device_list[0..device_count]) |dev| {
-        const props = instance.dispatch.getPhysicalDeviceProperties(dev);
-        const features = instance.dispatch.getPhysicalDeviceFeatures(dev);
-        const queue_family = try findQueueFamily(instance, dev) orelse continue;
+    for (physical_devices[0..device_count]) |physical_device| {
+        const props = instance.dispatch.getPhysicalDeviceProperties(physical_device);
+        const features = instance.dispatch.getPhysicalDeviceFeatures(physical_device);
+        const queue_family = try findQueueFamily(instance, physical_device) orelse continue;
 
         if (isDeviceSuitable(props, features)) {
             const score = rateDevice(props, features, options.power_preference);
             if (score == 0) continue;
 
-            if (device_info == null or score > device_info.?.score) {
-                device_info = .{
-                    .dev = dev,
+            if (physical_device_info == null or score > physical_device_info.?.score) {
+                physical_device_info = .{
+                    .physical_device = physical_device,
                     .props = props,
                     .queue_family = queue_family,
                     .score = score,
@@ -51,32 +52,33 @@ pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Ada
         }
     }
 
-    if (device_info) |dev_info| {
+    if (physical_device_info) |info| {
         var extensions_count: u32 = 0;
-        _ = try instance.dispatch.enumerateDeviceExtensionProperties(dev_info.dev, null, &extensions_count, null);
+        _ = try instance.dispatch.enumerateDeviceExtensionProperties(info.physical_device, null, &extensions_count, null);
 
         var extensions = try instance.allocator.alloc(vk.ExtensionProperties, extensions_count);
         errdefer instance.allocator.free(extensions);
-        _ = try instance.dispatch.enumerateDeviceExtensionProperties(dev_info.dev, null, &extensions_count, extensions.ptr);
+        _ = try instance.dispatch.enumerateDeviceExtensionProperties(info.physical_device, null, &extensions_count, extensions.ptr);
 
         const driver_desc = try std.fmt.allocPrintZ(
             instance.allocator,
             "Vulkan driver version {}.{}.{}",
             .{
-                vk.apiVersionMajor(dev_info.props.driver_version),
-                vk.apiVersionMinor(dev_info.props.driver_version),
-                vk.apiVersionPatch(dev_info.props.driver_version),
+                vk.apiVersionMajor(info.props.driver_version),
+                vk.apiVersionMinor(info.props.driver_version),
+                vk.apiVersionPatch(info.props.driver_version),
             },
         );
 
         return .{
+            .allocator = instance.allocator,
             .instance = instance,
-            .device = dev_info.dev,
-            .props = dev_info.props,
-            .queue_family = dev_info.queue_family,
+            .physical_device = info.physical_device,
+            .props = info.props,
+            .queue_family = info.queue_family,
             .extensions = extensions,
-            .vendor_id = @enumFromInt(dev_info.props.vendor_id),
             .driver_desc = driver_desc,
+            .vendor_id = @enumFromInt(info.props.vendor_id),
         };
     }
 
@@ -84,8 +86,12 @@ pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Ada
 }
 
 pub fn deinit(adapter: *Adapter) void {
-    adapter.instance.allocator.free(adapter.extensions);
-    adapter.instance.allocator.free(adapter.driver_desc);
+    adapter.allocator.free(adapter.extensions);
+    adapter.allocator.free(adapter.driver_desc);
+}
+
+pub fn createDevice(adapter: *Adapter, desc: *const gpu.Device.Descriptor) !Device {
+    return Device.init(adapter, desc);
 }
 
 pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
@@ -107,6 +113,15 @@ pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
         .backend_type = .vulkan,
         .compatibility_mode = false, // TODO
     };
+}
+
+pub fn hasExtension(adapter: *Adapter, name: []const u8) bool {
+    for (adapter.extensions) |ext| {
+        if (std.mem.eql(u8, name, std.mem.sliceTo(&ext.extension_name, 0))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 fn isDeviceSuitable(props: vk.PhysicalDeviceProperties, features: vk.PhysicalDeviceFeatures) bool {
@@ -162,25 +177,9 @@ fn findQueueFamily(instance: *Instance, device: vk.PhysicalDevice) !?u32 {
         if (family.queue_flags.graphics_bit and family.queue_flags.compute_bit) {
             return @intCast(i);
         }
-    } else {
-        return null;
     }
 
     return null;
-}
-
-pub fn hasExtension(adapter: *Adapter, name: []const u8) bool {
-    for (adapter.extensions) |ext| {
-        if (std.mem.eql(u8, name, std.mem.sliceTo(&ext.extension_name, 0))) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-pub fn createDevice(adapter: *Adapter, desc: *const gpu.Device.Descriptor) !Device {
-    return Device.init(adapter, desc);
 }
 
 const VendorID = enum(u32) {
