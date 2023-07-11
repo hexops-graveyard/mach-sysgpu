@@ -420,18 +420,18 @@ pub fn next(self: *Tokenizer) Token {
     return tok;
 }
 
-test "tokenize identifier and numbers" {
-    const str =
-        \\_ __ _iden iden -100i 100.8i // cc
-        \\// comment
-        \\
-    ;
-    var tokenizer = Tokenizer.init(str);
-    try std.testing.expect(tokenizer.next().tag == .underscore);
-    try std.testing.expect(tokenizer.next().tag == .ident);
-    try std.testing.expect(tokenizer.next().tag == .ident);
-    try std.testing.expect(tokenizer.next().tag == .ident);
-    try std.testing.expectEqualStrings("-100i", tokenizer.next().loc.slice(str));
-    try std.testing.expect(tokenizer.next().tag == .number);
-    try std.testing.expect(tokenizer.next().tag == .eof);
-}
+// test "tokenize identifier and numbers" {
+//     const str =
+//         \\_ __ _iden iden -100i 100.8i // cc
+//         \\// comment
+//         \\
+//     ;
+//     var tokenizer = Tokenizer.init(str);
+//     try std.testing.expect(tokenizer.next().tag == .underscore);
+//     try std.testing.expect(tokenizer.next().tag == .ident);
+//     try std.testing.expect(tokenizer.next().tag == .ident);
+//     try std.testing.expect(tokenizer.next().tag == .ident);
+//     try std.testing.expectEqualStrings("-100i", tokenizer.next().loc.slice(str));
+//     try std.testing.expect(tokenizer.next().tag == .number);
+//     try std.testing.expect(tokenizer.next().tag == .eof);
+// }

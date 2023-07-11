@@ -44,7 +44,7 @@ pub fn build(b: *std.Build) !void {
     run_triangle_example_step.dependOn(&run_triangle_example.step);
 
     const shader_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/shader/test.zig" },
+        .root_source_file = .{ .path = "src/shader.zig" },
         .target = target,
         .optimize = optimize,
     });
