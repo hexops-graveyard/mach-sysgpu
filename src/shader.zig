@@ -18,4 +18,5 @@ test {
     std.testing.refAllDecls(Tokenizer);
     std.testing.refAllDecls(ErrorList);
     _ = printAir;
+    _ = @import("shader/test.zig");
 }

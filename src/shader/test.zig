@@ -8,86 +8,6 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const allocator = std.testing.allocator;
 
-fn expectIR(source: [:0]const u8) !Air {
-    var tree = try Ast.parse(allocator, source);
-    defer tree.deinit(allocator);
-
-    if (tree.errors.list.items.len > 0) {
-        try tree.errors.print(source, null);
-        return error.Parsing;
-    }
-
-    var ir = try Air.generate(allocator, &tree, null);
-    errdefer ir.deinit(allocator);
-
-    if (ir.errors.list.items.len > 0) {
-        try ir.errors.print(source, null);
-        return error.ExpectedIR;
-    }
-
-    return ir;
-}
-
-fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
-    var tree = try Ast.parse(allocator, source);
-    defer tree.deinit(allocator);
-    var err_list = tree.errors;
-
-    var ir: ?Air = null;
-    defer if (ir != null) ir.?.deinit(allocator);
-
-    if (err_list.list.items.len == 0) {
-        ir = try Air.generate(allocator, &tree, null);
-
-        err_list = ir.?.errors;
-        if (err_list.list.items.len == 0) {
-            return error.ExpectedError;
-        }
-    }
-
-    const first_error = err_list.list.items[0];
-    {
-        errdefer {
-            std.debug.print(
-                "\n\x1b[31mexpected error({d}..{d}):\n{s}\n\x1b[32mactual error({d}..{d}):\n{s}\n\x1b[0m",
-                .{
-                    err.loc.start,         err.loc.end,         err.msg,
-                    first_error.loc.start, first_error.loc.end, first_error.msg,
-                },
-            );
-        }
-        try expect(std.mem.eql(u8, err.msg, first_error.msg));
-        try expect(first_error.loc.start == err.loc.start);
-        try expect(first_error.loc.end == err.loc.end);
-    }
-    if (first_error.note) |_| {
-        errdefer {
-            std.debug.print(
-                "\n\x1b[31mexpected note msg:\n{s}\n\x1b[32mactual note msg:\n{s}\n\x1b[0m",
-                .{ err.note.?.msg, first_error.note.?.msg },
-            );
-        }
-        if (err.note == null) {
-            std.debug.print("\x1b[31mnote missed: {s}\x1b[0m\n", .{first_error.note.?.msg});
-            return error.NoteMissed;
-        }
-        try expect(std.mem.eql(u8, err.note.?.msg, first_error.note.?.msg));
-        if (first_error.note.?.loc) |_| {
-            errdefer {
-                std.debug.print(
-                    "\n\x1b[31mexpected note loc: {d}..{d}\n\x1b[32mactual note loc: {d}..{d}\n\x1b[0m",
-                    .{
-                        err.note.?.loc.?.start,         err.note.?.loc.?.end,
-                        first_error.note.?.loc.?.start, first_error.note.?.loc.?.end,
-                    },
-                );
-            }
-            try expect(first_error.note.?.loc.?.start == err.note.?.loc.?.start);
-            try expect(first_error.note.?.loc.?.end == err.note.?.loc.?.end);
-        }
-    }
-}
-
 test "empty" {
     const source = "";
     var ir = try expectIR(source);
@@ -154,7 +74,7 @@ test "must pass" {
             \\    }
             \\    a = a + 2;
             \\  }
-            \\  
+            \\
             \\  switch (expr0) {
             \\      case 1 {
             \\          v0--;
@@ -529,25 +449,111 @@ test "must error" {
     }
 }
 
-test "spirv" {
+test "triangle.wgsl -> triangle.spv" {
     const triangle = @embedFile("test/triangle.wgsl");
+    try expectCodegen(triangle, "triangle.spv");
+}
 
-    var ast = try Ast.parse(allocator, triangle);
-    defer ast.deinit(allocator);
-    if (ast.errors.list.items.len > 0) {
-        try ast.errors.print(triangle, "src/test/triangle.wgsl");
+fn expectCodegen(source: [:0]const u8, comptime file_name: []const u8) !void {
+    var tree = try Ast.parse(allocator, source);
+    defer tree.deinit(allocator);
+
+    if (tree.errors.list.items.len > 0) {
+        try tree.errors.print(source, null);
         return error.Parsing;
     }
 
-    var ir = try Air.generate(allocator, &ast, null);
+    var ir = try Air.generate(allocator, &tree, null);
     defer ir.deinit(allocator);
+
     if (ir.errors.list.items.len > 0) {
-        try ir.errors.print(triangle, "src/test/triangle.wgsl");
-        return error.AstGen;
+        try ir.errors.print(source, null);
+        return error.ExpectedIR;
     }
 
     const out = try CodeGen.generate(allocator, &ir, .spirv);
     defer allocator.free(out);
 
-    try std.fs.cwd().writeFile("triangle.spv", out);
+    try std.fs.cwd().makePath("zig-out/spirv/");
+    try std.fs.cwd().writeFile("zig-out/spirv/" ++ file_name, out);
+}
+
+fn expectIR(source: [:0]const u8) !Air {
+    var tree = try Ast.parse(allocator, source);
+    defer tree.deinit(allocator);
+
+    if (tree.errors.list.items.len > 0) {
+        try tree.errors.print(source, null);
+        return error.Parsing;
+    }
+
+    var ir = try Air.generate(allocator, &tree, null);
+    errdefer ir.deinit(allocator);
+
+    if (ir.errors.list.items.len > 0) {
+        try ir.errors.print(source, null);
+        return error.ExpectedIR;
+    }
+
+    return ir;
+}
+
+fn expectError(source: [:0]const u8, err: ErrorList.ErrorMsg) !void {
+    var tree = try Ast.parse(allocator, source);
+    defer tree.deinit(allocator);
+    var err_list = tree.errors;
+
+    var ir: ?Air = null;
+    defer if (ir != null) ir.?.deinit(allocator);
+
+    if (err_list.list.items.len == 0) {
+        ir = try Air.generate(allocator, &tree, null);
+
+        err_list = ir.?.errors;
+        if (err_list.list.items.len == 0) {
+            return error.ExpectedError;
+        }
+    }
+
+    const first_error = err_list.list.items[0];
+    {
+        errdefer {
+            std.debug.print(
+                "\n\x1b[31mexpected error({d}..{d}):\n{s}\n\x1b[32mactual error({d}..{d}):\n{s}\n\x1b[0m",
+                .{
+                    err.loc.start,         err.loc.end,         err.msg,
+                    first_error.loc.start, first_error.loc.end, first_error.msg,
+                },
+            );
+        }
+        try expect(std.mem.eql(u8, err.msg, first_error.msg));
+        try expect(first_error.loc.start == err.loc.start);
+        try expect(first_error.loc.end == err.loc.end);
+    }
+    if (first_error.note) |_| {
+        errdefer {
+            std.debug.print(
+                "\n\x1b[31mexpected note msg:\n{s}\n\x1b[32mactual note msg:\n{s}\n\x1b[0m",
+                .{ err.note.?.msg, first_error.note.?.msg },
+            );
+        }
+        if (err.note == null) {
+            std.debug.print("\x1b[31mnote missed: {s}\x1b[0m\n", .{first_error.note.?.msg});
+            return error.NoteMissed;
+        }
+        try expect(std.mem.eql(u8, err.note.?.msg, first_error.note.?.msg));
+        if (first_error.note.?.loc) |_| {
+            errdefer {
+                std.debug.print(
+                    "\n\x1b[31mexpected note loc: {d}..{d}\n\x1b[32mactual note loc: {d}..{d}\n\x1b[0m",
+                    .{
+                        err.note.?.loc.?.start,         err.note.?.loc.?.end,
+                        first_error.note.?.loc.?.start, first_error.note.?.loc.?.end,
+                    },
+                );
+            }
+            try expect(first_error.note.?.loc.?.start == err.note.?.loc.?.start);
+            try expect(first_error.note.?.loc.?.end == err.note.?.loc.?.end);
+        }
+    }
 }

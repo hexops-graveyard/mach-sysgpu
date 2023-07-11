@@ -109,7 +109,8 @@ fn emitModule(spv: *SpirV, section: *Section) !void {
         spec.magic_number,
         // Spir-V 1.3
         spec.Version.toWord(.{ .major = 1, .minor = 3 }),
-        // Generator magic number. TODO: register dusk compiler
+        // Generator magic number
+        // TODO: register dusk compiler
         0,
         // Id's bound
         spv.next_result_id,
@@ -192,10 +193,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     };
 
     const name_slice = spv.air.getStr(inst.name);
-    try spv.debug_section.emit(.OpName, .{
-        .target = fn_id,
-        .name = name_slice,
-    });
+    try spv.debugName(fn_id, name_slice);
 
     var interface = std.ArrayList(IdRef).init(spv.allocator);
     errdefer interface.deinit();
@@ -210,10 +208,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
             &.{ name_slice, "_return_output" },
         );
         defer spv.allocator.free(return_var_name_slice);
-        try spv.debug_section.emit(.OpName, .{
-            .target = return_var_id.?,
-            .name = return_var_name_slice,
-        });
+        try spv.debugName(return_var_id.?, return_var_name_slice);
 
         const return_var_type_id = try spv.resolve(.{ .ptr_type = .{
             .storage_class = .Output,
@@ -252,10 +247,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
             const param_inst = spv.air.getInst(param_inst_idx).fn_param;
             const param_id = spv.allocId();
 
-            try spv.debug_section.emit(.OpName, .{
-                .target = param_id,
-                .name = spv.air.getStr(param_inst.name),
-            });
+            try spv.debugName(param_id, spv.air.getStr(param_inst.name));
 
             if (inst.stage != .none) {
                 const elem_type_id = try spv.emitType(param_inst.type);
@@ -408,10 +400,7 @@ fn emitVar(spv: *SpirV, section: *Section, init_section: *Section, inst_idx: Ins
 
     const inst = spv.air.getInst(inst_idx).@"var";
     const id = spv.allocId();
-    try spv.debug_section.emit(.OpName, .{
-        .target = id,
-        .name = spv.air.getStr(inst.name),
-    });
+    try spv.debugName(id, spv.air.getStr(inst.name));
 
     const storage_class = storageClassFromAddrSpace(inst.addr_space);
     const type_id = try spv.emitType(if (inst.type != .none) inst.type else inst.expr);
@@ -449,10 +438,7 @@ fn emitConst(spv: *SpirV, inst_idx: InstIndex) !IdRef {
 
     const inst = spv.air.getInst(inst_idx).@"const";
     const id = try spv.emitExpr(&spv.global_section, inst.expr);
-    try spv.debug_section.emit(.OpName, .{
-        .target = id,
-        .name = spv.air.getStr(inst.name),
-    });
+    try spv.debugName(id, spv.air.getStr(inst.name));
     return id;
 }
 
@@ -1048,6 +1034,10 @@ pub fn resolve(spv: *SpirV, key: Key) !IdRef {
 
     try spv.type_value_map.put(spv.allocator, key, id);
     return id;
+}
+
+fn debugName(spv: *SpirV, id: IdResult, name: []const u8) !void {
+    try spv.global_section.emit(.OpName, .{ .target = id, .name = name });
 }
 
 fn allocId(spv: *SpirV) IdResult {
