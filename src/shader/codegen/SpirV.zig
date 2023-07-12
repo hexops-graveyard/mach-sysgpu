@@ -31,6 +31,7 @@ next_result_id: Word = 1,
 compute_stage: ?ComputeStage = null,
 vertex_stage: ?VertexStage = null,
 fragment_stage: ?FragmentStage = null,
+store_return: ?IdRef = null,
 
 const Decl = struct {
     id: IdRef,
@@ -89,7 +90,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
         switch (spv.air.getInst(inst_idx)) {
             .@"fn" => _ = try spv.emitFn(inst_idx),
             .@"const" => _ = try spv.emitConst(inst_idx),
-            .@"var" => _ = try spv.emitVar(&spv.global_section, &spv.global_section, inst_idx),
+            .@"var" => _ = try spv.emitVarProto(&spv.global_section, inst_idx),
             else => unreachable,
         }
     }
@@ -169,11 +170,9 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
 
     var fn_section = Section{ .allocator = spv.allocator };
     var fn_params_section = Section{ .allocator = spv.allocator };
-    var fn_vars_init_section = Section{ .allocator = spv.allocator };
     defer {
         fn_section.deinit();
         fn_params_section.deinit();
-        fn_vars_init_section.deinit();
     }
 
     const fn_id = spv.allocId();
@@ -201,6 +200,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     var return_var_id: ?IdRef = null;
     if (inst.stage != .none and inst.return_type != .none) {
         return_var_id = spv.allocId();
+        spv.store_return = return_var_id;
 
         const return_var_name_slice = try std.mem.concat(
             spv.allocator,
@@ -235,6 +235,8 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
         }
 
         try interface.append(return_var_id.?);
+    } else {
+        spv.store_return = null;
     }
 
     var params_type = std.ArrayList(IdRef).init(spv.allocator);
@@ -321,20 +323,13 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     try fn_section.emit(.OpLabel, .{ .id_result = block_id });
 
     if (statements_ref != .none) {
-        const list = spv.air.refToList(statements_ref);
-        for (list) |statement_idx| {
-            if (spv.air.getInst(statement_idx) == .@"var") {
-                _ = try spv.emitVar(&fn_section, &fn_vars_init_section, statement_idx);
-            }
-        }
+        try spv.emitFnVars(&fn_section, statements_ref);
     }
-
-    try fn_section.append(fn_vars_init_section);
 
     if (statements_ref != .none) {
         const list = spv.air.refToList(statements_ref);
         for (list) |statement_idx| {
-            try spv.emitStatement(&fn_section, statement_idx, return_var_id);
+            try spv.emitStatement(&fn_section, statement_idx);
         }
 
         if (spv.air.getInst(list[list.len - 1]) != .@"return") {
@@ -395,7 +390,44 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     return fn_id;
 }
 
-fn emitVar(spv: *SpirV, section: *Section, init_section: *Section, inst_idx: InstIndex) !IdRef {
+fn emitFnVars(spv: *SpirV, section: *Section, statements: RefIndex) !void {
+    if (statements == .none) return;
+    const list = spv.air.refToList(statements);
+    for (list) |statement_idx| {
+        switch (spv.air.getInst(statement_idx)) {
+            .@"var" => _ = try spv.emitVarProto(section, statement_idx),
+            .block => |block| try spv.emitFnVars(section, block),
+            .@"if" => {
+                var if_idx = statement_idx;
+                while (true) {
+                    const @"if" = spv.air.getInst(if_idx).@"if";
+                    const if_body = spv.air.getInst(@"if".body).block;
+                    try spv.emitFnVars(section, if_body);
+                    if (@"if".@"else" != .none) {
+                        switch (spv.air.getInst(@"if".@"else")) {
+                            .@"if" => if_idx = @"if".@"else",
+                            .block => |block| return spv.emitFnVars(section, block),
+                            else => unreachable,
+                        }
+                    }
+                }
+            },
+            .@"while" => |@"while"| try spv.emitFnVars(section, spv.air.getInst(@"while".rhs).block),
+            .continuing => |continuing| try spv.emitFnVars(section, spv.air.getInst(continuing).block),
+            .@"switch" => |@"switch"| {
+                const switch_cases_list = spv.air.refToList(@"switch".cases_list);
+                for (switch_cases_list) |switch_case_idx| {
+                    const switch_case = spv.air.getInst(switch_case_idx).switch_case;
+                    try spv.emitFnVars(section, spv.air.getInst(switch_case.body).block);
+                }
+            },
+            .@"for" => unreachable, // TODO
+            else => {},
+        }
+    }
+}
+
+fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     if (spv.decl_map.get(inst_idx)) |decl| return decl.id;
 
     const inst = spv.air.getInst(inst_idx).@"var";
@@ -418,18 +450,12 @@ fn emitVar(spv: *SpirV, section: *Section, init_section: *Section, inst_idx: Ins
         .initializer = zero_id,
     });
 
-    if (inst.expr != .none) {
-        try init_section.emit(.OpStore, .{
-            .pointer = id,
-            .object = try spv.emitExpr(init_section, inst.expr),
-        });
-    }
-
     try spv.decl_map.put(spv.allocator, inst_idx, .{
         .id = id,
         .type_id = type_id,
         .is_ptr = true,
     });
+
     return id;
 }
 
@@ -480,10 +506,19 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
     };
 }
 
-fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex, store_return: ?IdRef) !void {
+fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!void {
     switch (spv.air.getInst(inst_idx)) {
+        .@"var" => |@"var"| {
+            const var_id = spv.decl_map.get(inst_idx).?.id;
+            if (@"var".expr != .none) {
+                try section.emit(.OpStore, .{
+                    .pointer = var_id,
+                    .object = try spv.emitExpr(section, @"var".expr),
+                });
+            }
+        },
         .@"return" => |inst| {
-            if (store_return) |store_to| {
+            if (spv.store_return) |store_to| {
                 try section.emit(.OpStore, .{
                     .pointer = store_to,
                     .object = try spv.emitExpr(section, inst),
@@ -494,13 +529,73 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex, store_retu
             }
         },
         .call => |inst| _ = try spv.emitCall(section, inst),
+        .@"if" => |@"if"| try spv.emitIf(section, @"if"),
+        .assign => |assign| try spv.emitAssign(section, assign),
         else => {}, // TODO
     }
 }
 
-fn emitReturn(spv: *SpirV, section: *Section, value: InstIndex) !void {
-    if (value == .none) return section.emit(.OpReturn, {});
-    try section.emit(.OpReturnValue, .{ .value = try spv.emitExpr(section, value) });
+fn emitIf(spv: *SpirV, section: *Section, inst: Inst.If) !void {
+    const cond = try spv.emitExpr(section, inst.cond);
+    const true_branch = spv.allocId();
+    const false_branch = spv.allocId();
+    const merge_branch = spv.allocId();
+
+    try section.emit(.OpSelectionMerge, .{
+        .merge_block = merge_branch,
+        .selection_control = .{},
+    });
+
+    try section.emit(.OpBranchConditional, .{
+        .condition = cond,
+        .true_label = true_branch,
+        .false_label = false_branch,
+    });
+
+    try section.emit(.OpLabel, .{ .id_result = true_branch });
+    const if_body = spv.air.getInst(inst.body).block;
+    if (if_body != .none) {
+        const true_branch_statements = spv.air.refToList(if_body);
+        for (true_branch_statements) |statement_idx| {
+            try spv.emitStatement(section, statement_idx);
+        }
+        try section.emit(.OpBranch, .{ .target_label = merge_branch });
+    }
+
+    if (inst.@"else" != .none) {
+        try section.emit(.OpLabel, .{ .id_result = false_branch });
+        switch (spv.air.getInst(inst.@"else")) {
+            .@"if" => |else_if| try spv.emitIf(section, else_if),
+            .block => |else_body| if (else_body != .none) {
+                const false_branch_statements = spv.air.refToList(else_body);
+                for (false_branch_statements) |statement_idx| {
+                    try spv.emitStatement(section, statement_idx);
+                }
+            },
+            else => unreachable,
+        }
+        try section.emit(.OpBranch, .{ .target_label = merge_branch });
+    }
+
+    try section.emit(.OpLabel, .{ .id_result = merge_branch });
+}
+
+fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
+    const var_idx = spv.air.getInst(inst.lhs).var_ref;
+    const decl = spv.decl_map.get(var_idx).?;
+    const expr = try spv.emitExpr(section, inst.rhs);
+
+    if (inst.mod != .none) unreachable; // TODO
+
+    try section.emit(.OpStore, .{
+        .pointer = decl.id,
+        .object = expr,
+    });
+}
+
+fn emitReturn(spv: *SpirV, section: *Section, inst: InstIndex) !void {
+    if (inst == .none) return section.emit(.OpReturn, {});
+    try section.emit(.OpReturnValue, .{ .value = try spv.emitExpr(section, inst) });
 }
 
 fn emitExpr(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
@@ -974,7 +1069,12 @@ pub fn resolve(spv: *SpirV, key: Key) !IdRef {
                     .element_type = array.elem_type,
                     .length = len,
                 });
-            } else unreachable; // TODO
+            } else {
+                try spv.global_section.emit(.OpTypeRuntimeArray, .{
+                    .id_result = id,
+                    .element_type = array.elem_type,
+                });
+            }
         },
         .ptr_type => |ptr_type| {
             try spv.global_section.emit(.OpTypePointer, .{
@@ -1037,7 +1137,7 @@ pub fn resolve(spv: *SpirV, key: Key) !IdRef {
 }
 
 fn debugName(spv: *SpirV, id: IdResult, name: []const u8) !void {
-    try spv.global_section.emit(.OpName, .{ .target = id, .name = name });
+    try spv.debug_section.emit(.OpName, .{ .target = id, .name = name });
 }
 
 fn allocId(spv: *SpirV) IdResult {
