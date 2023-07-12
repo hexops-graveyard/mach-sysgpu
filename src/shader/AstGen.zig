@@ -1168,20 +1168,22 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
         return error.AnalysisFail;
     }
 
-    return astgen.addInst(switch (astgen.tree.tokenTag(astgen.tree.nodeToken(node))) {
-        .equal => .{ .assign = .{ .lhs = lhs, .rhs = rhs } },
-        .plus_equal => .{ .assign_add = .{ .lhs = lhs, .rhs = rhs } },
-        .minus_equal => .{ .assign_sub = .{ .lhs = lhs, .rhs = rhs } },
-        .asterisk_equal => .{ .assign_mul = .{ .lhs = lhs, .rhs = rhs } },
-        .slash_equal => .{ .assign_div = .{ .lhs = lhs, .rhs = rhs } },
-        .percent_equal => .{ .assign_mod = .{ .lhs = lhs, .rhs = rhs } },
-        .ampersand_equal => .{ .assign_and = .{ .lhs = lhs, .rhs = rhs } },
-        .pipe_equal => .{ .assign_or = .{ .lhs = lhs, .rhs = rhs } },
-        .xor_equal => .{ .assign_xor = .{ .lhs = lhs, .rhs = rhs } },
-        .angle_bracket_angle_bracket_left_equal => .{ .assign_shl = .{ .lhs = lhs, .rhs = rhs } },
-        .angle_bracket_angle_bracket_right_equal => .{ .assign_shr = .{ .lhs = lhs, .rhs = rhs } },
+    const mod: Inst.Assign.Modifier = switch (astgen.tree.tokenTag(astgen.tree.nodeToken(node))) {
+        .equal => .none,
+        .plus_equal => .add,
+        .minus_equal => .sub,
+        .asterisk_equal => .mul,
+        .slash_equal => .div,
+        .percent_equal => .mod,
+        .ampersand_equal => .@"and",
+        .pipe_equal => .@"or",
+        .xor_equal => .xor,
+        .angle_bracket_angle_bracket_left_equal => .shl,
+        .angle_bracket_angle_bracket_right_equal => .shr,
         else => unreachable,
-    });
+    };
+
+    return astgen.addInst(.{ .assign = .{ .mod = mod, .lhs = lhs, .rhs = rhs } });
 }
 
 pub fn isMutable(astgen: *AstGen, index: InstIndex) !bool {
@@ -1197,8 +1199,7 @@ pub fn isMutable(astgen: *AstGen, index: InstIndex) !bool {
 
 fn genPhonyAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
-    const lhs = try astgen.genExpr(scope, node_lhs);
-    return astgen.addInst(.{ .assign_phony = lhs });
+    return astgen.genExpr(scope, node_lhs);
 }
 
 fn genIncreaseDecrease(astgen: *AstGen, scope: *Scope, node: NodeIndex, increase: bool) !InstIndex {
@@ -1349,7 +1350,7 @@ fn genExpr(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_tag = astgen.tree.nodeTag(node);
     return switch (node_tag) {
         .number => astgen.genNumber(node),
-        .true => astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }),
+        .true => astgen.addInst(.{ .bool = .{ .value = .{ .literal = true } } }),
         .false => astgen.addInst(.{ .bool = .{ .value = .{ .literal = false } } }),
         .not => astgen.genNot(scope, node),
         .negate => astgen.genNegate(scope, node),
@@ -3523,17 +3524,6 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .@"switch",
             .switch_case,
             .assign,
-            .assign_add,
-            .assign_sub,
-            .assign_mul,
-            .assign_div,
-            .assign_mod,
-            .assign_and,
-            .assign_or,
-            .assign_xor,
-            .assign_shl,
-            .assign_shr,
-            .assign_phony,
             .increase,
             .decrease,
             => unreachable,

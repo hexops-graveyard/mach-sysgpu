@@ -426,18 +426,7 @@ pub const Inst = union(enum) {
     @"for": For,
     @"switch": Switch,
     switch_case: SwitchCase,
-    assign: Binary,
-    assign_add: Binary,
-    assign_sub: Binary,
-    assign_mul: Binary,
-    assign_div: Binary,
-    assign_mod: Binary,
-    assign_and: Binary,
-    assign_or: Binary,
-    assign_xor: Binary,
-    assign_shl: Binary,
-    assign_shr: Binary,
-    assign_phony: InstIndex,
+    assign: Assign,
     increase: InstIndex,
     decrease: InstIndex,
     discard,
@@ -768,6 +757,26 @@ pub const Inst = union(enum) {
     };
 
     pub const Binary = struct { lhs: InstIndex, rhs: InstIndex };
+
+    pub const Assign = struct {
+        mod: Modifier,
+        lhs: InstIndex,
+        rhs: InstIndex,
+
+        pub const Modifier = enum {
+            none,
+            add,
+            sub,
+            mul,
+            div,
+            mod,
+            @"and",
+            @"or",
+            xor,
+            shl,
+            shr,
+        };
+    };
 
     pub const FieldAccess = struct {
         base: InstIndex,
