@@ -8,6 +8,7 @@ const ErrorList = @import("ErrorList.zig");
 const Extensions = @import("wgsl.zig").Extensions;
 const Air = @This();
 
+tree: *const Ast,
 globals_index: RefIndex,
 compute_stage: InstIndex,
 vertex_stage: InstIndex,
@@ -16,7 +17,6 @@ instructions: []const Inst,
 refs: []const InstIndex,
 strings: []const u8,
 values: []const u8,
-errors: ErrorList,
 extensions: Extensions,
 
 pub fn deinit(self: *Air, allocator: std.mem.Allocator) void {
@@ -24,17 +24,21 @@ pub fn deinit(self: *Air, allocator: std.mem.Allocator) void {
     allocator.free(self.refs);
     allocator.free(self.strings);
     allocator.free(self.values);
-    self.errors.deinit();
     self.* = undefined;
 }
 
-pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]const u8) error{OutOfMemory}!Air {
+pub fn generate(
+    allocator: std.mem.Allocator,
+    tree: *const Ast,
+    errors: *ErrorList,
+    entry_point: ?[]const u8,
+) error{ OutOfMemory, AnalysisFail }!Air {
     var astgen = AstGen{
         .allocator = allocator,
         .tree = tree,
         .scope_pool = std.heap.MemoryPool(AstGen.Scope).init(allocator),
         .entry_point_name = entry_point,
-        .errors = try ErrorList.init(allocator),
+        .errors = errors,
     };
     defer {
         astgen.instructions.deinit(allocator);
@@ -50,6 +54,7 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
     const globals_index = try astgen.genTranslationUnit();
 
     return .{
+        .tree = tree,
         .globals_index = globals_index,
         .compute_stage = astgen.compute_stage,
         .vertex_stage = astgen.vertex_stage,
@@ -58,7 +63,6 @@ pub fn generate(allocator: std.mem.Allocator, tree: *const Ast, entry_point: ?[]
         .refs = try astgen.refs.toOwnedSlice(allocator),
         .strings = try astgen.strings.toOwnedSlice(allocator),
         .values = try astgen.values.toOwnedSlice(allocator),
-        .errors = astgen.errors,
         .extensions = tree.extensions,
     };
 }

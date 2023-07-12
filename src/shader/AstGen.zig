@@ -28,7 +28,7 @@ vertex_stage: InstIndex = .none,
 fragment_stage: InstIndex = .none,
 entry_point_name: ?[]const u8 = null,
 scope_pool: std.heap.MemoryPool(Scope),
-errors: ErrorList,
+errors: *ErrorList,
 
 pub const Scope = struct {
     tag: Tag,
@@ -59,10 +59,7 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
     root_scope.* = .{ .tag = .root, .parent = undefined };
 
     const global_nodes = astgen.tree.spanToList(.globals);
-    astgen.scanDecls(root_scope, global_nodes) catch |err| switch (err) {
-        error.AnalysisFail => return astgen.addRefList(astgen.scratch.items[scratch_top..]),
-        error.OutOfMemory => return error.OutOfMemory,
-    };
+    try astgen.scanDecls(root_scope, global_nodes);
 
     for (global_nodes) |node| {
         var global = root_scope.decls.get(node).? catch continue;
@@ -76,6 +73,8 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
 
         try astgen.scratch.append(astgen.allocator, global);
     }
+
+    if (astgen.errors.list.items.len > 0) return error.AnalysisFail;
 
     if (astgen.entry_point_name != null and
         astgen.compute_stage == .none and
@@ -3536,13 +3535,14 @@ fn selectType(cands: []const InstIndex) InstIndex {
 }
 
 fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) ?Air.ConstExpr {
+    // TODO: this is disgusting
     return Air.resolveConstExpr(.{
+        .tree = undefined,
         .globals_index = undefined,
         .compute_stage = undefined,
         .vertex_stage = undefined,
         .fragment_stage = undefined,
         .strings = undefined,
-        .errors = undefined,
         .extensions = undefined,
         .instructions = astgen.instructions.keys(),
         .refs = astgen.refs.items,

@@ -14,19 +14,17 @@ source: []const u8,
 tokens: TokenList.Slice,
 nodes: NodeList.Slice,
 extra: []const u32,
-errors: ErrorList,
 extensions: Extensions,
 
 pub fn deinit(tree: *Ast, allocator: std.mem.Allocator) void {
     tree.tokens.deinit(allocator);
     tree.nodes.deinit(allocator);
     allocator.free(tree.extra);
-    tree.errors.deinit();
     tree.* = undefined;
 }
 
 /// parses a TranslationUnit (WGSL Program)
-pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemory}!Ast {
+pub fn parse(allocator: std.mem.Allocator, errors: *ErrorList, source: [:0]const u8) error{ OutOfMemory, Parsing }!Ast {
     var p = Parser{
         .allocator = allocator,
         .source = source,
@@ -47,14 +45,13 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
 
             break :blk tokens;
         },
-        .errors = try ErrorList.init(allocator),
+        .errors = errors,
     };
     defer p.scratch.deinit(allocator);
     errdefer {
         p.tokens.deinit(allocator);
         p.nodes.deinit(allocator);
         p.extra.deinit(allocator);
-        p.errors.deinit();
     }
 
     const estimated_nodes = p.tokens.len / 2 + 1;
@@ -67,7 +64,6 @@ pub fn parse(allocator: std.mem.Allocator, source: [:0]const u8) error{OutOfMemo
         .tokens = p.tokens.toOwnedSlice(),
         .nodes = p.nodes.toOwnedSlice(),
         .extra = try p.extra.toOwnedSlice(allocator),
-        .errors = p.errors,
         .extensions = p.extensions,
     };
 }
