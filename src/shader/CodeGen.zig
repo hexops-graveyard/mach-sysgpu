@@ -6,8 +6,18 @@ pub const Language = enum {
     spirv,
 };
 
-pub fn generate(allocator: std.mem.Allocator, air: *const Air, out_lang: Language) ![]const u8 {
+pub const DebugInfo = struct {
+    emit_source_file: ?[]const u8 = null,
+    emit_names: bool = true,
+};
+
+pub fn generate(
+    allocator: std.mem.Allocator,
+    air: *const Air,
+    out_lang: Language,
+    debug_info: DebugInfo,
+) ![]const u8 {
     return switch (out_lang) {
-        .spirv => try genSpirv(allocator, air),
+        .spirv => try genSpirv(allocator, air, debug_info),
     };
 }

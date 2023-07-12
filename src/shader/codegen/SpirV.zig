@@ -1,5 +1,6 @@
 const std = @import("std");
 const Air = @import("../Air.zig");
+const DebugInfo = @import("../CodeGen.zig").DebugInfo;
 const Section = @import("spirv/Section.zig");
 const spec = @import("spirv/spec.zig");
 const Inst = Air.Inst;
@@ -27,6 +28,7 @@ main_section: Section,
 type_value_map: std.ArrayHashMapUnmanaged(Key, IdRef, Key.Adapter, true) = .{},
 /// Map Air Instruction Index to IdRefs to prevent duplicated declarations
 decl_map: std.AutoHashMapUnmanaged(InstIndex, Decl) = .{},
+emit_debug_names: bool,
 next_result_id: Word = 1,
 compute_stage: ?ComputeStage = null,
 vertex_stage: ?VertexStage = null,
@@ -62,7 +64,7 @@ const FragmentStage = struct {
     interface: []const IdRef,
 };
 
-pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
+pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo) ![]const u8 {
     var spv = SpirV{
         .air = air,
         .allocator = allocator,
@@ -70,6 +72,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
         .annotations_section = .{ .allocator = allocator },
         .global_section = .{ .allocator = allocator },
         .main_section = .{ .allocator = allocator },
+        .emit_debug_names = debug_info.emit_names,
     };
     defer {
         spv.debug_section.deinit();
@@ -85,6 +88,10 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
 
     var module_section = Section{ .allocator = allocator };
     defer module_section.deinit();
+
+    if (debug_info.emit_source_file) |source_file_path| {
+        try spv.emitSourceInfo(source_file_path);
+    }
 
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (spv.air.getInst(inst_idx)) {
@@ -102,6 +109,21 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air) ![]const u8 {
     try module_section.append(spv.main_section);
 
     return allocator.dupe(u8, std.mem.sliceAsBytes(module_section.words.items));
+}
+
+fn emitSourceInfo(spv: *SpirV, file_path: []const u8) !void {
+    const file_path_id = spv.allocId();
+    try spv.global_section.emit(.OpString, .{
+        .id_result = file_path_id,
+        .string = file_path,
+    });
+
+    try spv.debug_section.emit(.OpSource, .{
+        .source_language = .Unknown,
+        .version = 0,
+        .file = file_path_id,
+        .source = spv.air.tree.source,
+    });
 }
 
 fn emitModule(spv: *SpirV, section: *Section) !void {
@@ -1137,7 +1159,9 @@ pub fn resolve(spv: *SpirV, key: Key) !IdRef {
 }
 
 fn debugName(spv: *SpirV, id: IdResult, name: []const u8) !void {
-    try spv.debug_section.emit(.OpName, .{ .target = id, .name = name });
+    if (spv.emit_debug_names) {
+        try spv.debug_section.emit(.OpName, .{ .target = id, .name = name });
+    }
 }
 
 fn allocId(spv: *SpirV) IdResult {

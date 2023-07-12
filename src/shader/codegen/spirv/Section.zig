@@ -105,13 +105,9 @@ fn writeOperands(section: *Section, comptime Operands: type, operands: Operands)
 pub fn writeOperand(section: *Section, comptime Operand: type, operand: Operand) void {
     switch (Operand) {
         spec.IdResult => section.writeWord(operand.id),
-
         spec.LiteralInteger => section.writeWord(operand),
-
         spec.LiteralString => section.writeString(operand),
-
         spec.LiteralContextDependentNumber => section.writeContextDependentNumber(operand),
-
         spec.LiteralExtInstInteger => section.writeWord(operand.inst),
 
         // TODO: Where this type is used (OpSpecConstantOp) is currently not correct in the spec json,
@@ -122,7 +118,6 @@ pub fn writeOperand(section: *Section, comptime Operand: type, operand: Operand)
         spec.PairLiteralIntegerIdRef => section.writeWords(&.{ operand.value, operand.label.id }),
         spec.PairIdRefLiteralInteger => section.writeWords(&.{ operand.target.id, operand.member }),
         spec.PairIdRefIdRef => section.writeWords(&.{ operand[0].id, operand[1].id }),
-
         else => switch (@typeInfo(Operand)) {
             .Enum => section.writeWord(@intFromEnum(operand)),
             .Optional => |info| if (operand) |child| {
@@ -244,9 +239,8 @@ fn operandSize(comptime Operand: type, operand: Operand) usize {
         spec.LiteralInteger,
         spec.LiteralExtInstInteger,
         => 1,
-
-        spec.LiteralString => std.math.divCeil(usize, operand.len + 1, @sizeOf(Word)) catch unreachable, // Add one for zero-terminator
-
+        // Add one for zero-terminator
+        spec.LiteralString => std.math.divCeil(usize, operand.len + 1, @sizeOf(Word)) catch unreachable,
         spec.LiteralContextDependentNumber => switch (operand) {
             .int32, .uint32, .float32 => @as(usize, 1),
             .int64, .uint64, .float64 => @as(usize, 2),
@@ -261,7 +255,6 @@ fn operandSize(comptime Operand: type, operand: Operand) usize {
         spec.PairIdRefLiteralInteger,
         spec.PairIdRefIdRef,
         => 2,
-
         else => switch (@typeInfo(Operand)) {
             .Enum => 1,
             .Optional => |info| if (operand) |child| operandSize(info.child, child) else 0,

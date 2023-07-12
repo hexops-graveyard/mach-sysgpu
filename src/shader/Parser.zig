@@ -18,7 +18,7 @@ nodes: std.MultiArrayList(Node) = .{},
 extra: std.ArrayListUnmanaged(u32) = .{},
 scratch: std.ArrayListUnmanaged(NodeIndex) = .{},
 extensions: Extensions = .{},
-errors: ErrorList,
+errors: *ErrorList,
 
 pub fn translationUnit(p: *Parser) !void {
     p.parameterizeTemplates() catch |err| switch (err) {
@@ -34,6 +34,8 @@ pub fn translationUnit(p: *Parser) !void {
         const decl = try p.expectGlobalDeclRecoverable() orelse continue;
         try p.scratch.append(p.allocator, decl);
     }
+
+    if (p.errors.list.items.len > 0) return error.Parsing;
 
     try p.extra.appendSlice(p.allocator, @ptrCast(p.scratch.items));
     p.nodes.items(.lhs)[@intFromEnum(root)] = @enumFromInt(p.extra.items.len - p.scratch.items.len);
