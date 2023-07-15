@@ -21,6 +21,17 @@ pub fn init(instance: *Instance, desc: *const gpu.Surface.Descriptor) !Surface {
                 null,
             ),
         };
+    } else if (findChained(gpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_descriptor| {
+        return .{
+            .surface = try instance.dispatch.createWin32SurfaceKHR(
+                instance.instance,
+                &vk.Win32SurfaceCreateInfoKHR{
+                    .hinstance = @ptrCast(win_descriptor.hinstance),
+                    .hwnd = @ptrCast(win_descriptor.hwnd),
+                },
+                null,
+            ),
+        };
     }
 
     unreachable;
