@@ -547,12 +547,14 @@ pub const Interface = struct {
         var shader_module = allocator.create(impl.ShaderModule) catch unreachable;
         errdefer allocator.destroy(shader_module);
 
+        var errors = try shader.ErrorList.init(allocator);
+        defer errors.deinit();
         if (helper.findChained(gpu.ShaderModule.WGSLDescriptor, descriptor.next_in_chain.generic)) |wgsl_descriptor| {
-            var ast = shader.Ast.parse(allocator, std.mem.span(wgsl_descriptor.code)) catch unreachable;
+            var ast = shader.Ast.parse(allocator, &errors, std.mem.span(wgsl_descriptor.code)) catch unreachable;
             defer ast.deinit(allocator);
-            var air = shader.Air.generate(allocator, &ast, null) catch unreachable;
+            var air = shader.Air.generate(allocator, &ast, &errors, null) catch unreachable;
             defer air.deinit(allocator);
-            const output = shader.CodeGen.generate(allocator, &air, .spirv) catch unreachable;
+            const output = shader.CodeGen.generate(allocator, &air, .spirv, .{ .emit_source_file = "" }) catch unreachable;
             defer allocator.free(output);
             shader_module.* = impl.Device.createShaderModule(device, output) catch unreachable;
         } else if (helper.findChained(gpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {

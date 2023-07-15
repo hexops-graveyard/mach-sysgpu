@@ -106,7 +106,7 @@ fn getExtensions(base: Base) ![]const [*:0]const u8 {
             vk.extension_info.khr_xcb_surface.name,
             vk.extension_info.khr_wayland_surface.name,
         },
-        .windows => &.{vk.extension_info.khr_win_32_keyed_mutex.name},
+        .windows => &.{vk.extension_info.khr_win_32_surface.name},
         .macos, .ios => &.{vk.extension_info.ext_metal_surface.name},
         else => if (builtin.target.abi == .android)
             &.{vk.extension_info.khr_android_surface.name}
