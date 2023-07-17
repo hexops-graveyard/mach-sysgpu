@@ -10,5 +10,9 @@
 }
 
 @fragment fn frag_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0, 0.0, 1.0, 1.0);
+    var x = 1.0;
+    if (x < 2.0) {
+        x += 2.0;
+    }
+    return vec4<f32>(1.0, 0.0, x, 1.0);
 }

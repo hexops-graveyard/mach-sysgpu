@@ -318,7 +318,7 @@ pub const Node = struct {
         ///       times_equal,       division_equal,
         ///       modulo_equal,      and_equal,
         ///       or_equal,          xor_equal,
-        ///       shift_right_equal, shift_left_equal
+        ///       shl_equal, shl_equal
         /// LHS : Expr
         /// RHS : Expr
         compound_assign,
@@ -489,12 +489,12 @@ pub const Node = struct {
         /// TOK : <<
         /// LHS : Expr
         /// RHS : Expr
-        shift_left,
+        shl,
 
         /// TOK : >>
         /// LHS : Expr
         /// RHS : Expr
-        shift_right,
+        shr,
 
         /// TOK : &
         /// LHS : Expr

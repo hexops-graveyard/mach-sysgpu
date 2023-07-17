@@ -1786,8 +1786,8 @@ fn bitwiseExpr(p: *Parser, lhs: NodeIndex) !?NodeIndex {
 fn expectShiftExpr(p: *Parser, lhs: NodeIndex) !NodeIndex {
     const op_token = p.tok_i;
     const op: Node.Tag = switch (p.getToken(.tag, op_token)) {
-        .angle_bracket_angle_bracket_left => .shift_left,
-        .angle_bracket_angle_bracket_right => .shift_right,
+        .angle_bracket_angle_bracket_left => .shl,
+        .angle_bracket_angle_bracket_right => .shl,
         else => return try p.expectMathExpr(lhs),
     };
     _ = p.advanceToken();
