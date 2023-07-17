@@ -9,6 +9,7 @@ const Manager = @import("../helper.zig").Manager;
 
 pub const Dispatch = vk.InstanceWrapper(.{
     .createDevice = true,
+    .createWin32SurfaceKHR = true,
     .createXlibSurfaceKHR = true,
     .destroyInstance = true,
     .enumerateDeviceExtensionProperties = true,

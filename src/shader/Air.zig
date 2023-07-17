@@ -122,8 +122,8 @@ pub const ConstExpr = union(enum) {
 
     fn mod(lhs: *ConstExpr, rhs: ConstExpr) void {
         switch (lhs.*) {
-            .int => lhs.int = @rem(lhs.int, rhs.int),
-            .float => lhs.float = @rem(lhs.float, rhs.float),
+            .int => lhs.int = @mod(lhs.int, rhs.int),
+            .float => lhs.float = @mod(lhs.float, rhs.float),
             else => unreachable,
         }
     }
@@ -179,13 +179,29 @@ pub const ConstExpr = union(enum) {
         }
     }
 
+    fn min(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return switch (lhs) {
+            .int => .{ .int = @min(lhs.int, rhs.int) },
+            .float => .{ .float = @min(lhs.float, rhs.float) },
+            else => unreachable,
+        };
+    }
+
+    fn max(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
+        return switch (lhs) {
+            .int => .{ .int = @max(lhs.int, rhs.int) },
+            .float => .{ .float = @max(lhs.float, rhs.float) },
+            else => unreachable,
+        };
+    }
+
     fn equal(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
-        switch (lhs) {
-            .bool => return .{ .bool = lhs.bool == rhs.bool },
-            .int => return .{ .bool = lhs.int == rhs.int },
-            .float => return .{ .bool = lhs.float == rhs.float },
+        return switch (lhs) {
+            .bool => .{ .bool = lhs.bool == rhs.bool },
+            .int => .{ .bool = lhs.int == rhs.int },
+            .float => .{ .bool = lhs.float == rhs.float },
             .guaranteed => unreachable,
-        }
+        };
     }
 
     fn notEqual(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
@@ -313,38 +329,22 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
             }
             return value;
         },
-        .mul,
-        .div,
-        .mod,
-        .add,
-        .sub,
-        .shift_left,
-        .shift_right,
-        .@"and",
-        .@"or",
-        .xor,
-        .equal,
-        .not_equal,
-        .less_than,
-        .less_than_equal,
-        .greater_than,
-        .greater_than_equal,
-        .logical_and,
-        .logical_or,
-        => |bin| {
+        .binary => |bin| {
             var lhs = air.resolveConstExpr(bin.lhs) orelse return null;
             const rhs = air.resolveConstExpr(bin.rhs) orelse return null;
-            switch (inst) {
+            switch (bin.op) {
                 .mul => lhs.mul(rhs),
                 .div => lhs.div(rhs),
                 .mod => lhs.mod(rhs),
                 .add => lhs.add(rhs),
                 .sub => lhs.sub(rhs),
-                .shift_left => lhs.shiftLeft(rhs),
-                .shift_right => lhs.shiftRight(rhs),
+                .shl => lhs.shiftLeft(rhs),
+                .shr => lhs.shiftRight(rhs),
                 .@"and" => lhs.bitwiseAnd(rhs),
                 .@"or" => lhs.bitwiseOr(rhs),
                 .xor => lhs.bitwiseXor(rhs),
+                .min => return lhs.min(rhs),
+                .max => return lhs.max(rhs),
                 .equal => return lhs.equal(rhs),
                 .not_equal => return lhs.notEqual(rhs),
                 .less_than => return lhs.lessThan(rhs),
@@ -353,7 +353,6 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
                 .greater_than_equal => return lhs.greaterThanEqual(rhs),
                 .logical_and => return lhs.logicalAnd(rhs),
                 .logical_or => return lhs.logicalOr(rhs),
-                else => unreachable,
             }
             return lhs;
         },
@@ -401,24 +400,7 @@ pub const Inst = union(enum) {
     deref: InstIndex,
     addr_of: InstIndex,
 
-    mul: Binary,
-    div: Binary,
-    mod: Binary,
-    add: Binary,
-    sub: Binary,
-    shift_left: Binary,
-    shift_right: Binary,
-    @"and": Binary,
-    @"or": Binary,
-    xor: Binary,
-    logical_and: Binary,
-    logical_or: Binary,
-    equal: Binary,
-    not_equal: Binary,
-    less_than: Binary,
-    less_than_equal: Binary,
-    greater_than: Binary,
-    greater_than_equal: Binary,
+    binary: Binary,
 
     block: RefIndex,
     loop: InstIndex,
@@ -426,7 +408,7 @@ pub const Inst = union(enum) {
     @"return": InstIndex,
     break_if: InstIndex,
     @"if": If,
-    @"while": Binary,
+    @"while": While,
     @"for": For,
     @"switch": Switch,
     switch_case: SwitchCase,
@@ -443,57 +425,55 @@ pub const Inst = union(enum) {
     call: FnCall,
     struct_construct: StructConstruct,
     bitcast: Bitcast,
-    builtin_all: InstIndex,
-    builtin_any: InstIndex,
-    builtin_select: BuiltinSelect,
-    builtin_abs: InstIndex,
-    builtin_acos: InstIndex,
-    builtin_acosh: InstIndex,
-    builtin_asin: InstIndex,
-    builtin_asinh: InstIndex,
-    builtin_atan: InstIndex,
-    builtin_atanh: InstIndex,
-    builtin_ceil: InstIndex,
-    builtin_cos: InstIndex,
-    builtin_cosh: InstIndex,
-    builtin_count_leading_zeros: InstIndex,
-    builtin_count_one_bits: InstIndex,
-    builtin_count_trailing_zeros: InstIndex,
-    builtin_degrees: InstIndex,
-    builtin_exp: InstIndex,
-    builtin_exp2: InstIndex,
-    builtin_first_leading_bit: InstIndex,
-    builtin_first_trailing_bit: InstIndex,
-    builtin_floor: InstIndex,
-    builtin_fract: InstIndex,
-    builtin_inverse_sqrt: InstIndex,
-    builtin_length: InstIndex,
-    builtin_log: InstIndex,
-    builtin_log2: InstIndex,
-    builtin_min: Binary,
-    builtin_max: Binary,
-    builtin_quantize_to_F16: InstIndex,
-    builtin_radians: InstIndex,
-    builtin_reverseBits: InstIndex,
-    builtin_round: InstIndex,
-    builtin_saturate: InstIndex,
-    builtin_sign: InstIndex,
-    builtin_sin: InstIndex,
-    builtin_sinh: InstIndex,
-    builtin_smoothstep: BuiltinSmoothstep,
-    builtin_sqrt: InstIndex,
-    builtin_tan: InstIndex,
-    builtin_tanh: InstIndex,
-    builtin_trunc: InstIndex,
-    builtin_dpdx: InstIndex,
-    builtin_dpdx_coarse: InstIndex,
-    builtin_dpdx_fine: InstIndex,
-    builtin_dpdy: InstIndex,
-    builtin_dpdy_coarse: InstIndex,
-    builtin_dpdy_fine: InstIndex,
-    builtin_fwidth: InstIndex,
-    builtin_fwidth_coarse: InstIndex,
-    builtin_fwidth_fine: InstIndex,
+    all: InstIndex,
+    any: InstIndex,
+    select: BuiltinSelect,
+    abs: InstIndex,
+    acos: InstIndex,
+    acosh: InstIndex,
+    asin: InstIndex,
+    asinh: InstIndex,
+    atan: InstIndex,
+    atanh: InstIndex,
+    ceil: InstIndex,
+    cos: InstIndex,
+    cosh: InstIndex,
+    count_leading_zeros: InstIndex,
+    count_one_bits: InstIndex,
+    count_trailing_zeros: InstIndex,
+    degrees: InstIndex,
+    exp: InstIndex,
+    exp2: InstIndex,
+    first_leading_bit: InstIndex,
+    first_trailing_bit: InstIndex,
+    floor: InstIndex,
+    fract: InstIndex,
+    inverse_sqrt: InstIndex,
+    length: InstIndex,
+    log: InstIndex,
+    log2: InstIndex,
+    quantize_to_F16: InstIndex,
+    radians: InstIndex,
+    reverseBits: InstIndex,
+    round: InstIndex,
+    saturate: InstIndex,
+    sign: InstIndex,
+    sin: InstIndex,
+    sinh: InstIndex,
+    smoothstep: BuiltinSmoothstep,
+    sqrt: InstIndex,
+    tan: InstIndex,
+    tanh: InstIndex,
+    trunc: InstIndex,
+    dpdx: InstIndex,
+    dpdx_coarse: InstIndex,
+    dpdx_fine: InstIndex,
+    dpdy: InstIndex,
+    dpdy_coarse: InstIndex,
+    dpdy_fine: InstIndex,
+    fwidth: InstIndex,
+    fwidth_coarse: InstIndex,
+    fwidth_fine: InstIndex,
 
     pub const Var = struct {
         name: StringIndex,
@@ -760,10 +740,40 @@ pub const Inst = union(enum) {
         multisampled_2d,
     };
 
-    pub const Binary = struct { lhs: InstIndex, rhs: InstIndex };
+    pub const Binary = struct {
+        op: Op,
+        result_type: InstIndex,
+        operands_type: InstIndex,
+        lhs: InstIndex,
+        rhs: InstIndex,
+
+        pub const Op = enum {
+            mul,
+            div,
+            mod,
+            add,
+            sub,
+            shl,
+            shr,
+            @"and",
+            @"or",
+            xor,
+            min,
+            max,
+            logical_and,
+            logical_or,
+            equal,
+            not_equal,
+            less_than,
+            less_than_equal,
+            greater_than,
+            greater_than_equal,
+        };
+    };
 
     pub const Assign = struct {
         mod: Modifier,
+        type: InstIndex,
         lhs: InstIndex,
         rhs: InstIndex,
 
@@ -825,13 +835,21 @@ pub const Inst = union(enum) {
         result_type: InstIndex,
     };
 
+    pub const BuiltinMinMax = struct {
+        type: InstIndex,
+        lhs: InstIndex,
+        rhs: InstIndex,
+    };
+
     pub const BuiltinSelect = struct {
+        type: InstIndex,
         true: InstIndex,
         false: InstIndex,
         cond: InstIndex,
     };
 
     pub const BuiltinSmoothstep = struct {
+        type: InstIndex,
         low: InstIndex,
         high: InstIndex,
         x: InstIndex,
@@ -853,6 +871,11 @@ pub const Inst = union(enum) {
         cases: RefIndex,
         body: InstIndex,
         default: bool,
+    };
+
+    pub const While = struct {
+        cond: InstIndex,
+        body: InstIndex,
     };
 
     pub const For = struct {
