@@ -190,11 +190,11 @@ fn emitModule(spv: *SpirV, section: *Section) !void {
 fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     const inst = spv.air.getInst(inst_idx).@"fn";
 
-    var fn_section = Section{ .allocator = spv.allocator };
-    var fn_params_section = Section{ .allocator = spv.allocator };
+    var section = Section{ .allocator = spv.allocator };
+    var params_section = Section{ .allocator = spv.allocator };
     defer {
-        fn_section.deinit();
-        fn_params_section.deinit();
+        section.deinit();
+        params_section.deinit();
     }
 
     const fn_id = spv.allocId();
@@ -310,7 +310,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                 });
             } else {
                 const param_type_id = try spv.emitType(param_inst.type);
-                try fn_params_section.emit(.OpFunctionParameter, .{
+                try params_section.emit(.OpFunctionParameter, .{
                     .id_result_type = param_type_id,
                     .id_result = param_id,
                 });
@@ -331,37 +331,34 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
         },
     });
 
-    try fn_section.emit(.OpFunction, .{
+    try section.emit(.OpFunction, .{
         .id_result_type = return_type_id,
         .id_result = fn_id,
         .function_control = .{ .Const = inst.is_const },
         .function_type = fn_type_id,
     });
 
-    try fn_section.append(fn_params_section);
+    try section.append(params_section);
 
-    const block_id = spv.allocId();
-    const statements_ref = spv.air.getInst(inst.block).block;
-    try fn_section.emit(.OpLabel, .{ .id_result = block_id });
+    const body_id = spv.allocId();
+    const body = spv.air.getInst(inst.block).block;
+    try section.emit(.OpLabel, .{ .id_result = body_id });
 
-    if (statements_ref != .none) {
-        try spv.emitFnVars(&fn_section, statements_ref);
+    if (body != .none) {
+        try spv.emitFnVars(&section, body);
     }
 
-    if (statements_ref != .none) {
-        const list = spv.air.refToList(statements_ref);
-        for (list) |statement_idx| {
-            try spv.emitStatement(&fn_section, statement_idx);
-        }
-
-        if (spv.air.getInst(list[list.len - 1]) != .@"return") {
-            try spv.emitReturn(&fn_section, .none);
+    if (body != .none) {
+        try spv.emitBlock(&section, body);
+        const statements = spv.air.refToList(body);
+        if (spv.air.getInst(statements[statements.len - 1]) != .@"return") {
+            try spv.emitReturn(&section, .none);
         }
     } else {
-        try spv.emitReturn(&fn_section, .none);
+        try spv.emitReturn(&section, .none);
     }
 
-    try fn_section.emit(.OpFunctionEnd, {});
+    try section.emit(.OpFunctionEnd, {});
 
     switch (inst.stage) {
         .none => {},
@@ -403,7 +400,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
         },
     }
 
-    try spv.main_section.append(fn_section);
+    try spv.main_section.append(section);
     try spv.decl_map.put(spv.allocator, inst_idx, .{
         .id = fn_id,
         .type_id = fn_type_id,
@@ -558,6 +555,7 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutO
         .call => |inst| _ = try spv.emitCall(section, inst),
         .@"if" => |@"if"| try spv.emitIf(section, @"if"),
         .assign => |assign| try spv.emitAssign(section, assign),
+        .block => |block| if (block != .none) try spv.emitBlock(section, block),
         else => {}, // TODO
     }
 }
@@ -582,29 +580,30 @@ fn emitIf(spv: *SpirV, section: *Section, inst: Inst.If) !void {
     try section.emit(.OpLabel, .{ .id_result = true_branch });
     const if_body = spv.air.getInst(inst.body).block;
     if (if_body != .none) {
-        const true_branch_statements = spv.air.refToList(if_body);
-        for (true_branch_statements) |statement_idx| {
-            try spv.emitStatement(section, statement_idx);
-        }
+        try spv.emitBlock(section, if_body);
         try section.emit(.OpBranch, .{ .target_label = merge_branch });
     }
 
+    try section.emit(.OpLabel, .{ .id_result = false_branch });
     if (inst.@"else" != .none) {
-        try section.emit(.OpLabel, .{ .id_result = false_branch });
         switch (spv.air.getInst(inst.@"else")) {
             .@"if" => |else_if| try spv.emitIf(section, else_if),
             .block => |else_body| if (else_body != .none) {
-                const false_branch_statements = spv.air.refToList(else_body);
-                for (false_branch_statements) |statement_idx| {
-                    try spv.emitStatement(section, statement_idx);
-                }
+                try spv.emitBlock(section, else_body);
             },
             else => unreachable,
         }
-        try section.emit(.OpBranch, .{ .target_label = merge_branch });
     }
+    try section.emit(.OpBranch, .{ .target_label = merge_branch });
 
     try section.emit(.OpLabel, .{ .id_result = merge_branch });
+}
+
+fn emitBlock(spv: *SpirV, section: *Section, block: RefIndex) !void {
+    if (block == .none) return;
+    for (spv.air.refToList(block)) |statement| {
+        try spv.emitStatement(section, statement);
+    }
 }
 
 fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
