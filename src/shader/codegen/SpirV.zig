@@ -560,6 +560,13 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutO
     }
 }
 
+fn emitBlock(spv: *SpirV, section: *Section, block: RefIndex) !void {
+    if (block == .none) return;
+    for (spv.air.refToList(block)) |statement| {
+        try spv.emitStatement(section, statement);
+    }
+}
+
 fn emitIf(spv: *SpirV, section: *Section, inst: Inst.If) !void {
     const cond = try spv.emitExpr(section, inst.cond);
     const true_branch = spv.allocId();
@@ -597,13 +604,6 @@ fn emitIf(spv: *SpirV, section: *Section, inst: Inst.If) !void {
     try section.emit(.OpBranch, .{ .target_label = merge_branch });
 
     try section.emit(.OpLabel, .{ .id_result = merge_branch });
-}
-
-fn emitBlock(spv: *SpirV, section: *Section, block: RefIndex) !void {
-    if (block == .none) return;
-    for (spv.air.refToList(block)) |statement| {
-        try spv.emitStatement(section, statement);
-    }
 }
 
 fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
@@ -1018,6 +1018,28 @@ fn emitGreaterThan(
     }
 }
 
+fn emitCall(spv: *SpirV, section: *Section, inst: Inst.FnCall) !IdRef {
+    var args = std.ArrayList(IdRef).init(spv.allocator);
+    defer args.deinit();
+
+    if (inst.args != .none) {
+        for (spv.air.refToList(inst.args)) |arg_inst_idx| {
+            try args.append(try spv.emitExpr(section, arg_inst_idx));
+        }
+    }
+
+    const id = spv.allocId();
+    const function = if (spv.decl_map.get(inst.@"fn")) |decl| decl.id else try spv.emitFn(inst.@"fn");
+    try section.emit(.OpFunctionCall, .{
+        .id_result_type = try spv.emitType(spv.air.getInst(inst.@"fn").@"fn".return_type),
+        .id_result = id,
+        .function = function,
+        .id_ref_3 = args.items,
+    });
+
+    return id;
+}
+
 fn emitBool(spv: *SpirV, section: *Section, boolean: Inst.Bool) !IdRef {
     return switch (boolean.value.?) {
         .literal => |lit| spv.resolve(.{ .bool = lit }),
@@ -1125,28 +1147,6 @@ fn emitFloatCast(spv: *SpirV, section: *Section, dest_type: Inst.Float.Type, cas
             else => unreachable,
         },
     }
-    return id;
-}
-
-fn emitCall(spv: *SpirV, section: *Section, inst: Inst.FnCall) !IdRef {
-    var args = std.ArrayList(IdRef).init(spv.allocator);
-    defer args.deinit();
-
-    if (inst.args != .none) {
-        for (spv.air.refToList(inst.args)) |arg_inst_idx| {
-            try args.append(try spv.emitExpr(section, arg_inst_idx));
-        }
-    }
-
-    const id = spv.allocId();
-    const function = if (spv.decl_map.get(inst.@"fn")) |decl| decl.id else try spv.emitFn(inst.@"fn");
-    try section.emit(.OpFunctionCall, .{
-        .id_result_type = try spv.emitType(spv.air.getInst(inst.@"fn").@"fn".return_type),
-        .id_result = id,
-        .function = function,
-        .id_ref_3 = args.items,
-    });
-
     return id;
 }
 
