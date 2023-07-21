@@ -34,6 +34,10 @@ compute_stage: ?ComputeStage = null,
 vertex_stage: ?VertexStage = null,
 fragment_stage: ?FragmentStage = null,
 store_return: ?IdRef = null,
+loop_merge_label: ?IdRef = null,
+loop_continue_label: ?IdRef = null,
+branched: std.AutoHashMapUnmanaged(RefIndex, void) = .{},
+current_block: RefIndex,
 
 const Decl = struct {
     id: IdRef,
@@ -73,6 +77,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         .global_section = .{ .allocator = allocator },
         .main_section = .{ .allocator = allocator },
         .emit_debug_names = debug_info.emit_names,
+        .current_block = undefined,
     };
     defer {
         spv.debug_section.deinit();
@@ -81,6 +86,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         spv.main_section.deinit();
         spv.type_value_map.deinit(allocator);
         spv.decl_map.deinit(allocator);
+        spv.branched.deinit(allocator);
         if (spv.compute_stage) |stage| allocator.free(stage.interface);
         if (spv.vertex_stage) |stage| allocator.free(stage.interface);
         if (spv.fragment_stage) |stage| allocator.free(stage.interface);
@@ -432,8 +438,12 @@ fn emitFnVars(spv: *SpirV, section: *Section, statements: RefIndex) !void {
                     break;
                 }
             },
-            .@"while" => |@"while"| try spv.emitFnVars(section, spv.air.getInst(@"while".body).block),
-            .continuing => |continuing| try spv.emitFnVars(section, spv.air.getInst(continuing).block),
+            .@"while" => |@"while"| if (@"while".body != .none) {
+                try spv.emitFnVars(section, spv.air.getInst(@"while".body).block);
+            },
+            .continuing => |continuing| if (continuing != .none) {
+                try spv.emitFnVars(section, spv.air.getInst(continuing).block);
+            },
             .@"switch" => |@"switch"| {
                 const switch_cases_list = spv.air.refToList(@"switch".cases_list);
                 for (switch_cases_list) |switch_case_idx| {
@@ -443,7 +453,9 @@ fn emitFnVars(spv: *SpirV, section: *Section, statements: RefIndex) !void {
             },
             .@"for" => |@"for"| {
                 _ = try spv.emitVarProto(section, @"for".init);
-                try spv.emitFnVars(section, spv.air.getInst(@"for".body).block);
+                if (@"for".body != .none) {
+                    try spv.emitFnVars(section, spv.air.getInst(@"for".body).block);
+                }
             },
             else => {},
         }
@@ -526,7 +538,7 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
             },
         }),
         .atomic_type => |atomic| try spv.emitType(atomic.elem_type),
-        else => unreachable, // TODO: make this unreachable
+        else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
 }
 
@@ -554,44 +566,55 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutO
         },
         .call => |inst| _ = try spv.emitCall(section, inst),
         .@"if" => |@"if"| try spv.emitIf(section, @"if"),
+        .@"for" => |@"for"| try spv.emitFor(section, @"for"),
+        .@"while" => |@"while"| try spv.emitWhile(section, @"while"),
+        .loop => |loop| try spv.emitLoop(section, loop),
+        .@"break" => try spv.emitBreak(section),
+        .@"continue" => try spv.emitContinue(section),
         .assign => |assign| try spv.emitAssign(section, assign),
         .block => |block| if (block != .none) try spv.emitBlock(section, block),
-        else => {}, // TODO
+        else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst_idx))}),
     }
 }
 
 fn emitBlock(spv: *SpirV, section: *Section, block: RefIndex) !void {
-    if (block == .none) return;
+    const parent_block = spv.current_block;
+    spv.current_block = block;
     for (spv.air.refToList(block)) |statement| {
         try spv.emitStatement(section, statement);
     }
+    spv.current_block = parent_block;
 }
 
 fn emitIf(spv: *SpirV, section: *Section, inst: Inst.If) !void {
+    const if_label = spv.allocId();
+    const true_label = spv.allocId();
+    const false_label = spv.allocId();
+    const merge_label = spv.allocId();
+
+    try section.emit(.OpBranch, .{ .target_label = if_label });
+
+    try section.emit(.OpLabel, .{ .id_result = if_label });
     const cond = try spv.emitExpr(section, inst.cond);
-    const true_branch = spv.allocId();
-    const false_branch = spv.allocId();
-    const merge_branch = spv.allocId();
-
-    try section.emit(.OpSelectionMerge, .{
-        .merge_block = merge_branch,
-        .selection_control = .{},
-    });
-
+    try section.emit(.OpSelectionMerge, .{ .merge_block = merge_label, .selection_control = .{} });
     try section.emit(.OpBranchConditional, .{
         .condition = cond,
-        .true_label = true_branch,
-        .false_label = false_branch,
+        .true_label = true_label,
+        .false_label = false_label,
     });
 
-    try section.emit(.OpLabel, .{ .id_result = true_branch });
-    const if_body = spv.air.getInst(inst.body).block;
-    if (if_body != .none) {
-        try spv.emitBlock(section, if_body);
-        try section.emit(.OpBranch, .{ .target_label = merge_branch });
+    try section.emit(.OpLabel, .{ .id_result = true_label });
+    if (inst.body != .none) {
+        const body = spv.air.getInst(inst.body).block;
+        try spv.emitBlock(section, body);
+        if (spv.branched.get(body) == null) {
+            try section.emit(.OpBranch, .{ .target_label = merge_label });
+        }
+    } else {
+        try section.emit(.OpBranch, .{ .target_label = merge_label });
     }
 
-    try section.emit(.OpLabel, .{ .id_result = false_branch });
+    try section.emit(.OpLabel, .{ .id_result = false_label });
     if (inst.@"else" != .none) {
         switch (spv.air.getInst(inst.@"else")) {
             .@"if" => |else_if| try spv.emitIf(section, else_if),
@@ -601,9 +624,176 @@ fn emitIf(spv: *SpirV, section: *Section, inst: Inst.If) !void {
             else => unreachable,
         }
     }
-    try section.emit(.OpBranch, .{ .target_label = merge_branch });
+    try section.emit(.OpBranch, .{ .target_label = merge_label });
 
-    try section.emit(.OpLabel, .{ .id_result = merge_branch });
+    try section.emit(.OpLabel, .{ .id_result = merge_label });
+}
+
+fn emitFor(spv: *SpirV, section: *Section, inst: Inst.For) !void {
+    const for_label = spv.allocId();
+    const header_label = spv.allocId();
+    const true_label = spv.allocId();
+    const false_label = spv.allocId();
+    const continue_label = spv.allocId();
+    const merge_label = spv.allocId();
+
+    const parent_loop_merge_label = spv.loop_merge_label;
+    const parent_loop_continue_label = spv.loop_continue_label;
+    spv.loop_merge_label = merge_label;
+    spv.loop_continue_label = continue_label;
+    defer {
+        spv.loop_merge_label = parent_loop_merge_label;
+        spv.loop_continue_label = parent_loop_continue_label;
+    }
+
+    try spv.emitStatement(section, inst.init);
+    try section.emit(.OpBranch, .{ .target_label = for_label });
+
+    try section.emit(.OpLabel, .{ .id_result = for_label });
+    try section.emit(.OpLoopMerge, .{
+        .merge_block = merge_label,
+        .continue_target = continue_label,
+        // TODO: this operand must not be 0. otherwise spirv tools will complain
+        .loop_control = .{ .Unroll = true },
+    });
+    try section.emit(.OpBranch, .{ .target_label = header_label });
+
+    try section.emit(.OpLabel, .{ .id_result = header_label });
+    const cond = try spv.emitExpr(section, inst.cond);
+    try section.emit(.OpSelectionMerge, .{ .merge_block = true_label, .selection_control = .{} });
+    try section.emit(.OpBranchConditional, .{
+        .condition = cond,
+        .true_label = false_label,
+        .false_label = true_label,
+    });
+
+    try section.emit(.OpLabel, .{ .id_result = true_label });
+    if (inst.body != .none) {
+        const body = spv.air.getInst(inst.body).block;
+        try spv.emitBlock(section, body);
+        if (spv.branched.get(body) == null) {
+            try section.emit(.OpBranch, .{ .target_label = merge_label });
+        }
+    } else {
+        try section.emit(.OpBranch, .{ .target_label = merge_label });
+    }
+
+    try section.emit(.OpLabel, .{ .id_result = false_label });
+    try section.emit(.OpBranch, .{ .target_label = merge_label });
+
+    try section.emit(.OpLabel, .{ .id_result = continue_label });
+    try spv.emitStatement(section, inst.update);
+    try section.emit(.OpBranch, .{ .target_label = for_label });
+
+    try section.emit(.OpLabel, .{ .id_result = merge_label });
+}
+
+fn emitWhile(spv: *SpirV, section: *Section, inst: Inst.While) !void {
+    const while_label = spv.allocId();
+    const header_label = spv.allocId();
+    const true_label = spv.allocId();
+    const false_label = spv.allocId();
+    const continue_label = spv.allocId();
+    const merge_label = spv.allocId();
+
+    const parent_loop_merge_label = spv.loop_merge_label;
+    const parent_loop_continue_label = spv.loop_continue_label;
+    spv.loop_merge_label = merge_label;
+    spv.loop_continue_label = continue_label;
+    defer {
+        spv.loop_merge_label = parent_loop_merge_label;
+        spv.loop_continue_label = parent_loop_continue_label;
+    }
+
+    try section.emit(.OpBranch, .{ .target_label = while_label });
+
+    try section.emit(.OpLabel, .{ .id_result = while_label });
+    try section.emit(.OpLoopMerge, .{
+        .merge_block = merge_label,
+        .continue_target = continue_label,
+        // TODO: this operand must not be 0. otherwise spirv tools will complain
+        .loop_control = .{ .Unroll = true },
+    });
+    try section.emit(.OpBranch, .{ .target_label = header_label });
+
+    try section.emit(.OpLabel, .{ .id_result = header_label });
+    const cond = try spv.emitExpr(section, inst.cond);
+    try section.emit(.OpSelectionMerge, .{ .merge_block = true_label, .selection_control = .{} });
+    try section.emit(.OpBranchConditional, .{
+        .condition = cond,
+        .true_label = false_label,
+        .false_label = true_label,
+    });
+
+    try section.emit(.OpLabel, .{ .id_result = true_label });
+    if (inst.body != .none) {
+        const body = spv.air.getInst(inst.body).block;
+        try spv.emitBlock(section, body);
+        if (spv.branched.get(body) == null) {
+            try section.emit(.OpBranch, .{ .target_label = merge_label });
+        }
+    } else {
+        try section.emit(.OpBranch, .{ .target_label = merge_label });
+    }
+
+    try section.emit(.OpLabel, .{ .id_result = false_label });
+    try section.emit(.OpBranch, .{ .target_label = merge_label });
+
+    try section.emit(.OpLabel, .{ .id_result = continue_label });
+    try section.emit(.OpBranch, .{ .target_label = while_label });
+
+    try section.emit(.OpLabel, .{ .id_result = merge_label });
+}
+
+fn emitLoop(spv: *SpirV, section: *Section, body_inst: InstIndex) !void {
+    if (body_inst == .none) return;
+
+    const loop_label = spv.allocId();
+    const body_label = spv.allocId();
+    const continue_label = spv.allocId();
+    const merge_label = spv.allocId();
+
+    const parent_loop_merge_label = spv.loop_merge_label;
+    const parent_loop_continue_label = spv.loop_continue_label;
+    spv.loop_merge_label = merge_label;
+    spv.loop_continue_label = continue_label;
+    defer {
+        spv.loop_merge_label = parent_loop_merge_label;
+        spv.loop_continue_label = parent_loop_continue_label;
+    }
+
+    try section.emit(.OpBranch, .{ .target_label = loop_label });
+
+    try section.emit(.OpLabel, .{ .id_result = loop_label });
+    try section.emit(.OpLoopMerge, .{
+        .merge_block = merge_label,
+        .continue_target = continue_label,
+        // TODO: this operand must not be 0. otherwise spirv tools will complain
+        .loop_control = .{ .Unroll = true },
+    });
+    try section.emit(.OpBranch, .{ .target_label = body_label });
+
+    try section.emit(.OpLabel, .{ .id_result = body_label });
+    const body = spv.air.getInst(body_inst).block;
+    try spv.emitBlock(section, body);
+    if (spv.branched.get(body) == null) {
+        try section.emit(.OpBranch, .{ .target_label = continue_label });
+    }
+
+    try section.emit(.OpLabel, .{ .id_result = continue_label });
+    try section.emit(.OpBranch, .{ .target_label = loop_label });
+
+    try section.emit(.OpLabel, .{ .id_result = merge_label });
+}
+
+fn emitBreak(spv: *SpirV, section: *Section) !void {
+    try section.emit(.OpBranch, .{ .target_label = spv.loop_merge_label.? });
+    try spv.branched.put(spv.allocator, spv.current_block, {});
+}
+
+fn emitContinue(spv: *SpirV, section: *Section) !void {
+    try section.emit(.OpBranch, .{ .target_label = spv.loop_continue_label.? });
+    try spv.branched.put(spv.allocator, spv.current_block, {});
 }
 
 fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
@@ -680,240 +870,26 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
     const rhs = try spv.emitExpr(section, binary.rhs);
 
     switch (spv.air.getInst(binary.operands_type)) {
-        .float => switch (binary.op) {
-            .mul => {
-                try section.emit(.OpFMul, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .div => {
-                try section.emit(.OpFDiv, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .mod => {
-                try section.emit(.OpFMod, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .add => {
-                try section.emit(.OpFAdd, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .sub => {
-                try section.emit(.OpFSub, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            else => {},
-        },
-        .int => |int| switch (binary.op) {
-            .mul => {
-                try section.emit(.OpIMul, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .add => {
-                try section.emit(.OpIAdd, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .sub => {
-                try section.emit(.OpISub, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .shl => {
-                try section.emit(.OpShiftLeftLogical, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .base = lhs,
-                    .shift = rhs,
-                });
-                return id;
-            },
-            .shr => {
-                try section.emit(.OpShiftRightLogical, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .base = lhs,
-                    .shift = rhs,
-                });
-                return id;
-            },
-            .@"and" => {
-                try section.emit(.OpBitwiseAnd, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .@"or" => {
-                try section.emit(.OpBitwiseOr, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            .xor => {
-                try section.emit(.OpBitwiseXor, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                });
-                return id;
-            },
-            else => switch (int.type) {
-                .i32 => switch (binary.op) {
-                    .div => {
-                        try section.emit(.OpSDiv, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = rhs,
-                        });
-                        return id;
-                    },
-                    .mod => {
-                        try section.emit(.OpSMod, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = rhs,
-                        });
-                        return id;
-                    },
-                    else => {},
-                },
-                .u32 => switch (binary.op) {
-                    .div => {
-                        try section.emit(.OpUDiv, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = rhs,
-                        });
-                        return id;
-                    },
-                    .mod => {
-                        try section.emit(.OpUMod, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = rhs,
-                        });
-                        return id;
-                    },
-                    else => {},
-                },
-            },
-        },
-        else => {},
-    }
-
-    switch (binary.op) {
-        .min => {
-            const cond_id = spv.allocId();
-            try spv.emitLessThan(section, id, binary.operands_type, type_id, lhs, rhs);
-            try section.emit(.OpSelect, .{
+        .bool => switch (binary.op) {
+            .equal => try section.emit(.OpLogicalEqual, .{
                 .id_result = id,
                 .id_result_type = type_id,
-                .condition = cond_id,
-                .object_1 = lhs,
-                .object_2 = rhs,
-            });
-        },
-        .max => {
-            const cond_id = spv.allocId();
-            try spv.emitGreaterThan(section, id, binary.operands_type, type_id, lhs, rhs);
-            try section.emit(.OpSelect, .{
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .not_equal => try section.emit(.OpLogicalNotEqual, .{
                 .id_result = id,
                 .id_result_type = type_id,
-                .condition = cond_id,
-                .object_1 = lhs,
-                .object_2 = rhs,
-            });
-        },
-        .logical_and => try section.emit(.OpLogicalAnd, .{
-            .id_result = id,
-            .id_result_type = type_id,
-            .operand_1 = lhs,
-            .operand_2 = rhs,
-        }),
-        .logical_or => try section.emit(.OpLogicalOr, .{
-            .id_result = id,
-            .id_result_type = type_id,
-            .operand_1 = lhs,
-            .operand_2 = rhs,
-        }),
-        .equal => try section.emit(.OpLogicalEqual, .{
-            .id_result = id,
-            .id_result_type = type_id,
-            .operand_1 = lhs,
-            .operand_2 = rhs,
-        }),
-        .not_equal => try section.emit(.OpLogicalNotEqual, .{
-            .id_result = id,
-            .id_result_type = type_id,
-            .operand_1 = lhs,
-            .operand_2 = rhs,
-        }),
-        .less_than => try spv.emitLessThan(section, id, binary.operands_type, type_id, lhs, rhs),
-        .greater_than => try spv.emitGreaterThan(section, id, binary.operands_type, type_id, lhs, rhs),
-        .less_than_equal => switch (spv.air.getInst(binary.operands_type)) {
-            .int => |int| switch (int.type) {
-                .i32 => try section.emit(.OpSLessThanEqual, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                }),
-                .u32 => try section.emit(.OpULessThanEqual, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                }),
-            },
-            .float => try section.emit(.OpFOrdLessThanEqual, .{
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .logical_and => try section.emit(.OpLogicalAnd, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .logical_or => try section.emit(.OpLogicalOr, .{
                 .id_result = id,
                 .id_result_type = type_id,
                 .operand_1 = lhs,
@@ -921,22 +897,174 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
             }),
             else => unreachable,
         },
-        .greater_than_equal => switch (spv.air.getInst(binary.operands_type)) {
-            .int => |int| switch (int.type) {
-                .i32 => try section.emit(.OpSGreaterThanEqual, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                }),
-                .u32 => try section.emit(.OpUGreaterThanEqual, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                }),
+        .int => |int| switch (binary.op) {
+            .mul => try section.emit(.OpIMul, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .add => try section.emit(.OpIAdd, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .sub => try section.emit(.OpISub, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .shl => try section.emit(.OpShiftLeftLogical, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .base = lhs,
+                .shift = rhs,
+            }),
+            .shr => try section.emit(.OpShiftRightLogical, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .base = lhs,
+                .shift = rhs,
+            }),
+            .@"and" => try section.emit(.OpBitwiseAnd, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .@"or" => try section.emit(.OpBitwiseOr, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .xor => try section.emit(.OpBitwiseXor, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .equal => try section.emit(.OpIEqual, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .not_equal => try section.emit(.OpINotEqual, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            else => switch (int.type) {
+                .i32 => switch (binary.op) {
+                    .div => try section.emit(.OpSDiv, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .mod => try section.emit(.OpSMod, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .less_than => try section.emit(.OpSLessThan, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .greater_than => try section.emit(.OpSGreaterThan, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    else => unreachable,
+                },
+                .u32 => switch (binary.op) {
+                    .div => try section.emit(.OpUDiv, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .mod => try section.emit(.OpUMod, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .less_than => try section.emit(.OpULessThan, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .greater_than => try section.emit(.OpUGreaterThan, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    else => unreachable,
+                },
             },
-            .float => try section.emit(.OpFOrdGreaterThanEqual, .{
+        },
+        .float => switch (binary.op) {
+            .mul => try section.emit(.OpFMul, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .div => try section.emit(.OpFDiv, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .mod => try section.emit(.OpFMod, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .add => try section.emit(.OpFAdd, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .sub => try section.emit(.OpFSub, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .equal => try section.emit(.OpFOrdEqual, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .not_equal => try section.emit(.OpFOrdNotEqual, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .less_than => try section.emit(.OpFOrdLessThan, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            .greater_than => try section.emit(.OpFOrdGreaterThan, .{
                 .id_result = id,
                 .id_result_type = type_id,
                 .operand_1 = lhs,
@@ -948,74 +1076,6 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
     }
 
     return id;
-}
-
-fn emitLessThan(
-    spv: *SpirV,
-    section: *Section,
-    id: IdResult,
-    operands_type: InstIndex,
-    result_type: IdRef,
-    lhs: IdRef,
-    rhs: IdRef,
-) !void {
-    switch (spv.air.getInst(operands_type)) {
-        .int => |int| switch (int.type) {
-            .i32 => try section.emit(.OpSLessThan, .{
-                .id_result = id,
-                .id_result_type = result_type,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .u32 => try section.emit(.OpULessThan, .{
-                .id_result = id,
-                .id_result_type = result_type,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-        },
-        .float => try section.emit(.OpFOrdLessThan, .{
-            .id_result = id,
-            .id_result_type = result_type,
-            .operand_1 = lhs,
-            .operand_2 = rhs,
-        }),
-        else => unreachable,
-    }
-}
-
-fn emitGreaterThan(
-    spv: *SpirV,
-    section: *Section,
-    id: IdResult,
-    operands_type: InstIndex,
-    result_type: IdRef,
-    lhs: IdRef,
-    rhs: IdRef,
-) !void {
-    switch (spv.air.getInst(operands_type)) {
-        .int => |int| switch (int.type) {
-            .i32 => try section.emit(.OpSGreaterThan, .{
-                .id_result = id,
-                .id_result_type = result_type,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .u32 => try section.emit(.OpUGreaterThan, .{
-                .id_result = id,
-                .id_result_type = result_type,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-        },
-        .float => try section.emit(.OpFOrdGreaterThan, .{
-            .id_result = id,
-            .id_result_type = result_type,
-            .operand_1 = lhs,
-            .operand_2 = rhs,
-        }),
-        else => unreachable,
-    }
 }
 
 fn emitCall(spv: *SpirV, section: *Section, inst: Inst.FnCall) !IdRef {

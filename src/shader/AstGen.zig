@@ -1584,39 +1584,11 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .logical_and, .logical_or => {
             is_valid = lhs_res_tag == .bool and rhs_res_tag == .bool;
         },
-        .mul, .div, .mod, .add, .sub => switch (lhs_res_tag) {
-            .int, .float => switch (rhs_res_tag) {
-                .int, .float => {
-                    is_valid = true;
-                },
-                .vector => |rhs_vec| switch (astgen.getInst(rhs_vec.elem_type)) {
-                    .int, .float => {
-                        is_valid = true;
-                    },
-                    else => {},
-                },
-                else => {},
-            },
-            .vector => |lhs_vec| switch (astgen.getInst(lhs_vec.elem_type)) {
-                .int, .float => {
-                    is_valid = true;
-                    switch (rhs_res_tag) {
-                        .int, .float => {
-                            is_valid = true;
-                        },
-                        .vector => |rhs_vec| switch (astgen.getInst(rhs_vec.elem_type)) {
-                            .int, .float => {
-                                is_valid = true;
-                            },
-                            else => {},
-                        },
-                        else => {},
-                    }
-                },
-                else => {},
-            },
-            else => {},
-        },
+        .mul,
+        .div,
+        .mod,
+        .add,
+        .sub,
         .equal,
         .not_equal,
         .less_than,
@@ -1624,11 +1596,21 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .greater_than,
         .greater_than_equal,
         => switch (lhs_res_tag) {
-            .int, .float, .bool, .vector => switch (rhs_res_tag) {
-                .int, .float, .bool, .vector => {
+            .int, .float => {
+                if (std.meta.activeTag(lhs_res_tag) == std.meta.activeTag(rhs_res_tag) or
+                    (lhs_res_tag == .vector and
+                    std.meta.activeTag(rhs_res_tag) == std.meta.activeTag(astgen.getInst(lhs_res_tag.vector.elem_type))))
+                {
                     is_valid = true;
-                },
-                else => {},
+                }
+            },
+            .vector => {
+                if (std.meta.activeTag(rhs_res_tag) == std.meta.activeTag(lhs_res_tag) or
+                    (rhs_res_tag == .vector and
+                    std.meta.activeTag(lhs_res_tag) == std.meta.activeTag(astgen.getInst(rhs_res_tag.vector.elem_type))))
+                {
+                    is_valid = true;
+                }
             },
             else => {},
         },
