@@ -184,10 +184,6 @@ fn writeExtendedMask(section: *Section, comptime Operand: type, operand: Operand
         }
     }
 
-    if (mask == 0) {
-        return;
-    }
-
     section.writeWord(mask);
 
     inline for (@typeInfo(Operand).Struct.fields) |field| {
