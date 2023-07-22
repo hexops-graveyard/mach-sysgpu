@@ -9,9 +9,10 @@ const Manager = @import("../helper.zig").Manager;
 
 pub const Dispatch = vk.InstanceWrapper(.{
     .createDevice = true,
-    .createWin32SurfaceKHR = true,
-    .createXlibSurfaceKHR = true,
+    .createWin32SurfaceKHR = builtin.target.os.tag == .windows,
+    .createXlibSurfaceKHR = builtin.target.os.tag == .linux,
     .destroyInstance = true,
+    .destroySurfaceKHR = true,
     .enumerateDeviceExtensionProperties = true,
     .enumerateDeviceLayerProperties = true,
     .enumeratePhysicalDevices = true,
@@ -54,7 +55,7 @@ pub fn init(desc: *const gpu.Instance.Descriptor, allocator: std.mem.Allocator) 
         .enabled_extension_count = @intCast(extensions.len),
         .pp_enabled_extension_names = extensions.ptr,
     });
-    const dispatch = try Dispatch.load(instance, base.getInstanceProcAddr());
+    const dispatch = try Dispatch.load(instance, base.dispatch.dispatch.vkGetInstanceProcAddr);
 
     return .{
         .allocator = allocator,
@@ -101,21 +102,28 @@ fn getLayers(base: Base) ![]const [*:0]const u8 {
 }
 
 fn getExtensions(base: Base) ![]const [*:0]const u8 {
-    const required_platform_extensions = switch (builtin.os.tag) {
-        .linux => &[_][*:0]const u8{
+    const required_extensions: []const [*:0]const u8 = switch (builtin.target.os.tag) {
+        .linux => &.{
+            vk.extension_info.khr_surface.name,
             vk.extension_info.khr_xlib_surface.name,
             vk.extension_info.khr_xcb_surface.name,
             vk.extension_info.khr_wayland_surface.name,
         },
-        .windows => &.{vk.extension_info.khr_win_32_surface.name},
-        .macos, .ios => &.{vk.extension_info.ext_metal_surface.name},
+        .windows => &.{
+            vk.extension_info.khr_surface.name,
+            vk.extension_info.khr_win_32_surface.name,
+        },
+        .macos, .ios => &.{
+            vk.extension_info.khr_surface.name,
+            vk.extension_info.ext_metal_surface.name,
+        },
         else => if (builtin.target.abi == .android)
-            &.{vk.extension_info.khr_android_surface.name}
+            &.{
+                vk.extension_info.khr_surface.name,
+                vk.extension_info.khr_android_surface.name,
+            }
         else
             @compileError("unsupported platform"),
-    };
-    const required_extensions = required_platform_extensions ++ &[_][*:0]const u8{
-        vk.extension_info.khr_surface.name,
     };
 
     var extensions = try std.ArrayList([*:0]const u8).initCapacity(base.allocator, required_extensions.len);

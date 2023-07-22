@@ -4,7 +4,7 @@ const gpu = @import("gpu");
 const shader = @import("shader.zig");
 const helper = @import("helper.zig");
 
-const backend_type: gpu.BackendType = switch (builtin.os.tag) {
+const backend_type: gpu.BackendType = switch (builtin.target.os.tag) {
     .linux, .windows => .vulkan,
     .macos, .ios => .metal,
     else => @compileError("unsupported platform"),
@@ -16,12 +16,13 @@ const impl = switch (backend_type) {
 };
 
 var inited = false;
+var gpa = std.heap.GeneralPurposeAllocator(.{}){}; // TODO
 var allocator: std.mem.Allocator = undefined;
 
 pub const Interface = struct {
-    pub fn init(passed_allocator: std.mem.Allocator) void {
+    pub fn init() void {
         inited = true;
-        allocator = passed_allocator;
+        allocator = gpa.allocator();
     }
 
     pub inline fn createInstance(descriptor: ?*const gpu.Instance.Descriptor) ?*gpu.Instance {
@@ -30,7 +31,10 @@ pub const Interface = struct {
         }
 
         var instance = allocator.create(impl.Instance) catch return null;
-        instance.* = impl.Instance.init(descriptor orelse &gpu.Instance.Descriptor{}, allocator) catch return null;
+        instance.* = impl.Instance.init(descriptor orelse &gpu.Instance.Descriptor{}, allocator) catch {
+            allocator.destroy(instance);
+            return null;
+        };
         return @as(*gpu.Instance, @ptrCast(instance));
     }
 
@@ -216,7 +220,10 @@ pub const Interface = struct {
 
     pub inline fn commandEncoderBeginRenderPass(command_encoder_raw: *gpu.CommandEncoder, descriptor: *const gpu.RenderPassDescriptor) *gpu.RenderPassEncoder {
         const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
+
         var render_pass = allocator.create(impl.RenderPassEncoder) catch unreachable;
+        errdefer allocator.destroy(render_pass);
+
         render_pass.* = command_encoder.beginRenderPass(descriptor) catch unreachable;
         return @ptrCast(render_pass);
     }
@@ -459,7 +466,10 @@ pub const Interface = struct {
 
     pub inline fn deviceCreateCommandEncoder(device_raw: *gpu.Device, descriptor: ?*const gpu.CommandEncoder.Descriptor) *gpu.CommandEncoder {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+
         var command_encoder = allocator.create(impl.CommandEncoder) catch unreachable;
+        errdefer allocator.destroy(command_encoder);
+
         command_encoder.* = impl.Device.createCommandEncoder(device, descriptor orelse &.{}) catch unreachable;
         return @ptrCast(command_encoder);
     }
@@ -521,7 +531,10 @@ pub const Interface = struct {
 
     pub inline fn deviceCreateRenderPipeline(device_raw: *gpu.Device, descriptor: *const gpu.RenderPipeline.Descriptor) *gpu.RenderPipeline {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+
         var render_pipeline = allocator.create(impl.RenderPipeline) catch unreachable;
+        errdefer allocator.destroy(render_pipeline);
+
         render_pipeline.* = impl.Device.createRenderPipeline(device, descriptor) catch unreachable;
         return @ptrCast(render_pipeline);
     }
@@ -552,10 +565,13 @@ pub const Interface = struct {
         if (helper.findChained(gpu.ShaderModule.WGSLDescriptor, descriptor.next_in_chain.generic)) |wgsl_descriptor| {
             var ast = shader.Ast.parse(allocator, &errors, std.mem.span(wgsl_descriptor.code)) catch unreachable;
             defer ast.deinit(allocator);
+
             var air = shader.Air.generate(allocator, &ast, &errors, null) catch unreachable;
             defer air.deinit(allocator);
+
             const output = shader.CodeGen.generate(allocator, &air, .spirv, .{ .emit_source_file = "" }) catch unreachable;
             defer allocator.free(output);
+
             shader_module.* = impl.Device.createShaderModule(device, output) catch unreachable;
         } else if (helper.findChained(gpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
             const output = std.mem.sliceAsBytes(spirv_descriptor.code[0..spirv_descriptor.code_size]);
@@ -568,7 +584,10 @@ pub const Interface = struct {
     pub inline fn deviceCreateSwapChain(device_raw: *gpu.Device, surface_raw: ?*gpu.Surface, descriptor: *const gpu.SwapChain.Descriptor) *gpu.SwapChain {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const surface: *impl.Surface = @ptrCast(@alignCast(surface_raw.?));
+
         var swapchain = allocator.create(impl.SwapChain) catch unreachable;
+        errdefer allocator.destroy(swapchain);
+
         swapchain.* = impl.Device.createSwapChain(device, surface, descriptor) catch unreachable;
         return @ptrCast(swapchain);
     }
@@ -661,7 +680,10 @@ pub const Interface = struct {
 
     pub inline fn deviceTick(device: *gpu.Device) void {
         _ = device;
-        unreachable;
+    }
+
+    pub inline fn machDeviceWaitForCommandsToBeScheduled(device: *gpu.Device) void {
+        _ = device;
     }
 
     pub inline fn deviceReference(device_raw: *gpu.Device) void {
@@ -699,6 +721,8 @@ pub const Interface = struct {
         const instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
 
         var surface = allocator.create(impl.Surface) catch unreachable;
+        errdefer allocator.destroy(surface);
+
         surface.* = impl.Instance.createSurface(instance, descriptor) catch unreachable;
         surface.manager.reference();
 
@@ -721,6 +745,8 @@ pub const Interface = struct {
         var adapter = allocator.create(impl.Adapter) catch |err| {
             return callback(.err, undefined, @errorName(err), userdata);
         };
+        errdefer allocator.destroy(adapter);
+
         adapter.* = impl.Adapter.init(instance, options orelse &gpu.RequestAdapterOptions{}) catch |err| {
             return callback(.err, undefined, @errorName(err), userdata);
         };
@@ -736,6 +762,7 @@ pub const Interface = struct {
     pub inline fn instanceRelease(instance_raw: *gpu.Instance) void {
         var instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
         instance.manager.release();
+        _ = gpa.deinit();
     }
 
     pub inline fn pipelineLayoutSetLabel(pipeline_layout: *gpu.PipelineLayout, label: [*:0]const u8) void {
@@ -1208,7 +1235,10 @@ pub const Interface = struct {
 
     pub inline fn swapChainGetCurrentTextureView(swap_chain_raw: *gpu.SwapChain) ?*gpu.TextureView {
         const swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
+
         var texture_view = allocator.create(impl.TextureView) catch unreachable;
+        errdefer allocator.destroy(texture_view);
+
         texture_view.* = swap_chain.getCurrentTextureView() catch unreachable;
         return @ptrCast(texture_view);
     }
