@@ -42,8 +42,8 @@ pub fn emitRaw(
     operand_words: usize, // opcode itself not included
 ) !void {
     const word_count = 1 + operand_words;
-    try section.words.ensureUnusedCapacity(word_count);
-    section.writeWord((@intCast(word_count << 16))) | @intFromEnum(opcode);
+    try section.words.ensureUnusedCapacity(section.allocator, word_count);
+    section.writeWord(@as(Word, @intCast(word_count << 16)) | @intFromEnum(opcode));
 }
 
 pub fn emit(
