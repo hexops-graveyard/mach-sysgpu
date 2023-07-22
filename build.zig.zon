@@ -6,13 +6,25 @@
             .url = "https://github.com/hexops/vulkan-zig-generated/archive/b5ee8187817cf620e00d3ccbb48c68cc2a386b28.tar.gz",
             .hash = "12207fb09aa58efcc6f833cd1ae4b37f2e5082f55a125a1401c93939289bcdcc48fa",
         },
-        .@"mach-glfw" = .{
-            .url = "https://github.com/hexops/mach-glfw/archive/c2b814963e7aa37d0138b111c9e05acc491f61e8.tar.gz",
-            .hash = "122014acdd8545ebfa583c8d3e92bfd90a6b84fde0fcfde9f510f7ad1c47d05c6039",
+        .mach_model3d = .{
+            .url = "https://github.com/hexops/mach-model3d/archive/c00491828969237f200a43e318e8b7d460e2c82a.tar.gz",
+            .hash = "1220b32d2a485161f0cee533ac2ab0baab2eeff34dee8bb519f976a30f34fda8e3a7",
+        },
+        .mach_sysjs = .{
+            .url = "https://github.com/hexops/mach-sysjs/archive/b71eb0531f337fcca5a2b245f595355260109a34.tar.gz",
+            .hash = "12208b30f1d9c229d1e64483354610207c9aa06350a46558560b818d597800ed86e0",
+        },
+        .mach_gamemode = .{
+            .url = "https://github.com/hexops/mach-gamemode/archive/6e71d19d7eecbf0230e5c445dbe9281e45393245.tar.gz",
+            .hash = "1220ff812193615e03375a342a7c8a52f368eab219bceab3039de1915f9c945f2a66",
+        },
+        .mach_glfw = .{
+            .url = "https://github.com/hexops/mach-glfw/archive/1b516bae925110d120bd6353a87fcca22eae8131.tar.gz",
+            .hash = "12200748b2fb192a567d63dacbbd471fb44a7291d2670e36326c4305b0de59cdc711",
         },
         .glfw = .{
-            .url = "https://github.com/hexops/glfw/archive/0e4cdba4216c6def0423462a2f21fef80683d56d.tar.gz",
-            .hash = "1220a0b036095c2c54af347c86514ed9dab431299f0140b0e434ed119f85a976c32b",
+            .url = "https://github.com/hexops/glfw/archive/06bd1276fb05c8bc999e104cf21c76788386f263.tar.gz",
+            .hash = "1220c4155e5e573bc39731e6e459cff44fb4a9c5fcf9087b5890a03cc349587d36ab",
         },
         .direct3d_headers = .{
             .url = "https://github.com/hexops/direct3d-headers/archive/773dce3f079eecdccc7c71d1318a0741649d568b.tar.gz",

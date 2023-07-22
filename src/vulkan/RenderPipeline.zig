@@ -83,6 +83,13 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
     var color_attachments: []vk.PipelineColorBlendAttachmentState = &.{};
     var attachments: []vk.AttachmentDescription = &.{};
     var attachment_refs: []vk.AttachmentReference = &.{};
+
+    defer if (desc.fragment != null) {
+        device.allocator.free(color_attachments);
+        device.allocator.free(attachments);
+        device.allocator.free(attachment_refs);
+    };
+
     if (desc.fragment) |frag| {
         color_attachments = try device.allocator.alloc(vk.PipelineColorBlendAttachmentState, frag.target_count);
         attachments = try device.allocator.alloc(vk.AttachmentDescription, frag.target_count);

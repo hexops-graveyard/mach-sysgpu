@@ -20,7 +20,7 @@ pub fn init(allocator: std.mem.Allocator) !Base {
     // ElfDynLib is unable to find vulkan, so forcing libc means we always use DlDynlib even on Linux
     if (!builtin.link_libc) @compileError("libc not linked");
     if (lib == null) {
-        lib = try std.DynLib.openZ(switch (builtin.os.tag) {
+        lib = try std.DynLib.openZ(switch (builtin.target.os.tag) {
             .windows => "vulkan-1.dll",
             .linux => "libvulkan.so.1",
             .macos => "libvulkan.1.dylib",
@@ -38,16 +38,11 @@ pub fn init(allocator: std.mem.Allocator) !Base {
 
 pub fn deinit(base: Base) void {
     _ = base;
-
     lib.?.close();
 }
 
 pub fn createInstance(base: Base, info: vk.InstanceCreateInfo) !vk.Instance {
     return base.dispatch.createInstance(&info, null);
-}
-
-pub fn getInstanceProcAddr(base: Base) vk.PfnGetInstanceProcAddr {
-    return base.dispatch.dispatch.vkGetInstanceProcAddr;
 }
 
 fn getBaseProcAddress(_: vk.Instance, name_ptr: [*:0]const u8) vk.PfnVoidFunction {
