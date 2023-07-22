@@ -538,6 +538,21 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
             },
         }),
         .atomic_type => |atomic| try spv.emitType(atomic.elem_type),
+        .@"struct" => |@"struct"| {
+            const member_list = spv.air.refToList(@"struct".members);
+            var members = std.ArrayList(IdRef).init(spv.allocator);
+            try members.ensureTotalCapacityPrecise(member_list.len);
+            defer members.deinit();
+            for (member_list, 0..) |member_inst_idx, i| {
+                const member_inst = spv.air.getInst(member_inst_idx).struct_member;
+                const member = try spv.emitType(member_inst.type);
+                try spv.debugMemberName(member, i, spv.air.getStr(member_inst.name));
+                members.appendAssumeCapacity(member);
+            }
+            const id = try spv.resolve(.{ .struct_type = .{ .members = try members.toOwnedSlice() } });
+            try spv.debugName(id, spv.air.getStr(@"struct".name));
+            return id;
+        },
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
 }
@@ -1423,6 +1438,7 @@ const Key = union(enum) {
     matrix_type: MatrixType,
     array_type: ArrayType,
     ptr_type: PointerType,
+    struct_type: StructType,
     fn_type: FunctionType,
     null: IdRef,
     bool: bool,
@@ -1448,6 +1464,10 @@ const Key = union(enum) {
     const PointerType = struct {
         storage_class: spec.StorageClass,
         elem_type: IdRef,
+    };
+
+    const StructType = struct {
+        members: []const IdRef,
     };
 
     const FunctionType = struct {
@@ -1535,6 +1555,12 @@ pub fn resolve(spv: *SpirV, key: Key) !IdRef {
                 .type = ptr_type.elem_type,
             });
         },
+        .struct_type => |struct_type| {
+            try spv.global_section.emit(.OpTypeStruct, .{
+                .id_result = id,
+                .id_ref = struct_type.members,
+            });
+        },
         .fn_type => |fn_type| {
             try spv.global_section.emit(.OpTypeFunction, .{
                 .id_result = id,
@@ -1591,6 +1617,16 @@ pub fn resolve(spv: *SpirV, key: Key) !IdRef {
 fn debugName(spv: *SpirV, id: IdResult, name: []const u8) !void {
     if (spv.emit_debug_names) {
         try spv.debug_section.emit(.OpName, .{ .target = id, .name = name });
+    }
+}
+
+fn debugMemberName(spv: *SpirV, id: IdResult, index: usize, name: []const u8) !void {
+    if (spv.emit_debug_names) {
+        try spv.debug_section.emit(.OpMemberName, .{
+            .type = id,
+            .member = @as(spec.LiteralInteger, @intCast(index)),
+            .name = name,
+        });
     }
 }
 

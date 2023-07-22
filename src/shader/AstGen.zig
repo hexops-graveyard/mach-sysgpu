@@ -1352,7 +1352,7 @@ fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     });
 }
 
-fn genExpr(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+fn genExpr(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ OutOfMemory, AnalysisFail }!InstIndex {
     const node_tag = astgen.tree.nodeTag(node);
     return switch (node_tag) {
         .number => astgen.genNumber(node),
