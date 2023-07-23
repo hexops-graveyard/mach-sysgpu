@@ -33,5 +33,4 @@ pub fn deinit(cmd_buffer: *CommandBuffer) void {
         1,
         @ptrCast(&cmd_buffer.buffer),
     );
-    cmd_buffer.render_passes.deinit(cmd_buffer.device.allocator);
 }

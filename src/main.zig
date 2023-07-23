@@ -340,12 +340,12 @@ pub const Interface = struct {
     }
 
     pub inline fn commandEncoderReference(command_encoder_raw: *gpu.CommandEncoder) void {
-        const command_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(command_encoder_raw));
+        const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
         command_encoder.manager.reference();
     }
 
     pub inline fn commandEncoderRelease(command_encoder_raw: *gpu.CommandEncoder) void {
-        const command_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(command_encoder_raw));
+        const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
         command_encoder.manager.release();
     }
 
