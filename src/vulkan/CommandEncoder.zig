@@ -23,12 +23,7 @@ pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !Comma
 }
 
 pub fn deinit(cmd_encoder: *CommandEncoder) void {
-    cmd_encoder.device.dispatch.destroyFramebuffer(
-        cmd_encoder.cmd_buffer.device.device,
-        cmd_encoder.frame_buffer,
-        null,
-    );
-    cmd_encoder.cmd_buffer.deinit();
+    _ = cmd_encoder;
 }
 
 pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !RenderPassEncoder {
