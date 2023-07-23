@@ -41,14 +41,17 @@ pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
     _ = try queue.device_dispatch.waitForFences(queue.device_raw, 1, &[_]vk.Fence{queue.fence}, vk.TRUE, std.math.maxInt(u64));
     try queue.device_dispatch.resetFences(queue.device_raw, 1, &[_]vk.Fence{queue.fence});
 
+    const dst_stage_masks = vk.PipelineStageFlags{ .all_commands_bit = true };
     const submits = try queue.allocator.alloc(vk.SubmitInfo, commands.len);
     defer queue.allocator.free(submits);
+
     for (commands, 0..) |buf, i| {
         submits[i] = .{
             .command_buffer_count = 1,
             .p_command_buffers = &[_]vk.CommandBuffer{buf.buffer},
             .wait_semaphore_count = 1,
             .p_wait_semaphores = &[_]vk.Semaphore{queue.image_available_semaphore},
+            .p_wait_dst_stage_mask = @ptrCast(&dst_stage_masks),
             .signal_semaphore_count = 1,
             .p_signal_semaphores = &[_]vk.Semaphore{queue.render_finished_semaphore},
         };
