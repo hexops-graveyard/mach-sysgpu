@@ -15,7 +15,6 @@ pipeline: vk.Pipeline,
 render_pass_raw: vk.RenderPass,
 
 pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !RenderPipeline {
-    // Create shader stages
     var stages: [2]vk.PipelineShaderStageCreateInfo = undefined;
     var stage_count: u32 = 1;
 
@@ -38,13 +37,18 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
         };
     }
 
-    // Configure vertex stage
     const vertex_bindings = try device.allocator.alloc(vk.VertexInputBindingDescription, desc.vertex.buffer_count);
-    defer device.allocator.free(vertex_bindings);
     var vertex_attrs = std.ArrayList(vk.VertexInputAttributeDescription).init(device.allocator);
-    defer vertex_attrs.deinit();
+    defer {
+        device.allocator.free(vertex_bindings);
+        vertex_attrs.deinit();
+    }
+
     for (vertex_bindings, 0..) |*binding, i| {
         const buf = desc.vertex.buffers.?[i];
+        // skip unused slots
+        if (buf.step_mode == .vertex_buffer_not_used) continue;
+
         binding.* = .{
             .binding = @intCast(i),
             .stride = @intCast(buf.array_stride),
@@ -72,14 +76,109 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
         .p_vertex_attribute_descriptions = vertex_attrs.items.ptr,
     };
 
+    const input_assembly = vk.PipelineInputAssemblyStateCreateInfo{
+        .topology = switch (desc.primitive.topology) {
+            .point_list => .point_list,
+            .line_list => .line_list,
+            .line_strip => .line_strip,
+            .triangle_list => .triangle_list,
+            .triangle_strip => .triangle_strip,
+        },
+        .primitive_restart_enable = @intFromBool(desc.primitive.strip_index_format != .undefined),
+    };
+
+    const viewport = vk.PipelineViewportStateCreateInfo{
+        .viewport_count = 1,
+        .scissor_count = 1,
+    };
+
+    const rasterization = vk.PipelineRasterizationStateCreateInfo{
+        .depth_clamp_enable = vk.FALSE,
+        .rasterizer_discard_enable = vk.FALSE,
+        .polygon_mode = .fill,
+        .cull_mode = .{
+            .front_bit = desc.primitive.cull_mode == .front,
+            .back_bit = desc.primitive.cull_mode == .back,
+        },
+        .front_face = switch (desc.primitive.front_face) {
+            .ccw => vk.FrontFace.counter_clockwise,
+            .cw => vk.FrontFace.clockwise,
+        },
+        .depth_bias_enable = isDepthBiasEnabled(desc.depth_stencil),
+        .depth_bias_constant_factor = getDepthBias(desc.depth_stencil),
+        .depth_bias_clamp = getDepthBiasClamp(desc.depth_stencil),
+        .depth_bias_slope_factor = getDepthBiasSlopeScale(desc.depth_stencil),
+        .line_width = 1,
+    };
+
+    const multisample = vk.PipelineMultisampleStateCreateInfo{
+        .rasterization_samples = getSampleCountFlags(desc.multisample.count),
+        .sample_shading_enable = vk.FALSE,
+        .min_sample_shading = 0,
+        .p_sample_mask = &[_]u32{desc.multisample.mask},
+        .alpha_to_coverage_enable = @intFromBool(desc.multisample.alpha_to_coverage_enabled),
+        .alpha_to_one_enable = vk.FALSE,
+    };
+
+    var depth_stencil = vk.PipelineDepthStencilStateCreateInfo{
+        .depth_test_enable = vk.FALSE,
+        .depth_write_enable = vk.FALSE,
+        .depth_compare_op = .never,
+        .depth_bounds_test_enable = vk.FALSE,
+        .stencil_test_enable = vk.FALSE,
+        .front = .{
+            .fail_op = .keep,
+            .depth_fail_op = .keep,
+            .pass_op = .keep,
+            .compare_op = .never,
+            .compare_mask = 0,
+            .write_mask = 0,
+            .reference = 0,
+        },
+        .back = .{
+            .fail_op = .keep,
+            .depth_fail_op = .keep,
+            .pass_op = .keep,
+            .compare_op = .never,
+            .compare_mask = 0,
+            .write_mask = 0,
+            .reference = 0,
+        },
+        .min_depth_bounds = 0,
+        .max_depth_bounds = 1,
+    };
+
+    if (desc.depth_stencil) |ds| {
+        depth_stencil.depth_test_enable = @intFromBool(ds.depth_compare == .always and ds.depth_write_enabled);
+        depth_stencil.depth_write_enable = @intFromBool(ds.depth_write_enabled);
+        depth_stencil.depth_compare_op = getCompareOp(ds.depth_compare);
+        depth_stencil.stencil_test_enable = @intFromBool(ds.stencil_read_mask != 0 or ds.stencil_write_mask != 0);
+        depth_stencil.front = .{
+            .fail_op = getStencilOp(ds.stencil_front.fail_op),
+            .depth_fail_op = getStencilOp(ds.stencil_front.depth_fail_op),
+            .pass_op = getStencilOp(ds.stencil_front.pass_op),
+            .compare_op = getCompareOp(ds.stencil_front.compare),
+            .compare_mask = ds.stencil_read_mask,
+            .write_mask = ds.stencil_write_mask,
+            .reference = 0,
+        };
+        depth_stencil.back = .{
+            .fail_op = getStencilOp(ds.stencil_back.fail_op),
+            .depth_fail_op = getStencilOp(ds.stencil_back.depth_fail_op),
+            .pass_op = getStencilOp(ds.stencil_back.pass_op),
+            .compare_op = getCompareOp(ds.stencil_back.compare),
+            .compare_mask = ds.stencil_read_mask,
+            .write_mask = ds.stencil_write_mask,
+            .reference = 0,
+        };
+    }
+
     var layout = if (desc.layout) |layout|
         @as(*PipelineLayout, @ptrCast(@alignCast(layout))).*
     else
         try PipelineLayout.init(device, &.{});
     defer layout.deinit();
 
-    // Configure fragment stage
-    // TODO: how to free?
     var color_attachments: []vk.PipelineColorBlendAttachmentState = &.{};
     var attachments: []vk.AttachmentDescription = &.{};
     var attachment_refs: []vk.AttachmentReference = &.{};
@@ -120,8 +219,8 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
                 .store_op = .store,
                 .stencil_load_op = .clear,
                 .stencil_store_op = .store,
-                .initial_layout = .depth_stencil_read_only_optimal,
-                .final_layout = .depth_stencil_attachment_optimal,
+                .initial_layout = .color_attachment_optimal,
+                .final_layout = .color_attachment_optimal,
             };
             attachment_ref.* = .{
                 .attachment = @intCast(i),
@@ -130,85 +229,6 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
         }
     }
 
-    const rasterization = vk.PipelineRasterizationStateCreateInfo{
-        .depth_clamp_enable = vk.FALSE,
-        .rasterizer_discard_enable = vk.FALSE,
-        .polygon_mode = .fill,
-        .cull_mode = .{
-            .front_bit = desc.primitive.cull_mode == .front,
-            .back_bit = desc.primitive.cull_mode == .back,
-        },
-        .front_face = switch (desc.primitive.front_face) {
-            .ccw => vk.FrontFace.counter_clockwise,
-            .cw => vk.FrontFace.clockwise,
-        },
-        .depth_bias_enable = isDepthBiasEnabled(desc.depth_stencil),
-        .depth_bias_constant_factor = getDepthBias(desc.depth_stencil),
-        .depth_bias_clamp = getDepthBiasClamp(desc.depth_stencil),
-        .depth_bias_slope_factor = getDepthBiasSlopeScale(desc.depth_stencil),
-        .line_width = 1,
-    };
-    const multisample = vk.PipelineMultisampleStateCreateInfo{
-        .rasterization_samples = getSampleCountFlags(desc.multisample.count),
-        .sample_shading_enable = vk.FALSE,
-        .min_sample_shading = 0,
-        .p_sample_mask = &[_]u32{desc.multisample.mask},
-        .alpha_to_coverage_enable = @intFromBool(desc.multisample.alpha_to_coverage_enabled),
-        .alpha_to_one_enable = vk.FALSE,
-    };
-    const depth_stencil: vk.PipelineDepthStencilStateCreateInfo = if (desc.depth_stencil) |ds| .{
-        .depth_test_enable = @intFromBool(ds.depth_compare == .always and ds.depth_write_enabled),
-        .depth_write_enable = @intFromBool(ds.depth_write_enabled),
-        .depth_compare_op = getCompareOp(ds.depth_compare),
-        .depth_bounds_test_enable = vk.FALSE,
-        .stencil_test_enable = @intFromBool(ds.stencil_read_mask != 0 or ds.stencil_write_mask != 0),
-        .front = .{
-            .fail_op = getStencilOp(ds.stencil_front.fail_op),
-            .depth_fail_op = getStencilOp(ds.stencil_front.depth_fail_op),
-            .pass_op = getStencilOp(ds.stencil_front.pass_op),
-            .compare_op = getCompareOp(ds.stencil_front.compare),
-            .compare_mask = ds.stencil_read_mask,
-            .write_mask = ds.stencil_write_mask,
-            .reference = 0,
-        },
-        .back = .{
-            .fail_op = getStencilOp(ds.stencil_back.fail_op),
-            .depth_fail_op = getStencilOp(ds.stencil_back.depth_fail_op),
-            .pass_op = getStencilOp(ds.stencil_back.pass_op),
-            .compare_op = getCompareOp(ds.stencil_back.compare),
-            .compare_mask = ds.stencil_read_mask,
-            .write_mask = ds.stencil_write_mask,
-            .reference = 0,
-        },
-        .min_depth_bounds = 0,
-        .max_depth_bounds = 1,
-    } else .{
-        .depth_test_enable = vk.FALSE,
-        .depth_write_enable = vk.FALSE,
-        .depth_compare_op = .never,
-        .depth_bounds_test_enable = vk.FALSE,
-        .stencil_test_enable = vk.FALSE,
-        .front = .{
-            .fail_op = .keep,
-            .depth_fail_op = .keep,
-            .pass_op = .keep,
-            .compare_op = .never,
-            .compare_mask = 0,
-            .write_mask = 0,
-            .reference = 0,
-        },
-        .back = .{
-            .fail_op = .keep,
-            .depth_fail_op = .keep,
-            .pass_op = .keep,
-            .compare_op = .never,
-            .compare_mask = 0,
-            .write_mask = 0,
-            .reference = 0,
-        },
-        .min_depth_bounds = 0,
-        .max_depth_bounds = 1,
-    };
     const color_blend = vk.PipelineColorBlendStateCreateInfo{
         .logic_op_enable = vk.FALSE,
         .logic_op = .clear,
@@ -216,20 +236,7 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
         .p_attachments = color_attachments.ptr,
         .blend_constants = .{ 0, 0, 0, 0 },
     };
-    const input_assembly = vk.PipelineInputAssemblyStateCreateInfo{
-        .topology = switch (desc.primitive.topology) {
-            .point_list => .point_list,
-            .line_list => .line_list,
-            .line_strip => .line_strip,
-            .triangle_list => .triangle_list,
-            .triangle_strip => .triangle_strip,
-        },
-        .primitive_restart_enable = @intFromBool(desc.primitive.strip_index_format != .undefined),
-    };
-    const viewport = vk.PipelineViewportStateCreateInfo{
-        .viewport_count = 1,
-        .scissor_count = 1,
-    };
+
     const dynamic_states = [_]vk.DynamicState{ .viewport, .scissor, .stencil_reference, .blend_constants };
     const dynamic = vk.PipelineDynamicStateCreateInfo{
         .dynamic_state_count = dynamic_states.len,

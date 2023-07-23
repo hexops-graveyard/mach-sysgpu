@@ -10,11 +10,12 @@ const CommandEncoder = @This();
 
 manager: Manager(CommandEncoder) = .{},
 device: *Device,
-cmd_buffer: CommandBuffer,
+cmd_buffer: *CommandBuffer,
 
 pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !CommandEncoder {
     _ = desc;
-    var cmd_buffer = try CommandBuffer.init(device);
+    var cmd_buffer = try device.allocator.create(CommandBuffer);
+    cmd_buffer.* = try CommandBuffer.init(device);
     return .{
         .device = device,
         .cmd_buffer = cmd_buffer,
@@ -22,6 +23,11 @@ pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !Comma
 }
 
 pub fn deinit(cmd_encoder: *CommandEncoder) void {
+    cmd_encoder.device.dispatch.destroyFramebuffer(
+        cmd_encoder.cmd_buffer.device.device,
+        cmd_encoder.frame_buffer,
+        null,
+    );
     cmd_encoder.cmd_buffer.deinit();
 }
 
@@ -32,5 +38,5 @@ pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPass
 pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
     _ = desc;
     try cmd_encoder.cmd_buffer.device.dispatch.endCommandBuffer(cmd_encoder.cmd_buffer.buffer);
-    return &cmd_encoder.cmd_buffer;
+    return cmd_encoder.cmd_buffer;
 }
