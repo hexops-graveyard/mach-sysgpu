@@ -4,7 +4,7 @@ const gpu = @import("gpu");
 const vk = @import("vulkan");
 const Base = @import("Base.zig");
 const Surface = @import("Surface.zig");
-const global = @import("global.zig");
+const utils = @import("utils.zig");
 const Manager = @import("../helper.zig").Manager;
 
 pub const Dispatch = vk.InstanceWrapper(.{
@@ -75,7 +75,7 @@ pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !
 }
 
 fn getLayers(base: Base) ![]const [*:0]const u8 {
-    const required_layers = &[_][*:0]const u8{global.validation_layer};
+    const required_layers = &[_][*:0]const u8{utils.validation_layer};
 
     var layers = try std.ArrayList([*:0]const u8).initCapacity(base.allocator, required_layers.len);
     errdefer layers.deinit();

@@ -4,7 +4,7 @@ const gpu = @import("gpu");
 const Device = @import("Device.zig");
 const ShaderModule = @import("ShaderModule.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
-const global = @import("global.zig");
+const utils = @import("utils.zig");
 const Manager = @import("../helper.zig").Manager;
 
 const RenderPipeline = @This();
@@ -63,7 +63,7 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
             try vertex_attrs.append(.{
                 .location = attr.shader_location,
                 .binding = @intCast(i),
-                .format = global.vulkanFormatFromVertexFormat(attr.format),
+                .format = getVertexFormat(attr.format),
                 .offset = @intCast(attr.offset),
             });
         }
@@ -213,7 +213,7 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
                 },
             };
             attachment.* = .{
-                .format = global.vulkanFormatFromTextureFormat(target.format),
+                .format = utils.getTextureFormat(target.format),
                 .samples = getSampleCountFlags(desc.multisample.count),
                 .load_op = .clear,
                 .store_op = .store,
@@ -304,7 +304,7 @@ fn getDepthBiasSlopeScale(ds: ?*const gpu.DepthStencilState) f32 {
     return ds.?.depth_bias_slope_scale;
 }
 
-pub fn getSampleCountFlags(samples: u32) vk.SampleCountFlags {
+fn getSampleCountFlags(samples: u32) vk.SampleCountFlags {
     // TODO: https://github.com/Snektron/vulkan-zig/issues/27
     return switch (samples) {
         1 => .{ .@"1_bit" = true },
@@ -317,7 +317,7 @@ pub fn getSampleCountFlags(samples: u32) vk.SampleCountFlags {
     };
 }
 
-pub fn getCompareOp(op: gpu.CompareFunction) vk.CompareOp {
+fn getCompareOp(op: gpu.CompareFunction) vk.CompareOp {
     return switch (op) {
         .never => .never,
         .less => .less,
@@ -331,7 +331,7 @@ pub fn getCompareOp(op: gpu.CompareFunction) vk.CompareOp {
     };
 }
 
-pub fn getStencilOp(op: gpu.StencilOperation) vk.StencilOp {
+fn getStencilOp(op: gpu.StencilOperation) vk.StencilOp {
     return switch (op) {
         .keep => .keep,
         .zero => .zero,
@@ -344,7 +344,7 @@ pub fn getStencilOp(op: gpu.StencilOperation) vk.StencilOp {
     };
 }
 
-pub fn getBlendOp(op: gpu.BlendOperation) vk.BlendOp {
+fn getBlendOp(op: gpu.BlendOperation) vk.BlendOp {
     return switch (op) {
         .add => .add,
         .subtract => .subtract,
@@ -354,7 +354,7 @@ pub fn getBlendOp(op: gpu.BlendOperation) vk.BlendOp {
     };
 }
 
-pub fn getBlendFactor(op: gpu.BlendFactor) vk.BlendFactor {
+fn getBlendFactor(op: gpu.BlendFactor) vk.BlendFactor {
     return switch (op) {
         .zero => .zero,
         .one => .one,
@@ -369,5 +369,41 @@ pub fn getBlendFactor(op: gpu.BlendFactor) vk.BlendFactor {
         .src_alpha_saturated => .src_alpha_saturate,
         .constant => .constant_color,
         .one_minus_constant => .one_minus_constant_color,
+    };
+}
+
+fn getVertexFormat(format: gpu.VertexFormat) vk.Format {
+    return switch (format) {
+        .undefined => .undefined,
+        .uint8x2 => .r8g8_uint,
+        .uint8x4 => .r8g8b8a8_uint,
+        .sint8x2 => .r8g8_sint,
+        .sint8x4 => .r8g8b8a8_sint,
+        .unorm8x2 => .r8g8_unorm,
+        .unorm8x4 => .r8g8b8a8_unorm,
+        .snorm8x2 => .r8g8_snorm,
+        .snorm8x4 => .r8g8b8a8_snorm,
+        .uint16x2 => .r16g16_uint,
+        .uint16x4 => .r16g16b16a16_uint,
+        .sint16x2 => .r16g16_sint,
+        .sint16x4 => .r16g16b16a16_sint,
+        .unorm16x2 => .r16g16_unorm,
+        .unorm16x4 => .r16g16b16a16_unorm,
+        .snorm16x2 => .r16g16_snorm,
+        .snorm16x4 => .r16g16b16a16_snorm,
+        .float16x2 => .r16g16_sfloat,
+        .float16x4 => .r16g16b16a16_sfloat,
+        .float32 => .r16_sfloat,
+        .float32x2 => .r16g16_sfloat,
+        .float32x3 => .r16g16b16_sfloat,
+        .float32x4 => .r16g16b16a16_sfloat,
+        .uint32 => .r32_uint,
+        .uint32x2 => .r32g32_uint,
+        .uint32x3 => .r32g32b32_uint,
+        .uint32x4 => .r32g32b32a32_uint,
+        .sint32 => .r32_sint,
+        .sint32x2 => .r32g32_sint,
+        .sint32x3 => .r32g32b32_sint,
+        .sint32x4 => .r32g32b32a32_sint,
     };
 }

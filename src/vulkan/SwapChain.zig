@@ -6,7 +6,7 @@ const Surface = @import("Surface.zig");
 const Texture = @import("Texture.zig");
 const TextureView = @import("TextureView.zig");
 const Manager = @import("../helper.zig").Manager;
-const global = @import("global.zig");
+const utils = @import("utils.zig");
 
 const SwapChain = @This();
 
@@ -18,7 +18,7 @@ texture_index: u32 = 0,
 format: gpu.Texture.Format,
 
 pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !SwapChain {
-    const format = global.vulkanFormatFromTextureFormat(desc.format);
+    const format = utils.getTextureFormat(desc.format);
     const extent = vk.Extent2D{
         .width = desc.width,
         .height = desc.height,
@@ -61,8 +61,8 @@ pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descr
         .composite_alpha = composite_alpha,
         .present_mode = switch (desc.present_mode) {
             .immediate => vk.PresentModeKHR.immediate_khr,
-            .mailbox => vk.PresentModeKHR.mailbox_khr,
             .fifo => vk.PresentModeKHR.fifo_khr,
+            .mailbox => vk.PresentModeKHR.mailbox_khr,
         },
         .clipped = vk.FALSE,
     }, null);

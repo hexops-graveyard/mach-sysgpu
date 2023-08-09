@@ -8,7 +8,7 @@ const RenderPipeline = @import("RenderPipeline.zig");
 const SwapChain = @import("SwapChain.zig");
 const CommandEncoder = @import("CommandEncoder.zig");
 const Queue = @import("Queue.zig");
-const global = @import("global.zig");
+const utils = @import("utils.zig");
 const Manager = @import("../helper.zig").Manager;
 
 const Device = @This();
@@ -155,7 +155,7 @@ pub fn getQueue(device: *Device) !*Queue {
 }
 
 fn getLayers(adapter: *Adapter) ![]const [*:0]const u8 {
-    const required_layers = &[_][*:0]const u8{global.validation_layer};
+    const required_layers = &[_][*:0]const u8{utils.validation_layer};
 
     var layers = try std.ArrayList([*:0]const u8).initCapacity(adapter.allocator, required_layers.len);
     errdefer layers.deinit();

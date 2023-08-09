@@ -2,7 +2,7 @@ const std = @import("std");
 const vk = @import("vulkan");
 const gpu = @import("gpu");
 const Texture = @import("Texture.zig");
-const global = @import("global.zig");
+const utils = @import("utils.zig");
 const Manager = @import("../helper.zig").Manager;
 
 const TextureView = @This();
@@ -13,7 +13,7 @@ format: vk.Format,
 texture: *Texture,
 
 pub fn init(texture: *Texture, desc: *const gpu.TextureView.Descriptor) !TextureView {
-    const format = global.vulkanFormatFromTextureFormat(desc.format);
+    const format = utils.getTextureFormat(desc.format);
     const aspect: vk.ImageAspectFlags = if (desc.aspect == .all)
         switch (desc.format) {
             .stencil8 => .{ .stencil_bit = true },
