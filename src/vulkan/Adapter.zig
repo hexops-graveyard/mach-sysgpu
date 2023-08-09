@@ -3,7 +3,7 @@ const vk = @import("vulkan");
 const gpu = @import("gpu");
 const Instance = @import("Instance.zig");
 const Device = @import("Device.zig");
-const global = @import("global.zig");
+const utils = @import("utils.zig");
 const Manager = @import("../helper.zig").Manager;
 
 const Adapter = @This();
@@ -125,7 +125,7 @@ pub fn hasExtension(adapter: *Adapter, name: []const u8) bool {
 }
 
 fn isDeviceSuitable(props: vk.PhysicalDeviceProperties, features: vk.PhysicalDeviceFeatures) bool {
-    return props.api_version >= global.vulkan_version and
+    return props.api_version >= utils.vulkan_version and
         // WebGPU features
         features.depth_bias_clamp == vk.TRUE and
         features.fragment_stores_and_atomics == vk.TRUE and

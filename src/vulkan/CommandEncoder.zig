@@ -9,6 +9,7 @@ const Manager = @import("../helper.zig").Manager;
 const CommandEncoder = @This();
 
 manager: Manager(CommandEncoder) = .{},
+allocator: std.mem.Allocator,
 device: *Device,
 cmd_buffer: *CommandBuffer,
 
@@ -17,6 +18,7 @@ pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !Comma
     var cmd_buffer = try device.allocator.create(CommandBuffer);
     cmd_buffer.* = try CommandBuffer.init(device);
     return .{
+        .allocator = device.allocator,
         .device = device,
         .cmd_buffer = cmd_buffer,
     };

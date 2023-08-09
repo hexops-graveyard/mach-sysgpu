@@ -4,7 +4,7 @@ const gpu = @import("gpu");
 pub const vulkan_version = vk.makeApiVersion(0, 1, 1, 0);
 pub const validation_layer = "VK_LAYER_KHRONOS_validation";
 
-pub fn vulkanFormatFromTextureFormat(format: gpu.Texture.Format) vk.Format {
+pub fn getTextureFormat(format: gpu.Texture.Format) vk.Format {
     return switch (format) {
         .undefined => .undefined,
         .r8_unorm => .r8_unorm,
@@ -102,74 +102,5 @@ pub fn vulkanFormatFromTextureFormat(format: gpu.Texture.Format) vk.Format {
         .astc12x12_unorm => .astc_1_2x_12_unorm_block,
         .astc12x12_unorm_srgb => .astc_1_2x_12_srgb_block,
         .r8_bg8_biplanar420_unorm => .g8_b8r8_2plane_420_unorm,
-    };
-}
-
-pub fn vulkanFormatFromVertexFormat(format: gpu.VertexFormat) vk.Format {
-    return switch (format) {
-        .undefined => .undefined,
-
-        .uint8x2 => .r8g8_uint,
-        .uint8x4 => .r8g8b8a8_uint,
-        .sint8x2 => .r8g8_sint,
-        .sint8x4 => .r8g8b8a8_sint,
-        .unorm8x2 => .r8g8_unorm,
-        .unorm8x4 => .r8g8b8a8_unorm,
-        .snorm8x2 => .r8g8_snorm,
-        .snorm8x4 => .r8g8b8a8_snorm,
-
-        .uint16x2 => .r16g16_uint,
-        .uint16x4 => .r16g16b16a16_uint,
-        .sint16x2 => .r16g16_sint,
-        .sint16x4 => .r16g16b16a16_sint,
-        .unorm16x2 => .r16g16_unorm,
-        .unorm16x4 => .r16g16b16a16_unorm,
-        .snorm16x2 => .r16g16_snorm,
-        .snorm16x4 => .r16g16b16a16_snorm,
-
-        .float16x2 => .r16g16_sfloat,
-        .float16x4 => .r16g16b16a16_sfloat,
-
-        .float32 => .r16_sfloat,
-        .float32x2 => .r16g16_sfloat,
-        .float32x3 => .r16g16b16_sfloat,
-        .float32x4 => .r16g16b16a16_sfloat,
-
-        .uint32 => .r32_uint,
-        .uint32x2 => .r32g32_uint,
-        .uint32x3 => .r32g32b32_uint,
-        .uint32x4 => .r32g32b32a32_uint,
-        .sint32 => .r32_sint,
-        .sint32x2 => .r32g32_sint,
-        .sint32x3 => .r32g32b32_sint,
-        .sint32x4 => .r32g32b32a32_sint,
-    };
-}
-
-pub fn toVulkanBlendFactor(fac: gpu.BlendFactor) vk.BlendFactor {
-    return switch (fac) {
-        .zero => .zero,
-        .one => .one,
-        .src => .src_color,
-        .one_minus_src => .one_minus_src_color,
-        .src_alpha => .src_alpha,
-        .one_minus_src_alpha => .one_minus_src_alpha,
-        .dst => .dst_color,
-        .one_minus_dst => .one_minus_dst_color,
-        .dst_alpha => .dst_alpha,
-        .one_minus_dst_alpha => .one_minus_dst_alpha,
-        .src_alpha_saturated => .src_alpha_saturate,
-        .constant => .constant_color,
-        .one_minus_constant => .one_minus_constant_color,
-    };
-}
-
-pub fn toVulkanBlendOp(op: gpu.BlendOperation) vk.BlendOp {
-    return switch (op) {
-        .add => .add,
-        .subtract => .subtract,
-        .reverse_subtract => .reverse_subtract,
-        .min => .min,
-        .max => .max,
     };
 }

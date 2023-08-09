@@ -7,7 +7,6 @@ const CommandEncoder = @import("CommandEncoder.zig");
 const CommandBuffer = @import("CommandBuffer.zig");
 const RenderPipeline = @import("RenderPipeline.zig");
 const TextureView = @import("TextureView.zig");
-const global = @import("global.zig");
 const Manager = @import("../helper.zig").Manager;
 
 const RenderPassEncoder = @This();
@@ -15,91 +14,70 @@ const RenderPassEncoder = @This();
 manager: Manager(RenderPassEncoder) = .{},
 cmd_encoder: *CommandEncoder,
 frame_buffer: vk.Framebuffer = .null_handle,
-attachments: []const vk.ImageView,
 extent: vk.Extent2D,
+attachments: []const vk.ImageView,
 clear_values: []const vk.ClearValue,
 
 pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescriptor) !RenderPassEncoder {
-    const attachments = try cmd_encoder.device.allocator.alloc(vk.ImageView, descriptor.color_attachment_count + @intFromBool(descriptor.depth_stencil_attachment != null));
-    errdefer cmd_encoder.device.allocator.free(attachments);
+    const depth_stencil_attachment_count = @intFromBool(descriptor.depth_stencil_attachment != null);
+    const attachment_count = descriptor.color_attachment_count + depth_stencil_attachment_count;
+
+    var attachments = try std.ArrayList(vk.ImageView).initCapacity(cmd_encoder.allocator, attachment_count);
+    errdefer attachments.deinit();
+
+    var clear_values = std.ArrayList(vk.ClearValue).init(cmd_encoder.allocator);
+    errdefer clear_values.deinit();
 
     var extent: ?vk.Extent2D = null;
-    var clear_value_count: usize = 0;
 
-    for (0..descriptor.color_attachment_count) |i| {
+    for (0..attachment_count - depth_stencil_attachment_count) |i| {
         const attach = descriptor.color_attachments.?[i];
         const view: *TextureView = @ptrCast(@alignCast(attach.view));
-        attachments[i] = view.view;
+        attachments.appendAssumeCapacity(view.view);
 
         if (attach.load_op == .clear) {
-            clear_value_count += 1;
+            try clear_values.append(.{
+                .color = .{
+                    .float_32 = [4]f32{
+                        @floatCast(attach.clear_value.r),
+                        @floatCast(attach.clear_value.g),
+                        @floatCast(attach.clear_value.b),
+                        @floatCast(attach.clear_value.a),
+                    },
+                },
+            });
         }
 
-        if (extent) |e| {
-            std.debug.assert(std.meta.eql(e, view.texture.extent));
-        } else {
+        if (extent == null) {
             extent = view.texture.extent;
         }
     }
 
     if (descriptor.depth_stencil_attachment) |attach| {
+        const view: *TextureView = @ptrCast(@alignCast(attach.view));
+        attachments.appendAssumeCapacity(view.view);
+
         if (attach.stencil_load_op == .clear) {
-            clear_value_count += 1;
+            try clear_values.append(.{
+                .depth_stencil = .{
+                    .depth = attach.depth_clear_value,
+                    .stencil = attach.stencil_clear_value,
+                },
+            });
         }
-    }
-
-    const clear_values = try cmd_encoder.device.allocator.alloc(vk.ClearValue, clear_value_count);
-    errdefer cmd_encoder.device.allocator.free(clear_values);
-    {
-        var i: usize = 0;
-        var j: usize = 0;
-        while (i < descriptor.color_attachment_count) : (i += 1) {
-            const attach = descriptor.color_attachments.?[i];
-            if (attach.load_op == .clear) {
-                const v = attach.clear_value;
-                clear_values[j] = .{
-                    .color = .{
-                        .float_32 = .{
-                            @floatCast(v.r),
-                            @floatCast(v.g),
-                            @floatCast(v.b),
-                            @floatCast(v.a),
-                        },
-                    },
-                };
-                j += 1;
-            }
-        }
-
-        if (descriptor.depth_stencil_attachment) |attach| {
-            i += 1;
-
-            if (attach.depth_load_op == .clear or attach.stencil_load_op == .clear) {
-                clear_values[j] = .{
-                    .depth_stencil = .{
-                        .depth = attach.depth_clear_value,
-                        .stencil = attach.stencil_clear_value,
-                    },
-                };
-                j += 1;
-            }
-        }
-
-        std.debug.assert(i == attachments.len);
-        std.debug.assert(j == clear_values.len);
     }
 
     return .{
         .cmd_encoder = cmd_encoder,
-        .attachments = attachments,
         .extent = extent.?,
-        .clear_values = clear_values,
+        .attachments = try attachments.toOwnedSlice(),
+        .clear_values = try clear_values.toOwnedSlice(),
     };
 }
 
 pub fn deinit(encoder: *RenderPassEncoder) void {
-    encoder.cmd_encoder.device.allocator.free(encoder.attachments);
-    encoder.cmd_encoder.device.allocator.free(encoder.clear_values);
+    encoder.cmd_encoder.allocator.free(encoder.attachments);
+    encoder.cmd_encoder.allocator.free(encoder.clear_values);
 }
 
 pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
@@ -126,7 +104,7 @@ pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void
         .offset = .{ .x = 0, .y = 0 },
         .extent = encoder.extent,
     };
-    encoder.cmd_encoder.device.dispatch.cmdBeginRenderPass(buf, &.{
+    encoder.cmd_encoder.device.dispatch.cmdBeginRenderPass(buf, &vk.RenderPassBeginInfo{
         .render_pass = pipeline.render_pass_raw,
         .framebuffer = encoder.frame_buffer,
         .render_area = rect,
