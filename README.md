@@ -1,32 +1,27 @@
-# mach/dusk - WebGPU implementation in Zig
+<a href="https://machengine.org/pkg/mach-dusk">
+    <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="https://machengine.org/assets/mach/dusk-full-dark.svg">
+        <img alt="mach-dusk" src="https://machengine.org/assets/mach/dusk-full-light.svg" height="150px">
+    </picture>
+</a>
 
-This repository is a separate copy of the same library in the [main Mach repository](https://github.com/hexops/mach), and is automatically kept in sync, so that anyone can use this library in their own project if they like!
+Highly experimental, blazingly fast, lean & mean WebGPU implementation in Zig.
 
 ## Experimental
 
-This is an _experimental_ Mach library, according to our [stability guarantees](https://machengine.org/next/docs/libs/):
+This is an **experimental** project according to [our stability guarantees](https://machengine.org/about/stability):
 
-> Experimental libraries may have their APIs change without much notice, and you may have to look at recent changes in order to update your code.
+> When a project has an experimental warning, it means all bets are off. You should carefully read the warning to understand why the project is experimental, and assume the worst.
 
-[Why this library is not declared stable yet](https://machengine.org/next/docs/libs/experimental/#dusk)
+**Tracking issue:** https://github.com/hexops/mach/issues/966
 
-## Current Status
+## Documentation
 
-Dusk is in **very early stages** and under heavy development; there are hundreds of known bugs/missing features.
-
-### WGSL compiler
-
-- [x] Parser
-- [x] Ast analysis
-- [ ] Transpilation targets
-    - [ ] GLSL
-    - [ ] Spir-V
-    - [ ] HLSL
-    - [ ] Metal
+[machengine.org/pkg/mach-dusk](https://machengine.org/pkg/mach-dusk)
 
 ## Join the community
 
-Join the Mach community [on Discord](https://discord.gg/XNG3NZgCqp) to discuss this project, ask questions, get help, etc.
+Join the [Mach community on Discord](https://discord.gg/XNG3NZgCqp) to discuss this project, ask questions, get help, etc.
 
 ## Issues
 
