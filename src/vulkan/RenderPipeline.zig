@@ -219,8 +219,8 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
                 .store_op = .store,
                 .stencil_load_op = .clear,
                 .stencil_store_op = .store,
-                .initial_layout = .color_attachment_optimal,
-                .final_layout = .color_attachment_optimal,
+                .initial_layout = .undefined,
+                .final_layout = .present_src_khr,
             };
             attachment_ref.* = .{
                 .attachment = @intCast(i),

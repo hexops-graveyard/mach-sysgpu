@@ -50,6 +50,7 @@ pub const Dispatch = vk.DeviceWrapper(.{
     .getSwapchainImagesKHR = true,
     .queuePresentKHR = true,
     .queueSubmit = true,
+    .queueWaitIdle = true,
     .resetFences = true,
     .waitForFences = true,
 });

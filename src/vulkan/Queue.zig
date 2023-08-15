@@ -58,4 +58,5 @@ pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
     }
 
     try queue.device_dispatch.queueSubmit(queue.queue, @intCast(submits.len), submits.ptr, queue.fence);
+    try queue.device_dispatch.queueWaitIdle(queue.queue);
 }
