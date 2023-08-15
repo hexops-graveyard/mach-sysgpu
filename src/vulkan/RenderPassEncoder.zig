@@ -111,11 +111,8 @@ pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void
         .clear_value_count = @as(u32, @intCast(encoder.clear_values.len)),
         .p_clear_values = encoder.clear_values.ptr,
     }, .@"inline");
-
     try encoder.cmd_encoder.cmd_buffer.render_passes.append(encoder.cmd_encoder.device.allocator, encoder);
-
     encoder.cmd_encoder.device.dispatch.cmdBindPipeline(buf, .graphics, pipeline.pipeline);
-
     encoder.cmd_encoder.device.dispatch.cmdSetViewport(buf, 0, 1, @as(*const [1]vk.Viewport, &vk.Viewport{
         .x = 0,
         .y = @as(f32, @floatFromInt(encoder.extent.height)),
@@ -124,7 +121,6 @@ pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void
         .min_depth = 0,
         .max_depth = 1,
     }));
-
     encoder.cmd_encoder.device.dispatch.cmdSetScissor(buf, 0, 1, @as(*const [1]vk.Rect2D, &rect));
 }
 

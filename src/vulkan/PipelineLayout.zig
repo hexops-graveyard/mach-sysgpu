@@ -7,8 +7,8 @@ const Manager = @import("../helper.zig").Manager;
 const PipelineLayout = @This();
 
 manager: Manager(PipelineLayout) = .{},
-layout: vk.PipelineLayout,
 device: *Device,
+layout: vk.PipelineLayout,
 
 pub fn init(device: *Device, descriptor: *const gpu.PipelineLayout.Descriptor) !PipelineLayout {
     const groups = try device.allocator.alloc(vk.DescriptorSetLayout, descriptor.bind_group_layout_count);
@@ -23,8 +23,8 @@ pub fn init(device: *Device, descriptor: *const gpu.PipelineLayout.Descriptor) !
     }, null);
 
     return .{
-        .layout = layout,
         .device = device,
+        .layout = layout,
     };
 }
 
