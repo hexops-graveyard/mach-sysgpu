@@ -1,5 +1,5 @@
 const std = @import("std");
-const dusk = @import("dusk");
+const dusk = @import("mach-dusk");
 const core = @import("core");
 const gpu = core.gpu;
 
