@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const vk = @import("vulkan");
 const Base = @import("Base.zig");
 const Surface = @import("Surface.zig");

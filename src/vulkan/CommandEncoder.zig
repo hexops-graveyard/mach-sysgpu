@@ -1,6 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const Device = @import("Device.zig");
 const CommandBuffer = @import("CommandBuffer.zig");
 const RenderPassEncoder = @import("RenderPassEncoder.zig");

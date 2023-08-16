@@ -1,6 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const Device = @import("Device.zig");
 const ShaderModule = @import("ShaderModule.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
@@ -116,7 +116,7 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
         .sample_shading_enable = vk.FALSE,
         .min_sample_shading = 0,
         .p_sample_mask = &[_]u32{desc.multisample.mask},
-        .alpha_to_coverage_enable = @intFromBool(desc.multisample.alpha_to_coverage_enabled),
+        .alpha_to_coverage_enable = @intFromEnum(desc.multisample.alpha_to_coverage_enabled),
         .alpha_to_one_enable = vk.FALSE,
     };
 
@@ -369,6 +369,10 @@ fn getBlendFactor(op: gpu.BlendFactor) vk.BlendFactor {
         .src_alpha_saturated => .src_alpha_saturate,
         .constant => .constant_color,
         .one_minus_constant => .one_minus_constant_color,
+        .src1 => .src1_color,
+        .one_minus_src1 => .one_minus_src1_color,
+        .src1_alpha => .src1_alpha,
+        .one_minus_src1_alpha => .one_minus_src1_alpha,
     };
 }
 

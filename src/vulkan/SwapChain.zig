@@ -1,5 +1,5 @@
 const std = @import("std");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const vk = @import("vulkan");
 const Device = @import("Device.zig");
 const Surface = @import("Surface.zig");

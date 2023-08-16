@@ -1,5 +1,5 @@
 const builtin = @import("builtin");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const vk = @import("vulkan");
 const Instance = @import("Instance.zig");
 const Manager = @import("../helper.zig").Manager;

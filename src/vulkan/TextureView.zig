@@ -1,6 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const Texture = @import("Texture.zig");
 const Manager = @import("../helper.zig").Manager;
 const getTextureFormat = @import("../vulkan.zig").getTextureFormat;

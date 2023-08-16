@@ -13,7 +13,7 @@ pub const TextureView = @import("vulkan/TextureView.zig");
 pub const Queue = @import("vulkan/Queue.zig");
 
 const vk = @import("vulkan");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 
 pub const api_version = vk.makeApiVersion(0, 1, 1, 0);
 
