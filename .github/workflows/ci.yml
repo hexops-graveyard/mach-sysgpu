@@ -11,15 +11,16 @@ jobs:
       - name: Setup Zig
         run: |
           sudo apt install xz-utils
-          sudo sh -c 'wget -c https://pkg.machengine.org/zig/zig-linux-x86_64-0.11.0-dev.4410+76f7b40e1.tar.xz -O - | tar -xJ --strip-components=1 -C /usr/local/bin'
+          sudo sh -c 'wget -c https://pkg.machengine.org/zig/zig-linux-x86_64-0.12.0-dev.21+ac95cfe44.tar.xz -O - | tar -xJ --strip-components=1 -C /usr/local/bin'
       - name: Setup Vulkan SDK and SpirV tools
         run: |
           wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list http://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
           sudo apt update
           sudo apt install vulkan-sdk spirv-tools
-          git submodule update --init --recursive
-      - name: Test
+      - name: build
+        run: zig build
+      - name: test
         run: zig build test
-      - name: Validate spirv output
+      - name: validate spirv output
         run: bash tools/validate_spirv.sh
