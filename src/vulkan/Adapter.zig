@@ -1,6 +1,6 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const Instance = @import("Instance.zig");
 const Device = @import("Device.zig");
 const Manager = @import("../helper.zig").Manager;
@@ -111,7 +111,7 @@ pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
         .driver_description = adapter.driver_desc,
         .adapter_type = adapter_type,
         .backend_type = .vulkan,
-        .compatibility_mode = false, // TODO
+        .compatibility_mode = .false, // TODO
     };
 }
 

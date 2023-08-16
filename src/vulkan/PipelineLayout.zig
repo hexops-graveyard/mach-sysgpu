@@ -1,5 +1,5 @@
 const vk = @import("vulkan");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const Device = @import("Device.zig");
 const BindGroupLayout = @import("BindGroupLayout.zig");
 const Manager = @import("../helper.zig").Manager;

@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 const shader = @import("shader.zig");
 const helper = @import("helper.zig");
 
@@ -64,7 +64,7 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn adapterGetLimits(adapter: *gpu.Adapter, limits: *gpu.SupportedLimits) bool {
+    pub inline fn adapterGetLimits(adapter: *gpu.Adapter, limits: *gpu.SupportedLimits) u32 {
         _ = adapter;
         _ = limits;
         unreachable;
@@ -80,9 +80,14 @@ pub const Interface = struct {
         properties.* = adapter.getProperties();
     }
 
-    pub inline fn adapterHasFeature(adapter: *gpu.Adapter, feature: gpu.FeatureName) bool {
+    pub inline fn adapterHasFeature(adapter: *gpu.Adapter, feature: gpu.FeatureName) u32 {
         _ = adapter;
         _ = feature;
+        unreachable;
+    }
+
+    pub inline fn adapterPropertiesFreeMembers(value: gpu.Adapter.Properties) void {
+        _ = value;
         unreachable;
     }
 
@@ -609,7 +614,7 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceGetLimits(device: *gpu.Device, limits: *gpu.SupportedLimits) bool {
+    pub inline fn deviceGetLimits(device: *gpu.Device, limits: *gpu.SupportedLimits) u32 {
         _ = device;
         _ = limits;
         unreachable;
@@ -621,9 +626,21 @@ pub const Interface = struct {
         return @ptrCast(queue);
     }
 
-    pub inline fn deviceHasFeature(device: *gpu.Device, feature: gpu.FeatureName) bool {
+    pub inline fn deviceHasFeature(device: *gpu.Device, feature: gpu.FeatureName) u32 {
         _ = device;
         _ = feature;
+        unreachable;
+    }
+
+    pub inline fn deviceImportSharedFence(device: *gpu.Device, descriptor: *const gpu.SharedFence.Descriptor) *gpu.SharedFence {
+        _ = device;
+        _ = descriptor;
+        unreachable;
+    }
+
+    pub inline fn deviceImportSharedTextureMemory(device: *gpu.Device, descriptor: *const gpu.SharedTextureMemory.Descriptor) *gpu.SharedTextureMemory {
+        _ = device;
+        _ = descriptor;
         unreachable;
     }
 
@@ -1207,6 +1224,69 @@ pub const Interface = struct {
     pub inline fn shaderModuleRelease(shader_module_raw: *gpu.ShaderModule) void {
         var shader_module: *impl.ShaderModule = @ptrCast(@alignCast(shader_module_raw));
         shader_module.manager.release();
+    }
+
+    pub inline fn sharedFenceExportInfo(shared_fence: *gpu.SharedFence, info: *gpu.SharedFence.ExportInfo) void {
+        _ = shared_fence;
+        _ = info;
+        unreachable;
+    }
+
+    pub inline fn sharedFenceReference(shared_fence: *gpu.SharedFence) void {
+        _ = shared_fence;
+        unreachable;
+    }
+
+    pub inline fn sharedFenceRelease(shared_fence: *gpu.SharedFence) void {
+        _ = shared_fence;
+        unreachable;
+    }
+
+    pub inline fn sharedTextureMemoryBeginAccess(shared_texture_memory: *gpu.SharedTextureMemory, texture: *gpu.Texture, descriptor: *const gpu.SharedTextureMemory.BeginAccessDescriptor) void {
+        _ = shared_texture_memory;
+        _ = texture;
+        _ = descriptor;
+        unreachable;
+    }
+
+    pub inline fn sharedTextureMemoryCreateTexture(shared_texture_memory: *gpu.SharedTextureMemory, descriptor: *const gpu.Texture.Descriptor) *gpu.Texture {
+        _ = shared_texture_memory;
+        _ = descriptor;
+        unreachable;
+    }
+
+    pub inline fn sharedTextureMemoryEndAccess(shared_texture_memory: *gpu.SharedTextureMemory, texture: *gpu.Texture, descriptor: *gpu.SharedTextureMemory.EndAccessState) void {
+        _ = shared_texture_memory;
+        _ = texture;
+        _ = descriptor;
+        unreachable;
+    }
+
+    pub inline fn sharedTextureMemoryEndAccessStateFreeMembers(value: gpu.SharedTextureMemory.EndAccessState) void {
+        _ = value;
+        unreachable;
+    }
+
+    pub inline fn sharedTextureMemoryGetProperties(shared_texture_memory: *gpu.SharedTextureMemory, properties: *gpu.SharedTextureMemory.Properties) void {
+        _ = shared_texture_memory;
+        _ = properties;
+        unreachable;
+    }
+
+    pub inline fn sharedTextureMemorySetLabel(shared_texture_memory: *gpu.SharedTextureMemory, label: [*:0]const u8) void {
+        _ = shared_texture_memory;
+        _ = label;
+        unreachable;
+    }
+
+    pub inline fn sharedTextureMemoryReference(shared_texture_memory: *gpu.SharedTextureMemory) void {
+        _ = shared_texture_memory;
+        unreachable;
+    }
+
+    pub inline fn sharedTextureMemoryRelease(shared_texture_memory: *gpu.SharedTextureMemory) void {
+        _ = shared_texture_memory;
+        unreachable;
     }
 
     pub inline fn surfaceReference(surface_raw: *gpu.Surface) void {

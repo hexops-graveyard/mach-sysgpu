@@ -1,5 +1,5 @@
 const std = @import("std");
-const gpu = @import("gpu");
+const gpu = @import("mach").gpu;
 
 pub fn findChained(comptime T: type, next_in_chain: ?*const gpu.ChainedStruct) ?*const T {
     const search = @as(*align(1) const gpu.ChainedStruct, @ptrCast(std.meta.fieldInfo(T, .chain).default_value.?));
