@@ -12,8 +12,9 @@ const Manager = @import("../helper.zig").Manager;
 const RenderPassEncoder = @This();
 
 manager: Manager(RenderPassEncoder) = .{},
+device: *Device,
 cmd_encoder: *CommandEncoder,
-frame_buffer: vk.Framebuffer = .null_handle,
+framebuffer: vk.Framebuffer = .null_handle,
 extent: vk.Extent2D,
 attachments: []const vk.ImageView,
 clear_values: []const vk.ClearValue,
@@ -22,10 +23,10 @@ pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescr
     const depth_stencil_attachment_count = @intFromBool(descriptor.depth_stencil_attachment != null);
     const attachment_count = descriptor.color_attachment_count + depth_stencil_attachment_count;
 
-    var attachments = try std.ArrayList(vk.ImageView).initCapacity(cmd_encoder.allocator, attachment_count);
+    var attachments = try std.ArrayList(vk.ImageView).initCapacity(cmd_encoder.device.allocator, attachment_count);
     errdefer attachments.deinit();
 
-    var clear_values = std.ArrayList(vk.ClearValue).init(cmd_encoder.allocator);
+    var clear_values = std.ArrayList(vk.ClearValue).init(cmd_encoder.device.allocator);
     errdefer clear_values.deinit();
 
     var extent: ?vk.Extent2D = null;
@@ -68,6 +69,7 @@ pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescr
     }
 
     return .{
+        .device = cmd_encoder.device,
         .cmd_encoder = cmd_encoder,
         .extent = extent.?,
         .attachments = try attachments.toOwnedSlice(),
@@ -76,13 +78,21 @@ pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescr
 }
 
 pub fn deinit(encoder: *RenderPassEncoder) void {
-    encoder.cmd_encoder.allocator.free(encoder.attachments);
-    encoder.cmd_encoder.allocator.free(encoder.clear_values);
+    encoder.cmd_encoder.device.allocator.free(encoder.attachments);
+    encoder.cmd_encoder.device.allocator.free(encoder.clear_values);
 }
 
 pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
-    encoder.frame_buffer = try encoder.cmd_encoder.device.dispatch.createFramebuffer(
-        encoder.cmd_encoder.device.device,
+    if (encoder.framebuffer != .null_handle) {
+        encoder.device.dispatch.destroyFramebuffer(
+            encoder.device.device,
+            encoder.framebuffer,
+            null,
+        );
+    }
+
+    encoder.framebuffer = try encoder.device.dispatch.createFramebuffer(
+        encoder.device.device,
         &.{
             .render_pass = pipeline.render_pass_raw,
             .attachment_count = @as(u32, @intCast(encoder.attachments.len)),
@@ -93,41 +103,49 @@ pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void
         },
         null,
     );
-    errdefer encoder.cmd_encoder.device.dispatch.destroyFramebuffer(
-        encoder.cmd_encoder.device.device,
-        encoder.frame_buffer,
+    errdefer encoder.device.dispatch.destroyFramebuffer(
+        encoder.device.device,
+        encoder.framebuffer,
         null,
     );
 
-    const buf = encoder.cmd_encoder.cmd_buffer.buffer;
     const rect = vk.Rect2D{
         .offset = .{ .x = 0, .y = 0 },
         .extent = encoder.extent,
     };
-    encoder.cmd_encoder.device.dispatch.cmdBeginRenderPass(buf, &vk.RenderPassBeginInfo{
+
+    encoder.device.dispatch.cmdBeginRenderPass(encoder.cmd_encoder.cmd_buffer.buffer, &vk.RenderPassBeginInfo{
         .render_pass = pipeline.render_pass_raw,
-        .framebuffer = encoder.frame_buffer,
+        .framebuffer = encoder.framebuffer,
         .render_area = rect,
         .clear_value_count = @as(u32, @intCast(encoder.clear_values.len)),
         .p_clear_values = encoder.clear_values.ptr,
     }, .@"inline");
-    try encoder.cmd_encoder.cmd_buffer.render_passes.append(encoder.cmd_encoder.device.allocator, encoder);
-    encoder.cmd_encoder.device.dispatch.cmdBindPipeline(buf, .graphics, pipeline.pipeline);
-    encoder.cmd_encoder.device.dispatch.cmdSetViewport(buf, 0, 1, @as(*const [1]vk.Viewport, &vk.Viewport{
-        .x = 0,
-        .y = @as(f32, @floatFromInt(encoder.extent.height)),
-        .width = @as(f32, @floatFromInt(encoder.extent.width)),
-        .height = -@as(f32, @floatFromInt(encoder.extent.height)),
-        .min_depth = 0,
-        .max_depth = 1,
-    }));
-    encoder.cmd_encoder.device.dispatch.cmdSetScissor(buf, 0, 1, @as(*const [1]vk.Rect2D, &rect));
+    encoder.device.dispatch.cmdBindPipeline(
+        encoder.cmd_encoder.cmd_buffer.buffer,
+        .graphics,
+        pipeline.pipeline,
+    );
+    encoder.device.dispatch.cmdSetViewport(
+        encoder.cmd_encoder.cmd_buffer.buffer,
+        0,
+        1,
+        @as(*const [1]vk.Viewport, &vk.Viewport{
+            .x = 0,
+            .y = @as(f32, @floatFromInt(encoder.extent.height)),
+            .width = @as(f32, @floatFromInt(encoder.extent.width)),
+            .height = -@as(f32, @floatFromInt(encoder.extent.height)),
+            .min_depth = 0,
+            .max_depth = 1,
+        }),
+    );
+    encoder.device.dispatch.cmdSetScissor(encoder.cmd_encoder.cmd_buffer.buffer, 0, 1, @as(*const [1]vk.Rect2D, &rect));
 }
 
 pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-    encoder.cmd_encoder.device.dispatch.cmdDraw(encoder.cmd_encoder.cmd_buffer.buffer, vertex_count, instance_count, first_vertex, first_instance);
+    encoder.device.dispatch.cmdDraw(encoder.cmd_encoder.cmd_buffer.buffer, vertex_count, instance_count, first_vertex, first_instance);
 }
 
 pub fn end(encoder: *RenderPassEncoder) void {
-    encoder.cmd_encoder.device.dispatch.cmdEndRenderPass(encoder.cmd_encoder.cmd_buffer.buffer);
+    encoder.device.dispatch.cmdEndRenderPass(encoder.cmd_encoder.cmd_buffer.buffer);
 }

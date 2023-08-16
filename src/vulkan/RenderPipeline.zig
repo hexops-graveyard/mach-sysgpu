@@ -4,8 +4,8 @@ const gpu = @import("gpu");
 const Device = @import("Device.zig");
 const ShaderModule = @import("ShaderModule.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
-const utils = @import("utils.zig");
 const Manager = @import("../helper.zig").Manager;
+const getTextureFormat = @import("../vulkan.zig").getTextureFormat;
 
 const RenderPipeline = @This();
 
@@ -213,7 +213,7 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
                 },
             };
             attachment.* = .{
-                .format = utils.getTextureFormat(target.format),
+                .format = getTextureFormat(target.format),
                 .samples = getSampleCountFlags(desc.multisample.count),
                 .load_op = .clear,
                 .store_op = .store,

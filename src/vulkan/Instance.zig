@@ -4,7 +4,6 @@ const gpu = @import("gpu");
 const vk = @import("vulkan");
 const Base = @import("Base.zig");
 const Surface = @import("Surface.zig");
-const utils = @import("utils.zig");
 const Manager = @import("../helper.zig").Manager;
 
 pub const Dispatch = vk.InstanceWrapper(.{
@@ -74,10 +73,17 @@ pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !
     return Surface.init(instance, desc);
 }
 
-fn getLayers(base: Base) ![]const [*:0]const u8 {
-    const required_layers = &[_][*:0]const u8{utils.validation_layer};
+pub const required_layers = &[_][*:0]const u8{};
+pub const optional_layers = if (builtin.mode == .Debug)
+    &[_][*:0]const u8{"VK_LAYER_KHRONOS_validation"}
+else
+    &.{};
 
-    var layers = try std.ArrayList([*:0]const u8).initCapacity(base.allocator, required_layers.len);
+fn getLayers(base: Base) ![]const [*:0]const u8 {
+    var layers = try std.ArrayList([*:0]const u8).initCapacity(
+        base.allocator,
+        required_layers.len + optional_layers.len,
+    );
     errdefer layers.deinit();
 
     var count: u32 = 0;
@@ -87,46 +93,59 @@ fn getLayers(base: Base) ![]const [*:0]const u8 {
     defer base.allocator.free(available_layers);
     _ = try base.dispatch.enumerateInstanceLayerProperties(&count, available_layers.ptr);
 
-    for (required_layers) |ext| {
+    for (required_layers) |required| {
         for (available_layers[0..count]) |available| {
-            if (std.mem.eql(u8, std.mem.sliceTo(ext, 0), std.mem.sliceTo(&available.layer_name, 0))) {
-                layers.appendAssumeCapacity(ext);
+            if (std.mem.eql(u8, std.mem.sliceTo(required, 0), std.mem.sliceTo(&available.layer_name, 0))) {
+                layers.appendAssumeCapacity(required);
                 break;
             }
         } else {
-            std.log.warn("unable to find layer: {s}", .{ext});
+            std.log.warn("unable to find required layer: {s}", .{required});
+        }
+    }
+
+    for (optional_layers) |optional| {
+        for (available_layers[0..count]) |available| {
+            if (std.mem.eql(u8, std.mem.sliceTo(optional, 0), std.mem.sliceTo(&available.layer_name, 0))) {
+                layers.appendAssumeCapacity(optional);
+                break;
+            }
         }
     }
 
     return layers.toOwnedSlice();
 }
 
-fn getExtensions(base: Base) ![]const [*:0]const u8 {
-    const required_extensions: []const [*:0]const u8 = switch (builtin.target.os.tag) {
-        .linux => &.{
+pub const required_extensions: []const [*:0]const u8 = switch (builtin.target.os.tag) {
+    .linux => &.{
+        vk.extension_info.khr_surface.name,
+        vk.extension_info.khr_xlib_surface.name,
+        vk.extension_info.khr_xcb_surface.name,
+        vk.extension_info.khr_wayland_surface.name,
+    },
+    .windows => &.{
+        vk.extension_info.khr_surface.name,
+        vk.extension_info.khr_win_32_surface.name,
+    },
+    .macos, .ios => &.{
+        vk.extension_info.khr_surface.name,
+        vk.extension_info.ext_metal_surface.name,
+    },
+    else => if (builtin.target.abi == .android)
+        &.{
             vk.extension_info.khr_surface.name,
-            vk.extension_info.khr_xlib_surface.name,
-            vk.extension_info.khr_xcb_surface.name,
-            vk.extension_info.khr_wayland_surface.name,
-        },
-        .windows => &.{
-            vk.extension_info.khr_surface.name,
-            vk.extension_info.khr_win_32_surface.name,
-        },
-        .macos, .ios => &.{
-            vk.extension_info.khr_surface.name,
-            vk.extension_info.ext_metal_surface.name,
-        },
-        else => if (builtin.target.abi == .android)
-            &.{
-                vk.extension_info.khr_surface.name,
-                vk.extension_info.khr_android_surface.name,
-            }
-        else
-            @compileError("unsupported platform"),
-    };
+            vk.extension_info.khr_android_surface.name,
+        }
+    else
+        @compileError("unsupported platform"),
+};
+pub const optional_extensions = &[_][*:0]const u8{};
 
-    var extensions = try std.ArrayList([*:0]const u8).initCapacity(base.allocator, required_extensions.len);
+fn getExtensions(base: Base) ![]const [*:0]const u8 {
+    var extensions = try std.ArrayList([*:0]const u8).initCapacity(
+        base.allocator,
+        required_extensions.len + optional_extensions.len,
+    );
     errdefer extensions.deinit();
 
     var count: u32 = 0;
@@ -136,14 +155,23 @@ fn getExtensions(base: Base) ![]const [*:0]const u8 {
     defer base.allocator.free(available_extensions);
     _ = try base.dispatch.enumerateInstanceExtensionProperties(null, &count, available_extensions.ptr);
 
-    for (required_extensions) |ext| {
+    for (required_extensions) |required| {
         for (available_extensions[0..count]) |available| {
-            if (std.mem.eql(u8, std.mem.sliceTo(ext, 0), std.mem.sliceTo(&available.extension_name, 0))) {
-                extensions.appendAssumeCapacity(ext);
+            if (std.mem.eql(u8, std.mem.sliceTo(required, 0), std.mem.sliceTo(&available.extension_name, 0))) {
+                extensions.appendAssumeCapacity(required);
                 break;
             }
         } else {
-            std.log.warn("unable to find extension: {s}", .{ext});
+            std.log.warn("unable to find required extension: {s}", .{required});
+        }
+    }
+
+    for (optional_extensions) |optional| {
+        for (available_extensions[0..count]) |available| {
+            if (std.mem.eql(u8, std.mem.sliceTo(optional, 0), std.mem.sliceTo(&available.extension_name, 0))) {
+                extensions.appendAssumeCapacity(optional);
+                break;
+            }
         }
     }
 

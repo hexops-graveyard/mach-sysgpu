@@ -6,7 +6,7 @@ const Surface = @import("Surface.zig");
 const Texture = @import("Texture.zig");
 const TextureView = @import("TextureView.zig");
 const Manager = @import("../helper.zig").Manager;
-const utils = @import("utils.zig");
+const getTextureFormat = @import("../vulkan.zig").getTextureFormat;
 
 const SwapChain = @This();
 
@@ -18,7 +18,7 @@ texture_index: u32 = 0,
 format: gpu.Texture.Format,
 
 pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !SwapChain {
-    const format = utils.getTextureFormat(desc.format);
+    const format = getTextureFormat(desc.format);
     const extent = vk.Extent2D{
         .width = desc.width,
         .height = desc.height,
@@ -99,7 +99,7 @@ pub fn getCurrentTextureView(swapchain: *SwapChain) !TextureView {
         swapchain.device.device,
         swapchain.swapchain,
         std.math.maxInt(u64),
-        swapchain.device.queue.image_available_semaphore,
+        swapchain.device.queue.?.image_available_semaphore,
         .null_handle,
     );
     switch (result.result) {
@@ -118,12 +118,11 @@ pub fn getCurrentTextureView(swapchain: *SwapChain) !TextureView {
 }
 
 pub fn present(swapchain: *SwapChain) !void {
-    _ = try swapchain.device.dispatch.queuePresentKHR(swapchain.device.queue.queue, &.{
+    _ = try swapchain.device.dispatch.queuePresentKHR(swapchain.device.queue.?.queue, &.{
         .wait_semaphore_count = 1,
-        .p_wait_semaphores = &[_]vk.Semaphore{swapchain.device.queue.render_finished_semaphore},
+        .p_wait_semaphores = &[_]vk.Semaphore{swapchain.device.queue.?.render_finished_semaphore},
         .swapchain_count = 1,
         .p_swapchains = &[_]vk.SwapchainKHR{swapchain.swapchain},
         .p_image_indices = &[_]u32{swapchain.texture_index},
     });
-    swapchain.texture_index = undefined;
 }
