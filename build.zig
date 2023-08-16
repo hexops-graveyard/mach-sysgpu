@@ -1,7 +1,5 @@
 const std = @import("std");
-const mach_gpu_dawn = @import("libs/mach-gpu-dawn/build.zig");
-const mach_gpu = @import("libs/mach-gpu/build.zig").Sdk(.{ .gpu_dawn = mach_gpu_dawn });
-const mach_core = @import("libs/mach-core/build.zig").Sdk(.{ .gpu_dawn = mach_gpu_dawn, .gpu = mach_gpu });
+const mach_core = @import("mach_core");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -14,16 +12,18 @@ pub fn build(b: *std.Build) !void {
         .source_file = .{ .path = "src/main.zig" },
         .dependencies = &.{
             .{ .name = "vulkan", .module = vulkan_mod },
-            .{ .name = "gpu", .module = mach_gpu.module(b) },
+            // TODO: directly use mach-gpu instead
+            .{ .name = "mach", .module = mach_core.module(b, optimize, target) },
         },
     });
 
+    mach_core.mach_glfw_import_path = "mach_core.mach_glfw";
     const triangle = try mach_core.App.init(b, .{
         .name = "triangle",
         .src = "examples/triangle/main.zig",
         .target = target,
         .optimize = optimize,
-        .deps = &.{.{ .name = "dusk", .module = module }},
+        .deps = &.{.{ .name = "mach-dusk", .module = module }},
     });
 
     const run_triangle_step = b.step("triangle", "Run the basic init example");
