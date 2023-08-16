@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const vk = @import("vulkan");
 const gpu = @import("gpu");
 const Adapter = @import("Adapter.zig");
@@ -6,9 +7,9 @@ const ShaderModule = @import("ShaderModule.zig");
 const Surface = @import("Surface.zig");
 const RenderPipeline = @import("RenderPipeline.zig");
 const SwapChain = @import("SwapChain.zig");
+const CommandBuffer = @import("CommandBuffer.zig");
 const CommandEncoder = @import("CommandEncoder.zig");
 const Queue = @import("Queue.zig");
-const utils = @import("utils.zig");
 const Manager = @import("../helper.zig").Manager;
 
 const Device = @This();
@@ -60,9 +61,8 @@ allocator: std.mem.Allocator,
 adapter: *Adapter,
 dispatch: Dispatch,
 device: vk.Device,
-queue: Queue,
 cmd_pool: vk.CommandPool,
-framebuffers: std.ArrayListUnmanaged(vk.Framebuffer) = .{},
+queue: ?Queue = null,
 err_cb: ?gpu.ErrorCallback = null,
 err_cb_userdata: ?*anyopaque = null,
 
@@ -98,15 +98,17 @@ pub fn init(adapter: *Adapter, desc: *const gpu.Device.Descriptor) !Device {
         }
     }
 
-    const extensions = &[_][*:0]const u8{vk.extension_info.khr_swapchain.name};
-    const supported_layers = try getLayers(adapter);
-    defer adapter.allocator.free(supported_layers);
+    const layers = try getLayers(adapter);
+    defer adapter.allocator.free(layers);
+
+    const extensions = try getExtensions(adapter);
+    defer adapter.allocator.free(extensions);
 
     var create_info = vk.DeviceCreateInfo{
         .queue_create_info_count = @intCast(queue_infos.len),
         .p_queue_create_infos = queue_infos.ptr,
-        .enabled_layer_count = @intCast(supported_layers.len),
-        .pp_enabled_layer_names = supported_layers.ptr,
+        .enabled_layer_count = @intCast(layers.len),
+        .pp_enabled_layer_names = layers.ptr,
         .enabled_extension_count = @intCast(extensions.len),
         .pp_enabled_extension_names = extensions.ptr,
     };
@@ -119,14 +121,12 @@ pub fn init(adapter: *Adapter, desc: *const gpu.Device.Descriptor) !Device {
     const device_raw = try adapter.instance.dispatch.createDevice(adapter.physical_device, &create_info, null);
     const dispatch = try Dispatch.load(device_raw, adapter.instance.dispatch.dispatch.vkGetDeviceProcAddr);
     const cmd_pool = try dispatch.createCommandPool(device_raw, &.{ .queue_family_index = adapter.queue_family }, null);
-    const queue = try Queue.init(adapter.allocator, dispatch, device_raw, adapter.queue_family);
 
     return .{
         .allocator = adapter.allocator,
         .adapter = adapter,
         .dispatch = dispatch,
         .device = device_raw,
-        .queue = queue,
         .cmd_pool = cmd_pool,
     };
 }
@@ -152,13 +152,23 @@ pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Des
 }
 
 pub fn getQueue(device: *Device) !*Queue {
-    return &device.queue;
+    if (device.queue == null) {
+        device.queue = try Queue.init(device);
+    }
+    return &device.queue.?;
 }
 
-fn getLayers(adapter: *Adapter) ![]const [*:0]const u8 {
-    const required_layers = &[_][*:0]const u8{utils.validation_layer};
+pub const required_layers = &[_][*:0]const u8{};
+pub const optional_layers = if (builtin.mode == .Debug)
+    &[_][*:0]const u8{"VK_LAYER_KHRONOS_validation"}
+else
+    &.{};
 
-    var layers = try std.ArrayList([*:0]const u8).initCapacity(adapter.allocator, required_layers.len);
+fn getLayers(adapter: *Adapter) ![]const [*:0]const u8 {
+    var layers = try std.ArrayList([*:0]const u8).initCapacity(
+        adapter.allocator,
+        required_layers.len + optional_layers.len,
+    );
     errdefer layers.deinit();
 
     var count: u32 = 0;
@@ -168,16 +178,65 @@ fn getLayers(adapter: *Adapter) ![]const [*:0]const u8 {
     defer adapter.allocator.free(available_layers);
     _ = try adapter.instance.dispatch.enumerateDeviceLayerProperties(adapter.physical_device, &count, available_layers.ptr);
 
-    for (required_layers) |ext| {
+    for (required_layers) |required| {
         for (available_layers[0..count]) |available| {
-            if (std.mem.eql(u8, std.mem.sliceTo(ext, 0), std.mem.sliceTo(&available.layer_name, 0))) {
-                layers.appendAssumeCapacity(ext);
+            if (std.mem.eql(u8, std.mem.sliceTo(required, 0), std.mem.sliceTo(&available.layer_name, 0))) {
+                layers.appendAssumeCapacity(required);
                 break;
             }
         } else {
-            std.log.warn("unable to find layer: {s}", .{ext});
+            std.log.warn("unable to find required layer: {s}", .{required});
+        }
+    }
+
+    for (optional_layers) |optional| {
+        for (available_layers[0..count]) |available| {
+            if (std.mem.eql(u8, std.mem.sliceTo(optional, 0), std.mem.sliceTo(&available.layer_name, 0))) {
+                layers.appendAssumeCapacity(optional);
+                break;
+            }
         }
     }
 
     return layers.toOwnedSlice();
+}
+
+pub const required_extensions = &[_][*:0]const u8{vk.extension_info.khr_swapchain.name};
+pub const optional_extensions = &[_][*:0]const u8{};
+
+fn getExtensions(adapter: *Adapter) ![]const [*:0]const u8 {
+    var extensions = try std.ArrayList([*:0]const u8).initCapacity(
+        adapter.allocator,
+        required_extensions.len + optional_extensions.len,
+    );
+    errdefer extensions.deinit();
+
+    var count: u32 = 0;
+    _ = try adapter.instance.dispatch.enumerateDeviceExtensionProperties(adapter.physical_device, null, &count, null);
+
+    var available_extensions = try adapter.allocator.alloc(vk.ExtensionProperties, count);
+    defer adapter.allocator.free(available_extensions);
+    _ = try adapter.instance.dispatch.enumerateDeviceExtensionProperties(adapter.physical_device, null, &count, available_extensions.ptr);
+
+    for (required_extensions) |required| {
+        for (available_extensions[0..count]) |available| {
+            if (std.mem.eql(u8, std.mem.sliceTo(required, 0), std.mem.sliceTo(&available.extension_name, 0))) {
+                extensions.appendAssumeCapacity(required);
+                break;
+            }
+        } else {
+            std.log.warn("unable to find required extension: {s}", .{required});
+        }
+    }
+
+    for (optional_extensions) |optional| {
+        for (available_extensions[0..count]) |available| {
+            if (std.mem.eql(u8, std.mem.sliceTo(optional, 0), std.mem.sliceTo(&available.extension_name, 0))) {
+                extensions.appendAssumeCapacity(optional);
+                break;
+            }
+        }
+    }
+
+    return extensions.toOwnedSlice();
 }

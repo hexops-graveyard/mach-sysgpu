@@ -8,9 +8,8 @@ const Manager = @import("../helper.zig").Manager;
 const CommandBuffer = @This();
 
 manager: Manager(CommandBuffer) = .{},
-buffer: vk.CommandBuffer,
 device: *Device,
-render_passes: std.ArrayListUnmanaged(*RenderPassEncoder) = .{},
+buffer: vk.CommandBuffer,
 
 pub fn init(device: *Device) !CommandBuffer {
     var buffer: vk.CommandBuffer = undefined;

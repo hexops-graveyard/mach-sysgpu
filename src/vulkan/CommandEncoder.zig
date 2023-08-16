@@ -9,18 +9,14 @@ const Manager = @import("../helper.zig").Manager;
 const CommandEncoder = @This();
 
 manager: Manager(CommandEncoder) = .{},
-allocator: std.mem.Allocator,
 device: *Device,
-cmd_buffer: *CommandBuffer,
+cmd_buffer: CommandBuffer,
 
 pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !CommandEncoder {
     _ = desc;
-    var cmd_buffer = try device.allocator.create(CommandBuffer);
-    cmd_buffer.* = try CommandBuffer.init(device);
     return .{
-        .allocator = device.allocator,
         .device = device,
-        .cmd_buffer = cmd_buffer,
+        .cmd_buffer = try CommandBuffer.init(device),
     };
 }
 
@@ -34,6 +30,6 @@ pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPass
 
 pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
     _ = desc;
-    try cmd_encoder.cmd_buffer.device.dispatch.endCommandBuffer(cmd_encoder.cmd_buffer.buffer);
-    return cmd_encoder.cmd_buffer;
+    try cmd_encoder.device.dispatch.endCommandBuffer(cmd_encoder.cmd_buffer.buffer);
+    return &cmd_encoder.cmd_buffer;
 }
