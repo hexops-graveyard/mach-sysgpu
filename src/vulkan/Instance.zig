@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const gpu = @import("mach").gpu;
+const gpu = @import("gpu");
 const vk = @import("vulkan");
 const Base = @import("Base.zig");
 const Surface = @import("Surface.zig");
@@ -74,7 +74,7 @@ pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !
 }
 
 pub const required_layers = &[_][*:0]const u8{};
-pub const optional_layers = if (builtin.mode == .Debug)
+pub const optional_layers = if (builtin.mode == .Debug and false)
     &[_][*:0]const u8{"VK_LAYER_KHRONOS_validation"}
 else
     &.{};

@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const gpu = @import("mach").gpu;
+const gpu = @import("gpu");
 const shader = @import("shader.zig");
 const helper = @import("helper.zig");
 
@@ -16,13 +16,12 @@ const impl = switch (backend_type) {
 };
 
 var inited = false;
-var gpa = std.heap.GeneralPurposeAllocator(.{}){}; // TODO
 var allocator: std.mem.Allocator = undefined;
 
 pub const Interface = struct {
-    pub fn init() void {
+    pub fn init(alloc: std.mem.Allocator) void {
         inited = true;
-        allocator = gpa.allocator();
+        allocator = alloc;
     }
 
     pub inline fn createInstance(descriptor: ?*const gpu.Instance.Descriptor) ?*gpu.Instance {
@@ -695,8 +694,9 @@ pub const Interface = struct {
         device.err_cb_userdata = userdata;
     }
 
-    pub inline fn deviceTick(device: *gpu.Device) void {
-        _ = device;
+    pub inline fn deviceTick(device_raw: *gpu.Device) void {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        device.tick();
     }
 
     pub inline fn machDeviceWaitForCommandsToBeScheduled(device: *gpu.Device) void {
@@ -741,8 +741,6 @@ pub const Interface = struct {
         errdefer allocator.destroy(surface);
 
         surface.* = impl.Instance.createSurface(instance, descriptor) catch unreachable;
-        surface.manager.reference();
-
         return @ptrCast(surface);
     }
 
@@ -779,7 +777,6 @@ pub const Interface = struct {
     pub inline fn instanceRelease(instance_raw: *gpu.Instance) void {
         var instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
         instance.manager.release();
-        _ = gpa.deinit();
     }
 
     pub inline fn pipelineLayoutSetLabel(pipeline_layout: *gpu.PipelineLayout, label: [*:0]const u8) void {
@@ -1315,11 +1312,7 @@ pub const Interface = struct {
 
     pub inline fn swapChainGetCurrentTextureView(swap_chain_raw: *gpu.SwapChain) ?*gpu.TextureView {
         const swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
-
-        var texture_view = allocator.create(impl.TextureView) catch unreachable;
-        errdefer allocator.destroy(texture_view);
-
-        texture_view.* = swap_chain.getCurrentTextureView() catch unreachable;
+        const texture_view = swap_chain.getCurrentTextureView() catch unreachable;
         return @ptrCast(texture_view);
     }
 

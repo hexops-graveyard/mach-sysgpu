@@ -1,5 +1,4 @@
 const std = @import("std");
-const mach_core = @import("mach_core");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -8,26 +7,35 @@ pub fn build(b: *std.Build) !void {
     const vulkan_dep = b.dependency("vulkan", .{});
     const vulkan_mod = vulkan_dep.module("vulkan-zig-generated");
 
+    const gpu_dep = b.dependency("mach_gpu", .{});
+    const gpu_mod = gpu_dep.module("mach-gpu");
+
+    const glfw_dep = b.dependency("mach_glfw", .{});
+    const glfw_mod = glfw_dep.module("mach-glfw");
+
     const module = b.addModule("mach-dusk", .{
         .source_file = .{ .path = "src/main.zig" },
         .dependencies = &.{
             .{ .name = "vulkan", .module = vulkan_mod },
-            // TODO: directly use mach-gpu instead
-            .{ .name = "mach", .module = mach_core.module(b, optimize, target) },
+            .{ .name = "gpu", .module = gpu_mod },
         },
     });
 
-    mach_core.mach_glfw_import_path = "mach_core.mach_glfw";
-    const triangle = try mach_core.App.init(b, .{
+    const triangle = b.addExecutable(.{
         .name = "triangle",
-        .src = "examples/triangle/main.zig",
+        .root_source_file = .{ .path = "examples/triangle/main.zig" },
         .target = target,
         .optimize = optimize,
-        .deps = &.{.{ .name = "mach-dusk", .module = module }},
     });
+    triangle.addModule("dusk", module);
+    triangle.addModule("gpu", gpu_mod);
+    triangle.addModule("glfw", glfw_mod);
+    try @import("mach_glfw").link(b, triangle);
+    b.installArtifact(triangle);
 
+    const run_traingle_cmd = b.addRunArtifact(triangle);
     const run_triangle_step = b.step("triangle", "Run the basic init example");
-    run_triangle_step.dependOn(&triangle.run.step);
+    run_triangle_step.dependOn(&run_traingle_cmd.step);
 
     const shader_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/shader.zig" },

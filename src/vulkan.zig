@@ -13,7 +13,7 @@ pub const TextureView = @import("vulkan/TextureView.zig");
 pub const Queue = @import("vulkan/Queue.zig");
 
 const vk = @import("vulkan");
-const gpu = @import("mach").gpu;
+const gpu = @import("gpu");
 
 pub const api_version = vk.makeApiVersion(0, 1, 1, 0);
 
@@ -115,5 +115,18 @@ pub fn getTextureFormat(format: gpu.Texture.Format) vk.Format {
         .astc12x12_unorm => .astc_1_2x_12_unorm_block,
         .astc12x12_unorm_srgb => .astc_1_2x_12_srgb_block,
         .r8_bg8_biplanar420_unorm => .g8_b8r8_2plane_420_unorm,
+    };
+}
+
+pub fn getSampleCountFlags(samples: u32) vk.SampleCountFlags {
+    // TODO: https://github.com/Snektron/vulkan-zig/issues/27
+    return switch (samples) {
+        1 => .{ .@"1_bit" = true },
+        2 => .{ .@"2_bit" = true },
+        4 => .{ .@"4_bit" = true },
+        8 => .{ .@"8_bit" = true },
+        16 => .{ .@"16_bit" = true },
+        32 => .{ .@"32_bit" = true },
+        else => unreachable,
     };
 }
