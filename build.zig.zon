@@ -6,25 +6,13 @@
             .url = "https://pkg.machengine.org/vulkan-zig-generated/b8a80cf0640654aed592c04e8b11615d593f5f15.tar.gz",
             .hash = "1220e29b8f591c65dc3d0659938e625d6f458cbe17dfc5c6d00ac31de9b0f82c48be",
         },
-        .mach_core = .{
-            .url = "https://pkg.machengine.org/mach-core/f180def8d6fea24ef10b1a118819dfb613841fb7.tar.gz",
-            .hash = "122067f8d2a74126f3815236f1f668458ea1c3ebd4c0c3a5c26ac04e888966036abb",
-        },
-        .mach_sysjs = .{
-            .url = "https://pkg.machengine.org/mach-sysjs/cd011058993f39a3ab473921ff51e0eda5635f99.tar.gz",
-            .hash = "1220d2af1939977838949d435b28de637c29407586b8ac87e35241b1b68c0860e98d",
-        },
-        .mach_gamemode = .{
-            .url = "https://pkg.machengine.org/mach-gamemode/e8cf3b00c1e7ce47c15a0b9a4def8493dd84fef1.tar.gz",
-            .hash = "122033b8f9bc8116edb3f2421f78a35d5dd85f71792681633cb6edc883275af2a1e7",
-        },
         .mach_gpu = .{
-            .url = "https://pkg.machengine.org/mach-gpu/a86af86591827a2b779cd8eb52835929394912a4.tar.gz",
-            .hash = "12208531803f37e906974a4a4bd58b81200ae313f46f62f6384c91a32601b0a07eb6",
+            .url = "https://pkg.machengine.org/mach-gpu/3719f54c902c7a71b4ff0ce53a971edd3964fcac.tar.gz",
+            .hash = "1220a6aa5e161806d191e6a39c08dab0c4af6f97147529d658266a48b473dbea299d",
         },
         .mach_gpu_dawn = .{
-            .url = "https://pkg.machengine.org/mach-gpu-dawn/5d463ceb63246b3b73070c774465c67dd657e045.tar.gz",
-            .hash = "12205cd22eb1e26ea16e973fe57fb297535246d64454e3ccae8a39783c97ea488a83",
+            .url = "https://pkg.machengine.org/mach-gpu-dawn/359bd180e48a511b4b362a8e2dbdf93fba21a5d9.tar.gz",
+            .hash = "1220eb66866f6d3a1183de6108e82a79344e6efb6d88db6e8a3e852b73d9427ba4da",
         },
         .mach_glfw = .{
             .url = "https://pkg.machengine.org/mach-glfw/58a16012c33b047b9468cccb53ecd95835456121.tar.gz",

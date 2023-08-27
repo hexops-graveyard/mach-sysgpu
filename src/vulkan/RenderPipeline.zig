@@ -1,63 +1,61 @@
 const std = @import("std");
 const vk = @import("vulkan");
-const gpu = @import("mach").gpu;
+const gpu = @import("gpu");
 const Device = @import("Device.zig");
 const ShaderModule = @import("ShaderModule.zig");
 const PipelineLayout = @import("PipelineLayout.zig");
 const Manager = @import("../helper.zig").Manager;
 const getTextureFormat = @import("../vulkan.zig").getTextureFormat;
+const getSampleCountFlags = @import("../vulkan.zig").getSampleCountFlags;
 
 const RenderPipeline = @This();
 
 manager: Manager(RenderPipeline) = .{},
 device: *Device,
 pipeline: vk.Pipeline,
-render_pass_raw: vk.RenderPass,
+render_pass: vk.RenderPass,
 
 pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !RenderPipeline {
-    var stages: [2]vk.PipelineShaderStageCreateInfo = undefined;
-    var stage_count: u32 = 1;
+    var stages = std.BoundedArray(vk.PipelineShaderStageCreateInfo, 2){};
 
     const vertex_shader: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
-    stages[0] = .{
+    stages.appendAssumeCapacity(.{
         .stage = .{ .vertex_bit = true },
         .module = vertex_shader.shader_module,
         .p_name = desc.vertex.entry_point,
         .p_specialization_info = null,
-    };
+    });
 
     if (desc.fragment) |frag| {
-        stage_count += 1;
         const frag_shader: *ShaderModule = @ptrCast(@alignCast(frag.module));
-        stages[1] = .{
+        stages.appendAssumeCapacity(.{
             .stage = .{ .fragment_bit = true },
             .module = frag_shader.shader_module,
             .p_name = frag.entry_point,
             .p_specialization_info = null,
-        };
+        });
     }
 
-    const vertex_bindings = try device.allocator.alloc(vk.VertexInputBindingDescription, desc.vertex.buffer_count);
-    var vertex_attrs = std.ArrayList(vk.VertexInputAttributeDescription).init(device.allocator);
+    var vertex_bindings = try std.ArrayList(vk.VertexInputBindingDescription).initCapacity(device.allocator, desc.vertex.buffer_count);
+    var vertex_attrs = try std.ArrayList(vk.VertexInputAttributeDescription).initCapacity(device.allocator, desc.vertex.buffer_count);
     defer {
-        device.allocator.free(vertex_bindings);
+        vertex_bindings.deinit();
         vertex_attrs.deinit();
     }
 
-    for (vertex_bindings, 0..) |*binding, i| {
+    for (0..desc.vertex.buffer_count) |i| {
         const buf = desc.vertex.buffers.?[i];
-        // skip unused slots
-        if (buf.step_mode == .vertex_buffer_not_used) continue;
+        const input_rate: vk.VertexInputRate = switch (buf.step_mode) {
+            .vertex => .vertex,
+            .instance => .instance,
+            .vertex_buffer_not_used => unreachable,
+        };
 
-        binding.* = .{
+        vertex_bindings.appendAssumeCapacity(.{
             .binding = @intCast(i),
             .stride = @intCast(buf.array_stride),
-            .input_rate = switch (buf.step_mode) {
-                .vertex => .vertex,
-                .instance => .instance,
-                .vertex_buffer_not_used => unreachable,
-            },
-        };
+            .input_rate = input_rate,
+        });
 
         for (buf.attributes.?[0..buf.attribute_count]) |attr| {
             try vertex_attrs.append(.{
@@ -70,8 +68,8 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
     }
 
     const vertex_input = vk.PipelineVertexInputStateCreateInfo{
-        .vertex_binding_description_count = @intCast(vertex_bindings.len),
-        .p_vertex_binding_descriptions = vertex_bindings.ptr,
+        .vertex_binding_description_count = @intCast(vertex_bindings.items.len),
+        .p_vertex_binding_descriptions = vertex_bindings.items.ptr,
         .vertex_attribute_description_count = @intCast(vertex_attrs.items.len),
         .p_vertex_attribute_descriptions = vertex_attrs.items.ptr,
     };
@@ -111,8 +109,9 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
         .line_width = 1,
     };
 
+    const sample_count = getSampleCountFlags(desc.multisample.count);
     const multisample = vk.PipelineMultisampleStateCreateInfo{
-        .rasterization_samples = getSampleCountFlags(desc.multisample.count),
+        .rasterization_samples = sample_count,
         .sample_shading_enable = vk.FALSE,
         .min_sample_shading = 0,
         .p_sample_mask = &[_]u32{desc.multisample.mask},
@@ -120,7 +119,48 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
         .alpha_to_one_enable = vk.FALSE,
     };
 
-    var depth_stencil = vk.PipelineDepthStencilStateCreateInfo{
+    var pipeline_layout = if (desc.layout) |layout|
+        @as(*PipelineLayout, @ptrCast(@alignCast(layout))).*
+    else
+        try PipelineLayout.init(device, &.{});
+    defer pipeline_layout.deinit();
+
+    var blend_attachments: []vk.PipelineColorBlendAttachmentState = &.{};
+    defer if (desc.fragment != null) device.allocator.free(blend_attachments);
+
+    var rp_key = Device.RenderPassKey.init();
+    rp_key.samples = sample_count;
+
+    if (desc.fragment) |frag| {
+        blend_attachments = try device.allocator.alloc(vk.PipelineColorBlendAttachmentState, frag.target_count);
+
+        for (frag.targets.?[0..frag.target_count], 0..) |target, i| {
+            const blend = target.blend orelse &gpu.BlendState{};
+            blend_attachments[i] = .{
+                .blend_enable = vk.FALSE,
+                .src_color_blend_factor = getBlendFactor(blend.color.src_factor),
+                .dst_color_blend_factor = getBlendFactor(blend.color.dst_factor),
+                .color_blend_op = getBlendOp(blend.color.operation),
+                .src_alpha_blend_factor = getBlendFactor(blend.alpha.src_factor),
+                .dst_alpha_blend_factor = getBlendFactor(blend.alpha.dst_factor),
+                .alpha_blend_op = getBlendOp(blend.alpha.operation),
+                .color_write_mask = .{
+                    .r_bit = target.write_mask.red,
+                    .g_bit = target.write_mask.green,
+                    .b_bit = target.write_mask.blue,
+                    .a_bit = target.write_mask.alpha,
+                },
+            };
+            rp_key.colors.appendAssumeCapacity(.{
+                .format = getTextureFormat(target.format),
+                .load_op = .clear,
+                .store_op = .store,
+                .resolve_format = null,
+            });
+        }
+    }
+
+    var depth_stencil_state = vk.PipelineDepthStencilStateCreateInfo{
         .depth_test_enable = vk.FALSE,
         .depth_write_enable = vk.FALSE,
         .depth_compare_op = .never,
@@ -149,11 +189,11 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
     };
 
     if (desc.depth_stencil) |ds| {
-        depth_stencil.depth_test_enable = @intFromBool(ds.depth_compare == .always and ds.depth_write_enabled);
-        depth_stencil.depth_write_enable = @intFromBool(ds.depth_write_enabled);
-        depth_stencil.depth_compare_op = getCompareOp(ds.depth_compare);
-        depth_stencil.stencil_test_enable = @intFromBool(ds.stencil_read_mask != 0 or ds.stencil_write_mask != 0);
-        depth_stencil.front = .{
+        depth_stencil_state.depth_test_enable = @intFromBool(ds.depth_compare == .always and ds.depth_write_enabled == .true);
+        depth_stencil_state.depth_write_enable = @intFromBool(ds.depth_write_enabled == .true);
+        depth_stencil_state.depth_compare_op = getCompareOp(ds.depth_compare);
+        depth_stencil_state.stencil_test_enable = @intFromBool(ds.stencil_read_mask != 0 or ds.stencil_write_mask != 0);
+        depth_stencil_state.front = .{
             .fail_op = getStencilOp(ds.stencil_front.fail_op),
             .depth_fail_op = getStencilOp(ds.stencil_front.depth_fail_op),
             .pass_op = getStencilOp(ds.stencil_front.pass_op),
@@ -162,7 +202,7 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
             .write_mask = ds.stencil_write_mask,
             .reference = 0,
         };
-        depth_stencil.back = .{
+        depth_stencil_state.back = .{
             .fail_op = getStencilOp(ds.stencil_back.fail_op),
             .depth_fail_op = getStencilOp(ds.stencil_back.depth_fail_op),
             .pass_op = getStencilOp(ds.stencil_back.pass_op),
@@ -171,103 +211,50 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
             .write_mask = ds.stencil_write_mask,
             .reference = 0,
         };
-    }
 
-    var layout = if (desc.layout) |layout|
-        @as(*PipelineLayout, @ptrCast(@alignCast(layout))).*
-    else
-        try PipelineLayout.init(device, &.{});
-    defer layout.deinit();
-
-    var color_attachments: []vk.PipelineColorBlendAttachmentState = &.{};
-    var attachments: []vk.AttachmentDescription = &.{};
-    var attachment_refs: []vk.AttachmentReference = &.{};
-
-    defer if (desc.fragment != null) {
-        device.allocator.free(color_attachments);
-        device.allocator.free(attachments);
-        device.allocator.free(attachment_refs);
-    };
-
-    if (desc.fragment) |frag| {
-        color_attachments = try device.allocator.alloc(vk.PipelineColorBlendAttachmentState, frag.target_count);
-        attachments = try device.allocator.alloc(vk.AttachmentDescription, frag.target_count);
-        attachment_refs = try device.allocator.alloc(vk.AttachmentReference, frag.target_count);
-
-        for (color_attachments, attachments, attachment_refs, 0..) |*color_attachment, *attachment, *attachment_ref, i| {
-            const target = frag.targets.?[i];
-            const blend = target.blend orelse &gpu.BlendState{};
-            color_attachment.* = .{
-                .blend_enable = vk.FALSE,
-                .src_color_blend_factor = getBlendFactor(blend.color.src_factor),
-                .dst_color_blend_factor = getBlendFactor(blend.color.dst_factor),
-                .color_blend_op = getBlendOp(blend.color.operation),
-                .src_alpha_blend_factor = getBlendFactor(blend.alpha.src_factor),
-                .dst_alpha_blend_factor = getBlendFactor(blend.alpha.dst_factor),
-                .alpha_blend_op = getBlendOp(blend.alpha.operation),
-                .color_write_mask = .{
-                    .r_bit = target.write_mask.red,
-                    .g_bit = target.write_mask.green,
-                    .b_bit = target.write_mask.blue,
-                    .a_bit = target.write_mask.alpha,
-                },
-            };
-            attachment.* = .{
-                .format = getTextureFormat(target.format),
-                .samples = getSampleCountFlags(desc.multisample.count),
-                .load_op = .clear,
-                .store_op = .store,
-                .stencil_load_op = .clear,
-                .stencil_store_op = .store,
-                .initial_layout = .undefined,
-                .final_layout = .present_src_khr,
-            };
-            attachment_ref.* = .{
-                .attachment = @intCast(i),
-                .layout = .general,
-            };
-        }
+        rp_key.depth_stencil = .{
+            .format = getTextureFormat(ds.format),
+            .depth_load_op = .load,
+            .depth_store_op = .store,
+            .stencil_load_op = .load,
+            .stencil_store_op = .store,
+            .read_only = ds.depth_write_enabled == .false and ds.stencil_write_mask == 0,
+        };
     }
 
     const color_blend = vk.PipelineColorBlendStateCreateInfo{
         .logic_op_enable = vk.FALSE,
         .logic_op = .clear,
-        .attachment_count = @intCast(color_attachments.len),
-        .p_attachments = color_attachments.ptr,
+        .attachment_count = @intCast(blend_attachments.len),
+        .p_attachments = blend_attachments.ptr,
         .blend_constants = .{ 0, 0, 0, 0 },
     };
 
-    const dynamic_states = [_]vk.DynamicState{ .viewport, .scissor, .stencil_reference, .blend_constants };
+    const dynamic_states = [_]vk.DynamicState{
+        .viewport,        .scissor,      .line_width,
+        .blend_constants, .depth_bounds, .stencil_reference,
+    };
     const dynamic = vk.PipelineDynamicStateCreateInfo{
         .dynamic_state_count = dynamic_states.len,
         .p_dynamic_states = &dynamic_states,
     };
 
-    const render_pass_raw = try device.dispatch.createRenderPass(device.device, &vk.RenderPassCreateInfo{
-        .attachment_count = @intCast(attachments.len),
-        .p_attachments = attachments.ptr,
-        .subpass_count = 1,
-        .p_subpasses = &[_]vk.SubpassDescription{.{
-            .pipeline_bind_point = .graphics,
-            .color_attachment_count = @intCast(attachment_refs.len),
-            .p_color_attachments = attachment_refs.ptr,
-        }},
-    }, null);
+    const render_pass = try device.queryRenderPass(rp_key);
 
     var pipeline: vk.Pipeline = undefined;
     _ = try device.dispatch.createGraphicsPipelines(device.device, .null_handle, 1, &[_]vk.GraphicsPipelineCreateInfo{.{
-        .stage_count = stage_count,
-        .p_stages = &stages,
+        .stage_count = stages.len,
+        .p_stages = stages.slice().ptr,
         .p_vertex_input_state = &vertex_input,
         .p_input_assembly_state = &input_assembly,
         .p_viewport_state = &viewport,
         .p_rasterization_state = &rasterization,
         .p_multisample_state = &multisample,
-        .p_depth_stencil_state = &depth_stencil,
+        .p_depth_stencil_state = &depth_stencil_state,
         .p_color_blend_state = &color_blend,
         .p_dynamic_state = &dynamic,
-        .layout = layout.layout,
-        .render_pass = render_pass_raw,
+        .layout = pipeline_layout.layout,
+        .render_pass = render_pass,
         .subpass = 0,
         .base_pipeline_index = -1,
     }}, null, @ptrCast(&pipeline));
@@ -275,12 +262,11 @@ pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !Render
     return .{
         .device = device,
         .pipeline = pipeline,
-        .render_pass_raw = render_pass_raw,
+        .render_pass = render_pass,
     };
 }
 
 pub fn deinit(render_pipeline: *RenderPipeline) void {
-    render_pipeline.device.dispatch.destroyRenderPass(render_pipeline.device.device, render_pipeline.render_pass_raw, null);
     render_pipeline.device.dispatch.destroyPipeline(render_pipeline.device.device, render_pipeline.pipeline, null);
 }
 
@@ -302,19 +288,6 @@ fn getDepthBiasClamp(ds: ?*const gpu.DepthStencilState) f32 {
 fn getDepthBiasSlopeScale(ds: ?*const gpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return ds.?.depth_bias_slope_scale;
-}
-
-fn getSampleCountFlags(samples: u32) vk.SampleCountFlags {
-    // TODO: https://github.com/Snektron/vulkan-zig/issues/27
-    return switch (samples) {
-        1 => .{ .@"1_bit" = true },
-        2 => .{ .@"2_bit" = true },
-        4 => .{ .@"4_bit" = true },
-        8 => .{ .@"8_bit" = true },
-        16 => .{ .@"16_bit" = true },
-        32 => .{ .@"32_bit" = true },
-        else => unreachable,
-    };
 }
 
 fn getCompareOp(op: gpu.CompareFunction) vk.CompareOp {
