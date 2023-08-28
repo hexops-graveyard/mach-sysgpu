@@ -9,7 +9,7 @@ pub const Tokenizer = @import("shader/Tokenizer.zig");
 pub const ErrorList = @import("shader/ErrorList.zig");
 pub const printAir = @import("shader/print_air.zig").printAir;
 
-test {
+test "reference declarations" {
     std.testing.refAllDecls(CodeGen);
     std.testing.refAllDecls(Air);
     std.testing.refAllDecls(Ast);

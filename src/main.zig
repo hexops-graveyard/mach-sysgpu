@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const gpu = @import("gpu");
 const shader = @import("shader.zig");
-const helper = @import("helper.zig");
+const utils = @import("utils.zig");
 
 const backend_type: gpu.BackendType = switch (builtin.target.os.tag) {
     .linux, .windows => .vulkan,
@@ -16,7 +16,7 @@ const impl = switch (backend_type) {
 };
 
 var inited = false;
-var allocator: std.mem.Allocator = undefined;
+pub var allocator: std.mem.Allocator = undefined;
 
 pub const Interface = struct {
     pub fn init(alloc: std.mem.Allocator) void {
@@ -26,11 +26,11 @@ pub const Interface = struct {
 
     pub inline fn createInstance(descriptor: ?*const gpu.Instance.Descriptor) ?*gpu.Instance {
         if (builtin.mode == .Debug and !inited) {
-            @panic("dusk: not initialized; did you forget to call gpu.Impl.init()?");
+            std.log.err("dusk not initialized; did you forget to call gpu.Impl.init()?");
         }
 
         var instance = allocator.create(impl.Instance) catch return null;
-        instance.* = impl.Instance.init(descriptor orelse &gpu.Instance.Descriptor{}, allocator) catch {
+        instance.* = impl.Instance.init(descriptor orelse &gpu.Instance.Descriptor{}) catch {
             allocator.destroy(instance);
             return null;
         };
@@ -566,7 +566,7 @@ pub const Interface = struct {
 
         var errors = try shader.ErrorList.init(allocator);
         defer errors.deinit();
-        if (helper.findChained(gpu.ShaderModule.WGSLDescriptor, descriptor.next_in_chain.generic)) |wgsl_descriptor| {
+        if (utils.findChained(gpu.ShaderModule.WGSLDescriptor, descriptor.next_in_chain.generic)) |wgsl_descriptor| {
             var ast = shader.Ast.parse(allocator, &errors, std.mem.span(wgsl_descriptor.code)) catch unreachable;
             defer ast.deinit(allocator);
 
@@ -577,7 +577,7 @@ pub const Interface = struct {
             defer allocator.free(output);
 
             shader_module.* = impl.Device.createShaderModule(device, output) catch unreachable;
-        } else if (helper.findChained(gpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
+        } else if (utils.findChained(gpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
             const output = std.mem.sliceAsBytes(spirv_descriptor.code[0..spirv_descriptor.code_size]);
             shader_module.* = impl.Device.createShaderModule(device, output) catch unreachable;
         } else unreachable;
@@ -1415,6 +1415,6 @@ pub const Interface = struct {
     }
 };
 
-test "dusk impl" {
+test "export" {
     _ = gpu.Export(Interface);
 }
