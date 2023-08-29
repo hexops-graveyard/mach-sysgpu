@@ -64,7 +64,7 @@ pub const Instance = struct {
     }
 
     pub const required_layers = &[_][*:0]const u8{};
-    pub const optional_layers = if (builtin.mode == .Debug and false)
+    pub const optional_layers = if (builtin.mode == .Debug)
         &[_][*:0]const u8{"VK_LAYER_KHRONOS_validation"}
     else
         &.{};
