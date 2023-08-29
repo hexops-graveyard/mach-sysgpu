@@ -60,6 +60,7 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .destroySemaphore = true,
     .destroyShaderModule = true,
     .destroySwapchainKHR = true,
+    .deviceWaitIdle = true,
     .endCommandBuffer = true,
     .freeCommandBuffers = true,
     .getDeviceQueue = true,
@@ -77,40 +78,49 @@ pub var instance: InstanceDispatch = undefined;
 pub var device: DeviceDispatch = undefined;
 
 var lib: std.DynLib = undefined;
-var loaded = false;
+var lib_loaded = false;
+var base_loaded = false;
+var instance_loaded = false;
+var device_loaded = false;
 
 pub fn init() !void {
     // ElfDynLib is unable to find vulkan, so forcing libc means we always use DlDynlib even on Linux
     if (!builtin.link_libc) @compileError("libc not linked");
 
-    std.debug.assert(!loaded);
+    std.debug.assert(!lib_loaded);
     lib = try std.DynLib.openZ(switch (builtin.target.os.tag) {
         .windows => "vulkan-1.dll",
         .linux => "libvulkan.so.1",
         .macos => "libvulkan.1.dylib",
         else => @compileError("Unknown OS!"),
     });
-    loaded = true;
+    lib_loaded = true;
 }
 
 pub fn close() void {
     lib.close();
-    loaded = false;
+    lib_loaded = false;
 }
 
 pub fn loadBase() !void {
-    std.debug.assert(loaded);
+    std.debug.assert(lib_loaded);
+    if (base_loaded) return;
     base = try BaseDispatch.load(getBaseProcAddress);
+    base_loaded = true;
 }
 
 pub fn loadInstance(vki: vk.Instance) !void {
-    std.debug.assert(loaded);
+    std.debug.assert(lib_loaded);
+    if (instance_loaded) return;
     instance = try InstanceDispatch.load(vki, base.dispatch.vkGetInstanceProcAddr);
+    instance_loaded = true;
 }
 
 pub fn loadDevice(vkd: vk.Device) !void {
-    std.debug.assert(loaded);
+    std.debug.assert(lib_loaded);
+    if (device_loaded) return;
     device = try DeviceDispatch.load(vkd, instance.dispatch.vkGetDeviceProcAddr);
+    device_loaded = true;
 }
 
 fn getBaseProcAddress(_: vk.Instance, name_ptr: [*:0]const u8) vk.PfnVoidFunction {

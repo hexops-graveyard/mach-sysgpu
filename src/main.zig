@@ -26,7 +26,7 @@ pub const Interface = struct {
 
     pub inline fn createInstance(descriptor: ?*const gpu.Instance.Descriptor) ?*gpu.Instance {
         if (builtin.mode == .Debug and !inited) {
-            std.log.err("dusk not initialized; did you forget to call gpu.Impl.init()?");
+            std.log.err("dusk not initialized; did you forget to call gpu.Impl.init()?", .{});
         }
 
         var instance = allocator.create(impl.Instance) catch return null;

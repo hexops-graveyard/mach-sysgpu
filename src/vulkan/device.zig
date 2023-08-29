@@ -12,11 +12,11 @@ const Surface = @import("instance.zig").Surface;
 pub const Device = struct {
     const max_frames_in_flight = 2;
 
-    const Sync = struct {
-        available: vk.Semaphore,
-        finished: vk.Semaphore,
-        fence: vk.Fence,
-        cmd_buffer: CommandBuffer,
+    const FrameRes = struct {
+        available: [max_frames_in_flight]vk.Semaphore,
+        finished: [max_frames_in_flight]vk.Semaphore,
+        fence: [max_frames_in_flight]vk.Fence,
+        buffer: [max_frames_in_flight]CommandBuffer,
     };
 
     manager: utils.Manager(Device) = .{},
@@ -25,8 +25,8 @@ pub const Device = struct {
     cmd_pool: vk.CommandPool,
     render_passes: std.AutoHashMapUnmanaged(RenderPassKey, vk.RenderPass) = .{},
     framebuffer: vk.Framebuffer = .null_handle,
-    syncs: [max_frames_in_flight]Sync,
-    sync_index: u8 = 0,
+    frame_res: FrameRes,
+    frame_index: u8 = 0,
     queue: ?Queue = null,
     err_cb: ?gpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
@@ -39,8 +39,6 @@ pub const Device = struct {
         }};
 
         var features = vk.PhysicalDeviceFeatures2{ .features = .{ .geometry_shader = vk.TRUE } };
-        var feature_chain: *vk.BaseOutStructure = @ptrCast(&features);
-
         if (desc.required_features) |required_features| {
             for (required_features[0..desc.required_features_count]) |req_feature| {
                 switch (req_feature) {
@@ -52,21 +50,21 @@ pub const Device = struct {
                     .texture_compression_astc => features.features.texture_compression_astc_ldr = vk.TRUE,
                     .indirect_first_instance => features.features.draw_indirect_first_instance = vk.TRUE,
                     .shader_f16 => {
-                        var next_feature = vk.PhysicalDeviceShaderFloat16Int8FeaturesKHR{
+                        var feature = vk.PhysicalDeviceShaderFloat16Int8FeaturesKHR{
                             .s_type = .physical_device_shader_float16_int8_features_khr,
                             .shader_float_16 = vk.TRUE,
                         };
-                        feature_chain.p_next = @ptrCast(&next_feature);
+                        features.p_next = @ptrCast(&feature);
                     },
                     else => std.log.warn("unimplement feature: {s}", .{@tagName(req_feature)}),
                 }
             }
         }
 
-        const layers = try getLayers(adapter);
+        const layers = try queryLayers(adapter);
         defer dusk.allocator.free(layers);
 
-        const extensions = try getExtensions(adapter);
+        const extensions = try queryExtensions(adapter);
         defer dusk.allocator.free(extensions);
 
         var create_info = vk.DeviceCreateInfo{
@@ -95,38 +93,33 @@ pub const Device = struct {
             null,
         );
 
-        var syncs: [max_frames_in_flight]Sync = undefined;
-        for (&syncs) |*sync| {
-            sync.* = .{
-                .available = try proc.device.createSemaphore(device, &.{}, null),
-                .finished = try proc.device.createSemaphore(device, &.{}, null),
-                .fence = try proc.device.createFence(device, &.{ .flags = .{ .signaled_bit = true } }, null),
-                .cmd_buffer = blk: {
-                    var buffer: vk.CommandBuffer = undefined;
-                    try proc.device.allocateCommandBuffers(device, &.{
-                        .command_pool = cmd_pool,
-                        .level = .primary,
-                        .command_buffer_count = 1,
-                    }, @ptrCast(&buffer));
-                    break :blk .{ .buffer = buffer };
-                },
-            };
+        var frame_res: FrameRes = undefined;
+        for (0..max_frames_in_flight) |i| {
+            frame_res.available[i] = try proc.device.createSemaphore(device, &.{}, null);
+            frame_res.finished[i] = try proc.device.createSemaphore(device, &.{}, null);
+            frame_res.fence[i] = try proc.device.createFence(device, &.{ .flags = .{ .signaled_bit = true } }, null);
+            try proc.device.allocateCommandBuffers(device, &.{
+                .command_pool = cmd_pool,
+                .level = .primary,
+                .command_buffer_count = max_frames_in_flight,
+            }, @ptrCast(&frame_res.buffer[i]));
         }
 
         return .{
             .adapter = adapter,
             .device = device,
             .cmd_pool = cmd_pool,
-            .syncs = syncs,
+            .frame_res = frame_res,
         };
     }
 
     pub fn deinit(device: *Device) void {
-        for (device.syncs) |sync| {
-            proc.device.destroySemaphore(device.device, sync.available, null);
-            proc.device.destroySemaphore(device.device, sync.finished, null);
-            proc.device.destroyFence(device.device, sync.fence, null);
-            proc.device.freeCommandBuffers(device.device, device.cmd_pool, 1, &[_]vk.CommandBuffer{sync.cmd_buffer.buffer});
+        proc.device.deviceWaitIdle(device.device) catch {};
+
+        for (0..max_frames_in_flight) |i| {
+            proc.device.destroySemaphore(device.device, device.frame_res.available[i], null);
+            proc.device.destroySemaphore(device.device, device.frame_res.finished[i], null);
+            proc.device.destroyFence(device.device, device.frame_res.fence[i], null);
         }
 
         var render_pass_iter = device.render_passes.valueIterator();
@@ -135,8 +128,8 @@ pub const Device = struct {
         }
         device.render_passes.deinit(dusk.allocator);
 
-        proc.device.destroyFramebuffer(device.device, device.framebuffer, null);
         proc.device.destroyCommandPool(device.device, device.cmd_pool, null);
+        proc.device.destroyFramebuffer(device.device, device.framebuffer, null);
         proc.device.destroyDevice(device.device, null);
     }
 
@@ -164,16 +157,16 @@ pub const Device = struct {
     }
 
     pub fn tick(device: *Device) void {
-        device.sync_index = (device.sync_index + 1) % max_frames_in_flight;
+        device.frame_index = (device.frame_index + 1) % max_frames_in_flight;
     }
 
     pub const required_layers = &[_][*:0]const u8{};
-    pub const optional_layers = if (builtin.mode == .Debug and false)
+    pub const optional_layers = if (builtin.mode == .Debug)
         &[_][*:0]const u8{"VK_LAYER_KHRONOS_validation"}
     else
         &.{};
 
-    fn getLayers(adapter: *Adapter) ![]const [*:0]const u8 {
+    fn queryLayers(adapter: *Adapter) ![]const [*:0]const u8 {
         var layers = try std.ArrayList([*:0]const u8).initCapacity(
             dusk.allocator,
             required_layers.len + optional_layers.len,
@@ -213,7 +206,7 @@ pub const Device = struct {
     pub const required_extensions = &[_][*:0]const u8{vk.extension_info.khr_swapchain.name};
     pub const optional_extensions = &[_][*:0]const u8{};
 
-    fn getExtensions(adapter: *Adapter) ![]const [*:0]const u8 {
+    fn queryExtensions(adapter: *Adapter) ![]const [*:0]const u8 {
         var extensions = try std.ArrayList([*:0]const u8).initCapacity(
             dusk.allocator,
             required_extensions.len + optional_extensions.len,
@@ -304,8 +297,8 @@ pub const Device = struct {
                 .store_op = conv.vulkanStoreOp(attach.store_op),
                 .stencil_load_op = .dont_care,
                 .stencil_store_op = .dont_care,
-                .initial_layout = .color_attachment_optimal,
-                .final_layout = .color_attachment_optimal,
+                .initial_layout = .undefined,
+                .final_layout = .present_src_khr,
             });
             color_refs.appendAssumeCapacity(.{
                 .attachment = @intCast(attachments.len - 1),
@@ -320,8 +313,8 @@ pub const Device = struct {
                     .store_op = .store,
                     .stencil_load_op = .dont_care,
                     .stencil_store_op = .dont_care,
-                    .initial_layout = .color_attachment_optimal,
-                    .final_layout = .color_attachment_optimal,
+                    .initial_layout = .undefined,
+                    .final_layout = .present_src_khr,
                 });
                 resolve_refs.appendAssumeCapacity(.{
                     .attachment = @intCast(attachments.len - 1),
@@ -378,6 +371,7 @@ pub const SwapChain = struct {
     device: *Device,
     swapchain: vk.SwapchainKHR,
     textures: []Texture,
+    texture_views: []TextureView,
     texture_index: u32 = 0,
     format: gpu.Texture.Format,
 
@@ -406,7 +400,18 @@ pub const SwapChain = struct {
         };
         const image_count = @max(capabilities.min_image_count + 1, capabilities.max_image_count);
         const format = conv.vulkanFormat(desc.format);
-        const extent = vk.Extent2D{ .width = desc.width, .height = desc.height };
+        const extent = vk.Extent2D{
+            .width = std.math.clamp(
+                desc.width,
+                capabilities.min_image_extent.width,
+                capabilities.max_image_extent.width,
+            ),
+            .height = std.math.clamp(
+                desc.height,
+                capabilities.min_image_extent.height,
+                capabilities.max_image_extent.height,
+            ),
+        };
         const image_usage = vk.ImageUsageFlags{
             .transfer_src_bit = desc.usage.copy_src,
             .transfer_dst_bit = desc.usage.copy_dst,
@@ -453,8 +458,16 @@ pub const SwapChain = struct {
         _ = try proc.device.getSwapchainImagesKHR(device.device, swapchain, &images_len, images.ptr);
 
         const textures = try dusk.allocator.alloc(Texture, images_len);
-        for (images, 0..) |image, i| {
-            textures[i] = try Texture.init(device, image, extent);
+        errdefer dusk.allocator.free(textures);
+        const texture_views = try dusk.allocator.alloc(TextureView, images_len);
+        errdefer dusk.allocator.free(texture_views);
+
+        for (textures, texture_views, 0..) |*texture, *view, i| {
+            texture.* = try Texture.init(device, images[i], extent);
+            view.* = try texture.createView(&.{
+                .format = desc.format,
+                .dimension = .dimension_2d,
+            });
         }
 
         return .{
@@ -462,17 +475,21 @@ pub const SwapChain = struct {
             .swapchain = swapchain,
             .format = desc.format,
             .textures = textures,
+            .texture_views = texture_views,
         };
     }
 
     pub fn deinit(swapchain: *SwapChain) void {
-        dusk.allocator.free(swapchain.textures);
         proc.device.destroySwapchainKHR(swapchain.device.device, swapchain.swapchain, null);
+        for (swapchain.texture_views) |*view| view.manager.release();
+        dusk.allocator.free(swapchain.textures);
+        dusk.allocator.free(swapchain.texture_views);
     }
 
     pub fn getCurrentTextureView(swapchain: *SwapChain) !*TextureView {
-        const semaphore = swapchain.device.syncs[swapchain.device.sync_index].available;
-        const fence = swapchain.device.syncs[swapchain.device.sync_index].fence;
+        const semaphore = swapchain.device.frame_res.available[swapchain.device.frame_index];
+        const fence = swapchain.device.frame_res.fence[swapchain.device.frame_index];
+        const buffer = swapchain.device.frame_res.buffer[swapchain.device.frame_index];
 
         _ = try proc.device.waitForFences(
             swapchain.device.device,
@@ -481,6 +498,8 @@ pub const SwapChain = struct {
             vk.TRUE,
             std.math.maxInt(u64),
         );
+        try proc.device.resetFences(swapchain.device.device, 1, &[_]vk.Fence{fence});
+        try proc.device.resetCommandBuffer(buffer.buffer, .{});
 
         const result = try proc.device.acquireNextImageKHR(
             swapchain.device.device,
@@ -491,132 +510,112 @@ pub const SwapChain = struct {
         );
         swapchain.texture_index = result.image_index;
 
-        return swapchain.textures[swapchain.texture_index].createView(&.{
-            .format = swapchain.format,
-            .dimension = .dimension_2d,
-        });
+        const view = &swapchain.texture_views[swapchain.texture_index];
+        view.manager.reference();
+
+        return view;
     }
 
     pub fn present(swapchain: *SwapChain) !void {
-        {
-            var cmd_buffer: vk.CommandBuffer = undefined;
-            try proc.device.allocateCommandBuffers(swapchain.device.device, &.{
-                .command_pool = swapchain.device.cmd_pool,
-                .level = .primary,
-                .command_buffer_count = 1,
-            }, @ptrCast(&cmd_buffer));
-            try proc.device.beginCommandBuffer(
-                cmd_buffer,
-                &.{
-                    .flags = .{ .one_time_submit_bit = true },
-                },
-            );
-
-            proc.device.cmdPipelineBarrier(
-                cmd_buffer,
-                .{ .top_of_pipe_bit = true },
-                .{ .color_attachment_output_bit = true },
-                .{},
-                0,
-                &[_]vk.MemoryBarrier{},
-                0,
-                &[_]vk.BufferMemoryBarrier{},
-                1,
-                &[_]vk.ImageMemoryBarrier{
-                    .{
-                        .src_access_mask = .{},
-                        .dst_access_mask = .{},
-                        .old_layout = .color_attachment_optimal,
-                        .new_layout = .present_src_khr,
-                        .src_queue_family_index = 0,
-                        .dst_queue_family_index = 0,
-                        .image = swapchain.textures[swapchain.texture_index].image,
-                        .subresource_range = .{
-                            .aspect_mask = .{ .color_bit = true },
-                            .base_mip_level = 0,
-                            .level_count = 1,
-                            .base_array_layer = 0,
-                            .layer_count = 1,
-                        },
-                    },
-                },
-            );
-
-            try proc.device.endCommandBuffer(cmd_buffer);
-            const queue = try swapchain.device.getQueue();
-            try proc.device.queueSubmit(queue.queue, 1, &[_]vk.SubmitInfo{
-                .{
-                    .command_buffer_count = 1,
-                    .p_command_buffers = &[_]vk.CommandBuffer{cmd_buffer},
-                },
-            }, .null_handle);
-            try proc.device.queueWaitIdle(queue.queue);
-            proc.device.freeCommandBuffers(swapchain.device.device, swapchain.device.cmd_pool, 1, &[_]vk.CommandBuffer{cmd_buffer});
-        }
-
-        _ = try proc.device.queuePresentKHR(swapchain.device.queue.?.queue, &.{
+        const queue = try swapchain.device.getQueue();
+        _ = try proc.device.queuePresentKHR(queue.queue, &.{
             .wait_semaphore_count = 1,
-            .p_wait_semaphores = &[_]vk.Semaphore{swapchain.device.syncs[swapchain.device.sync_index].finished},
+            .p_wait_semaphores = &[_]vk.Semaphore{swapchain.device.frame_res.finished[swapchain.device.frame_index]},
             .swapchain_count = 1,
             .p_swapchains = &[_]vk.SwapchainKHR{swapchain.swapchain},
             .p_image_indices = &[_]u32{swapchain.texture_index},
         });
+    }
+};
 
-        {
-            var cmd_buffer: vk.CommandBuffer = undefined;
-            try proc.device.allocateCommandBuffers(swapchain.device.device, &.{
-                .command_pool = swapchain.device.cmd_pool,
-                .level = .primary,
-                .command_buffer_count = 1,
-            }, @ptrCast(&cmd_buffer));
-            try proc.device.beginCommandBuffer(
-                cmd_buffer,
-                &.{
-                    .flags = .{ .one_time_submit_bit = true },
-                },
-            );
+pub const Texture = struct {
+    manager: utils.Manager(Texture) = .{},
+    device: *Device,
+    extent: vk.Extent2D,
+    image: vk.Image,
 
-            proc.device.cmdPipelineBarrier(
-                cmd_buffer,
-                .{ .top_of_pipe_bit = true },
-                .{ .color_attachment_output_bit = true },
-                .{},
-                0,
-                &[_]vk.MemoryBarrier{},
-                0,
-                &[_]vk.BufferMemoryBarrier{},
-                1,
-                &[_]vk.ImageMemoryBarrier{
-                    .{
-                        .src_access_mask = .{},
-                        .dst_access_mask = .{},
-                        .old_layout = .present_src_khr,
-                        .new_layout = .color_attachment_optimal,
-                        .src_queue_family_index = 0,
-                        .dst_queue_family_index = 0,
-                        .image = swapchain.textures[swapchain.texture_index].image,
-                        .subresource_range = .{
-                            .aspect_mask = .{ .color_bit = true },
-                            .base_mip_level = 0,
-                            .level_count = 1,
-                            .base_array_layer = 0,
-                            .layer_count = 1,
-                        },
-                    },
-                },
-            );
+    pub fn init(device: *Device, image: vk.Image, extent: vk.Extent2D) !Texture {
+        return .{
+            .device = device,
+            .extent = extent,
+            .image = image,
+        };
+    }
 
-            try proc.device.endCommandBuffer(cmd_buffer);
-            const queue = try swapchain.device.getQueue();
-            try proc.device.queueSubmit(queue.queue, 1, &[_]vk.SubmitInfo{
-                .{
-                    .command_buffer_count = 1,
-                    .p_command_buffers = &[_]vk.CommandBuffer{cmd_buffer},
-                },
-            }, .null_handle);
-            try proc.device.queueWaitIdle(queue.queue);
-            proc.device.freeCommandBuffers(swapchain.device.device, swapchain.device.cmd_pool, 1, &[_]vk.CommandBuffer{cmd_buffer});
-        }
+    pub fn deinit(texture: *Texture) void {
+        _ = texture;
+    }
+
+    pub fn createView(texture: *Texture, desc: *const gpu.TextureView.Descriptor) !TextureView {
+        return TextureView.init(texture, desc, texture.extent);
+    }
+};
+
+pub const TextureView = struct {
+    manager: utils.Manager(TextureView) = .{},
+    device: *Device,
+    view: vk.ImageView,
+    format: vk.Format,
+    extent: vk.Extent2D,
+
+    pub fn init(texture: *Texture, desc: *const gpu.TextureView.Descriptor, extent: vk.Extent2D) !TextureView {
+        const format = conv.vulkanFormat(desc.format);
+        const aspect: vk.ImageAspectFlags = blk: {
+            if (desc.aspect == .all) {
+                break :blk switch (desc.format) {
+                    .stencil8 => .{ .stencil_bit = true },
+                    .depth16_unorm, .depth24_plus, .depth32_float => .{ .depth_bit = true },
+                    .depth24_plus_stencil8, .depth32_float_stencil8 => .{ .depth_bit = true, .stencil_bit = true },
+                    .r8_bg8_biplanar420_unorm => .{ .plane_0_bit = true, .plane_1_bit = true },
+                    else => .{ .color_bit = true },
+                };
+            }
+
+            break :blk .{
+                .stencil_bit = desc.aspect == .stencil_only,
+                .depth_bit = desc.aspect == .depth_only,
+                .plane_0_bit = desc.aspect == .plane0_only,
+                .plane_1_bit = desc.aspect == .plane1_only,
+            };
+        };
+
+        const view = try proc.device.createImageView(texture.device.device, &.{
+            .image = texture.image,
+            .view_type = @as(vk.ImageViewType, switch (desc.dimension) {
+                .dimension_undefined => unreachable,
+                .dimension_1d => .@"1d",
+                .dimension_2d => .@"2d",
+                .dimension_2d_array => .@"2d_array",
+                .dimension_cube => .cube,
+                .dimension_cube_array => .cube_array,
+                .dimension_3d => .@"3d",
+            }),
+            .format = format,
+            .components = .{
+                .r = .identity,
+                .g = .identity,
+                .b = .identity,
+                .a = .identity,
+            },
+            .subresource_range = .{
+                .aspect_mask = aspect,
+                .base_mip_level = desc.base_mip_level,
+                .level_count = desc.mip_level_count,
+                .base_array_layer = desc.base_array_layer,
+                .layer_count = desc.array_layer_count,
+            },
+        }, null);
+
+        return .{
+            .device = texture.device,
+            .view = view,
+            .format = format,
+            .extent = extent,
+        };
+    }
+
+    pub fn deinit(view: *TextureView) void {
+        proc.device.destroyImageView(view.device.device, view.view, null);
     }
 };
 
@@ -624,7 +623,6 @@ pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     device: *Device,
     pipeline: vk.Pipeline,
-    render_pass: vk.RenderPass,
 
     pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !RenderPipeline {
         var stages = std.BoundedArray(vk.PipelineShaderStageCreateInfo, 2){};
@@ -873,11 +871,15 @@ pub const RenderPipeline = struct {
         return .{
             .device = device,
             .pipeline = pipeline,
-            .render_pass = render_pass,
         };
     }
 
     pub fn deinit(render_pipeline: *RenderPipeline) void {
+        // TODO(HACK): this should be removed. a DeletionQueue maybe?
+        if (render_pipeline.device.queue) |queue| {
+            proc.device.queueWaitIdle(queue.queue) catch {};
+        }
+
         proc.device.destroyPipeline(render_pipeline.device.device, render_pipeline.pipeline, null);
     }
 
@@ -918,6 +920,7 @@ pub const PipelineLayout = struct {
 pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
     device: *Device,
+    render_pass: vk.RenderPass,
     extent: vk.Extent2D,
     clear_values: []const vk.ClearValue,
 
@@ -960,7 +963,7 @@ pub const RenderPassEncoder = struct {
             }
 
             if (extent == null) {
-                extent = view.texture.extent;
+                extent = view.extent;
             }
         }
 
@@ -1008,6 +1011,7 @@ pub const RenderPassEncoder = struct {
 
         return .{
             .device = device,
+            .render_pass = render_pass,
             .extent = extent.?,
             .clear_values = try clear_values.toOwnedSlice(),
         };
@@ -1023,9 +1027,9 @@ pub const RenderPassEncoder = struct {
             .extent = encoder.extent,
         };
 
-        const cmd_buffer = encoder.device.syncs[encoder.device.sync_index].cmd_buffer;
+        const cmd_buffer = encoder.device.frame_res.buffer[encoder.device.frame_index];
         proc.device.cmdBeginRenderPass(cmd_buffer.buffer, &vk.RenderPassBeginInfo{
-            .render_pass = pipeline.render_pass,
+            .render_pass = encoder.render_pass,
             .framebuffer = encoder.device.framebuffer,
             .render_area = rect,
             .clear_value_count = @as(u32, @intCast(encoder.clear_values.len)),
@@ -1053,12 +1057,12 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-        const cmd_buffer = encoder.device.syncs[encoder.device.sync_index].cmd_buffer;
+        const cmd_buffer = encoder.device.frame_res.buffer[encoder.device.frame_index];
         proc.device.cmdDraw(cmd_buffer.buffer, vertex_count, instance_count, first_vertex, first_instance);
     }
 
     pub fn end(encoder: *RenderPassEncoder) void {
-        const cmd_buffer = encoder.device.syncs[encoder.device.sync_index].cmd_buffer;
+        const cmd_buffer = encoder.device.frame_res.buffer[encoder.device.frame_index];
         proc.device.cmdEndRenderPass(cmd_buffer.buffer);
     }
 };
@@ -1069,7 +1073,7 @@ pub const CommandEncoder = struct {
 
     pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !CommandEncoder {
         _ = desc;
-        const cmd_buffer = device.syncs[device.sync_index].cmd_buffer;
+        const cmd_buffer = device.frame_res.buffer[device.frame_index];
         try proc.device.beginCommandBuffer(cmd_buffer.buffer, &.{});
         return .{ .device = device };
     }
@@ -1084,7 +1088,7 @@ pub const CommandEncoder = struct {
 
     pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
         _ = desc;
-        const cmd_buffer = &cmd_encoder.device.syncs[cmd_encoder.device.sync_index].cmd_buffer;
+        const cmd_buffer = &cmd_encoder.device.frame_res.buffer[cmd_encoder.device.frame_index];
         try proc.device.endCommandBuffer(cmd_buffer.buffer);
         return cmd_buffer;
     }
@@ -1127,24 +1131,18 @@ pub const Queue = struct {
                 .command_buffer_count = 1,
                 .p_command_buffers = &[_]vk.CommandBuffer{buf.buffer},
                 .wait_semaphore_count = 1,
-                .p_wait_semaphores = &[_]vk.Semaphore{queue.device.syncs[queue.device.sync_index].available},
+                .p_wait_semaphores = &[_]vk.Semaphore{queue.device.frame_res.available[queue.device.frame_index]},
                 .p_wait_dst_stage_mask = @ptrCast(&dst_stage_masks),
                 .signal_semaphore_count = 1,
-                .p_signal_semaphores = &[_]vk.Semaphore{queue.device.syncs[queue.device.sync_index].finished},
+                .p_signal_semaphores = &[_]vk.Semaphore{queue.device.frame_res.finished[queue.device.frame_index]},
             };
         }
-
-        try proc.device.resetFences(
-            queue.device.device,
-            1,
-            &[_]vk.Fence{queue.device.syncs[queue.device.sync_index].fence},
-        );
 
         try proc.device.queueSubmit(
             queue.queue,
             @intCast(submits.len),
             submits.ptr,
-            queue.device.syncs[queue.device.sync_index].fence,
+            queue.device.frame_res.fence[queue.device.frame_index],
         );
     }
 };
@@ -1176,152 +1174,6 @@ pub const ShaderModule = struct {
             shader_module.shader_module,
             null,
         );
-    }
-};
-
-pub const Texture = struct {
-    manager: utils.Manager(Texture) = .{},
-    device: *Device,
-    extent: vk.Extent2D,
-    image: vk.Image,
-    view: ?TextureView = null,
-
-    pub fn init(device: *Device, image: vk.Image, extent: vk.Extent2D) !Texture {
-        var cmd_buffer: vk.CommandBuffer = undefined;
-        try proc.device.allocateCommandBuffers(device.device, &.{
-            .command_pool = device.cmd_pool,
-            .level = .primary,
-            .command_buffer_count = 1,
-        }, @ptrCast(&cmd_buffer));
-        try proc.device.beginCommandBuffer(
-            cmd_buffer,
-            &.{
-                .flags = .{ .one_time_submit_bit = true },
-            },
-        );
-
-        proc.device.cmdPipelineBarrier(
-            cmd_buffer,
-            .{ .top_of_pipe_bit = true },
-            .{ .color_attachment_output_bit = true },
-            .{},
-            0,
-            &[_]vk.MemoryBarrier{},
-            0,
-            &[_]vk.BufferMemoryBarrier{},
-            1,
-            &[_]vk.ImageMemoryBarrier{
-                .{
-                    .src_access_mask = .{},
-                    .dst_access_mask = .{},
-                    .old_layout = .undefined,
-                    .new_layout = .color_attachment_optimal,
-                    .src_queue_family_index = 0,
-                    .dst_queue_family_index = 0,
-                    .image = image,
-                    .subresource_range = .{
-                        .aspect_mask = .{ .color_bit = true },
-                        .base_mip_level = 0,
-                        .level_count = 1,
-                        .base_array_layer = 0,
-                        .layer_count = 1,
-                    },
-                },
-            },
-        );
-
-        try proc.device.endCommandBuffer(cmd_buffer);
-
-        const queue = try device.getQueue();
-        try proc.device.queueSubmit(queue.queue, 1, &[_]vk.SubmitInfo{
-            .{
-                .command_buffer_count = 1,
-                .p_command_buffers = &[_]vk.CommandBuffer{cmd_buffer},
-            },
-        }, .null_handle);
-        try proc.device.queueWaitIdle(queue.queue);
-        proc.device.freeCommandBuffers(device.device, device.cmd_pool, 1, &[_]vk.CommandBuffer{cmd_buffer});
-
-        return .{
-            .device = device,
-            .extent = extent,
-            .image = image,
-        };
-    }
-
-    pub fn deinit(texture: *Texture) void {
-        _ = texture;
-    }
-
-    pub fn createView(texture: *Texture, desc: *const gpu.TextureView.Descriptor) !*TextureView {
-        texture.view = try TextureView.init(texture, desc);
-        return &texture.view.?;
-    }
-};
-
-pub const TextureView = struct {
-    manager: utils.Manager(TextureView) = .{},
-    view: vk.ImageView,
-    format: vk.Format,
-    texture: *Texture,
-
-    pub fn init(texture: *Texture, desc: *const gpu.TextureView.Descriptor) !TextureView {
-        const format = conv.vulkanFormat(desc.format);
-        const aspect: vk.ImageAspectFlags = blk: {
-            if (desc.aspect == .all) {
-                break :blk switch (desc.format) {
-                    .stencil8 => .{ .stencil_bit = true },
-                    .depth16_unorm, .depth24_plus, .depth32_float => .{ .depth_bit = true },
-                    .depth24_plus_stencil8, .depth32_float_stencil8 => .{ .depth_bit = true, .stencil_bit = true },
-                    .r8_bg8_biplanar420_unorm => .{ .plane_0_bit = true, .plane_1_bit = true },
-                    else => .{ .color_bit = true },
-                };
-            }
-
-            break :blk .{
-                .stencil_bit = desc.aspect == .stencil_only,
-                .depth_bit = desc.aspect == .depth_only,
-                .plane_0_bit = desc.aspect == .plane0_only,
-                .plane_1_bit = desc.aspect == .plane1_only,
-            };
-        };
-
-        const view = try proc.device.createImageView(texture.device.device, &.{
-            .image = texture.image,
-            .view_type = @as(vk.ImageViewType, switch (desc.dimension) {
-                .dimension_undefined => unreachable,
-                .dimension_1d => .@"1d",
-                .dimension_2d => .@"2d",
-                .dimension_2d_array => .@"2d_array",
-                .dimension_cube => .cube,
-                .dimension_cube_array => .cube_array,
-                .dimension_3d => .@"3d",
-            }),
-            .format = format,
-            .components = .{
-                .r = .identity,
-                .g = .identity,
-                .b = .identity,
-                .a = .identity,
-            },
-            .subresource_range = .{
-                .aspect_mask = aspect,
-                .base_mip_level = desc.base_mip_level,
-                .level_count = desc.mip_level_count,
-                .base_array_layer = desc.base_array_layer,
-                .layer_count = desc.array_layer_count,
-            },
-        }, null);
-
-        return .{
-            .view = view,
-            .format = format,
-            .texture = texture,
-        };
-    }
-
-    pub fn deinit(view: *TextureView) void {
-        proc.device.destroyImageView(view.texture.device.device, view.view, null);
     }
 };
 
