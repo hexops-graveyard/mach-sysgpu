@@ -2,14 +2,14 @@ const std = @import("std");
 const builtin = @import("builtin");
 const vk = @import("vulkan");
 
-const BaseDispatch = vk.BaseWrapper(.{
+pub const BaseFunctions = vk.BaseWrapper(.{
     .createInstance = true,
     .enumerateInstanceExtensionProperties = true,
     .enumerateInstanceLayerProperties = true,
     .getInstanceProcAddr = true,
 });
 
-const InstanceDispatch = vk.InstanceWrapper(.{
+pub const InstanceFunctions = vk.InstanceWrapper(.{
     .createDevice = true,
     .createWaylandSurfaceKHR = builtin.target.os.tag == .linux,
     .createWin32SurfaceKHR = builtin.target.os.tag == .windows,
@@ -27,7 +27,7 @@ const InstanceDispatch = vk.InstanceWrapper(.{
     .getPhysicalDeviceSurfaceFormatsKHR = true,
 });
 
-const DeviceDispatch = vk.DeviceWrapper(.{
+pub const DeviceFunctions = vk.DeviceWrapper(.{
     .acquireNextImageKHR = true,
     .allocateCommandBuffers = true,
     .beginCommandBuffer = true,
@@ -73,57 +73,16 @@ const DeviceDispatch = vk.DeviceWrapper(.{
     .waitForFences = true,
 });
 
-pub var base: BaseDispatch = undefined;
-pub var instance: InstanceDispatch = undefined;
-pub var device: DeviceDispatch = undefined;
+pub const BaseLoader = *const fn (vk.Instance, [*:0]const u8) vk.PfnVoidFunction;
 
-var lib: std.DynLib = undefined;
-var lib_loaded = false;
-var base_loaded = false;
-var instance_loaded = false;
-var device_loaded = false;
-
-pub fn init() !void {
-    // ElfDynLib is unable to find vulkan, so forcing libc means we always use DlDynlib even on Linux
-    if (!builtin.link_libc) @compileError("libc not linked");
-
-    std.debug.assert(!lib_loaded);
-    lib = try std.DynLib.openZ(switch (builtin.target.os.tag) {
-        .windows => "vulkan-1.dll",
-        .linux => "libvulkan.so.1",
-        .macos => "libvulkan.1.dylib",
-        else => @compileError("Unknown OS!"),
-    });
-    lib_loaded = true;
+pub fn loadBase(baseLoader: BaseLoader) !BaseFunctions {
+    return BaseFunctions.load(baseLoader) catch return error.ProcLoadingFailed;
 }
 
-pub fn close() void {
-    lib.close();
-    lib_loaded = false;
+pub fn loadInstance(instance: vk.Instance, instanceLoader: vk.PfnGetInstanceProcAddr) !InstanceFunctions {
+    return InstanceFunctions.load(instance, instanceLoader) catch return error.ProcLoadingFailed;
 }
 
-pub fn loadBase() !void {
-    std.debug.assert(lib_loaded);
-    if (base_loaded) return;
-    base = try BaseDispatch.load(getBaseProcAddress);
-    base_loaded = true;
-}
-
-pub fn loadInstance(vki: vk.Instance) !void {
-    std.debug.assert(lib_loaded);
-    if (instance_loaded) return;
-    instance = try InstanceDispatch.load(vki, base.dispatch.vkGetInstanceProcAddr);
-    instance_loaded = true;
-}
-
-pub fn loadDevice(vkd: vk.Device) !void {
-    std.debug.assert(lib_loaded);
-    if (device_loaded) return;
-    device = try DeviceDispatch.load(vkd, instance.dispatch.vkGetDeviceProcAddr);
-    device_loaded = true;
-}
-
-fn getBaseProcAddress(_: vk.Instance, name_ptr: [*:0]const u8) vk.PfnVoidFunction {
-    var name = std.mem.span(name_ptr);
-    return lib.lookup(vk.PfnVoidFunction, name) orelse null;
+pub fn loadDevice(device: vk.Device, deviceLoader: vk.PfnGetDeviceProcAddr) !DeviceFunctions {
+    return DeviceFunctions.load(device, deviceLoader) catch return error.ProcLoadingFailed;
 }
