@@ -7,6 +7,11 @@ const objc = @import("objc.zig");
 const shader = @embedFile("shader.wgsl");
 
 pub const GPUInterface = dusk.Interface;
+// pub const GPUInterface = gpu.dawn.Interface;
+
+fn baseLoader(_: u32, name: [*:0]const u8) ?*const fn () callconv(.C) void {
+    return glfw.getInstanceProcAddress(null, name);
+}
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = 10 }){};
@@ -26,7 +31,8 @@ pub fn main() !void {
     };
     defer window.destroy();
 
-    gpu.Impl.init(std.heap.c_allocator);
+    try gpu.Impl.init(gpa.allocator(), .{ .baseLoader = @ptrCast(&baseLoader) });
+    // gpu.Impl.init();
 
     const instance = gpu.createInstance(null) orelse {
         std.log.err("failed to create GPU instance", .{});
@@ -50,7 +56,7 @@ pub fn main() !void {
     const adapter = response.adapter.?;
     defer adapter.release();
 
-    var props: gpu.Adapter.Properties = undefined;
+    var props = std.mem.zeroes(gpu.Adapter.Properties);
     adapter.getProperties(&props);
     std.log.info("found {s} backend on {s} adapter: {s}, {s}", .{
         props.backend_type.name(),
@@ -127,6 +133,10 @@ pub fn main() !void {
     const queue = device.getQueue();
     defer queue.release();
 
+    var timer = try std.time.Timer.start();
+    var frames: u32 = 0;
+    var seconds: u32 = 0;
+
     while (!window.shouldClose()) {
         const pool = if (comptime builtin.target.isDarwin()) try objc.AutoReleasePool.init() else undefined;
         defer if (comptime builtin.target.isDarwin()) objc.AutoReleasePool.release(pool);
@@ -167,7 +177,16 @@ pub fn main() !void {
         glfw.pollEvents();
         window.swapBuffers();
 
-        std.time.sleep(16 * std.time.ns_per_ms);
+        if (timer.read() >= std.time.ns_per_s) {
+            timer.reset();
+            var buf: [12]u8 = undefined;
+            const title = try std.fmt.bufPrintZ(&buf, "FPS: {d}", .{frames});
+            window.setTitle(title);
+            frames = 0;
+            seconds += 1;
+            // if (seconds >= 3) break;
+        }
+        frames += 1;
     }
 }
 

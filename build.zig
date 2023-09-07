@@ -40,6 +40,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     try @import("mach_glfw").link(b, triangle);
+    try @import("mach_gpu").link(b, triangle, .{}); // link dawn
     b.installArtifact(triangle);
 
     const run_traingle_cmd = b.addRunArtifact(triangle);
