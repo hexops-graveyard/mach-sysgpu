@@ -5,25 +5,29 @@ const mtl = @import("objc/mtl.zig");
 const ns = @import("objc/ns.zig");
 const utils = @import("../utils.zig");
 const Device = @import("device.zig").Device;
+const metal = @import("../metal.zig");
 
 pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
 
-    pub fn init(desc: *const gpu.Instance.Descriptor) !Instance {
+    pub fn init(desc: *const gpu.Instance.Descriptor) !*Instance {
         // TODO
         _ = desc;
 
         ns.init();
         ca.init();
         mtl.init();
-        return .{};
+
+        var instance = try metal.allocator.create(Instance);
+        instance.* = .{};
+        return instance;
     }
 
     pub fn deinit(instance: *Instance) void {
-        _ = instance;
+        metal.allocator.destroy(instance);
     }
 
-    pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !Surface {
+    pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !*Surface {
         return Surface.init(instance, desc);
     }
 };
@@ -32,7 +36,7 @@ pub const Adapter = struct {
     manager: utils.Manager(Adapter) = .{},
     device: *mtl.Device,
 
-    pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !Adapter {
+    pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !*Adapter {
         _ = instance;
         _ = options;
 
@@ -41,14 +45,17 @@ pub const Adapter = struct {
             return error.NoAdapterFound;
         };
 
-        return .{ .device = device };
+        var adapter = try metal.allocator.create(Adapter);
+        adapter.* = .{ .device = device };
+        return adapter;
     }
 
     pub fn deinit(adapter: *Adapter) void {
         adapter.device.release();
+        metal.allocator.destroy(adapter);
     }
 
-    pub fn createDevice(adapter: *Adapter, desc: *const gpu.Device.Descriptor) !Device {
+    pub fn createDevice(adapter: *Adapter, desc: ?*const gpu.Device.Descriptor) !*Device {
         return Device.init(adapter, desc);
     }
 
@@ -71,17 +78,19 @@ pub const Surface = struct {
     manager: utils.Manager(Surface) = .{},
     layer: *ca.MetalLayer,
 
-    pub fn init(instance: *Instance, desc: *const gpu.Surface.Descriptor) !Surface {
+    pub fn init(instance: *Instance, desc: *const gpu.Surface.Descriptor) !*Surface {
         _ = instance;
 
         if (utils.findChained(gpu.Surface.DescriptorFromMetalLayer, desc.next_in_chain.generic)) |mtl_desc| {
-            return .{ .layer = @ptrCast(mtl_desc.layer) };
+            var surface = try metal.allocator.create(Surface);
+            surface.* = .{ .layer = @ptrCast(mtl_desc.layer) };
+            return surface;
         } else {
             return error.InvalidDescriptor;
         }
     }
 
     pub fn deinit(surface: *Surface) void {
-        _ = surface;
+        metal.allocator.destroy(surface);
     }
 };

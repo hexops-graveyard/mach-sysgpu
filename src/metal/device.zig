@@ -5,40 +5,43 @@ const mtl = @import("objc/mtl.zig");
 const ns = @import("objc/ns.zig");
 const conv = @import("conv.zig");
 const utils = @import("../utils.zig");
+const metal = @import("../metal.zig");
 const Adapter = @import("instance.zig").Adapter;
 const Surface = @import("instance.zig").Surface;
 
 pub const Device = struct {
     manager: utils.Manager(Device) = .{},
     device: *mtl.Device,
-    queue: ?Queue = null,
+    queue: ?*Queue = null,
     err_cb: ?gpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
 
-    pub fn init(adapter: *Adapter, desc: *const gpu.Device.Descriptor) !Device {
+    pub fn init(adapter: *Adapter, desc: ?*const gpu.Device.Descriptor) !*Device {
         // TODO
         _ = desc;
 
-        return .{ .device = adapter.device };
+        var device = try metal.allocator.create(Device);
+        device.* = .{ .device = adapter.device };
+        return device;
     }
 
     pub fn deinit(device: *Device) void {
-        _ = device;
+        metal.allocator.destroy(device);
     }
 
-    pub fn createShaderModule(device: *Device, code: []const u8) !ShaderModule {
+    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
         return ShaderModule.init(device, code);
     }
 
-    pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !RenderPipeline {
+    pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
-    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !SwapChain {
+    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !CommandEncoder {
+    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
     }
 
@@ -46,7 +49,7 @@ pub const Device = struct {
         if (device.queue == null) {
             device.queue = try Queue.init(device);
         }
-        return &device.queue.?;
+        return device.queue.?;
     }
 };
 
@@ -57,17 +60,19 @@ pub const SwapChain = struct {
     texture_view: TextureView = .{ .texture = null },
     current_drawable: ?*ca.MetalDrawable = null,
 
-    pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !SwapChain {
+    pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
         // TODO
         _ = desc;
 
         surface.layer.setDevice(device.device);
 
-        return .{ .device = device, .surface = surface };
+        var swapchain = try metal.allocator.create(SwapChain);
+        swapchain.* = .{ .device = device, .surface = surface };
+        return swapchain;
     }
 
     pub fn deinit(swapchain: *SwapChain) void {
-        _ = swapchain;
+        metal.allocator.destroy(swapchain);
     }
 
     pub fn getCurrentTextureView(swapchain: *SwapChain) !*TextureView {
@@ -96,7 +101,7 @@ pub const TextureView = struct {
     texture: ?*mtl.Texture,
 
     pub fn deinit(view: *TextureView) void {
-        _ = view;
+        metal.allocator.destroy(view);
     }
 };
 
@@ -104,7 +109,7 @@ pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     pipeline: *mtl.RenderPipelineState,
 
-    pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !RenderPipeline {
+    pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
         var mtl_desc = mtl.RenderPipelineDescriptor.alloc().init();
         defer mtl_desc.release();
 
@@ -133,11 +138,14 @@ pub const RenderPipeline = struct {
             return error.InvalidDescriptor;
         };
 
-        return .{ .pipeline = pipeline };
+        var render_pipeline = try metal.allocator.create(RenderPipeline);
+        render_pipeline.* = .{ .pipeline = pipeline };
+        return render_pipeline;
     }
 
     pub fn deinit(render_pipeline: *RenderPipeline) void {
         render_pipeline.pipeline.release();
+        metal.allocator.destroy(render_pipeline);
     }
 };
 
@@ -145,7 +153,7 @@ pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
     encoder: *mtl.RenderCommandEncoder,
 
-    pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescriptor) !RenderPassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
         const mtl_descriptor = mtl.RenderPassDescriptor.new();
         defer mtl_descriptor.release();
 
@@ -166,14 +174,16 @@ pub const RenderPassEncoder = struct {
             }
         }
 
-        const encoder = cmd_encoder.cmd_buffer.command_buffer.renderCommandEncoderWithDescriptor(mtl_descriptor) orelse {
+        const enc = cmd_encoder.cmd_buffer.command_buffer.renderCommandEncoderWithDescriptor(mtl_descriptor) orelse {
             return error.InvalidDescriptor;
         };
-        return .{ .encoder = encoder };
+        var encoder = try metal.allocator.create(RenderPassEncoder);
+        encoder.* = .{ .encoder = enc };
+        return encoder;
     }
 
     pub fn deinit(encoder: *RenderPassEncoder) void {
-        _ = encoder;
+        metal.allocator.destroy(encoder);
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
@@ -193,21 +203,23 @@ pub const CommandEncoder = struct {
     manager: utils.Manager(CommandEncoder) = .{},
     cmd_buffer: CommandBuffer,
 
-    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !CommandEncoder {
+    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         // TODO
         _ = desc;
 
         const queue = try device.getQueue();
         var command_buffer = queue.command_queue.commandBuffer().?; // TODO
 
-        return .{ .cmd_buffer = .{ .command_buffer = command_buffer } };
+        var encoder = try metal.allocator.create(CommandEncoder);
+        encoder.* = .{ .cmd_buffer = .{ .command_buffer = command_buffer } };
+        return encoder;
     }
 
     pub fn deinit(cmd_encoder: *CommandEncoder) void {
-        _ = cmd_encoder;
+        metal.allocator.destroy(cmd_encoder);
     }
 
-    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !RenderPassEncoder {
+    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
         return RenderPassEncoder.init(cmd_encoder, desc);
     }
 
@@ -223,7 +235,7 @@ pub const CommandBuffer = struct {
     command_buffer: *mtl.CommandBuffer,
 
     pub fn deinit(cmd_buffer: *CommandBuffer) void {
-        _ = cmd_buffer;
+        metal.allocator.destroy(cmd_buffer);
     }
 };
 
@@ -231,16 +243,19 @@ pub const Queue = struct {
     manager: utils.Manager(Queue) = .{},
     command_queue: *mtl.CommandQueue,
 
-    pub fn init(device: *Device) !Queue {
+    pub fn init(device: *Device) !*Queue {
         const command_queue = device.device.newCommandQueue() orelse {
             return error.NoCommandQueue; // TODO
         };
 
-        return .{ .command_queue = command_queue };
+        var queue = try metal.allocator.create(Queue);
+        queue.* = .{ .command_queue = command_queue };
+        return queue;
     }
 
     pub fn deinit(queue: *Queue) void {
         queue.command_queue.release();
+        metal.allocator.destroy(queue);
     }
 
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
@@ -255,7 +270,7 @@ pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     library: *mtl.Library,
 
-    pub fn init(device: *Device, code: []const u8) !ShaderModule {
+    pub fn init(device: *Device, code: []const u8) !*ShaderModule {
         var err: ?*ns.Error = undefined;
         var source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(code.ptr, code.len, ns.UTF8StringEncoding, false);
         var library = device.device.newLibraryWithSource_options_error(source, null, &err) orelse {
@@ -263,10 +278,13 @@ pub const ShaderModule = struct {
             return error.InvalidDescriptor;
         };
 
-        return .{ .library = library };
+        var module = try metal.allocator.create(ShaderModule);
+        module.* = .{ .library = library };
+        return module;
     }
 
     pub fn deinit(shader_module: *ShaderModule) void {
         shader_module.library.release();
+        metal.allocator.destroy(shader_module);
     }
 };

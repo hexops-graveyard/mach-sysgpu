@@ -13,6 +13,15 @@ pub const Queue = @import("metal/device.zig").Queue;
 
 const std = @import("std");
 
+pub var allocator: std.mem.Allocator = undefined;
+
+pub const InitOptions = struct {};
+
+pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
+    _ = options;
+    allocator = alloc;
+}
+
 test "reference declarations" {
     std.testing.refAllDecls(Instance);
     std.testing.refAllDecls(Adapter);
