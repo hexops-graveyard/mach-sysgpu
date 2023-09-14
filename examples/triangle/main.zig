@@ -31,8 +31,9 @@ pub fn main() !void {
     };
     defer window.destroy();
 
-    try gpu.Impl.init(gpa.allocator(), .{ .baseLoader = @ptrCast(&baseLoader) });
-    // gpu.Impl.init();
+    if (builtin.target.os.tag == .linux) try gpu.Impl.init(gpa.allocator(), .{ .baseLoader = @ptrCast(&baseLoader) });
+    if (builtin.target.isDarwin()) try gpu.Impl.init(gpa.allocator(), .{});
+    if (builtin.target.os.tag == .windows) try gpu.Impl.init(gpa.allocator(), .{});
 
     const instance = gpu.createInstance(null) orelse {
         std.log.err("failed to create GPU instance", .{});
