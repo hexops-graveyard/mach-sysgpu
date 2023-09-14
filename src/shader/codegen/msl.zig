@@ -9,6 +9,8 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
     _ = debug_info;
 
     var arr = std.ArrayList(u8).init(allocator);
+    defer arr.deinit();
+
     const writer = arr.writer();
 
     try writer.writeAll("#include <metal_stdlib>\n");
@@ -23,7 +25,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         }
     }
 
-    return arr.items;
+    return arr.toOwnedSlice();
 }
 
 fn emitType(writer: std.ArrayList(u8).Writer, air: *const Air, inst_idx: InstIndex) !void {
