@@ -30,6 +30,15 @@ pub fn build(b: *std.Build) !void {
     triangle.addModule("dusk", module);
     triangle.addModule("gpu", gpu_mod);
     triangle.addModule("glfw", glfw_mod);
+
+    if (target.isDarwin()) {
+        triangle.linkFramework("AppKit");
+        triangle.linkFramework("CoreGraphics");
+        triangle.linkFramework("Foundation");
+        triangle.linkFramework("Metal");
+        triangle.linkFramework("QuartzCore");
+    }
+
     try @import("mach_glfw").link(b, triangle);
     b.installArtifact(triangle);
 

@@ -91,10 +91,8 @@ pub fn main() !void {
         }
     }).callback);
 
-    const vertex_module = device.createShaderModuleWGSL("vertex shader", shader);
-    defer vertex_module.release();
-    const fragment_module = device.createShaderModuleWGSL("fragment shader", shader);
-    defer fragment_module.release();
+    const shader_module = device.createShaderModuleWGSL("shader", shader);
+    defer shader_module.release();
 
     const blend = gpu.BlendState{
         .color = .{ .dst_factor = .one },
@@ -106,12 +104,12 @@ pub fn main() !void {
         .write_mask = gpu.ColorWriteMaskFlags.all,
     };
     const fragment = gpu.FragmentState.init(.{
-        .module = fragment_module,
+        .module = shader_module,
         .entry_point = "fragment_main",
         .targets = &.{color_target},
     });
     const vertex = gpu.VertexState{
-        .module = vertex_module,
+        .module = shader_module,
         .entry_point = "vertex_main",
     };
     const pipeline_descriptor = gpu.RenderPipeline.Descriptor{
@@ -177,7 +175,7 @@ pub fn createSurfaceForWindow(instance: *gpu.Instance, window: glfw.Window) *gpu
     const glfw_options: glfw.BackendOptions = switch (builtin.target.os.tag) {
         .windows => .{ .win32 = true },
         .linux => .{ .x11 = true, .wayland = true },
-        else => if (builtin.target.isDarwin()) .{ .cocoa = true } else .{},
+        else => if (comptime builtin.target.isDarwin()) .{ .cocoa = true } else .{},
     };
     const glfw_native = glfw.Native(glfw_options);
 
