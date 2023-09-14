@@ -101,7 +101,7 @@ pub const TextureView = struct {
     texture: ?*mtl.Texture,
 
     pub fn deinit(view: *TextureView) void {
-        metal.allocator.destroy(view);
+        _ = view;
     }
 };
 
@@ -201,17 +201,16 @@ pub const RenderPassEncoder = struct {
 
 pub const CommandEncoder = struct {
     manager: utils.Manager(CommandEncoder) = .{},
-    cmd_buffer: CommandBuffer,
+    cmd_buffer: *CommandBuffer,
 
     pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         // TODO
         _ = desc;
 
-        const queue = try device.getQueue();
-        var command_buffer = queue.command_queue.commandBuffer().?; // TODO
+        const cmd_buffer = try CommandBuffer.init(device);
 
         var encoder = try metal.allocator.create(CommandEncoder);
-        encoder.* = .{ .cmd_buffer = .{ .command_buffer = command_buffer } };
+        encoder.* = .{ .cmd_buffer = cmd_buffer };
         return encoder;
     }
 
@@ -226,13 +225,22 @@ pub const CommandEncoder = struct {
     pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
         // TODO
         _ = desc;
-        return &cmd_encoder.cmd_buffer;
+        return cmd_encoder.cmd_buffer;
     }
 };
 
 pub const CommandBuffer = struct {
     manager: utils.Manager(CommandBuffer) = .{},
     command_buffer: *mtl.CommandBuffer,
+
+    pub fn init(device: *Device) !*CommandBuffer {
+        const queue = try device.getQueue();
+        var command_buffer = queue.command_queue.commandBuffer().?; // TODO
+
+        var cmd_buffer = try metal.allocator.create(CommandBuffer);
+        cmd_buffer.* = .{ .command_buffer = command_buffer };
+        return cmd_buffer;
+    }
 
     pub fn deinit(cmd_buffer: *CommandBuffer) void {
         metal.allocator.destroy(cmd_buffer);
