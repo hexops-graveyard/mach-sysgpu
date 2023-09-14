@@ -11,7 +11,7 @@ const backend_type: gpu.BackendType = switch (builtin.target.os.tag) {
 };
 const impl = switch (backend_type) {
     .vulkan => @import("vulkan.zig"),
-    .metal => @compileError("TODO: unsupported platform"),
+    .metal => @import("metal.zig"),
     else => unreachable,
 };
 
@@ -558,7 +558,7 @@ pub const Interface = struct {
     }
 
     pub inline fn deviceCreateShaderModule(device_raw: *gpu.Device, descriptor: *const gpu.ShaderModule.Descriptor) *gpu.ShaderModule {
-        std.debug.assert(backend_type == .vulkan);
+        std.debug.assert(backend_type == .vulkan or backend_type == .metal);
 
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         var shader_module = allocator.create(impl.ShaderModule) catch unreachable;
@@ -573,7 +573,8 @@ pub const Interface = struct {
             var air = shader.Air.generate(allocator, &ast, &errors, null) catch unreachable;
             defer air.deinit(allocator);
 
-            const output = shader.CodeGen.generate(allocator, &air, .spirv, .{ .emit_source_file = "" }) catch unreachable;
+            const language = if (backend_type == .vulkan) .spirv else .msl;
+            const output = shader.CodeGen.generate(allocator, &air, language, .{ .emit_source_file = "" }) catch unreachable;
             defer allocator.free(output);
 
             shader_module.* = impl.Device.createShaderModule(device, output) catch unreachable;
