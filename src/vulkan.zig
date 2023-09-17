@@ -682,7 +682,7 @@ pub const Device = struct {
     const device_extensions = &[_][*:0]const u8{vk.extension_info.khr_swapchain.name};
 
     pub const ColorAttachmentKey = struct {
-        format: vk.Format, // TODO: gpu.TextureFormat instead?
+        format: vk.Format,
         load_op: gpu.LoadOp,
         store_op: gpu.StoreOp,
         resolve_format: ?vk.Format,

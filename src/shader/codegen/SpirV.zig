@@ -1477,7 +1477,7 @@ const Key = union(enum) {
 
     const Int = struct {
         type: Inst.Int.Type,
-        value: i33,
+        value: i64,
     };
 
     const Float = struct {

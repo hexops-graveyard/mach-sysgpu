@@ -86,7 +86,7 @@ pub fn getValue(self: Air, comptime T: type, value: ValueIndex) T {
 pub const ConstExpr = union(enum) {
     guaranteed,
     bool: bool,
-    int: i33,
+    int: i64,
     float: f32,
 
     fn negate(unary: *ConstExpr) void {
@@ -597,7 +597,7 @@ pub const Inst = union(enum) {
         };
 
         pub const Value = union(enum) {
-            literal: i33,
+            literal: i64, // TODO: make this i33 once https://github.com/ziglang/zig/issues/16390 is fixed
             cast: Cast,
         };
     };
