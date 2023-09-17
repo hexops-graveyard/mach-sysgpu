@@ -1117,7 +1117,7 @@ fn genSwitch(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     const case_node_loc = astgen.tree.nodeLoc(case_node);
                     const case = try astgen.genExpr(scope, case_node);
                     const case_res = try astgen.resolve(case);
-                    if (!astgen.eql(switch_on_res, case_res)) {
+                    if (!try astgen.coerce(case_res, switch_on_res)) {
                         try astgen.errors.add(case_node_loc, "switch and case type mismatch", .{}, null);
                         return error.AnalysisFail;
                     }
@@ -1162,7 +1162,7 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
         return error.AnalysisFail;
     }
 
-    if (!astgen.eql(lhs_res, rhs_res)) {
+    if (!try astgen.coerce(rhs_res, lhs_res)) {
         try astgen.errors.add(astgen.tree.nodeLoc(node), "type mismatch", .{}, null);
         return error.AnalysisFail;
     }
@@ -1496,6 +1496,29 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
         };
     }
     return astgen.addInst(inst);
+}
+
+fn coerce(astgen: *AstGen, src: InstIndex, dst: InstIndex) !bool {
+    if (astgen.eql(src, dst)) return true;
+
+    const src_inst = astgen.getInst(src);
+    const dst_inst = astgen.getInst(dst);
+
+    if (src_inst == .int and src_inst.int.value != null and dst_inst == .float) {
+        const int_value = astgen.getValue(Air.Inst.Int.Value, src_inst.int.value.?);
+        if (int_value == .literal) {
+            const value = try astgen.addValue(Air.Inst.Float.Value, .{ .literal = @floatFromInt(int_value.literal) });
+            astgen.instructions.keys()[@intFromEnum(src)] = .{
+                .float = .{
+                    .type = dst_inst.float.type,
+                    .value = value,
+                },
+            };
+        }
+        return true;
+    }
+
+    return false;
 }
 
 fn genNot(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -1933,7 +1956,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         if (elem_type == .none) {
                             elem_type = arg_vec.elem_type;
                         } else {
-                            if (!astgen.eql(elem_type, arg_vec.elem_type)) {
+                            if (!try astgen.coerce(arg_vec.elem_type, elem_type)) {
                                 try astgen.errors.add(arg_loc, "type mismatch", .{}, null);
                                 return error.AnalysisFail;
                             }
@@ -1971,7 +1994,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         if (elem_type == .none) {
                             elem_type = arg_res;
                         } else {
-                            if (!astgen.eql(elem_type, arg_res)) {
+                            if (!try astgen.coerce(arg_res, elem_type)) {
                                 try astgen.errors.add(arg_loc, "type mismatch", .{}, null);
                                 return error.AnalysisFail;
                             }
@@ -2069,7 +2092,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         if (elem_type == .none) {
                             elem_type = arg_mat.elem_type;
                         } else {
-                            if (!astgen.eql(elem_type, arg_mat.elem_type)) {
+                            if (!try astgen.coerce(arg_mat.elem_type, elem_type)) {
                                 try astgen.errors.add(arg_loc, "type mismatch", .{}, null);
                                 return error.AnalysisFail;
                             }
@@ -2086,7 +2109,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         if (elem_type == .none) {
                             elem_type = arg_vec.elem_type;
                         } else {
-                            if (!astgen.eql(elem_type, arg_vec.elem_type)) {
+                            if (!try astgen.coerce(arg_vec.elem_type, elem_type)) {
                                 try astgen.errors.add(arg_loc, "type mismatch", .{}, null);
                                 return error.AnalysisFail;
                             }
@@ -2162,7 +2185,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 const arg_res = try astgen.resolve(arg);
                 if (i == 0) {
                     arg0_res = arg_res;
-                } else if (!astgen.eql(arg0_res, arg_res)) {
+                } else if (!try astgen.coerce(arg_res, arg0_res)) {
                     try astgen.errors.add(node_loc, "cannot construct array", .{}, null);
                     return error.AnalysisFail;
                 }
@@ -2170,13 +2193,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             }
 
             const args = try astgen.addRefList(astgen.scratch.items[scratch_top..]);
-            const arr = try astgen.genArray(scope, node_rhs, args);
-            if (astgen.eql(astgen.getInst(arr).array.elem_type, arg0_res)) {
-                return arr;
-            }
-
-            try astgen.errors.add(node_loc, "cannot construct array", .{}, null);
-            return error.AnalysisFail;
+            return astgen.genArray(scope, node_rhs, args);
         },
         else => unreachable,
     }
@@ -2204,7 +2221,7 @@ fn genReturn(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
         value = try astgen.genExpr(scope, node_lhs);
         const value_res = try astgen.resolve(value);
-        if (!astgen.eql(fn_scope.tag.@"fn".return_type, value_res)) {
+        if (!try astgen.coerce(value_res, fn_scope.tag.@"fn".return_type)) {
             try astgen.errors.add(node_loc, "return type mismatch", .{}, null);
             return error.AnalysisFail;
         }
@@ -2260,7 +2277,7 @@ fn genFnCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         for (arg_nodes, 0..) |arg_node, i| {
             const arg = try astgen.genExpr(scope, arg_node);
             const arg_res = try astgen.resolve(arg);
-            if (astgen.eql(astgen.getInst(params[i]).fn_param.type, arg_res)) {
+            if (try astgen.coerce(astgen.getInst(params[i]).fn_param.type, arg_res)) {
                 try astgen.scratch.append(astgen.allocator, arg);
             } else {
                 try astgen.errors.add(
@@ -2300,7 +2317,7 @@ fn genStructConstruct(astgen: *AstGen, scope: *Scope, decl: InstIndex, node: Nod
         for (arg_nodes, 0..) |arg_node, i| {
             const arg = try astgen.genExpr(scope, arg_node);
             const arg_res = try astgen.resolve(arg);
-            if (astgen.eql(astgen.getInst(struct_members[i]).struct_member.type, arg_res)) {
+            if (try astgen.coerce(astgen.getInst(struct_members[i]).struct_member.type, arg_res)) {
                 try astgen.scratch.append(astgen.allocator, arg);
             } else {
                 try astgen.errors.add(
@@ -2495,7 +2512,7 @@ fn genBuiltinSelect(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
     const arg1_res = try astgen.resolve(arg1);
     const arg2_res = try astgen.resolve(arg2);
 
-    if (!astgen.eql(arg0_res, arg1_res)) {
+    if (!try astgen.coerce(arg1_res, arg0_res)) {
         try astgen.errors.add(node_loc, "type mismatch", .{}, null);
         return error.AnalysisFail;
     }
@@ -2658,7 +2675,7 @@ fn genMinMaxBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex, min: bool) 
         },
     }
 
-    if (!astgen.eql(arg0_res, arg1_res)) {
+    if (!try astgen.coerce(arg1_res, arg0_res)) {
         try astgen.errors.add(node_loc, "type mismatch", .{}, null);
         return error.AnalysisFail;
     }
@@ -2693,7 +2710,7 @@ fn genSmoothstepBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIn
     const high_res = try astgen.resolve(high);
     const x_res = try astgen.resolve(x);
 
-    if (!astgen.eql(low_res, high_res) or !astgen.eql(low_res, x_res)) {
+    if (!try astgen.coerce(high_res, low_res) or !try astgen.coerce(x_res, low_res)) {
         try astgen.errors.add(node_loc, "type mismatch", .{}, null);
         return error.AnalysisFail;
     }
