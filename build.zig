@@ -47,6 +47,18 @@ pub fn build(b: *std.Build) !void {
         triangle.linkFramework("QuartzCore");
     }
 
+    if (target.isWindows()) {
+        triangle.addCSourceFile(.{ .file = .{ .path = "src/d3d12/workarounds.c" }, .flags = &.{} });
+
+        triangle.linkLibrary(b.dependency("direct3d_headers", .{
+            .target = target,
+            .optimize = optimize,
+        }).artifact("direct3d-headers"));
+        @import("direct3d_headers").addLibraryPath(triangle);
+        triangle.linkSystemLibrary("d3d12");
+        triangle.linkSystemLibrary("d3dcompiler_47");
+    }
+
     try @import("mach_glfw").link(b, triangle);
     try @import("mach_gpu").link(b, triangle, .{}); // link dawn
     b.installArtifact(triangle);

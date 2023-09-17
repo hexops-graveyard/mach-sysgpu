@@ -5,13 +5,15 @@ const shader = @import("shader.zig");
 const utils = @import("utils.zig");
 
 const backend_type: gpu.BackendType = switch (builtin.target.os.tag) {
-    .linux, .windows => .vulkan,
+    .linux => .vulkan,
     .macos, .ios => .metal,
+    .windows => .d3d12,
     else => @compileError("unsupported platform"),
 };
 const impl = switch (backend_type) {
-    .vulkan => @import("vulkan.zig"),
+    .d3d12 => @import("d3d12.zig"),
     .metal => @import("metal.zig"),
+    .vulkan => @import("vulkan.zig"),
     else => unreachable,
 };
 
@@ -535,8 +537,6 @@ pub const Interface = struct {
     }
 
     pub inline fn deviceCreateShaderModule(device_raw: *gpu.Device, descriptor: *const gpu.ShaderModule.Descriptor) *gpu.ShaderModule {
-        std.debug.assert(backend_type == .vulkan or backend_type == .metal);
-
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
 
         var errors = try shader.ErrorList.init(allocator);
@@ -548,7 +548,12 @@ pub const Interface = struct {
             var air = shader.Air.generate(allocator, &ast, &errors, null) catch unreachable;
             defer air.deinit(allocator);
 
-            const language = if (backend_type == .vulkan) .spirv else .msl;
+            const language = switch (backend_type) {
+                .vulkan => .spirv,
+                .metal => .msl,
+                .d3d12 => .hlsl,
+                else => unreachable,
+            };
             const output = shader.CodeGen.generate(allocator, &air, language, .{ .emit_source_file = "" }) catch unreachable;
             defer allocator.free(output);
 
@@ -596,6 +601,7 @@ pub const Interface = struct {
     pub inline fn deviceGetQueue(device_raw: *gpu.Device) *gpu.Queue {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const queue = device.getQueue() catch unreachable;
+        queue.manager.reference();
         return @ptrCast(queue);
     }
 
