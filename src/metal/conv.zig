@@ -142,11 +142,11 @@ pub fn metalStencilOperation(op: gpu.StencilOperation) mtl.StencilOperation {
     };
 }
 
-pub fn metalStoreAction(op: gpu.StoreOp) mtl.StoreAction {
+pub fn metalStoreAction(op: gpu.StoreOp, has_resolve_target: bool) mtl.StoreAction {
     return switch (op) {
         .undefined => unreachable,
-        .store => mtl.StoreActionStore,
-        .discard => mtl.StoreActionDontCare,
+        .store => if (has_resolve_target) mtl.StoreActionStoreAndMultisampleResolve else mtl.StoreActionStore,
+        .discard => if (has_resolve_target) mtl.StoreActionMultisampleResolve else mtl.StoreActionDontCare,
     };
 }
 
@@ -251,8 +251,53 @@ pub fn metalPixelFormat(format: gpu.Texture.Format) mtl.PixelFormat {
     };
 }
 
-pub fn metalTextureType(format: gpu.TextureViewDimension) mtl.TextureType {
-    return switch (format) {
+pub fn metalPixelFormatForView(viewFormat: gpu.Texture.Format, textureFormat: mtl.PixelFormat, aspect: gpu.Texture.Aspect) mtl.PixelFormat {
+    // TODO - depth/stencil only views
+    _ = aspect;
+    _ = textureFormat;
+
+    return metalPixelFormat(viewFormat);
+}
+
+pub fn metalStorageModeForTexture(usage: gpu.Texture.UsageFlags) mtl.StorageMode {
+    if (usage.transient_attachment) {
+        return mtl.StorageModeMemoryless;
+    } else {
+        return mtl.StorageModePrivate;
+    }
+}
+
+pub fn metalTextureUsage(usage: gpu.Texture.UsageFlags, view_format_count: usize) mtl.TextureUsage {
+    var mtl_usage = mtl.TextureUsageUnknown;
+    if (usage.texture_binding)
+        mtl_usage |= mtl.TextureUsageShaderRead;
+    if (usage.storage_binding)
+        mtl_usage |= mtl.TextureUsageShaderWrite;
+    if (usage.render_attachment)
+        mtl_usage |= mtl.TextureUsageRenderTarget;
+    if (view_format_count > 0)
+        mtl_usage |= mtl.TextureUsagePixelFormatView;
+    return mtl_usage;
+}
+
+pub fn metalTextureType(dimension: gpu.Texture.Dimension, size: gpu.Extent3D, sample_count: u32) mtl.TextureType {
+    return switch (dimension) {
+        .dimension_1d => if (size.depth_or_array_layers > 1) mtl.TextureType1DArray else mtl.TextureType1D,
+        .dimension_2d => if (sample_count > 1)
+            if (size.depth_or_array_layers > 1)
+                mtl.TextureType2DMultisampleArray
+            else
+                mtl.TextureType2DMultisample
+        else if (size.depth_or_array_layers > 1)
+            mtl.TextureType2DArray
+        else
+            mtl.TextureType2D,
+        .dimension_3d => mtl.TextureType3D,
+    };
+}
+
+pub fn metalTextureTypeForView(dimension: gpu.TextureView.Dimension) mtl.TextureType {
+    return switch (dimension) {
         .dimension_undefined => unreachable,
         .dimension_1d => mtl.TextureType1D,
         .dimension_2d => mtl.TextureType2D,

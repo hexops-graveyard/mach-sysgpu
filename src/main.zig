@@ -570,10 +570,10 @@ pub const Interface = struct {
         return @ptrCast(swapchain);
     }
 
-    pub inline fn deviceCreateTexture(device: *gpu.Device, descriptor: *const gpu.Texture.Descriptor) *gpu.Texture {
-        _ = device;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateTexture(device_raw: *gpu.Device, descriptor: *const gpu.Texture.Descriptor) *gpu.Texture {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const texture = impl.Device.createTexture(device, descriptor) catch unreachable;
+        return @ptrCast(texture);
     }
 
     pub inline fn deviceDestroy(device: *gpu.Device) void {
@@ -1293,10 +1293,10 @@ pub const Interface = struct {
         swap_chain.manager.release();
     }
 
-    pub inline fn textureCreateView(texture: *gpu.Texture, descriptor: ?*const gpu.TextureView.Descriptor) *gpu.TextureView {
-        _ = texture;
-        _ = descriptor;
-        unreachable;
+    pub inline fn textureCreateView(texture_raw: *gpu.Texture, descriptor: ?*const gpu.TextureView.Descriptor) *gpu.TextureView {
+        var texture: *impl.Texture = @ptrCast(@alignCast(texture_raw));
+        const texture_view = texture.createView(descriptor) catch unreachable;
+        return @ptrCast(texture_view);
     }
 
     pub inline fn textureDestroy(texture: *gpu.Texture) void {
@@ -1350,14 +1350,14 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn textureReference(texture: *gpu.Texture) void {
-        _ = texture;
-        unreachable;
+    pub inline fn textureReference(texture_raw: *gpu.Texture) void {
+        const texture: *impl.Texture = @ptrCast(@alignCast(texture_raw));
+        texture.manager.reference();
     }
 
-    pub inline fn textureRelease(texture: *gpu.Texture) void {
-        _ = texture;
-        unreachable;
+    pub inline fn textureRelease(texture_raw: *gpu.Texture) void {
+        const texture: *impl.Texture = @ptrCast(@alignCast(texture_raw));
+        texture.manager.release();
     }
 
     pub inline fn textureViewSetLabel(texture_view: *gpu.TextureView, label: [*:0]const u8) void {

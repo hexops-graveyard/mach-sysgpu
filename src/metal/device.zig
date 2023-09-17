@@ -45,24 +45,28 @@ pub const Device = struct {
     }
 
     pub fn deinit(device: *Device) void {
-        if (device.queue) |queue| queue.deinit();
+        if (device.queue) |queue| queue.manager.release();
         metal.allocator.destroy(device);
     }
 
-    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
-        return ShaderModule.init(device, code);
+    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+        return CommandEncoder.init(device, desc);
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
+    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
+        return ShaderModule.init(device, code);
+    }
+
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
-        return CommandEncoder.init(device, desc);
+    pub fn createTexture(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+        return Texture.init(device, desc);
     }
 
     pub fn getQueue(device: *Device) !*Queue {
@@ -77,7 +81,6 @@ pub const SwapChain = struct {
     manager: utils.Manager(SwapChain) = .{},
     device: *Device,
     surface: *Surface,
-    texture_view: TextureView = .{ .texture = null },
     current_drawable: ?*ca.MetalDrawable = null,
 
     pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
@@ -98,12 +101,11 @@ pub const SwapChain = struct {
     pub fn getCurrentTextureView(swapchain: *SwapChain) !*TextureView {
         swapchain.current_drawable = swapchain.surface.layer.nextDrawable();
         if (swapchain.current_drawable) |drawable| {
-            swapchain.texture_view.texture = drawable.texture();
+            return TextureView.initFromMtlTexture(drawable.texture().retain());
         } else {
             // TODO - handle no drawable
+            unreachable;
         }
-
-        return &swapchain.texture_view;
     }
 
     pub fn present(swapchain: *SwapChain) !void {
@@ -116,12 +118,87 @@ pub const SwapChain = struct {
     }
 };
 
+pub const Texture = struct {
+    manager: utils.Manager(Texture) = .{},
+    mtl_texture: *mtl.Texture,
+
+    pub fn init(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+        var mtl_desc = mtl.TextureDescriptor.alloc().init();
+        mtl_desc.setTextureType(conv.metalTextureType(desc.dimension, desc.size, desc.sample_count));
+        mtl_desc.setPixelFormat(conv.metalPixelFormat(desc.format));
+        mtl_desc.setWidth(desc.size.width);
+        mtl_desc.setHeight(desc.size.height);
+        mtl_desc.setDepth(if (desc.dimension == .dimension_3d) desc.size.depth_or_array_layers else 1);
+        mtl_desc.setMipmapLevelCount(desc.mip_level_count);
+        mtl_desc.setSampleCount(desc.sample_count);
+        mtl_desc.setArrayLength(if (desc.dimension == .dimension_3d) 1 else desc.size.depth_or_array_layers);
+        mtl_desc.setStorageMode(conv.metalStorageModeForTexture(desc.usage));
+        mtl_desc.setUsage(conv.metalTextureUsage(desc.usage, desc.view_format_count));
+
+        const mtl_texture = device.device.newTextureWithDescriptor(mtl_desc) orelse {
+            return error.newTextureFailed;
+        };
+        if (desc.label) |label| {
+            mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
+        }
+
+        var texture = try metal.allocator.create(Texture);
+        texture.* = .{
+            .mtl_texture = mtl_texture,
+        };
+        return texture;
+    }
+
+    pub fn deinit(texture: *Texture) void {
+        texture.mtl_texture.release();
+        metal.allocator.destroy(texture);
+    }
+
+    pub fn createView(texture: *Texture, desc: ?*const gpu.TextureView.Descriptor) !*TextureView {
+        return TextureView.init(texture, desc);
+    }
+};
+
 pub const TextureView = struct {
     manager: utils.Manager(TextureView) = .{},
-    texture: ?*mtl.Texture,
+    mtl_texture: *mtl.Texture,
+
+    pub fn init(texture: *Texture, opt_desc: ?*const gpu.TextureView.Descriptor) !*TextureView {
+        var mtl_texture = texture.mtl_texture;
+        if (opt_desc) |desc| {
+            // TODO - analyze desc to see if we need to create a new view
+
+            mtl_texture = mtl_texture.newTextureViewWithPixelFormat_textureType_levels_slices(
+                conv.metalPixelFormatForView(desc.format, mtl_texture.pixelFormat(), desc.aspect),
+                conv.metalTextureTypeForView(desc.dimension),
+                ns.Range.init(desc.base_mip_level, desc.mip_level_count),
+                ns.Range.init(desc.base_array_layer, desc.array_layer_count),
+            ) orelse {
+                return error.newTextureViewFailed;
+            };
+            if (desc.label) |label| {
+                mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
+            }
+        }
+
+        var view = try metal.allocator.create(TextureView);
+        view.* = .{
+            .mtl_texture = mtl_texture,
+        };
+        return view;
+    }
+
+    pub fn initFromMtlTexture(mtl_texture: *mtl.Texture) !*TextureView {
+        var view = try metal.allocator.create(TextureView);
+        view.* = .{
+            .mtl_texture = mtl_texture,
+        };
+        return view;
+    }
 
     pub fn deinit(view: *TextureView) void {
-        _ = view;
+        view.mtl_texture.release();
+        metal.allocator.destroy(view);
     }
 };
 
@@ -287,17 +364,14 @@ pub const RenderPassEncoder = struct {
             var mtl_attach = mtl_desc.colorAttachments().objectAtIndexedSubscript(i);
             if (attach.view) |view| {
                 const mtl_view: *TextureView = @ptrCast(@alignCast(view));
-                mtl_attach.setTexture(mtl_view.texture);
-                // level, slice, plane ?
+                mtl_attach.setTexture(mtl_view.mtl_texture);
             }
             if (attach.resolve_target) |view| {
                 const mtl_view: *TextureView = @ptrCast(@alignCast(view));
-                mtl_attach.setResolveTexture(mtl_view.texture);
-                // level, slice, plane ?
+                mtl_attach.setResolveTexture(mtl_view.mtl_texture);
             }
-            // resolve_target - TODO
             mtl_attach.setLoadAction(conv.metalLoadAction(attach.load_op));
-            mtl_attach.setStoreAction(conv.metalStoreAction(attach.store_op));
+            mtl_attach.setStoreAction(conv.metalStoreAction(attach.store_op, attach.resolve_target != null));
 
             if (attach.load_op == .clear) {
                 mtl_attach.setClearColor(mtl.ClearColor.init(
@@ -312,15 +386,14 @@ pub const RenderPassEncoder = struct {
         // depth-stencil
         if (desc.depth_stencil_attachment) |attach| {
             const mtl_view: *TextureView = @ptrCast(@alignCast(attach.view));
-            const format = mtl_view.texture.?.pixelFormat();
+            const format = mtl_view.mtl_texture.pixelFormat();
 
             if (isDepthFormat(format)) {
                 var mtl_attach = mtl_desc.depthAttachment();
 
-                mtl_attach.setTexture(mtl_view.texture);
-                // level, slice, plane ?
+                mtl_attach.setTexture(mtl_view.mtl_texture);
                 mtl_attach.setLoadAction(conv.metalLoadAction(attach.depth_load_op));
-                mtl_attach.setStoreAction(conv.metalStoreAction(attach.depth_store_op));
+                mtl_attach.setStoreAction(conv.metalStoreAction(attach.depth_store_op, false));
 
                 if (attach.depth_load_op == .clear) {
                     mtl_attach.setClearDepth(attach.depth_clear_value);
@@ -330,10 +403,9 @@ pub const RenderPassEncoder = struct {
             if (isStencilFormat(format)) {
                 var mtl_attach = mtl_desc.stencilAttachment();
 
-                mtl_attach.setTexture(mtl_view.texture);
-                // level, slice, plane ?
+                mtl_attach.setTexture(mtl_view.mtl_texture);
                 mtl_attach.setLoadAction(conv.metalLoadAction(attach.stencil_load_op));
-                mtl_attach.setStoreAction(conv.metalStoreAction(attach.stencil_store_op));
+                mtl_attach.setStoreAction(conv.metalStoreAction(attach.stencil_store_op, false));
 
                 if (attach.stencil_load_op == .clear) {
                     mtl_attach.setClearStencil(attach.stencil_clear_value);
@@ -472,7 +544,7 @@ pub const ShaderModule = struct {
 
     pub fn init(device: *Device, code: []const u8) !*ShaderModule {
         var err: ?*ns.Error = undefined;
-        var source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(code.ptr, code.len, ns.UTF8StringEncoding, false);
+        var source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(@constCast(code.ptr), code.len, ns.UTF8StringEncoding, false);
         var library = device.device.newLibraryWithSource_options_error(source, null, &err) orelse {
             std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
             return error.InvalidDescriptor;
