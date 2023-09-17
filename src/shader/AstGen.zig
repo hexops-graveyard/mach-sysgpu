@@ -1507,7 +1507,10 @@ fn coerce(astgen: *AstGen, src: InstIndex, dst: InstIndex) !bool {
     if (src_inst == .int and src_inst.int.value != null and dst_inst == .float) {
         const int_value = astgen.getValue(Air.Inst.Int.Value, src_inst.int.value.?);
         if (int_value == .literal) {
-            const value = try astgen.addValue(Air.Inst.Float.Value, .{ .literal = @floatFromInt(int_value.literal) });
+            const value = try astgen.addValue(
+                Air.Inst.Float.Value,
+                Air.Inst.Float.Value{ .literal = @floatFromInt(int_value.literal) },
+            );
             astgen.instructions.keys()[@intFromEnum(src)] = .{
                 .float = .{
                     .type = dst_inst.float.type,
