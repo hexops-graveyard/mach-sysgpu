@@ -18,6 +18,10 @@
             .url = "https://pkg.machengine.org/mach-glfw/58a16012c33b047b9468cccb53ecd95835456121.tar.gz",
             .hash = "1220dcf8c006b5bd91bb55c732eac6d95afe16247058f31348e1e2e071dfca7923db",
         },
+        .mach_objc = .{
+            .url = "https://pkg.machengine.org/mach-objc/8b2ba7e7aa02978e3b158354905dcbd527aa4219.tar.gz",
+            .hash = "12209b301027b9a15b8ac809e6ae9178372b94b084d7370c250bd0bd0a658a9b8ae7",
+        },
         .glfw = .{
             .url = "https://pkg.machengine.org/glfw/bad964824403ba34c935a90013024957dae795aa.tar.gz",
             .hash = "1220fe0763e9722d56d3f93f8740e077fccf338d9697f08239d79a1ee27ae5833e62",

@@ -13,11 +13,18 @@ pub fn build(b: *std.Build) !void {
     const glfw_dep = b.dependency("mach_glfw", .{});
     const glfw_mod = glfw_dep.module("mach-glfw");
 
+    const objc_dep = b.dependency("mach_objc", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const objc_mod = objc_dep.module("mach-objc");
+
     const module = b.addModule("mach-dusk", .{
         .source_file = .{ .path = "src/main.zig" },
         .dependencies = &.{
             .{ .name = "vulkan", .module = vulkan_mod },
             .{ .name = "gpu", .module = gpu_mod },
+            .{ .name = "objc", .module = objc_mod },
         },
     });
 
@@ -30,6 +37,7 @@ pub fn build(b: *std.Build) !void {
     triangle.addModule("dusk", module);
     triangle.addModule("gpu", gpu_mod);
     triangle.addModule("glfw", glfw_mod);
+    triangle.addModule("objc", objc_mod);
 
     if (target.isDarwin()) {
         triangle.linkFramework("AppKit");

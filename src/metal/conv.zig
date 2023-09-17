@@ -1,5 +1,5 @@
 const gpu = @import("gpu");
-const mtl = @import("objc/mtl.zig");
+const mtl = @import("objc").metal.mtl;
 
 pub fn metalLoadAction(op: gpu.LoadOp) mtl.LoadAction {
     return switch (op) {
