@@ -185,7 +185,7 @@ pub fn main() !void {
             window.setTitle(title);
             frames = 0;
             seconds += 1;
-            // if (seconds >= 3) break;
+            if (seconds >= 3) break;
         }
         frames += 1;
     }
