@@ -9,6 +9,25 @@ const metal = @import("../metal.zig");
 const Adapter = @import("instance.zig").Adapter;
 const Surface = @import("instance.zig").Surface;
 
+pub fn isDepthFormat(format: mtl.PixelFormat) bool {
+    return switch (format) {
+        mtl.PixelFormatDepth16Unorm => true,
+        mtl.PixelFormatDepth24Unorm_Stencil8 => true,
+        mtl.PixelFormatDepth32Float => true,
+        mtl.PixelFormatDepth32Float_Stencil8 => true,
+        else => false,
+    };
+}
+
+pub fn isStencilFormat(format: mtl.PixelFormat) bool {
+    return switch (format) {
+        mtl.PixelFormatStencil8 => true,
+        mtl.PixelFormatDepth24Unorm_Stencil8 => true,
+        mtl.PixelFormatDepth32Float_Stencil8 => true,
+        else => false,
+    };
+}
+
 pub const Device = struct {
     manager: utils.Manager(Device) = .{},
     device: *mtl.Device,
@@ -26,6 +45,7 @@ pub const Device = struct {
     }
 
     pub fn deinit(device: *Device) void {
+        if (device.queue) |queue| queue.deinit();
         metal.allocator.destroy(device);
     }
 
@@ -108,11 +128,25 @@ pub const TextureView = struct {
 pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     pipeline: *mtl.RenderPipelineState,
+    primitive_type: mtl.PrimitiveType,
+    winding: mtl.Winding,
+    cull_mode: mtl.CullMode,
+    depth_stencil_state: ?*mtl.DepthStencilState,
+    depth_bias: f32,
+    depth_bias_slope_scale: f32,
+    depth_bias_clamp: f32,
 
     pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
         var mtl_desc = mtl.RenderPipelineDescriptor.alloc().init();
         defer mtl_desc.release();
 
+        if (desc.label) |label| {
+            mtl_desc.setLabel(ns.String.stringWithUTF8String(label));
+        }
+
+        // layout - TODO
+
+        // vertex
         const vertex_module: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
         const vertex_fn = vertex_module.library.newFunctionWithName(ns.String.stringWithUTF8String(desc.vertex.entry_point)) orelse {
             return error.InvalidDescriptor;
@@ -120,6 +154,65 @@ pub const RenderPipeline = struct {
         defer vertex_fn.release();
         mtl_desc.setVertexFunction(vertex_fn);
 
+        // vertex constants - TODO
+        // vertex buffers - TODO
+
+        // primitive
+        const primitive_type = conv.metalPrimitiveType(desc.primitive.topology);
+        mtl_desc.setInputPrimitiveTopology(conv.metalPrimitiveTopologyClass(desc.primitive.topology));
+        // strip_index_format
+        const winding = conv.metalWinding(desc.primitive.front_face);
+        const cull_mode = conv.metalCullMode(desc.primitive.cull_mode);
+
+        // depth-stencil
+        const depth_stencil_state = blk: {
+            if (desc.depth_stencil) |ds| {
+                var front_desc = mtl.StencilDescriptor.alloc().init();
+                defer front_desc.release();
+
+                front_desc.setStencilCompareFunction(conv.metalCompareFunction(ds.stencil_front.compare));
+                front_desc.setStencilFailureOperation(conv.metalStencilOperation(ds.stencil_front.fail_op));
+                front_desc.setDepthFailureOperation(conv.metalStencilOperation(ds.stencil_front.depth_fail_op));
+                front_desc.setDepthStencilPassOperation(conv.metalStencilOperation(ds.stencil_front.pass_op));
+                front_desc.setReadMask(ds.stencil_read_mask);
+                front_desc.setWriteMask(ds.stencil_write_mask);
+
+                var back_desc = mtl.StencilDescriptor.alloc().init();
+                defer back_desc.release();
+
+                back_desc.setStencilCompareFunction(conv.metalCompareFunction(ds.stencil_back.compare));
+                back_desc.setStencilFailureOperation(conv.metalStencilOperation(ds.stencil_back.fail_op));
+                back_desc.setDepthFailureOperation(conv.metalStencilOperation(ds.stencil_back.depth_fail_op));
+                back_desc.setDepthStencilPassOperation(conv.metalStencilOperation(ds.stencil_back.pass_op));
+                back_desc.setReadMask(ds.stencil_read_mask);
+                back_desc.setWriteMask(ds.stencil_write_mask);
+
+                var depth_stencil_desc = mtl.DepthStencilDescriptor.alloc().init();
+                defer depth_stencil_desc.release();
+
+                depth_stencil_desc.setDepthCompareFunction(conv.metalCompareFunction(ds.depth_compare));
+                depth_stencil_desc.setDepthWriteEnabled(ds.depth_write_enabled == .true);
+                depth_stencil_desc.setFrontFaceStencil(front_desc);
+                depth_stencil_desc.setBackFaceStencil(back_desc);
+                if (desc.label) |label| {
+                    depth_stencil_desc.setLabel(ns.String.stringWithUTF8String(label));
+                }
+
+                break :blk device.device.newDepthStencilStateWithDescriptor(depth_stencil_desc);
+            } else {
+                break :blk null;
+            }
+        };
+        const depth_bias = if (desc.depth_stencil != null) @as(f32, @floatFromInt(desc.depth_stencil.?.depth_bias)) else 0.0; // TODO - int to float conversion
+        const depth_bias_slope_scale = if (desc.depth_stencil != null) desc.depth_stencil.?.depth_bias_slope_scale else 0.0;
+        const depth_bias_clamp = if (desc.depth_stencil != null) desc.depth_stencil.?.depth_bias_clamp else 0.0;
+
+        // multisample
+        mtl_desc.setSampleCount(desc.multisample.count);
+        // mask - TODO
+        mtl_desc.setAlphaToCoverageEnabled(desc.multisample.alpha_to_coverage_enabled == .true);
+
+        // fragment
         if (desc.fragment) |frag| {
             const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
             const frag_fn = frag_module.library.newFunctionWithName(ns.String.stringWithUTF8String(frag.entry_point)) orelse {
@@ -129,8 +222,30 @@ pub const RenderPipeline = struct {
             mtl_desc.setFragmentFunction(frag_fn);
         }
 
-        mtl_desc.colorAttachments().objectAtIndexedSubscript(0).setPixelFormat(mtl.PixelFormatBGRA8Unorm_sRGB);
+        // attachments
+        if (desc.fragment) |frag| {
+            for (frag.targets.?[0..frag.target_count], 0..) |target, i| {
+                var attach = mtl_desc.colorAttachments().objectAtIndexedSubscript(i);
 
+                attach.setPixelFormat(conv.metalPixelFormat(target.format));
+                attach.setWriteMask(conv.metalColorWriteMask(target.write_mask));
+                if (target.blend) |blend| {
+                    attach.setBlendingEnabled(true);
+                    attach.setSourceRGBBlendFactor(conv.metalBlendFactor(blend.color.src_factor));
+                    attach.setDestinationRGBBlendFactor(conv.metalBlendFactor(blend.color.dst_factor));
+                    attach.setRgbBlendOperation(conv.metalBlendOperation(blend.color.operation));
+                    attach.setSourceAlphaBlendFactor(conv.metalBlendFactor(blend.alpha.src_factor));
+                    attach.setDestinationAlphaBlendFactor(conv.metalBlendFactor(blend.alpha.dst_factor));
+                    attach.setAlphaBlendOperation(conv.metalBlendOperation(blend.alpha.operation));
+                }
+            }
+        }
+        if (desc.depth_stencil) |ds| {
+            mtl_desc.setDepthAttachmentPixelFormat(conv.metalPixelFormat(ds.format));
+            mtl_desc.setStencilAttachmentPixelFormat(conv.metalPixelFormat(ds.format));
+        }
+
+        // create
         var err: ?*ns.Error = undefined;
         const pipeline = device.device.newRenderPipelineStateWithDescriptor_error(mtl_desc, &err) orelse {
             // TODO
@@ -139,7 +254,16 @@ pub const RenderPipeline = struct {
         };
 
         var render_pipeline = try metal.allocator.create(RenderPipeline);
-        render_pipeline.* = .{ .pipeline = pipeline };
+        render_pipeline.* = .{
+            .pipeline = pipeline,
+            .primitive_type = primitive_type,
+            .winding = winding,
+            .cull_mode = cull_mode,
+            .depth_stencil_state = depth_stencil_state,
+            .depth_bias = depth_bias,
+            .depth_bias_slope_scale = depth_bias_slope_scale,
+            .depth_bias_clamp = depth_bias_clamp,
+        };
         return render_pipeline;
     }
 
@@ -152,17 +276,28 @@ pub const RenderPipeline = struct {
 pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
     encoder: *mtl.RenderCommandEncoder,
+    primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
 
-    pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
-        const mtl_descriptor = mtl.RenderPassDescriptor.new();
-        defer mtl_descriptor.release();
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+        var mtl_desc = mtl.RenderPassDescriptor.new();
+        defer mtl_desc.release();
 
-        for (descriptor.color_attachments.?[0..descriptor.color_attachment_count], 0..) |attach, i| {
-            const view: *TextureView = @ptrCast(@alignCast(attach.view.?));
-            const mtl_attach = mtl_descriptor.colorAttachments().objectAtIndexedSubscript(i);
+        // color
+        for (desc.color_attachments.?[0..desc.color_attachment_count], 0..) |attach, i| {
+            var mtl_attach = mtl_desc.colorAttachments().objectAtIndexedSubscript(i);
+            if (attach.view) |view| {
+                const mtl_view: *TextureView = @ptrCast(@alignCast(view));
+                mtl_attach.setTexture(mtl_view.texture);
+                // level, slice, plane ?
+            }
+            if (attach.resolve_target) |view| {
+                const mtl_view: *TextureView = @ptrCast(@alignCast(view));
+                mtl_attach.setResolveTexture(mtl_view.texture);
+                // level, slice, plane ?
+            }
+            // resolve_target - TODO
             mtl_attach.setLoadAction(conv.metalLoadAction(attach.load_op));
             mtl_attach.setStoreAction(conv.metalStoreAction(attach.store_op));
-            mtl_attach.setTexture(view.texture);
 
             if (attach.load_op == .clear) {
                 mtl_attach.setClearColor(mtl.ClearColor.init(
@@ -174,9 +309,49 @@ pub const RenderPassEncoder = struct {
             }
         }
 
-        const enc = cmd_encoder.cmd_buffer.command_buffer.renderCommandEncoderWithDescriptor(mtl_descriptor) orelse {
+        // depth-stencil
+        if (desc.depth_stencil_attachment) |attach| {
+            const mtl_view: *TextureView = @ptrCast(@alignCast(attach.view));
+            const format = mtl_view.texture.?.pixelFormat();
+
+            if (isDepthFormat(format)) {
+                var mtl_attach = mtl_desc.depthAttachment();
+
+                mtl_attach.setTexture(mtl_view.texture);
+                // level, slice, plane ?
+                mtl_attach.setLoadAction(conv.metalLoadAction(attach.depth_load_op));
+                mtl_attach.setStoreAction(conv.metalStoreAction(attach.depth_store_op));
+
+                if (attach.depth_load_op == .clear) {
+                    mtl_attach.setClearDepth(attach.depth_clear_value);
+                }
+            }
+
+            if (isStencilFormat(format)) {
+                var mtl_attach = mtl_desc.stencilAttachment();
+
+                mtl_attach.setTexture(mtl_view.texture);
+                // level, slice, plane ?
+                mtl_attach.setLoadAction(conv.metalLoadAction(attach.stencil_load_op));
+                mtl_attach.setStoreAction(conv.metalStoreAction(attach.stencil_store_op));
+
+                if (attach.stencil_load_op == .clear) {
+                    mtl_attach.setClearStencil(attach.stencil_clear_value);
+                }
+            }
+        }
+
+        // occlusion_query - TODO
+        // timestamps - TODO
+
+        const enc = cmd_encoder.cmd_buffer.command_buffer.renderCommandEncoderWithDescriptor(mtl_desc) orelse {
             return error.InvalidDescriptor;
         };
+
+        if (desc.label) |label| {
+            enc.setLabel(ns.String.stringWithUTF8String(label));
+        }
+
         var encoder = try metal.allocator.create(RenderPassEncoder);
         encoder.* = .{ .encoder = enc };
         return encoder;
@@ -188,10 +363,27 @@ pub const RenderPassEncoder = struct {
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
         encoder.encoder.setRenderPipelineState(pipeline.pipeline);
+        encoder.encoder.setFrontFacingWinding(pipeline.winding);
+        encoder.encoder.setCullMode(pipeline.cull_mode);
+        if (pipeline.depth_stencil_state) |state| {
+            encoder.encoder.setDepthStencilState(state);
+            encoder.encoder.setDepthBias_slopeScale_clamp(
+                pipeline.depth_bias,
+                pipeline.depth_bias_slope_scale,
+                pipeline.depth_bias_clamp,
+            );
+        }
+        encoder.primitive_type = pipeline.primitive_type;
     }
 
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-        encoder.encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(mtl.PrimitiveTypeTriangle, first_vertex, vertex_count, instance_count, first_instance);
+        encoder.encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
+            encoder.primitive_type,
+            first_vertex,
+            vertex_count,
+            instance_count,
+            first_instance,
+        );
     }
 
     pub fn end(encoder: *RenderPassEncoder) void {
