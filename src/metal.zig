@@ -8,6 +8,7 @@ pub const CommandEncoder = @import("metal/device.zig").CommandEncoder;
 pub const CommandBuffer = @import("metal/device.zig").CommandBuffer;
 pub const RenderPassEncoder = @import("metal/device.zig").RenderPassEncoder;
 pub const SwapChain = @import("metal/device.zig").SwapChain;
+pub const Texture = @import("metal/device.zig").Texture;
 pub const TextureView = @import("metal/device.zig").TextureView;
 pub const Queue = @import("metal/device.zig").Queue;
 
@@ -33,6 +34,7 @@ test "reference declarations" {
     std.testing.refAllDecls(CommandBuffer);
     std.testing.refAllDecls(RenderPassEncoder);
     std.testing.refAllDecls(SwapChain);
+    std.testing.refAllDecls(Texture);
     std.testing.refAllDecls(TextureView);
     std.testing.refAllDecls(Queue);
 }
