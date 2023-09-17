@@ -2879,7 +2879,7 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
         .bool_type => try astgen.addInst(.{ .bool = .{ .value = null } }),
         .number_type => try astgen.genNumberType(node),
         .vector_type => try astgen.genVectorType(scope, node),
-        .matrix_type => try astgen.genMatrix(scope, node, .none, null),
+        .matrix_type => try astgen.genMatrixType(scope, node),
         .atomic_type => try astgen.genAtomicType(scope, node),
         .array_type => try astgen.genArray(scope, node, null),
         .ptr_type => try astgen.genPtrType(scope, node),
@@ -2974,38 +2974,36 @@ fn genVectorType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 }
 
-fn genMatrix(astgen: *AstGen, scope: *Scope, node: NodeIndex, element_type: InstIndex, value: ?Air.Inst.Matrix.Value) !InstIndex {
-    const node_lhs = astgen.tree.nodeLHS(node);
-    var loc = astgen.tree.nodeLoc(node);
-    var elem_type = element_type;
-    if (node_lhs != .none) {
-        loc = astgen.tree.nodeLoc(node_lhs);
-        elem_type = try astgen.genType(scope, node_lhs);
-    }
+fn genMatrixType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const elem_type_node = astgen.tree.nodeLHS(node);
+    const elem_type = try astgen.genType(scope, elem_type_node);
 
-    if (astgen.getInst(elem_type) != .float) {
-        try astgen.errors.add(
-            loc,
-            "invalid matrix component type",
-            .{},
-            try astgen.errors.createNote(
-                null,
-                "must be 'f32' or 'f16'",
-                .{},
-            ),
-        );
-        return error.AnalysisFail;
-    }
-
-    const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
-    return astgen.addInst(.{
-        .matrix = .{
-            .cols = matrixCols(token_tag),
-            .rows = matrixRows(token_tag),
-            .elem_type = elem_type,
-            .value = if (value) |val| try astgen.addValue(Inst.Matrix.Value, val) else null,
+    switch (astgen.getInst(elem_type)) {
+        .bool, .int, .float => {
+            const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
+            return astgen.addInst(.{
+                .matrix = .{
+                    .cols = matrixCols(token_tag),
+                    .rows = matrixRows(token_tag),
+                    .elem_type = elem_type,
+                    .value = null,
+                },
+            });
         },
-    });
+        else => {
+            try astgen.errors.add(
+                astgen.tree.nodeLoc(elem_type_node),
+                "invalid matrix component type",
+                .{},
+                try astgen.errors.createNote(
+                    null,
+                    "must be 'f32', or 'f16'",
+                    .{},
+                ),
+            );
+            return error.AnalysisFail;
+        },
+    }
 }
 
 fn matrixCols(tag: TokenTag) Air.Inst.Vector.Size {
