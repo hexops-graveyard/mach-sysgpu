@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const vulkan_dep = b.dependency("vulkan", .{});
+    const vulkan_dep = b.dependency("vulkan_zig_generated", .{});
     const vulkan_mod = vulkan_dep.module("vulkan-zig-generated");
 
     const gpu_dep = b.dependency("mach_gpu", .{});
@@ -59,8 +59,8 @@ pub fn build(b: *std.Build) !void {
         triangle.linkSystemLibrary("d3dcompiler_47");
     }
 
-    try @import("mach_glfw").link(b, triangle);
-    try @import("mach_gpu").link(b, triangle, .{}); // link dawn
+    @import("mach_glfw").link(glfw_dep.builder, triangle);
+    try @import("mach_gpu").link(gpu_dep.builder, triangle, .{}); // link dawn
     b.installArtifact(triangle);
 
     const run_traingle_cmd = b.addRunArtifact(triangle);
