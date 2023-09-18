@@ -474,6 +474,10 @@ pub const Device = struct {
     render_passes: std.AutoHashMapUnmanaged(RenderPassKey, vk.RenderPass) = .{},
     cmd_pool: vk.CommandPool,
     queue: ?Queue = null,
+    lost_cb: ?gpu.Device.LostCallback = null,
+    lost_cb_userdata: ?*anyopaque = null,
+    log_cb: ?gpu.LoggingCallback = null,
+    log_cb_userdata: ?*anyopaque = null,
     err_cb: ?gpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
 
@@ -601,6 +605,10 @@ pub const Device = struct {
     }
 
     pub fn deinit(device: *Device) void {
+        if (device.lost_cb) |lost_cb| {
+            lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
+        }
+
         device.waitAll() catch {};
 
         for (&device.frames_res) |*fr| {

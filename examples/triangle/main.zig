@@ -74,6 +74,7 @@ pub fn main() !void {
         std.process.exit(1);
     };
     defer device.release();
+    defer device.setDeviceLostCallback(null, null);
     device.setUncapturedErrorCallback({}, uncapturedErrorCallback);
 
     const framebuffer_size = window.getFramebufferSize();

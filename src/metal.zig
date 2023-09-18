@@ -128,6 +128,10 @@ pub const Device = struct {
     manager: utils.Manager(Device) = .{},
     device: *mtl.Device,
     queue: ?*Queue = null,
+    lost_cb: ?gpu.Device.LostCallback = null,
+    lost_cb_userdata: ?*anyopaque = null,
+    log_cb: ?gpu.LoggingCallback = null,
+    log_cb_userdata: ?*anyopaque = null,
     err_cb: ?gpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
 
@@ -141,6 +145,10 @@ pub const Device = struct {
     }
 
     pub fn deinit(device: *Device) void {
+        if (device.lost_cb) |lost_cb| {
+            lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
+        }
+
         if (device.queue) |queue| queue.manager.release();
         allocator.destroy(device);
     }
