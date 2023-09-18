@@ -1788,7 +1788,8 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     return astgen.addInst(.{ .binary = .{
         .op = op,
         .result_type = res_type,
-        .operands_type = lhs_res,
+        .lhs_type = lhs_res,
+        .rhs_type = rhs_res,
         .lhs = lhs,
         .rhs = rhs,
     } });
@@ -2789,7 +2790,8 @@ fn genMinMaxBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex, min: bool) 
         .binary = .{
             .op = if (min) .min else .max,
             .result_type = arg0_res,
-            .operands_type = arg0_res,
+            .lhs_type = arg0_res,
+            .rhs_type = arg1_res,
             .lhs = arg0,
             .rhs = arg1,
         },

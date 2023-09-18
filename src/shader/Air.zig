@@ -744,7 +744,8 @@ pub const Inst = union(enum) {
     pub const Binary = struct {
         op: Op,
         result_type: InstIndex,
-        operands_type: InstIndex,
+        lhs_type: InstIndex,
+        rhs_type: InstIndex,
         lhs: InstIndex,
         rhs: InstIndex,
 
