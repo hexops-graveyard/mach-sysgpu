@@ -546,10 +546,24 @@ pub const Interface = struct {
         var errors = try shader.ErrorList.init(allocator);
         defer errors.deinit();
         if (utils.findChained(gpu.ShaderModule.WGSLDescriptor, descriptor.next_in_chain.generic)) |wgsl_descriptor| {
-            var ast = shader.Ast.parse(allocator, &errors, std.mem.span(wgsl_descriptor.code)) catch unreachable;
+            const source = std.mem.span(wgsl_descriptor.code);
+
+            var ast = shader.Ast.parse(allocator, &errors, source) catch |err| switch (err) {
+                error.Parsing => {
+                    errors.print(source, null) catch unreachable;
+                    std.process.exit(1);
+                },
+                else => unreachable,
+            };
             defer ast.deinit(allocator);
 
-            var air = shader.Air.generate(allocator, &ast, &errors, null) catch unreachable;
+            var air = shader.Air.generate(allocator, &ast, &errors, null) catch |err| switch (err) {
+                error.AnalysisFail => {
+                    errors.print(source, null) catch unreachable;
+                    std.process.exit(1);
+                },
+                else => unreachable,
+            };
             defer air.deinit(allocator);
 
             const language = switch (backend_type) {

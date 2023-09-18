@@ -391,6 +391,7 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
             .struct_member = .{
                 .name = name,
                 .type = member_type,
+                .index = @intCast(i),
                 .@"align" = @"align",
                 .size = size,
                 .builtin = builtin,
@@ -1599,16 +1600,18 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     const lhs_res = try astgen.resolve(lhs);
     const rhs_res = try astgen.resolve(rhs);
-    const lhs_res_tag = astgen.getInst(lhs_res);
-    const rhs_res_tag = astgen.getInst(rhs_res);
+    const lhs_res_inst = astgen.getInst(lhs_res);
+    const rhs_res_inst = astgen.getInst(rhs_res);
 
     var is_valid = false;
+    var arithmetic_res_type = InstIndex.none;
+
     switch (node_tag) {
         .shl, .shr, .@"and", .@"or", .xor => {
-            is_valid = lhs_res_tag == .int and rhs_res_tag == .int;
+            is_valid = lhs_res_inst == .int and rhs_res_inst == .int;
         },
         .logical_and, .logical_or => {
-            is_valid = lhs_res_tag == .bool and rhs_res_tag == .bool;
+            is_valid = lhs_res_inst == .bool and rhs_res_inst == .bool;
         },
         .mul,
         .div,
@@ -1621,21 +1624,109 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .less_than_equal,
         .greater_than,
         .greater_than_equal,
-        => switch (lhs_res_tag) {
+        => switch (lhs_res_inst) {
             .int, .float => {
-                if (std.meta.activeTag(lhs_res_tag) == std.meta.activeTag(rhs_res_tag) or
-                    (lhs_res_tag == .vector and
-                    std.meta.activeTag(rhs_res_tag) == std.meta.activeTag(astgen.getInst(lhs_res_tag.vector.elem_type))))
-                {
+                if (try astgen.coerce(rhs_res, lhs_res)) {
                     is_valid = true;
+                    arithmetic_res_type = lhs_res;
+                }
+
+                if (astgen.eql(rhs_res_inst.vector.elem_type, lhs_res)) {
+                    is_valid = true;
+                    arithmetic_res_type = rhs_res;
                 }
             },
             .vector => {
-                if (std.meta.activeTag(rhs_res_tag) == std.meta.activeTag(lhs_res_tag) or
-                    (rhs_res_tag == .vector and
-                    std.meta.activeTag(lhs_res_tag) == std.meta.activeTag(astgen.getInst(rhs_res_tag.vector.elem_type))))
-                {
+                if (astgen.eql(rhs_res, lhs_res)) {
                     is_valid = true;
+                    arithmetic_res_type = lhs_res;
+                }
+
+                if (astgen.eql(lhs_res_inst.vector.elem_type, rhs_res)) {
+                    is_valid = true;
+                    arithmetic_res_type = lhs_res;
+                }
+
+                if (rhs_res_inst == .matrix) {
+                    if (astgen.getInst(lhs_res_inst.vector.elem_type) == .float) {
+                        if (lhs_res_inst.vector.size == rhs_res_inst.matrix.cols) {
+                            is_valid = true;
+                            arithmetic_res_type = try astgen.addInst(.{ .vector = .{
+                                .elem_type = lhs_res_inst.vector.elem_type,
+                                .size = rhs_res_inst.matrix.rows,
+                                .value = null,
+                            } });
+                        }
+
+                        if (lhs_res_inst.vector.size == rhs_res_inst.matrix.rows) {
+                            is_valid = true;
+                            arithmetic_res_type = try astgen.addInst(.{ .vector = .{
+                                .elem_type = lhs_res_inst.vector.elem_type,
+                                .size = rhs_res_inst.matrix.cols,
+                                .value = null,
+                            } });
+                        }
+                    }
+                }
+            },
+            .matrix => {
+                if (rhs_res_inst == .matrix) {
+                    if (astgen.eql(lhs_res_inst.matrix.elem_type, rhs_res_inst.matrix.elem_type)) {
+                        // matCxR<T> matCxR<T>
+                        if (lhs_res_inst.matrix.rows == rhs_res_inst.matrix.rows and
+                            lhs_res_inst.matrix.cols == rhs_res_inst.matrix.cols)
+                        {
+                            is_valid = true;
+                            arithmetic_res_type = lhs_res;
+                        }
+
+                        // matKxR<T> matCxK<T>
+                        if (lhs_res_inst.matrix.cols == rhs_res_inst.matrix.rows) {
+                            is_valid = true;
+                            arithmetic_res_type = try astgen.addInst(.{ .matrix = .{
+                                .elem_type = lhs_res_inst.vector.elem_type,
+                                .cols = rhs_res_inst.matrix.cols,
+                                .rows = lhs_res_inst.matrix.rows,
+                                .value = null,
+                            } });
+                        }
+
+                        // matCxK<T> matKxR<T>
+                        if (rhs_res_inst.matrix.cols == lhs_res_inst.matrix.rows) {
+                            is_valid = true;
+                            arithmetic_res_type = try astgen.addInst(.{ .matrix = .{
+                                .elem_type = lhs_res_inst.vector.elem_type,
+                                .cols = lhs_res_inst.matrix.cols,
+                                .rows = rhs_res_inst.matrix.rows,
+                                .value = null,
+                            } });
+                        }
+                    }
+                }
+
+                if (rhs_res_inst == .float) {
+                    is_valid = true;
+                    arithmetic_res_type = lhs_res;
+                }
+
+                if (rhs_res_inst == .vector) {
+                    if (rhs_res_inst.vector.size == lhs_res_inst.matrix.cols) {
+                        is_valid = true;
+                        arithmetic_res_type = try astgen.addInst(.{ .vector = .{
+                            .elem_type = rhs_res_inst.vector.elem_type,
+                            .size = lhs_res_inst.matrix.rows,
+                            .value = null,
+                        } });
+                    }
+
+                    if (rhs_res_inst.vector.size == lhs_res_inst.matrix.rows) {
+                        is_valid = true;
+                        arithmetic_res_type = try astgen.addInst(.{ .vector = .{
+                            .elem_type = rhs_res_inst.vector.elem_type,
+                            .size = lhs_res_inst.matrix.cols,
+                            .value = null,
+                        } });
+                    }
                 }
             },
             else => {},
@@ -1644,7 +1735,12 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     if (!is_valid) {
-        try astgen.errors.add(node_loc, "invalid operation", .{}, null);
+        try astgen.errors.add(
+            node_loc,
+            "invalid binary operation between {s} and {s}",
+            .{ @tagName(lhs_res_inst), @tagName(rhs_res_inst) },
+            null,
+        );
         return error.AnalysisFail;
     }
 
@@ -1671,6 +1767,12 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     };
 
     const res_type = switch (op) {
+        .mul,
+        .div,
+        .mod,
+        .add,
+        .sub,
+        => arithmetic_res_type,
         .logical_and,
         .logical_or,
         .equal,
