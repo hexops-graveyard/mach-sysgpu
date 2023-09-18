@@ -558,6 +558,7 @@ pub const Inst = union(enum) {
 
     pub const StructMember = struct {
         name: StringIndex,
+        index: u32,
         type: InstIndex,
         @"align": ?u29,
         size: ?u32,

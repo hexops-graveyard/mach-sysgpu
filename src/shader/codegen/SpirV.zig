@@ -104,6 +104,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
             .@"fn" => _ = try spv.emitFn(inst_idx),
             .@"const" => _ = try spv.emitConst(inst_idx),
             .@"var" => _ = try spv.emitVarProto(&spv.global_section, inst_idx),
+            .@"struct" => {},
             else => unreachable,
         }
     }
@@ -539,18 +540,32 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
         }),
         .atomic_type => |atomic| try spv.emitType(atomic.elem_type),
         .@"struct" => |@"struct"| {
+            if (spv.decl_map.get(inst)) |decl| return decl.id;
+
             const member_list = spv.air.refToList(@"struct".members);
             var members = std.ArrayList(IdRef).init(spv.allocator);
             try members.ensureTotalCapacityPrecise(member_list.len);
             defer members.deinit();
-            for (member_list, 0..) |member_inst_idx, i| {
+
+            for (member_list) |member_inst_idx| {
                 const member_inst = spv.air.getInst(member_inst_idx).struct_member;
                 const member = try spv.emitType(member_inst.type);
-                try spv.debugMemberName(member, i, spv.air.getStr(member_inst.name));
                 members.appendAssumeCapacity(member);
             }
+
             const id = try spv.resolve(.{ .struct_type = .{ .members = try members.toOwnedSlice() } });
+
+            for (member_list, 0..) |member_inst_idx, i| {
+                const member_inst = spv.air.getInst(member_inst_idx).struct_member;
+                try spv.debugMemberName(id, i, spv.air.getStr(member_inst.name));
+            }
             try spv.debugName(id, spv.air.getStr(@"struct".name));
+
+            try spv.decl_map.put(spv.allocator, inst, .{
+                .id = id,
+                .type_id = .{ .id = 0 },
+                .is_ptr = false,
+            });
             return id;
         },
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
@@ -812,8 +827,7 @@ fn emitContinue(spv: *SpirV, section: *Section) !void {
 }
 
 fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
-    const var_idx = spv.air.getInst(inst.lhs).var_ref;
-    const decl = spv.decl_map.get(var_idx).?;
+    const decl = try spv.emitDeclPtr(section, inst.lhs);
 
     const expr = blk: {
         const op: Inst.Binary.Op = switch (inst.mod) {
@@ -839,9 +853,18 @@ fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
     };
 
     try section.emit(.OpStore, .{
-        .pointer = decl.id,
+        .pointer = decl,
         .object = expr,
     });
+}
+
+fn emitDeclPtr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!IdRef {
+    switch (spv.air.getInst(inst)) {
+        .var_ref => |ref| return spv.decl_map.get(ref).?.id,
+        .index_access => |index_access| return spv.emitIndexAccess(section, index_access, true),
+        .field_access => |field_access| return spv.emitFieldAccess(section, field_access, true),
+        else => unreachable,
+    }
 }
 
 fn emitReturn(spv: *SpirV, section: *Section, inst: InstIndex) !void {
@@ -872,7 +895,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemo
             break :blk decl.id;
         },
         .swizzle_access => |swizzle_access| spv.emitSwizzleAccess(section, swizzle_access),
-        .index_access => |index_access| spv.emitIndexAccess(section, index_access),
+        .index_access => |index_access| spv.emitIndexAccess(section, index_access, false),
         .binary => |bin| spv.emitBinary(section, bin),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst_idx))}),
     };
@@ -1388,19 +1411,18 @@ fn emitSwizzleAccess(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) !
     return id;
 }
 
-fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess) !IdRef {
-    const id = spv.allocId();
+fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess, ptr: bool) !IdRef {
     const type_id = try spv.emitType(inst.type);
-    const base_decl = spv.decl_map.get(spv.air.getInst(inst.base).var_ref).?;
-    std.debug.assert(base_decl.is_ptr);
+    const base_decl = try spv.emitDeclPtr(section, inst.base);
 
-    if (spv.air.resolveConstExpr(inst.index)) |_| {
+    if (spv.air.resolveConstExpr(inst.index)) |_| { // TODO
+        const id = spv.allocId();
         const index_value_idx = spv.air.getInst(inst.index).int.value.?;
         const index_value = spv.air.getValue(Inst.Int.Value, index_value_idx).literal;
         try section.emit(.OpCompositeExtract, .{
             .id_result_type = type_id,
             .id_result = id,
-            .composite = base_decl.id,
+            .composite = base_decl,
             .indexes = &[_]u32{@intCast(index_value)},
         });
         return id;
@@ -1416,16 +1438,49 @@ fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess) !IdRe
             },
         }),
         .id_result = access_chain_id,
-        .base = base_decl.id,
+        .base = base_decl,
         .indexes = &.{index_id},
     });
+    if (ptr) return access_chain_id;
 
+    const id = spv.allocId();
     try section.emit(.OpLoad, .{
         .id_result_type = type_id,
         .id_result = id,
         .pointer = access_chain_id,
     });
+    return id;
+}
 
+fn emitFieldAccess(spv: *SpirV, section: *Section, inst: Inst.FieldAccess, ptr: bool) !IdRef {
+    const struct_member = spv.air.getInst(inst.field).struct_member;
+    const type_id = try spv.emitType(struct_member.type);
+    const base_decl = try spv.emitDeclPtr(section, inst.base);
+
+    const access_chain_id = spv.allocId();
+    const index_id = try spv.resolve(.{ .int = .{
+        .type = .u32,
+        .value = struct_member.index,
+    } });
+    try section.emit(.OpAccessChain, .{
+        .id_result_type = try spv.resolve(.{
+            .ptr_type = .{
+                .elem_type = type_id,
+                .storage_class = .Function,
+            },
+        }),
+        .id_result = access_chain_id,
+        .base = base_decl,
+        .indexes = &.{index_id},
+    });
+    if (ptr) return access_chain_id;
+
+    const id = spv.allocId();
+    try section.emit(.OpLoad, .{
+        .id_result_type = type_id,
+        .id_result = id,
+        .pointer = access_chain_id,
+    });
     return id;
 }
 
@@ -1620,10 +1675,10 @@ fn debugName(spv: *SpirV, id: IdResult, name: []const u8) !void {
     }
 }
 
-fn debugMemberName(spv: *SpirV, id: IdResult, index: usize, name: []const u8) !void {
+fn debugMemberName(spv: *SpirV, struct_id: IdResult, index: usize, name: []const u8) !void {
     if (spv.emit_debug_names) {
         try spv.debug_section.emit(.OpMemberName, .{
-            .type = id,
+            .type = struct_id,
             .member = @as(spec.LiteralInteger, @intCast(index)),
             .name = name,
         });
