@@ -199,6 +199,10 @@ pub const Device = struct {
     root_signature: *c.ID3D12RootSignature,
     command_manager: *CommandManager,
     queue: *Queue,
+    lost_cb: ?gpu.Device.LostCallback = null,
+    lost_cb_userdata: ?*anyopaque = null,
+    log_cb: ?gpu.LoggingCallback = null,
+    log_cb_userdata: ?*anyopaque = null,
     err_cb: ?gpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
 
@@ -279,6 +283,10 @@ pub const Device = struct {
     pub fn deinit(device: *Device) void {
         const rtv_descriptor_heap = device.rtv_descriptor_heap;
         const root_signature = device.root_signature;
+
+        if (device.lost_cb) |lost_cb| {
+            lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
+        }
 
         device.queue.waitUntil(device.queue.fence_value);
 

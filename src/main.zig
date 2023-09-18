@@ -45,6 +45,10 @@ pub const Interface = struct {
     pub inline fn adapterCreateDevice(adapter_raw: *gpu.Adapter, descriptor: ?*const gpu.Device.Descriptor) ?*gpu.Device {
         const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
         const device = adapter.createDevice(descriptor) catch return null;
+        if (descriptor) |desc| {
+            device.lost_cb = desc.device_lost_callback;
+            device.lost_cb_userdata = desc.device_lost_userdata;
+        }
         return @as(*gpu.Device, @ptrCast(device));
     }
 
@@ -648,11 +652,10 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceSetDeviceLostCallback(device: *gpu.Device, callback: ?gpu.Device.LostCallback, userdata: ?*anyopaque) void {
-        _ = device;
-        _ = callback;
-        _ = userdata;
-        unreachable;
+    pub inline fn deviceSetDeviceLostCallback(device_raw: *gpu.Device, callback: ?gpu.Device.LostCallback, userdata: ?*anyopaque) void {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        device.lost_cb = callback;
+        device.lost_cb_userdata = userdata;
     }
 
     pub inline fn deviceSetLabel(device: *gpu.Device, label: [*:0]const u8) void {
@@ -661,11 +664,10 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceSetLoggingCallback(device: *gpu.Device, callback: ?gpu.LoggingCallback, userdata: ?*anyopaque) void {
-        _ = device;
-        _ = callback;
-        _ = userdata;
-        unreachable;
+    pub inline fn deviceSetLoggingCallback(device_raw: *gpu.Device, callback: ?gpu.LoggingCallback, userdata: ?*anyopaque) void {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        device.log_cb = callback;
+        device.log_cb_userdata = userdata;
     }
 
     pub inline fn deviceSetUncapturedErrorCallback(device_raw: *gpu.Device, callback: ?gpu.ErrorCallback, userdata: ?*anyopaque) void {
