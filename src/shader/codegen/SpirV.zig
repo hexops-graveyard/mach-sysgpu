@@ -846,7 +846,8 @@ fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
         break :blk try spv.emitBinary(section, .{
             .op = op,
             .result_type = inst.type,
-            .operands_type = inst.type,
+            .lhs_type = inst.type,
+            .rhs_type = inst.type,
             .lhs = inst.lhs,
             .rhs = inst.rhs,
         });
@@ -904,10 +905,12 @@ fn emitExpr(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemo
 fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
     const id = spv.allocId();
     const type_id = try spv.emitType(binary.result_type);
+    const lhs_res = spv.air.getInst(binary.lhs_type);
+    var rhs_res = spv.air.getInst(binary.rhs_type);
     const lhs = try spv.emitExpr(section, binary.lhs);
     const rhs = try spv.emitExpr(section, binary.rhs);
 
-    switch (spv.air.getInst(binary.operands_type)) {
+    switch (lhs_res) {
         .bool => switch (binary.op) {
             .equal => try section.emit(.OpLogicalEqual, .{
                 .id_result = id,
@@ -1054,12 +1057,21 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
             },
         },
         .float => switch (binary.op) {
-            .mul => try section.emit(.OpFMul, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
+            .mul => switch (rhs_res) {
+                .vector => try section.emit(.OpVectorTimesScalar, .{
+                    .id_result = id,
+                    .id_result_type = type_id,
+                    .vector = rhs,
+                    .scalar = lhs,
+                }),
+                .float => try section.emit(.OpFMul, .{
+                    .id_result = id,
+                    .id_result_type = type_id,
+                    .operand_1 = lhs,
+                    .operand_2 = rhs,
+                }),
+                else => unreachable,
+            },
             .div => try section.emit(.OpFDiv, .{
                 .id_result = id,
                 .id_result_type = type_id,
@@ -1103,6 +1115,62 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
                 .operand_2 = rhs,
             }),
             .greater_than => try section.emit(.OpFOrdGreaterThan, .{
+                .id_result = id,
+                .id_result_type = type_id,
+                .operand_1 = lhs,
+                .operand_2 = rhs,
+            }),
+            else => unreachable,
+        },
+        .vector => switch (binary.op) {
+            .mul => switch (rhs_res) {
+                .int, .float => try section.emit(.OpVectorTimesScalar, .{
+                    .id_result = id,
+                    .id_result_type = type_id,
+                    .vector = lhs,
+                    .scalar = rhs,
+                }),
+                .matrix => try section.emit(.OpVectorTimesMatrix, .{
+                    .id_result = id,
+                    .id_result_type = type_id,
+                    .vector = lhs,
+                    .matrix = rhs,
+                }),
+                else => unreachable,
+            },
+            .add => {
+                while (true) {
+                    switch (rhs_res) {
+                        .int => break try section.emit(.OpIAdd, .{
+                            .id_result = id,
+                            .id_result_type = type_id,
+                            .operand_1 = lhs,
+                            .operand_2 = rhs,
+                        }),
+                        .float => break try section.emit(.OpFAdd, .{
+                            .id_result = id,
+                            .id_result_type = type_id,
+                            .operand_1 = lhs,
+                            .operand_2 = rhs,
+                        }),
+                        .vector => |vec| rhs_res = spv.air.getInst(vec.elem_type),
+                        else => unreachable,
+                    }
+                }
+            },
+            else => unreachable,
+        },
+        .matrix => switch (binary.op) {
+            .mul => switch (rhs_res) {
+                .vector => try section.emit(.OpMatrixTimesVector, .{
+                    .id_result = id,
+                    .id_result_type = type_id,
+                    .matrix = lhs,
+                    .vector = rhs,
+                }),
+                else => unreachable,
+            },
+            .add => try section.emit(.OpFAdd, .{
                 .id_result = id,
                 .id_result_type = type_id,
                 .operand_1 = lhs,
