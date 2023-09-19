@@ -1626,14 +1626,16 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .greater_than_equal,
         => switch (lhs_res_inst) {
             .int, .float => {
-                if (try astgen.coerce(rhs_res, lhs_res)) {
+                if (try astgen.coerce(rhs_res, lhs_res) or try astgen.coerce(lhs_res, rhs_res)) {
                     is_valid = true;
                     arithmetic_res_type = lhs_res;
                 }
 
-                if (astgen.eql(rhs_res_inst.vector.elem_type, lhs_res)) {
-                    is_valid = true;
-                    arithmetic_res_type = rhs_res;
+                if (rhs_res_inst == .vector) {
+                    if (astgen.eql(rhs_res_inst.vector.elem_type, lhs_res)) {
+                        is_valid = true;
+                        arithmetic_res_type = rhs_res;
+                    }
                 }
             },
             .vector => {
@@ -1737,7 +1739,7 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     if (!is_valid) {
         try astgen.errors.add(
             node_loc,
-            "invalid binary operation between {s} and {s}",
+            "invalid operation between {s} and {s}",
             .{ @tagName(lhs_res_inst), @tagName(rhs_res_inst) },
             null,
         );

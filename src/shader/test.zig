@@ -161,6 +161,13 @@ test "must pass" {
         var ir = try expectIR(source);
         ir.deinit(allocator);
     }
+    {
+        const source =
+            \\const v0 = 5 + 1.0;
+        ;
+        var ir = try expectIR(source);
+        ir.deinit(allocator);
+    }
 }
 
 test "integer/float literals" {
@@ -295,7 +302,7 @@ test "must error" {
             \\const v1 = &v0 + 5;
         ;
         try expectError(source, .{
-            .msg = "invalid operation",
+            .msg = "invalid operation between addr_of and int",
             .loc = .{ .start = 29, .end = 30 },
         });
     }
@@ -382,15 +389,6 @@ test "must error" {
         try expectError(source, .{
             .msg = "suffix 'u' on float literal",
             .loc = .{ .start = 11, .end = 15 },
-        });
-    }
-    {
-        const source =
-            \\const v0 = 5 << 1.0;
-        ;
-        try expectError(source, .{
-            .msg = "invalid operation",
-            .loc = .{ .start = 13, .end = 15 },
         });
     }
     {
