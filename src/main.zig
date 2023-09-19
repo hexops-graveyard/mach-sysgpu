@@ -566,20 +566,11 @@ pub const Interface = struct {
             };
             defer air.deinit(allocator);
 
-            const language = switch (backend_type) {
-                .vulkan => .spirv,
-                .metal => .msl,
-                .d3d12 => .hlsl,
-                else => unreachable,
-            };
-            const output = shader.CodeGen.generate(allocator, &air, language, .{ .emit_source_file = "" }) catch unreachable;
-            defer allocator.free(output);
-
-            const shader_module = impl.Device.createShaderModule(device, output) catch unreachable;
+            const shader_module = impl.Device.createShaderModuleAir(device, &air) catch unreachable;
             return @ptrCast(shader_module);
         } else if (utils.findChained(gpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
             const output = std.mem.sliceAsBytes(spirv_descriptor.code[0..spirv_descriptor.code_size]);
-            const shader_module = impl.Device.createShaderModule(device, output) catch unreachable;
+            const shader_module = impl.Device.createShaderModuleSpirv(device, output) catch unreachable;
             return @ptrCast(shader_module);
         }
 

@@ -4,6 +4,7 @@ const gpu = @import("gpu");
 const vk = @import("vulkan");
 const dusk = @import("main.zig");
 const utils = @import("utils.zig");
+const shader = @import("shader.zig");
 const conv = @import("vulkan/conv.zig");
 const proc = @import("vulkan/proc.zig");
 
@@ -669,8 +670,12 @@ pub const Device = struct {
         return RenderPipeline.init(device, desc);
     }
 
-    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
-        return ShaderModule.init(device, code);
+    pub fn createShaderModuleAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        return ShaderModule.initAir(device, air);
+    }
+
+    pub fn createShaderModuleSpirv(device: *Device, code: []const u8) !*ShaderModule {
+        return ShaderModule.initSpirv(device, code);
     }
 
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
@@ -1625,7 +1630,14 @@ pub const ShaderModule = struct {
     shader_module: vk.ShaderModule,
     device: *Device,
 
-    pub fn init(device: *Device, code: []const u8) !*ShaderModule {
+    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        const code = shader.CodeGen.generate(allocator, air, .spirv, .{ .emit_source_file = "" }) catch unreachable;
+        defer allocator.free(code);
+
+        return ShaderModule.initSpirv(device, code);
+    }
+
+    pub fn initSpirv(device: *Device, code: []const u8) !*ShaderModule {
         const vk_shader_module = try vkd.createShaderModule(
             device.device,
             &vk.ShaderModuleCreateInfo{
