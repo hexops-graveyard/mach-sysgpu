@@ -125,6 +125,7 @@ fn emitStatement(writer: std.ArrayList(u8).Writer, air: *const Air, inst_idx: In
         else => |inst| try writer.print("{}", .{inst}), // TODO
     }
 }
+
 fn emitExpr(writer: std.ArrayList(u8).Writer, air: *const Air, inst_idx: InstIndex) error{OutOfMemory}!void {
     switch (air.getInst(inst_idx)) {
         .float => |float| try emitFloat(writer, air, float),

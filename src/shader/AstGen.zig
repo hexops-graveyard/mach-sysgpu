@@ -1196,7 +1196,8 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
 pub fn isMutable(astgen: *AstGen, index: InstIndex) !bool {
     var idx = index;
     while (true) switch (astgen.getInst(idx)) {
-        .deref => |var_ref| return astgen.getInst(try astgen.resolve(var_ref)).ptr_type.access_mode != .read,
+        // TODO: maybe adding `type` field to unary instructions will be useful?
+        .deref => |deref| return astgen.getInst(try astgen.resolve(deref.expr)).ptr_type.access_mode != .read,
         .var_ref => |var_ref| idx = var_ref,
         inline .field_access, .swizzle_access, .index_access => |access| idx = access.base,
         .@"var" => |@"var"| return @"var".access_mode != .read,
@@ -1233,26 +1234,7 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const extra = astgen.tree.extraData(Node.Var, astgen.tree.nodeLHS(node));
     const name_loc = astgen.tree.declNameLoc(node).?;
 
-    var is_resource = false;
-    var var_type = InstIndex.none;
-    if (extra.type != .none) {
-        var_type = try astgen.genType(scope, extra.type);
-
-        switch (astgen.getInst(var_type)) {
-            .sampler_type,
-            .comparison_sampler_type,
-            .sampled_texture_type,
-            .external_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
-            => {
-                is_resource = true;
-            },
-            else => {},
-        }
-    }
-
+    var is_resource = false; // TODO: research and remove this?
     var addr_space = Inst.PointerType.AddressSpace.function;
     if (extra.addr_space != .none) {
         const addr_space_loc = astgen.tree.tokenLoc(extra.addr_space);
@@ -1284,6 +1266,27 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     var expr = InstIndex.none;
     if (node_rhs != .none) {
         expr = try astgen.genExpr(scope, node_rhs);
+    }
+
+    var var_type = InstIndex.none;
+    if (extra.type != .none) {
+        var_type = try astgen.genType(scope, extra.type);
+
+        switch (astgen.getInst(var_type)) {
+            .sampler_type,
+            .comparison_sampler_type,
+            .sampled_texture_type,
+            .external_texture_type,
+            .multisampled_texture_type,
+            .storage_texture_type,
+            .depth_texture_type,
+            => {
+                is_resource = true;
+            },
+            else => {},
+        }
+    } else {
+        var_type = try astgen.resolve(expr);
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
@@ -1335,13 +1338,16 @@ fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_rhs = astgen.tree.nodeRHS(node);
     const name_loc = astgen.tree.declNameLoc(node).?;
 
+    const expr = try astgen.genExpr(scope, node_rhs);
+    const name = try astgen.addString(name_loc.slice(astgen.tree.source));
+
     var var_type = InstIndex.none;
     if (node_lhs != .none) {
         var_type = try astgen.genType(scope, node_lhs);
+    } else {
+        var_type = try astgen.resolve(expr);
     }
 
-    const expr = try astgen.genExpr(scope, node_rhs);
-    const name = try astgen.addString(name_loc.slice(astgen.tree.source));
     return astgen.addInst(.{
         .@"var" = .{
             .name = name,
@@ -1528,11 +1534,11 @@ fn coerce(astgen: *AstGen, src: InstIndex, dst: InstIndex) !bool {
 fn genNot(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
-    const lhs = try astgen.genExpr(scope, node_lhs);
+    const expr = try astgen.genExpr(scope, node_lhs);
 
-    const lhs_res = try astgen.resolve(lhs);
-    if (astgen.getInst(lhs_res) == .bool) {
-        return astgen.addInst(.{ .not = lhs });
+    const expr_res = try astgen.resolve(expr);
+    if (astgen.getInst(expr_res) == .bool) {
+        return astgen.addInst(.{ .not = .{ .result_type = expr_res, .expr = expr } });
     }
 
     try astgen.errors.add(
@@ -1547,11 +1553,16 @@ fn genNot(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 fn genNegate(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
-    const lhs = try astgen.genExpr(scope, node_lhs);
+    const expr = try astgen.genExpr(scope, node_lhs);
 
-    const lhs_res = try astgen.resolve(lhs);
-    switch (astgen.getInst(lhs_res)) {
-        .int, .float => return astgen.addInst(.{ .negate = lhs }),
+    const expr_res = try astgen.resolve(expr);
+    switch (astgen.getInst(expr_res)) {
+        .int, .float => return astgen.addInst(.{
+            .negate = .{
+                .result_type = expr_res,
+                .expr = expr,
+            },
+        }),
         else => {},
     }
 
@@ -1567,11 +1578,17 @@ fn genNegate(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 fn genDeref(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
-    const lhs = try astgen.genExpr(scope, node_lhs);
-    const lhs_res = try astgen.resolve(lhs);
-    if (astgen.getInst(lhs_res) == .ptr_type) {
-        const inst = try astgen.addInst(.{ .deref = lhs });
-        return inst;
+    const expr = try astgen.genExpr(scope, node_lhs);
+    const expr_res = try astgen.resolve(expr);
+    const expr_res_inst = astgen.getInst(expr_res);
+
+    if (expr_res_inst == .ptr_type) {
+        return astgen.addInst(.{
+            .deref = .{
+                .result_type = expr_res_inst.ptr_type.elem_type,
+                .expr = expr,
+            },
+        });
     }
 
     try astgen.errors.add(
@@ -1584,8 +1601,21 @@ fn genDeref(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 }
 
 fn genAddrOf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
+    const expr_res = try astgen.resolve(expr);
+    const result_type = try astgen.addInst(.{
+        .ptr_type = .{
+            .elem_type = expr_res,
+            .addr_space = .function, // TODO
+            .access_mode = .read_write, // TODO
+        },
+    });
+
     const inst = try astgen.addInst(.{
-        .addr_of = try astgen.genExpr(scope, astgen.tree.nodeLHS(node)),
+        .addr_of = .{
+            .result_type = result_type,
+            .expr = expr,
+        },
     });
     return inst;
 }
@@ -1828,44 +1858,45 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .all => return astgen.genBuiltinAllAny(scope, node, true),
             .any => return astgen.genBuiltinAllAny(scope, node, false),
             .select => return astgen.genBuiltinSelect(scope, node),
-            .abs => return astgen.genSimpleNumericBuiltin(scope, node, .abs, &.{ .u32, .i32 }, &.{ .f32, .f16 }),
-            .acos => return astgen.genSimpleNumericBuiltin(scope, node, .acos, &.{}, &.{ .f32, .f16 }),
-            .acosh => return astgen.genSimpleNumericBuiltin(scope, node, .acosh, &.{}, &.{ .f32, .f16 }),
-            .asin => return astgen.genSimpleNumericBuiltin(scope, node, .asin, &.{}, &.{ .f32, .f16 }),
-            .asinh => return astgen.genSimpleNumericBuiltin(scope, node, .asinh, &.{}, &.{ .f32, .f16 }),
-            .atan => return astgen.genSimpleNumericBuiltin(scope, node, .atan, &.{}, &.{ .f32, .f16 }),
-            .atanh => return astgen.genSimpleNumericBuiltin(scope, node, .atanh, &.{}, &.{ .f32, .f16 }),
-            .ceil => return astgen.genSimpleNumericBuiltin(scope, node, .ceil, &.{}, &.{ .f32, .f16 }),
-            .cos => return astgen.genSimpleNumericBuiltin(scope, node, .cos, &.{}, &.{ .f32, .f16 }),
-            .cosh => return astgen.genSimpleNumericBuiltin(scope, node, .cosh, &.{}, &.{ .f32, .f16 }),
-            .countLeadingZeros => return astgen.genSimpleNumericBuiltin(scope, node, .count_leading_zeros, &.{ .u32, .i32 }, &.{}),
-            .countOneBits => return astgen.genSimpleNumericBuiltin(scope, node, .count_one_bits, &.{ .u32, .i32 }, &.{}),
-            .countTrailingZeros => return astgen.genSimpleNumericBuiltin(scope, node, .count_trailing_zeros, &.{ .u32, .i32 }, &.{}),
-            .degrees => return astgen.genSimpleNumericBuiltin(scope, node, .degrees, &.{}, &.{ .f32, .f16 }),
-            .exp => return astgen.genSimpleNumericBuiltin(scope, node, .exp, &.{}, &.{ .f32, .f16 }),
-            .exp2 => return astgen.genSimpleNumericBuiltin(scope, node, .exp2, &.{}, &.{ .f32, .f16 }),
-            .firstLeadingBit => return astgen.genSimpleNumericBuiltin(scope, node, .first_leading_bit, &.{ .u32, .i32 }, &.{}),
-            .firstTrailingBit => return astgen.genSimpleNumericBuiltin(scope, node, .first_trailing_bit, &.{ .u32, .i32 }, &.{}),
-            .floor => return astgen.genSimpleNumericBuiltin(scope, node, .floor, &.{}, &.{ .f32, .f16 }),
-            .fract => return astgen.genSimpleNumericBuiltin(scope, node, .fract, &.{}, &.{ .f32, .f16 }),
-            .inverseSqrt => return astgen.genSimpleNumericBuiltin(scope, node, .inverse_sqrt, &.{}, &.{ .f32, .f16 }),
-            .length => return astgen.genSimpleNumericBuiltin(scope, node, .length, &.{}, &.{ .f32, .f16 }),
-            .log => return astgen.genSimpleNumericBuiltin(scope, node, .log, &.{}, &.{ .f32, .f16 }),
-            .log2 => return astgen.genSimpleNumericBuiltin(scope, node, .log2, &.{}, &.{ .f32, .f16 }),
-            .quantizeToF16 => return astgen.genSimpleNumericBuiltin(scope, node, .quantize_to_F16, &.{}, &.{.f32}),
-            .radians => return astgen.genSimpleNumericBuiltin(scope, node, .radians, &.{}, &.{ .f32, .f16 }),
-            .reverseBits => return astgen.genSimpleNumericBuiltin(scope, node, .reverseBits, &.{ .u32, .i32 }, &.{}),
-            .round => return astgen.genSimpleNumericBuiltin(scope, node, .round, &.{}, &.{ .f32, .f16 }),
-            .saturate => return astgen.genSimpleNumericBuiltin(scope, node, .saturate, &.{}, &.{ .f32, .f16 }),
-            .sign => return astgen.genSimpleNumericBuiltin(scope, node, .sign, &.{ .u32, .i32 }, &.{.f16}),
-            .sin => return astgen.genSimpleNumericBuiltin(scope, node, .sin, &.{}, &.{ .f32, .f16 }),
-            .sinh => return astgen.genSimpleNumericBuiltin(scope, node, .sinh, &.{}, &.{ .f32, .f16 }),
-            .sqrt => return astgen.genSimpleNumericBuiltin(scope, node, .sqrt, &.{}, &.{ .f32, .f16 }),
-            .tan => return astgen.genSimpleNumericBuiltin(scope, node, .tan, &.{}, &.{ .f32, .f16 }),
-            .tanh => return astgen.genSimpleNumericBuiltin(scope, node, .tanh, &.{}, &.{ .f32, .f16 }),
-            .trunc => return astgen.genSimpleNumericBuiltin(scope, node, .trunc, &.{}, &.{ .f32, .f16 }),
-            .min => return astgen.genMinMaxBuiltin(scope, node, true),
-            .max => return astgen.genMinMaxBuiltin(scope, node, false),
+            .abs => return astgen.genSimpleBuiltin(scope, node, .abs, &.{ .u32, .i32 }, &.{ .f32, .f16 }),
+            .acos => return astgen.genSimpleBuiltin(scope, node, .acos, &.{}, &.{ .f32, .f16 }),
+            .acosh => return astgen.genSimpleBuiltin(scope, node, .acosh, &.{}, &.{ .f32, .f16 }),
+            .asin => return astgen.genSimpleBuiltin(scope, node, .asin, &.{}, &.{ .f32, .f16 }),
+            .asinh => return astgen.genSimpleBuiltin(scope, node, .asinh, &.{}, &.{ .f32, .f16 }),
+            .atan => return astgen.genSimpleBuiltin(scope, node, .atan, &.{}, &.{ .f32, .f16 }),
+            .atanh => return astgen.genSimpleBuiltin(scope, node, .atanh, &.{}, &.{ .f32, .f16 }),
+            .ceil => return astgen.genSimpleBuiltin(scope, node, .ceil, &.{}, &.{ .f32, .f16 }),
+            .cos => return astgen.genSimpleBuiltin(scope, node, .cos, &.{}, &.{ .f32, .f16 }),
+            .cosh => return astgen.genSimpleBuiltin(scope, node, .cosh, &.{}, &.{ .f32, .f16 }),
+            .countLeadingZeros => return astgen.genSimpleBuiltin(scope, node, .count_leading_zeros, &.{ .u32, .i32 }, &.{}),
+            .countOneBits => return astgen.genSimpleBuiltin(scope, node, .count_one_bits, &.{ .u32, .i32 }, &.{}),
+            .countTrailingZeros => return astgen.genSimpleBuiltin(scope, node, .count_trailing_zeros, &.{ .u32, .i32 }, &.{}),
+            .degrees => return astgen.genSimpleBuiltin(scope, node, .degrees, &.{}, &.{ .f32, .f16 }),
+            .exp => return astgen.genSimpleBuiltin(scope, node, .exp, &.{}, &.{ .f32, .f16 }),
+            .exp2 => return astgen.genSimpleBuiltin(scope, node, .exp2, &.{}, &.{ .f32, .f16 }),
+            .firstLeadingBit => return astgen.genSimpleBuiltin(scope, node, .first_leading_bit, &.{ .u32, .i32 }, &.{}),
+            .firstTrailingBit => return astgen.genSimpleBuiltin(scope, node, .first_trailing_bit, &.{ .u32, .i32 }, &.{}),
+            .floor => return astgen.genSimpleBuiltin(scope, node, .floor, &.{}, &.{ .f32, .f16 }),
+            .fract => return astgen.genSimpleBuiltin(scope, node, .fract, &.{}, &.{ .f32, .f16 }),
+            .inverseSqrt => return astgen.genSimpleBuiltin(scope, node, .inverse_sqrt, &.{}, &.{ .f32, .f16 }),
+            .length => return astgen.genSimpleBuiltin(scope, node, .length, &.{}, &.{ .f32, .f16 }),
+            .log => return astgen.genSimpleBuiltin(scope, node, .log, &.{}, &.{ .f32, .f16 }),
+            .log2 => return astgen.genSimpleBuiltin(scope, node, .log2, &.{}, &.{ .f32, .f16 }),
+            .quantizeToF16 => return astgen.genSimpleBuiltin(scope, node, .quantize_to_F16, &.{}, &.{.f32}),
+            .radians => return astgen.genSimpleBuiltin(scope, node, .radians, &.{}, &.{ .f32, .f16 }),
+            .reverseBits => return astgen.genSimpleBuiltin(scope, node, .reverseBits, &.{ .u32, .i32 }, &.{}),
+            .round => return astgen.genSimpleBuiltin(scope, node, .round, &.{}, &.{ .f32, .f16 }),
+            .saturate => return astgen.genSimpleBuiltin(scope, node, .saturate, &.{}, &.{ .f32, .f16 }),
+            .sign => return astgen.genSimpleBuiltin(scope, node, .sign, &.{ .u32, .i32 }, &.{.f16}),
+            .sin => return astgen.genSimpleBuiltin(scope, node, .sin, &.{}, &.{ .f32, .f16 }),
+            .sinh => return astgen.genSimpleBuiltin(scope, node, .sinh, &.{}, &.{ .f32, .f16 }),
+            .sqrt => return astgen.genSimpleBuiltin(scope, node, .sqrt, &.{}, &.{ .f32, .f16 }),
+            .tan => return astgen.genSimpleBuiltin(scope, node, .tan, &.{}, &.{ .f32, .f16 }),
+            .tanh => return astgen.genSimpleBuiltin(scope, node, .tanh, &.{}, &.{ .f32, .f16 }),
+            .trunc => return astgen.genSimpleBuiltin(scope, node, .trunc, &.{}, &.{ .f32, .f16 }),
+            .min => return astgen.genSimpleBuiltin2(scope, node, .min),
+            .max => return astgen.genSimpleBuiltin2(scope, node, .max),
+            .atan2 => return astgen.genSimpleBuiltin2(scope, node, .atan2),
             .smoothstep => return astgen.genSmoothstepBuiltin(scope, node),
             .dpdx => return astgen.genDerivativeBuiltin(scope, node, .dpdx),
             .dpdxCoarse => return astgen.genDerivativeBuiltin(scope, node, .dpdx_coarse),
@@ -2286,14 +2317,14 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             const scratch_top = astgen.scratch.items.len;
             defer astgen.scratch.shrinkRetainingCapacity(scratch_top);
 
-            var arg0_res = InstIndex.none;
+            var arg1_res = InstIndex.none;
             const arg_nodes = astgen.tree.spanToList(node_lhs);
             for (arg_nodes, 0..) |arg_node, i| {
                 const arg = try astgen.genExpr(scope, arg_node);
                 const arg_res = try astgen.resolve(arg);
                 if (i == 0) {
-                    arg0_res = arg_res;
-                } else if (!try astgen.coerce(arg_res, arg0_res)) {
+                    arg1_res = arg_res;
+                } else if (!try astgen.coerce(arg_res, arg1_res)) {
                     try astgen.errors.add(node_loc, "cannot construct array", .{}, null);
                     return error.AnalysisFail;
                 }
@@ -2613,26 +2644,26 @@ fn genBuiltinSelect(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
         return astgen.failArgCountMismatch(node_loc, 3, arg_nodes.len);
     }
 
-    const arg0 = try astgen.genExpr(scope, arg_nodes[0]);
-    const arg1 = try astgen.genExpr(scope, arg_nodes[1]);
-    const arg2 = try astgen.genExpr(scope, arg_nodes[2]);
-    const arg0_res = try astgen.resolve(arg0);
+    const arg1 = try astgen.genExpr(scope, arg_nodes[0]);
+    const arg2 = try astgen.genExpr(scope, arg_nodes[1]);
+    const arg3 = try astgen.genExpr(scope, arg_nodes[2]);
     const arg1_res = try astgen.resolve(arg1);
     const arg2_res = try astgen.resolve(arg2);
+    const arg3_res = try astgen.resolve(arg3);
 
-    if (!try astgen.coerce(arg1_res, arg0_res)) {
+    if (!try astgen.coerce(arg2_res, arg1_res)) {
         try astgen.errors.add(node_loc, "type mismatch", .{}, null);
         return error.AnalysisFail;
     }
 
-    switch (astgen.getInst(arg2_res)) {
+    switch (astgen.getInst(arg3_res)) {
         .bool => {
             return astgen.addInst(.{
                 .select = .{
-                    .type = arg0_res,
-                    .true = arg0,
-                    .false = arg1,
-                    .cond = arg2,
+                    .type = arg1_res,
+                    .true = arg1,
+                    .false = arg2,
+                    .cond = arg3,
                 },
             });
         },
@@ -2642,16 +2673,16 @@ fn genBuiltinSelect(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex 
                 return error.AnalysisFail;
             }
 
-            if (astgen.getInst(arg0_res) != .vector) {
+            if (astgen.getInst(arg1_res) != .vector) {
                 try astgen.errors.add(node_loc, "'true' and 'false' must be vector", .{}, null);
                 return error.AnalysisFail;
             }
 
             return astgen.addInst(.{
                 .select = .{
-                    .type = arg0_res,
-                    .true = arg0,
-                    .false = arg1,
+                    .type = arg1_res,
+                    .true = arg1,
+                    .false = arg2,
                     .cond = arg2,
                 },
             });
@@ -2706,7 +2737,7 @@ fn genDerivativeBuiltin(
     return error.AnalysisFail;
 }
 
-fn genSimpleNumericBuiltin(
+fn genSimpleBuiltin(
     astgen: *AstGen,
     scope: *Scope,
     node: NodeIndex,
@@ -2753,7 +2784,12 @@ fn genSimpleNumericBuiltin(
     return error.AnalysisFail;
 }
 
-fn genMinMaxBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex, min: bool) !InstIndex {
+fn genSimpleBuiltin2(
+    astgen: *AstGen,
+    scope: *Scope,
+    node: NodeIndex,
+    comptime tag: std.meta.Tag(Inst),
+) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
     if (node_lhs == .none) {
@@ -2765,11 +2801,11 @@ fn genMinMaxBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex, min: bool) 
         return astgen.failArgCountMismatch(node_loc, 2, arg_nodes.len);
     }
 
-    const arg0 = try astgen.genExpr(scope, arg_nodes[0]);
-    const arg1 = try astgen.genExpr(scope, arg_nodes[1]);
-    const arg0_res = try astgen.resolve(arg0);
+    const arg1 = try astgen.genExpr(scope, arg_nodes[0]);
+    const arg2 = try astgen.genExpr(scope, arg_nodes[1]);
     const arg1_res = try astgen.resolve(arg1);
-    switch (astgen.getInst(arg0_res)) {
+    const arg2_res = try astgen.resolve(arg2);
+    switch (astgen.getInst(arg1_res)) {
         .int, .float => {},
         .vector => |vec| {
             if (astgen.getInst(vec.elem_type) == .bool) {
@@ -2783,21 +2819,18 @@ fn genMinMaxBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex, min: bool) 
         },
     }
 
-    if (!try astgen.coerce(arg1_res, arg0_res)) {
+    if (!try astgen.coerce(arg2_res, arg1_res)) {
         try astgen.errors.add(node_loc, "type mismatch", .{}, null);
         return error.AnalysisFail;
     }
 
-    return astgen.addInst(.{
-        .binary = .{
-            .op = if (min) .min else .max,
-            .result_type = arg0_res,
-            .lhs_type = arg0_res,
-            .rhs_type = arg1_res,
-            .lhs = arg0,
-            .rhs = arg1,
-        },
+    const inst = @unionInit(Inst, @tagName(tag), .{
+        .result_type = arg1_res,
+        .lhs = arg1,
+        .rhs = arg2,
     });
+
+    return astgen.addInst(inst);
 }
 
 fn genSmoothstepBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -3505,7 +3538,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .bitcast => |bitcast| return bitcast.result_type,
             .addr_of => return idx,
 
-            .binary => |bin| return bin.result_type,
+            inline .binary, .min, .max, .atan2 => |bin| return bin.result_type,
             .smoothstep => |smoothstep| return smoothstep.type,
             .select => |select| return select.type,
 
@@ -3513,8 +3546,6 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .any,
             => return astgen.addInst(.{ .bool = .{ .value = null } }),
 
-            .not,
-            .negate,
             .abs,
             .acos,
             .acosh,
@@ -3562,9 +3593,11 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .fwidth_fine,
             => |un| idx = un,
 
+            .not, .negate => |un| return un.result_type,
+
             .deref => {
                 in_deref = true;
-                idx = inst.deref;
+                idx = inst.deref.expr;
             },
 
             .call => |call| return astgen.getInst(call.@"fn").@"fn".return_type,
