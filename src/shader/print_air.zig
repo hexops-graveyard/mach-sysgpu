@@ -24,11 +24,6 @@ fn Printer(comptime Writer: type) type {
         fn printInst(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.getInst(index);
             switch (inst) {
-                .global_var => {
-                    std.debug.assert(indent == 0);
-                    try self.printGlobalVar(indent, index);
-                    try self.printFieldEnd();
-                },
                 .@"const" => {
                     try self.printConst(indent, index);
                     if (indent == 0) {
@@ -46,7 +41,6 @@ fn Printer(comptime Writer: type) type {
                     try self.printFieldEnd();
                 },
                 .@"var" => try self.printVar(indent, index),
-                .let => try self.printLet(indent, index),
                 .bool => try self.printBool(indent, index),
                 .int, .float => try self.printNumber(indent, index),
                 .vector => try self.printVector(indent, index),
@@ -59,32 +53,12 @@ fn Printer(comptime Writer: type) type {
                     try self.writer.print(".{s}", .{@tagName(inst)});
                     try self.tty.setColor(self.writer, .reset);
                 },
-                .mul,
-                .div,
-                .mod,
-                .add,
-                .sub,
-                .shl,
-                .shl,
-                .@"and",
-                .@"or",
-                .xor,
-                .logical_and,
-                .logical_or,
-                .equal,
-                .not_equal,
-                .less_than,
-                .less_than_equal,
-                .greater_than,
-                .greater_than_equal,
-                .assign,
-                => |bin| {
+                .binary => |bin| {
                     try self.instBlockStart(index);
                     try self.printFieldInst(indent + 1, "lhs", bin.lhs);
                     try self.printFieldInst(indent + 1, "rhs", bin.rhs);
                     try self.instBlockEnd(indent);
                 },
-                .assign_phony,
                 .increase,
                 .decrease,
                 .loop,
@@ -103,7 +77,7 @@ fn Printer(comptime Writer: type) type {
                 .@"while" => try self.printWhile(indent, index),
                 .field_access => try self.printFieldAccess(indent, index),
                 .index_access => try self.printIndexAccess(indent, index),
-                .struct_ref, .var_ref => |ref| {
+                .var_ref => |ref| {
                     try self.instStart(index);
                     try self.tty.setColor(self.writer, .yellow);
                     try self.writer.print("{d}", .{@intFromEnum(ref)});
@@ -142,9 +116,7 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockStart(index);
             try self.printFieldString(indent + 1, "name", inst.name);
             try self.printFieldEnum(indent + 1, "addr_space", inst.addr_space);
-            if (inst.access_mode) |access_mode| {
-                try self.printFieldEnum(indent + 1, "access_mode", access_mode);
-            }
+            try self.printFieldEnum(indent + 1, "access_mode", inst.access_mode);
             if (inst.type != .none) {
                 try self.printFieldInst(indent + 1, "type", inst.type);
             }
@@ -289,9 +261,9 @@ fn Printer(comptime Writer: type) type {
         fn printWhile(self: @This(), indent: u16, index: Air.InstIndex) Writer.Error!void {
             const inst = self.ir.getInst(index).@"while";
             try self.instBlockStart(index);
-            try self.printFieldInst(indent + 1, "cond", inst.lhs);
-            if (inst.rhs != .none) {
-                try self.printFieldInst(indent + 1, "body", inst.rhs);
+            try self.printFieldInst(indent + 1, "cond", inst.cond);
+            if (inst.body != .none) {
+                try self.printFieldInst(indent + 1, "body", inst.body);
             }
             try self.instBlockEnd(indent);
         }

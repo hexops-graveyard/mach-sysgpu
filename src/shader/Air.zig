@@ -179,22 +179,6 @@ pub const ConstExpr = union(enum) {
         }
     }
 
-    fn min(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
-        return switch (lhs) {
-            .int => .{ .int = @min(lhs.int, rhs.int) },
-            .float => .{ .float = @min(lhs.float, rhs.float) },
-            else => unreachable,
-        };
-    }
-
-    fn max(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
-        return switch (lhs) {
-            .int => .{ .int = @max(lhs.int, rhs.int) },
-            .float => .{ .float = @max(lhs.float, rhs.float) },
-            else => unreachable,
-        };
-    }
-
     fn equal(lhs: ConstExpr, rhs: ConstExpr) ConstExpr {
         return switch (lhs) {
             .bool => .{ .bool = lhs.bool == rhs.bool },
@@ -321,7 +305,7 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
             return .guaranteed;
         },
         .negate, .not => |un| {
-            var value = air.resolveConstExpr(un) orelse return null;
+            var value = air.resolveConstExpr(un.expr) orelse return null;
             switch (inst) {
                 .negate => value.negate(),
                 .not => value.not(),
@@ -343,8 +327,6 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
                 .@"and" => lhs.bitwiseAnd(rhs),
                 .@"or" => lhs.bitwiseOr(rhs),
                 .xor => lhs.bitwiseXor(rhs),
-                .min => return lhs.min(rhs),
-                .max => return lhs.max(rhs),
                 .equal => return lhs.equal(rhs),
                 .not_equal => return lhs.notEqual(rhs),
                 .less_than => return lhs.lessThan(rhs),
@@ -395,10 +377,10 @@ pub const Inst = union(enum) {
     comparison_sampler_type,
     external_texture_type,
 
-    not: InstIndex,
-    negate: InstIndex,
-    deref: InstIndex,
-    addr_of: InstIndex,
+    not: Unary,
+    negate: Unary,
+    deref: Unary,
+    addr_of: Unary,
 
     binary: Binary,
 
@@ -474,6 +456,10 @@ pub const Inst = union(enum) {
     fwidth: InstIndex,
     fwidth_coarse: InstIndex,
     fwidth_fine: InstIndex,
+
+    min: BuiltinBinary,
+    max: BuiltinBinary,
+    atan2: BuiltinBinary,
 
     pub const Var = struct {
         name: StringIndex,
@@ -741,8 +727,13 @@ pub const Inst = union(enum) {
         multisampled_2d,
     };
 
+    pub const Unary = struct {
+        result_type: InstIndex,
+        expr: InstIndex,
+    };
+
     pub const Binary = struct {
-        op: Op,
+        op: Op, // TODO: move tags into Inst
         result_type: InstIndex,
         lhs_type: InstIndex,
         rhs_type: InstIndex,
@@ -760,8 +751,6 @@ pub const Inst = union(enum) {
             @"and",
             @"or",
             xor,
-            min,
-            max,
             logical_and,
             logical_or,
             equal,
@@ -837,8 +826,8 @@ pub const Inst = union(enum) {
         result_type: InstIndex,
     };
 
-    pub const BuiltinMinMax = struct {
-        type: InstIndex,
+    pub const BuiltinBinary = struct {
+        result_type: InstIndex,
         lhs: InstIndex,
         rhs: InstIndex,
     };

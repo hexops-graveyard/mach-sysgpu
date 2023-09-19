@@ -252,7 +252,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
         if (inst.return_attrs.builtin) |builtin| {
             try spv.annotations_section.emit(.OpDecorate, .{
                 .target = return_var_id.?,
-                .decoration = .{ .BuiltIn = .{ .built_in = builtInFromAirBuiltin(builtin) } },
+                .decoration = .{ .BuiltIn = .{ .built_in = spirvBuiltin(builtin) } },
             });
         }
 
@@ -304,7 +304,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                     try spv.annotations_section.emit(.OpDecorate, .{
                         .target = param_id,
                         .decoration = .{ .BuiltIn = .{
-                            .built_in = builtInFromAirBuiltin(builtin),
+                            .built_in = spirvBuiltin(builtin),
                         } },
                     });
                 }
@@ -471,7 +471,7 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     try spv.debugName(id, spv.air.getStr(inst.name));
 
     const storage_class = storageClassFromAddrSpace(inst.addr_space);
-    const type_id = try spv.emitType(if (inst.type != .none) inst.type else inst.expr);
+    const type_id = try spv.emitType(inst.type);
     const ptr_type_id = try spv.resolve(.{ .ptr_type = .{
         .elem_type = type_id,
         .storage_class = storage_class,
@@ -898,6 +898,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemo
         .swizzle_access => |swizzle_access| spv.emitSwizzleAccess(section, swizzle_access),
         .index_access => |index_access| spv.emitIndexAccess(section, index_access, false),
         .binary => |bin| spv.emitBinary(section, bin),
+        .negate => |neg| spv.emitNegate(section, neg),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst_idx))}),
     };
 }
@@ -1181,6 +1182,26 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
         else => unreachable,
     }
 
+    return id;
+}
+
+fn emitNegate(spv: *SpirV, section: *Section, negate: Inst.Unary) !IdRef {
+    const id = spv.allocId();
+    const expr = try spv.emitExpr(section, negate.expr);
+    const result_type = try spv.emitType(negate.result_type);
+    switch (spv.air.getInst(negate.result_type)) {
+        .int => try section.emit(.OpSNegate, .{
+            .id_result_type = result_type,
+            .id_result = id,
+            .operand = expr,
+        }),
+        .float => try section.emit(.OpFNegate, .{
+            .id_result_type = result_type,
+            .id_result = id,
+            .operand = expr,
+        }),
+        else => unreachable,
+    }
     return id;
 }
 
@@ -1758,7 +1779,7 @@ fn allocId(spv: *SpirV) IdResult {
     return .{ .id = spv.next_result_id };
 }
 
-fn builtInFromAirBuiltin(builtin: Air.Inst.Builtin) spec.BuiltIn {
+fn spirvBuiltin(builtin: Air.Inst.Builtin) spec.BuiltIn {
     return switch (builtin) {
         .vertex_index => .VertexIndex,
         .instance_index => .InstanceIndex,
