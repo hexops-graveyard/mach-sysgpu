@@ -72,6 +72,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    tests.linkLibC();
     tests.addModule("vulkan", vulkan_mod);
     tests.addModule("gpu", gpu_mod);
     tests.addModule("objc", objc_mod);

@@ -297,20 +297,26 @@ pub const Device = struct {
         allocator.destroy(device);
     }
 
-    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
-        return ShaderModule.init(device, code);
+    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+        return CommandEncoder.init(device, desc);
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
+    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
+        return ShaderModule.init(device, code);
+    }
+
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
-        return CommandEncoder.init(device, desc);
+    pub fn createTexture(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+        _ = desc;
+        _ = device;
+        unreachable;
     }
 
     pub fn getQueue(device: *Device) !*Queue {
@@ -631,6 +637,12 @@ pub const Texture = struct {
 
     pub fn deinit(view: *Texture) void {
         _ = view;
+    }
+
+    pub fn createView(texture: *Texture, desc: ?*const gpu.TextureView.Descriptor) !*TextureView {
+        _ = desc;
+        _ = texture;
+        unreachable;
     }
 };
 
