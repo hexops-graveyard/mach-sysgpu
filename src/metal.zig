@@ -4,6 +4,7 @@ const ca = @import("objc").quartz_core.ca;
 const mtl = @import("objc").metal.mtl;
 const ns = @import("objc").foundation.ns;
 const utils = @import("utils.zig");
+const shader = @import("shader.zig");
 const conv = @import("metal/conv.zig");
 
 const log = std.log.scoped(.metal);
@@ -161,8 +162,14 @@ pub const Device = struct {
         return RenderPipeline.init(device, desc);
     }
 
-    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
-        return ShaderModule.init(device, code);
+    pub fn createShaderModuleAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        return ShaderModule.initAir(device, air);
+    }
+
+    pub fn createShaderModuleSpirv(device: *Device, code: []const u8) !*ShaderModule {
+        _ = code;
+        _ = device;
+        return error.unsupported;
     }
 
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
@@ -645,23 +652,73 @@ pub const Queue = struct {
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     library: *mtl.Library,
+    threadgroup_sizes: std.StringHashMap(mtl.Size),
 
-    pub fn init(device: *Device, code: []const u8) !*ShaderModule {
+    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        const code = shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }) catch unreachable;
+        defer allocator.free(code);
+
         var err: ?*ns.Error = undefined;
-        var source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(@constCast(code.ptr), code.len, ns.UTF8StringEncoding, false);
+        var source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
+            @constCast(code.ptr),
+            code.len,
+            ns.UTF8StringEncoding,
+            false,
+        );
         var library = device.device.newLibraryWithSource_options_error(source, null, &err) orelse {
             std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
             return error.InvalidDescriptor;
         };
 
         var module = try allocator.create(ShaderModule);
-        module.* = .{ .library = library };
+        module.* = .{
+            .library = library,
+            .threadgroup_sizes = std.StringHashMap(mtl.Size).init(allocator),
+        };
+        try module.reflect(air);
         return module;
     }
 
     pub fn deinit(shader_module: *ShaderModule) void {
         shader_module.library.release();
+        shader_module.threadgroup_sizes.deinit();
         allocator.destroy(shader_module);
+    }
+
+    fn reflect(shader_module: *ShaderModule, air: *const shader.Air) !void {
+        for (air.refToList(air.globals_index)) |inst_idx| {
+            switch (air.getInst(inst_idx)) {
+                .@"fn" => _ = try shader_module.reflectFn(air, inst_idx),
+                else => {},
+            }
+        }
+    }
+
+    fn reflectFn(shader_module: *ShaderModule, air: *const shader.Air, inst_idx: shader.Air.InstIndex) !void {
+        const inst = air.getInst(inst_idx).@"fn";
+        const name = air.getStr(inst.name);
+
+        switch (inst.stage) {
+            .compute => |stage| {
+                try shader_module.threadgroup_sizes.put(name, mtl.Size.init(
+                    @intCast(resolveInt(air, stage.x) orelse 1),
+                    @intCast(resolveInt(air, stage.y) orelse 1),
+                    @intCast(resolveInt(air, stage.z) orelse 1),
+                ));
+            },
+            else => {},
+        }
+    }
+
+    fn resolveInt(air: *const shader.Air, inst_idx: shader.Air.InstIndex) ?i64 {
+        if (air.resolveConstExpr(inst_idx)) |const_expr| {
+            switch (const_expr) {
+                .int => |x| return x,
+                else => {},
+            }
+        }
+
+        return null;
     }
 };
 

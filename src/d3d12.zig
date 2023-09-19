@@ -1,6 +1,7 @@
 const std = @import("std");
 const gpu = @import("gpu");
 const utils = @import("utils.zig");
+const shader = @import("shader.zig");
 const c = @import("d3d12/c.zig");
 const conv = @import("d3d12/conv.zig");
 
@@ -305,8 +306,14 @@ pub const Device = struct {
         return RenderPipeline.init(device, desc);
     }
 
-    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
-        return ShaderModule.init(device, code);
+    pub fn createShaderModuleAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        return ShaderModule.initAir(device, air);
+    }
+
+    pub fn createShaderModuleSpirv(device: *Device, code: []const u8) !*ShaderModule {
+        _ = code;
+        _ = device;
+        return error.unsupported;
     }
 
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
@@ -665,7 +672,7 @@ pub const RenderPipeline = struct {
     fn compileShader(module: *ShaderModule, entrypoint: [*:0]const u8, target: [*:0]const u8) !*c.ID3DBlob {
         var hr: c.HRESULT = undefined;
 
-        var shader: *c.ID3DBlob = undefined;
+        var shader_blob: *c.ID3DBlob = undefined;
         var opt_errors: ?*c.ID3DBlob = null;
         hr = c.D3DCompile(
             module.code.ptr,
@@ -677,7 +684,7 @@ pub const RenderPipeline = struct {
             target,
             c.D3DCOMPILE_DEBUG | c.D3DCOMPILE_SKIP_OPTIMIZATION,
             0,
-            @ptrCast(&shader),
+            @ptrCast(&shader_blob),
             @ptrCast(&opt_errors),
         );
         if (opt_errors) |errors| {
@@ -689,7 +696,7 @@ pub const RenderPipeline = struct {
             return error.CompileFailed;
         }
 
-        return shader;
+        return shader_blob;
     }
 
     pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
@@ -1206,8 +1213,11 @@ pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     code: []const u8,
 
-    pub fn init(device: *Device, code: []const u8) !*ShaderModule {
+    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
         _ = device;
+
+        const code = shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" }) catch unreachable;
+        defer allocator.free(code);
 
         var module = try allocator.create(ShaderModule);
         module.* = .{
