@@ -158,8 +158,9 @@ pub const Instance = struct {
         callback: gpu.RequestAdapterCallback,
         userdata: ?*anyopaque,
     ) !*Adapter {
-        return Adapter.init(instance.instance, options orelse &gpu.RequestAdapterOptions{}) catch |err| {
-            return callback(.err, undefined, @errorName(err), userdata);
+        return Adapter.init(instance, options orelse &gpu.RequestAdapterOptions{}) catch |err| {
+            callback(.err, undefined, @errorName(err), userdata);
+            unreachable; // TODO - return dummy adapter
         };
     }
 
@@ -660,20 +661,26 @@ pub const Device = struct {
         }
     }
 
-    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
-        return ShaderModule.init(device, code);
+    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+        return CommandEncoder.init(device, desc);
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
+    pub fn createShaderModule(device: *Device, code: []const u8) !*ShaderModule {
+        return ShaderModule.init(device, code);
+    }
+
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
-        return CommandEncoder.init(device, desc);
+    pub fn createTexture(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+        _ = desc;
+        _ = device;
+        unreachable;
     }
 
     pub fn getQueue(device: *Device) !*Queue {
@@ -817,8 +824,8 @@ pub const SwapChain = struct {
     manager: utils.Manager(SwapChain) = .{},
     device: *Device,
     swapchain: vk.SwapchainKHR,
-    textures: []Texture,
-    texture_views: []TextureView,
+    textures: []*Texture,
+    texture_views: []*TextureView,
     texture_index: u32 = 0,
     format: gpu.Texture.Format,
 
@@ -904,14 +911,15 @@ pub const SwapChain = struct {
         defer allocator.free(images);
         _ = try vkd.getSwapchainImagesKHR(device.device, swapchain, &images_len, images.ptr);
 
-        const textures = try allocator.alloc(Texture, images_len);
+        const textures = try allocator.alloc(*Texture, images_len);
         errdefer allocator.free(textures);
-        const texture_views = try allocator.alloc(TextureView, images_len);
+        const texture_views = try allocator.alloc(*TextureView, images_len);
         errdefer allocator.free(texture_views);
 
-        for (textures, texture_views, 0..) |*texture, *view, i| {
-            texture.* = try Texture.init(device, images[i], extent);
-            view.* = try texture.createView(&.{
+        for (0..images_len) |i| {
+            const texture = try Texture.init(device, images[i], extent);
+            textures[i] = texture;
+            texture_views[i] = try texture.createView(&.{
                 .format = desc.format,
                 .dimension = .dimension_2d,
             });
@@ -957,7 +965,7 @@ pub const SwapChain = struct {
         );
         sc.texture_index = result.image_index;
 
-        return &sc.texture_views[sc.texture_index];
+        return sc.texture_views[sc.texture_index];
     }
 
     pub fn present(sc: *SwapChain) !void {
@@ -979,20 +987,22 @@ pub const Texture = struct {
     extent: vk.Extent2D,
     image: vk.Image,
 
-    pub fn init(device: *Device, image: vk.Image, extent: vk.Extent2D) !Texture {
-        return .{
+    pub fn init(device: *Device, image: vk.Image, extent: vk.Extent2D) !*Texture {
+        var texture = try allocator.create(Texture);
+        texture.* = .{
             .device = device,
             .extent = extent,
             .image = image,
         };
+        return texture;
     }
 
     pub fn deinit(texture: *Texture) void {
-        _ = texture;
+        allocator.destroy(texture);
     }
 
-    pub fn createView(texture: *Texture, desc: *const gpu.TextureView.Descriptor) !TextureView {
-        return TextureView.init(texture, desc, texture.extent);
+    pub fn createView(texture: *Texture, desc: ?*const gpu.TextureView.Descriptor) !*TextureView {
+        return TextureView.init(texture, desc orelse &gpu.TextureView.Descriptor{}, texture.extent);
     }
 };
 
@@ -1003,7 +1013,7 @@ pub const TextureView = struct {
     format: vk.Format,
     extent: vk.Extent2D,
 
-    pub fn init(texture: *Texture, desc: *const gpu.TextureView.Descriptor, extent: vk.Extent2D) !TextureView {
+    pub fn init(texture: *Texture, desc: *const gpu.TextureView.Descriptor, extent: vk.Extent2D) !*TextureView {
         const format = conv.vulkanFormat(desc.format);
         const aspect: vk.ImageAspectFlags = blk: {
             if (desc.aspect == .all) {
@@ -1024,7 +1034,7 @@ pub const TextureView = struct {
             };
         };
 
-        const view = try vkd.createImageView(texture.device.device, &.{
+        const vk_view = try vkd.createImageView(texture.device.device, &.{
             .image = texture.image,
             .view_type = @as(vk.ImageViewType, switch (desc.dimension) {
                 .dimension_undefined => unreachable,
@@ -1051,16 +1061,18 @@ pub const TextureView = struct {
             },
         }, null);
 
-        return .{
+        var view = try allocator.create(TextureView);
+        view.* = .{
             .device = texture.device,
-            .view = view,
+            .view = vk_view,
             .format = format,
             .extent = extent,
         };
+        return view;
     }
 
     pub fn deinit(view: *TextureView) void {
-        _ = view;
+        allocator.destroy(view);
     }
 };
 

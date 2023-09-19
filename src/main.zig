@@ -1399,6 +1399,10 @@ pub const Interface = struct {
     }
 };
 
+test "refAllDeclsRecursive" {
+    std.testing.refAllDeclsRecursive(@This());
+}
+
 test "export" {
     _ = gpu.Export(Interface);
 }
