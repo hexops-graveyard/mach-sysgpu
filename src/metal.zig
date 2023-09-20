@@ -64,24 +64,24 @@ pub const Instance = struct {
 
 pub const Adapter = struct {
     manager: utils.Manager(Adapter) = .{},
-    device: *mtl.Device,
+    mtl_device: *mtl.Device,
 
     pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !*Adapter {
         _ = instance;
         _ = options;
 
         // TODO - choose appropriate device from options
-        const device = mtl.createSystemDefaultDevice() orelse {
+        const mtl_device = mtl.createSystemDefaultDevice() orelse {
             return error.NoAdapterFound;
         };
 
         var adapter = try allocator.create(Adapter);
-        adapter.* = .{ .device = device };
+        adapter.* = .{ .mtl_device = mtl_device };
         return adapter;
     }
 
     pub fn deinit(adapter: *Adapter) void {
-        adapter.device.release();
+        adapter.mtl_device.release();
         allocator.destroy(adapter);
     }
 
@@ -90,14 +90,15 @@ pub const Adapter = struct {
     }
 
     pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
+        const mtl_device = adapter.mtl_device;
         return .{
             .vendor_id = 0, // TODO
             .vendor_name = "", // TODO
             .architecture = "", // TODO
             .device_id = 0, // TODO
-            .name = adapter.device.name().utf8String(),
+            .name = mtl_device.name().utf8String(),
             .driver_description = "", // TODO
-            .adapter_type = if (adapter.device.isLowPower()) .integrated_gpu else .discrete_gpu,
+            .adapter_type = if (mtl_device.isLowPower()) .integrated_gpu else .discrete_gpu,
             .backend_type = .metal,
             .compatibility_mode = .false,
         };
@@ -127,7 +128,7 @@ pub const Surface = struct {
 
 pub const Device = struct {
     manager: utils.Manager(Device) = .{},
-    device: *mtl.Device,
+    mtl_device: *mtl.Device,
     queue: ?*Queue = null,
     lost_cb: ?gpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
@@ -141,7 +142,7 @@ pub const Device = struct {
         _ = desc;
 
         var device = try allocator.create(Device);
-        device.* = .{ .device = adapter.device };
+        device.* = .{ .mtl_device = adapter.mtl_device };
         return device;
     }
 
@@ -198,7 +199,7 @@ pub const SwapChain = struct {
         // TODO
         _ = desc;
 
-        surface.layer.setDevice(device.device);
+        surface.layer.setDevice(device.mtl_device);
 
         var swapchain = try allocator.create(SwapChain);
         swapchain.* = .{ .device = device, .surface = surface };
@@ -222,7 +223,9 @@ pub const SwapChain = struct {
     pub fn present(swapchain: *SwapChain) !void {
         if (swapchain.current_drawable) |_| {
             const queue = try swapchain.device.getQueue();
-            const command_buffer = queue.command_queue.commandBuffer().?; // TODO
+            const command_buffer = queue.command_queue.commandBuffer() orelse {
+                return error.newCommandBufferFailed;
+            };
             command_buffer.presentDrawable(@ptrCast(swapchain.current_drawable)); // TODO - objc casting?
             command_buffer.commit();
         }
@@ -234,6 +237,8 @@ pub const Texture = struct {
     mtl_texture: *mtl.Texture,
 
     pub fn init(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+        const mtl_device = device.mtl_device;
+
         var mtl_desc = mtl.TextureDescriptor.alloc().init();
         mtl_desc.setTextureType(conv.metalTextureType(desc.dimension, desc.size, desc.sample_count));
         mtl_desc.setPixelFormat(conv.metalPixelFormat(desc.format));
@@ -246,7 +251,7 @@ pub const Texture = struct {
         mtl_desc.setStorageMode(conv.metalStorageModeForTexture(desc.usage));
         mtl_desc.setUsage(conv.metalTextureUsage(desc.usage, desc.view_format_count));
 
-        const mtl_texture = device.device.newTextureWithDescriptor(mtl_desc) orelse {
+        const mtl_texture = mtl_device.newTextureWithDescriptor(mtl_desc) orelse {
             return error.newTextureFailed;
         };
         if (desc.label) |label| {
@@ -315,7 +320,7 @@ pub const TextureView = struct {
 
 pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
-    pipeline: *mtl.RenderPipelineState,
+    mtl_pipeline: *mtl.RenderPipelineState,
     primitive_type: mtl.PrimitiveType,
     winding: mtl.Winding,
     cull_mode: mtl.CullMode,
@@ -325,6 +330,8 @@ pub const RenderPipeline = struct {
     depth_bias_clamp: f32,
 
     pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
+        const mtl_device = device.mtl_device;
+
         var mtl_desc = mtl.RenderPipelineDescriptor.alloc().init();
         defer mtl_desc.release();
 
@@ -386,7 +393,7 @@ pub const RenderPipeline = struct {
                     depth_stencil_desc.setLabel(ns.String.stringWithUTF8String(label));
                 }
 
-                break :blk device.device.newDepthStencilStateWithDescriptor(depth_stencil_desc);
+                break :blk mtl_device.newDepthStencilStateWithDescriptor(depth_stencil_desc);
             } else {
                 break :blk null;
             }
@@ -435,7 +442,7 @@ pub const RenderPipeline = struct {
 
         // create
         var err: ?*ns.Error = undefined;
-        const pipeline = device.device.newRenderPipelineStateWithDescriptor_error(mtl_desc, &err) orelse {
+        const mtl_pipeline = mtl_device.newRenderPipelineStateWithDescriptor_error(mtl_desc, &err) orelse {
             // TODO
             std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
             return error.InvalidDescriptor;
@@ -443,7 +450,7 @@ pub const RenderPipeline = struct {
 
         var render_pipeline = try allocator.create(RenderPipeline);
         render_pipeline.* = .{
-            .pipeline = pipeline,
+            .mtl_pipeline = mtl_pipeline,
             .primitive_type = primitive_type,
             .winding = winding,
             .cull_mode = cull_mode,
@@ -456,17 +463,19 @@ pub const RenderPipeline = struct {
     }
 
     pub fn deinit(render_pipeline: *RenderPipeline) void {
-        render_pipeline.pipeline.release();
+        render_pipeline.mtl_pipeline.release();
         allocator.destroy(render_pipeline);
     }
 };
 
 pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
-    encoder: *mtl.RenderCommandEncoder,
+    mtl_encoder: *mtl.RenderCommandEncoder,
     primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
 
-    pub fn init(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+        const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
+
         var mtl_desc = mtl.RenderPassDescriptor.new();
         defer mtl_desc.release();
 
@@ -527,16 +536,16 @@ pub const RenderPassEncoder = struct {
         // occlusion_query - TODO
         // timestamps - TODO
 
-        const enc = cmd_encoder.cmd_buffer.command_buffer.renderCommandEncoderWithDescriptor(mtl_desc) orelse {
+        const mtl_encoder = mtl_command_buffer.renderCommandEncoderWithDescriptor(mtl_desc) orelse {
             return error.InvalidDescriptor;
         };
 
         if (desc.label) |label| {
-            enc.setLabel(ns.String.stringWithUTF8String(label));
+            mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
         }
 
         var encoder = try allocator.create(RenderPassEncoder);
-        encoder.* = .{ .encoder = enc };
+        encoder.* = .{ .mtl_encoder = mtl_encoder };
         return encoder;
     }
 
@@ -545,12 +554,13 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
-        encoder.encoder.setRenderPipelineState(pipeline.pipeline);
-        encoder.encoder.setFrontFacingWinding(pipeline.winding);
-        encoder.encoder.setCullMode(pipeline.cull_mode);
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.setRenderPipelineState(pipeline.mtl_pipeline);
+        mtl_encoder.setFrontFacingWinding(pipeline.winding);
+        mtl_encoder.setCullMode(pipeline.cull_mode);
         if (pipeline.depth_stencil_state) |state| {
-            encoder.encoder.setDepthStencilState(state);
-            encoder.encoder.setDepthBias_slopeScale_clamp(
+            mtl_encoder.setDepthStencilState(state);
+            mtl_encoder.setDepthBias_slopeScale_clamp(
                 pipeline.depth_bias,
                 pipeline.depth_bias_slope_scale,
                 pipeline.depth_bias_clamp,
@@ -560,7 +570,8 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-        encoder.encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
             encoder.primitive_type,
             first_vertex,
             vertex_count,
@@ -570,55 +581,63 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn end(encoder: *RenderPassEncoder) void {
-        encoder.encoder.endEncoding();
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.endEncoding();
     }
 };
 
 pub const CommandEncoder = struct {
     manager: utils.Manager(CommandEncoder) = .{},
-    cmd_buffer: *CommandBuffer,
+    command_buffer: *CommandBuffer,
 
     pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         // TODO
         _ = desc;
 
-        const cmd_buffer = try CommandBuffer.init(device);
+        const command_buffer = try CommandBuffer.init(device);
 
         var encoder = try allocator.create(CommandEncoder);
-        encoder.* = .{ .cmd_buffer = cmd_buffer };
+        encoder.* = .{ .command_buffer = command_buffer };
         return encoder;
     }
 
-    pub fn deinit(cmd_encoder: *CommandEncoder) void {
-        allocator.destroy(cmd_encoder);
+    pub fn deinit(encoder: *CommandEncoder) void {
+        allocator.destroy(encoder);
     }
 
-    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
-        return RenderPassEncoder.init(cmd_encoder, desc);
+    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+        return RenderPassEncoder.init(encoder, desc);
     }
 
-    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
-        // TODO
-        _ = desc;
-        return cmd_encoder.cmd_buffer;
+    pub fn finish(encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
+        const command_buffer = encoder.command_buffer;
+        const mtl_command_buffer = command_buffer.mtl_command_buffer;
+
+        if (desc.label) |label| {
+            mtl_command_buffer.setLabel(ns.String.stringWithUTF8String(label));
+        }
+
+        return command_buffer;
     }
 };
 
 pub const CommandBuffer = struct {
     manager: utils.Manager(CommandBuffer) = .{},
-    command_buffer: *mtl.CommandBuffer,
+    mtl_command_buffer: *mtl.CommandBuffer,
 
     pub fn init(device: *Device) !*CommandBuffer {
         const queue = try device.getQueue();
-        var command_buffer = queue.command_queue.commandBuffer().?; // TODO
+        var mtl_command_buffer = queue.command_queue.commandBuffer() orelse {
+            return error.newCommandBufferFailed;
+        };
 
         var cmd_buffer = try allocator.create(CommandBuffer);
-        cmd_buffer.* = .{ .command_buffer = command_buffer };
+        cmd_buffer.* = .{ .mtl_command_buffer = mtl_command_buffer };
         return cmd_buffer;
     }
 
-    pub fn deinit(cmd_buffer: *CommandBuffer) void {
-        allocator.destroy(cmd_buffer);
+    pub fn deinit(command_buffer: *CommandBuffer) void {
+        allocator.destroy(command_buffer);
     }
 };
 
@@ -627,8 +646,10 @@ pub const Queue = struct {
     command_queue: *mtl.CommandQueue,
 
     pub fn init(device: *Device) !*Queue {
-        const command_queue = device.device.newCommandQueue() orelse {
-            return error.NoCommandQueue; // TODO
+        const mtl_device = device.mtl_device;
+
+        const command_queue = mtl_device.newCommandQueue() orelse {
+            return error.NoCommandQueue;
         };
 
         var queue = try allocator.create(Queue);
@@ -644,7 +665,7 @@ pub const Queue = struct {
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
         _ = queue;
         for (commands) |commandBuffer| {
-            commandBuffer.command_buffer.commit();
+            commandBuffer.mtl_command_buffer.commit();
         }
     }
 };
@@ -655,6 +676,8 @@ pub const ShaderModule = struct {
     threadgroup_sizes: std.StringHashMap(mtl.Size),
 
     pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        const mtl_device = device.mtl_device;
+
         const code = shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }) catch unreachable;
         defer allocator.free(code);
 
@@ -665,7 +688,7 @@ pub const ShaderModule = struct {
             ns.UTF8StringEncoding,
             false,
         );
-        var library = device.device.newLibraryWithSource_options_error(source, null, &err) orelse {
+        var library = mtl_device.newLibraryWithSource_options_error(source, null, &err) orelse {
             std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
             return error.InvalidDescriptor;
         };
