@@ -7,10 +7,16 @@ pub fn build(b: *std.Build) !void {
     const vulkan_dep = b.dependency("vulkan_zig_generated", .{});
     const vulkan_mod = vulkan_dep.module("vulkan-zig-generated");
 
-    const gpu_dep = b.dependency("mach_gpu", .{});
+    const gpu_dep = b.dependency("mach_gpu", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const gpu_mod = gpu_dep.module("mach-gpu");
 
-    const glfw_dep = b.dependency("mach_glfw", .{});
+    const glfw_dep = b.dependency("mach_glfw", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const glfw_mod = glfw_dep.module("mach-glfw");
 
     const objc_dep = b.dependency("mach_objc", .{
