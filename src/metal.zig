@@ -318,6 +318,81 @@ pub const TextureView = struct {
     }
 };
 
+pub const ShaderModule = struct {
+    manager: utils.Manager(ShaderModule) = .{},
+    library: *mtl.Library,
+    threadgroup_sizes: std.StringHashMap(mtl.Size),
+
+    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        const mtl_device = device.mtl_device;
+
+        const code = shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }) catch unreachable;
+        defer allocator.free(code);
+
+        var err: ?*ns.Error = undefined;
+        var source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
+            @constCast(code.ptr),
+            code.len,
+            ns.UTF8StringEncoding,
+            false,
+        );
+        var library = mtl_device.newLibraryWithSource_options_error(source, null, &err) orelse {
+            std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
+            return error.InvalidDescriptor;
+        };
+
+        var module = try allocator.create(ShaderModule);
+        module.* = .{
+            .library = library,
+            .threadgroup_sizes = std.StringHashMap(mtl.Size).init(allocator),
+        };
+        try module.reflect(air);
+        return module;
+    }
+
+    pub fn deinit(shader_module: *ShaderModule) void {
+        shader_module.library.release();
+        shader_module.threadgroup_sizes.deinit();
+        allocator.destroy(shader_module);
+    }
+
+    fn reflect(shader_module: *ShaderModule, air: *const shader.Air) !void {
+        for (air.refToList(air.globals_index)) |inst_idx| {
+            switch (air.getInst(inst_idx)) {
+                .@"fn" => _ = try shader_module.reflectFn(air, inst_idx),
+                else => {},
+            }
+        }
+    }
+
+    fn reflectFn(shader_module: *ShaderModule, air: *const shader.Air, inst_idx: shader.Air.InstIndex) !void {
+        const inst = air.getInst(inst_idx).@"fn";
+        const name = air.getStr(inst.name);
+
+        switch (inst.stage) {
+            .compute => |stage| {
+                try shader_module.threadgroup_sizes.put(name, mtl.Size.init(
+                    @intCast(resolveInt(air, stage.x) orelse 1),
+                    @intCast(resolveInt(air, stage.y) orelse 1),
+                    @intCast(resolveInt(air, stage.z) orelse 1),
+                ));
+            },
+            else => {},
+        }
+    }
+
+    fn resolveInt(air: *const shader.Air, inst_idx: shader.Air.InstIndex) ?i64 {
+        if (air.resolveConstExpr(inst_idx)) |const_expr| {
+            switch (const_expr) {
+                .int => |x| return x,
+                else => {},
+            }
+        }
+
+        return null;
+    }
+};
+
 pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     mtl_pipeline: *mtl.RenderPipelineState,
@@ -468,6 +543,61 @@ pub const RenderPipeline = struct {
     }
 };
 
+pub const CommandBuffer = struct {
+    manager: utils.Manager(CommandBuffer) = .{},
+    mtl_command_buffer: *mtl.CommandBuffer,
+
+    pub fn init(device: *Device) !*CommandBuffer {
+        const queue = try device.getQueue();
+        var mtl_command_buffer = queue.command_queue.commandBuffer() orelse {
+            return error.newCommandBufferFailed;
+        };
+
+        var cmd_buffer = try allocator.create(CommandBuffer);
+        cmd_buffer.* = .{ .mtl_command_buffer = mtl_command_buffer };
+        return cmd_buffer;
+    }
+
+    pub fn deinit(command_buffer: *CommandBuffer) void {
+        allocator.destroy(command_buffer);
+    }
+};
+
+pub const CommandEncoder = struct {
+    manager: utils.Manager(CommandEncoder) = .{},
+    command_buffer: *CommandBuffer,
+
+    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+        // TODO
+        _ = desc;
+
+        const command_buffer = try CommandBuffer.init(device);
+
+        var encoder = try allocator.create(CommandEncoder);
+        encoder.* = .{ .command_buffer = command_buffer };
+        return encoder;
+    }
+
+    pub fn deinit(encoder: *CommandEncoder) void {
+        allocator.destroy(encoder);
+    }
+
+    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+        return RenderPassEncoder.init(encoder, desc);
+    }
+
+    pub fn finish(encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
+        const command_buffer = encoder.command_buffer;
+        const mtl_command_buffer = command_buffer.mtl_command_buffer;
+
+        if (desc.label) |label| {
+            mtl_command_buffer.setLabel(ns.String.stringWithUTF8String(label));
+        }
+
+        return command_buffer;
+    }
+};
+
 pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
     mtl_encoder: *mtl.RenderCommandEncoder,
@@ -586,61 +716,6 @@ pub const RenderPassEncoder = struct {
     }
 };
 
-pub const CommandEncoder = struct {
-    manager: utils.Manager(CommandEncoder) = .{},
-    command_buffer: *CommandBuffer,
-
-    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
-        // TODO
-        _ = desc;
-
-        const command_buffer = try CommandBuffer.init(device);
-
-        var encoder = try allocator.create(CommandEncoder);
-        encoder.* = .{ .command_buffer = command_buffer };
-        return encoder;
-    }
-
-    pub fn deinit(encoder: *CommandEncoder) void {
-        allocator.destroy(encoder);
-    }
-
-    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
-        return RenderPassEncoder.init(encoder, desc);
-    }
-
-    pub fn finish(encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
-        const command_buffer = encoder.command_buffer;
-        const mtl_command_buffer = command_buffer.mtl_command_buffer;
-
-        if (desc.label) |label| {
-            mtl_command_buffer.setLabel(ns.String.stringWithUTF8String(label));
-        }
-
-        return command_buffer;
-    }
-};
-
-pub const CommandBuffer = struct {
-    manager: utils.Manager(CommandBuffer) = .{},
-    mtl_command_buffer: *mtl.CommandBuffer,
-
-    pub fn init(device: *Device) !*CommandBuffer {
-        const queue = try device.getQueue();
-        var mtl_command_buffer = queue.command_queue.commandBuffer() orelse {
-            return error.newCommandBufferFailed;
-        };
-
-        var cmd_buffer = try allocator.create(CommandBuffer);
-        cmd_buffer.* = .{ .mtl_command_buffer = mtl_command_buffer };
-        return cmd_buffer;
-    }
-
-    pub fn deinit(command_buffer: *CommandBuffer) void {
-        allocator.destroy(command_buffer);
-    }
-};
-
 pub const Queue = struct {
     manager: utils.Manager(Queue) = .{},
     command_queue: *mtl.CommandQueue,
@@ -667,81 +742,6 @@ pub const Queue = struct {
         for (commands) |commandBuffer| {
             commandBuffer.mtl_command_buffer.commit();
         }
-    }
-};
-
-pub const ShaderModule = struct {
-    manager: utils.Manager(ShaderModule) = .{},
-    library: *mtl.Library,
-    threadgroup_sizes: std.StringHashMap(mtl.Size),
-
-    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
-        const mtl_device = device.mtl_device;
-
-        const code = shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }) catch unreachable;
-        defer allocator.free(code);
-
-        var err: ?*ns.Error = undefined;
-        var source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
-            @constCast(code.ptr),
-            code.len,
-            ns.UTF8StringEncoding,
-            false,
-        );
-        var library = mtl_device.newLibraryWithSource_options_error(source, null, &err) orelse {
-            std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
-            return error.InvalidDescriptor;
-        };
-
-        var module = try allocator.create(ShaderModule);
-        module.* = .{
-            .library = library,
-            .threadgroup_sizes = std.StringHashMap(mtl.Size).init(allocator),
-        };
-        try module.reflect(air);
-        return module;
-    }
-
-    pub fn deinit(shader_module: *ShaderModule) void {
-        shader_module.library.release();
-        shader_module.threadgroup_sizes.deinit();
-        allocator.destroy(shader_module);
-    }
-
-    fn reflect(shader_module: *ShaderModule, air: *const shader.Air) !void {
-        for (air.refToList(air.globals_index)) |inst_idx| {
-            switch (air.getInst(inst_idx)) {
-                .@"fn" => _ = try shader_module.reflectFn(air, inst_idx),
-                else => {},
-            }
-        }
-    }
-
-    fn reflectFn(shader_module: *ShaderModule, air: *const shader.Air, inst_idx: shader.Air.InstIndex) !void {
-        const inst = air.getInst(inst_idx).@"fn";
-        const name = air.getStr(inst.name);
-
-        switch (inst.stage) {
-            .compute => |stage| {
-                try shader_module.threadgroup_sizes.put(name, mtl.Size.init(
-                    @intCast(resolveInt(air, stage.x) orelse 1),
-                    @intCast(resolveInt(air, stage.y) orelse 1),
-                    @intCast(resolveInt(air, stage.z) orelse 1),
-                ));
-            },
-            else => {},
-        }
-    }
-
-    fn resolveInt(air: *const shader.Air, inst_idx: shader.Air.InstIndex) ?i64 {
-        if (air.resolveConstExpr(inst_idx)) |const_expr| {
-            switch (const_expr) {
-                .int => |x| return x,
-                else => {},
-            }
-        }
-
-        return null;
     }
 };
 
