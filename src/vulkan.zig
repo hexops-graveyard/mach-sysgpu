@@ -444,7 +444,6 @@ pub const Device = struct {
     const FrameObject = union(enum) {
         cmd_encoder: *CommandEncoder,
         render_pass_encoder: *RenderPassEncoder,
-        image_view: vk.ImageView,
 
         pub fn destroy(obj: FrameObject, device: *Device) void {
             switch (obj) {
@@ -453,10 +452,10 @@ pub const Device = struct {
                     allocator.destroy(ce);
                 },
                 .render_pass_encoder => |rpe| {
+                    allocator.free(rpe.clear_values);
                     vkd.destroyFramebuffer(device.device, rpe.framebuffer, null);
                     allocator.destroy(rpe);
                 },
-                .image_view => |iv| vkd.destroyImageView(device.device, iv, null),
             }
         }
     };
@@ -966,11 +965,8 @@ pub const SwapChain = struct {
     }
 
     pub fn deinit(sc: *SwapChain) void {
-        for (sc.texture_views) |view| {
-            sc.device.frameRes().destruction_queue.append(allocator, .{ .image_view = view.view }) catch {
-                vkd.destroyImageView(sc.device.device, view.view, null);
-            };
-        }
+        for (sc.texture_views) |view| view.manager.release();
+        for (sc.textures) |texture| texture.manager.release();
         vkd.destroySwapchainKHR(sc.device.device, sc.swapchain, null);
         allocator.free(sc.textures);
         allocator.free(sc.texture_views);
@@ -991,9 +987,12 @@ pub const SwapChain = struct {
             sc.device.frameRes().present_semaphore,
             .null_handle,
         );
-        sc.texture_index = result.image_index;
 
-        return sc.texture_views[sc.texture_index];
+        sc.texture_index = result.image_index;
+        const view = sc.texture_views[sc.texture_index];
+        view.manager.reference();
+
+        return view;
     }
 
     pub fn present(sc: *SwapChain) !void {
@@ -1136,6 +1135,7 @@ pub const TextureView = struct {
     }
 
     pub fn deinit(view: *TextureView) void {
+        vkd.destroyImageView(view.device.device, view.view, null);
         allocator.destroy(view);
     }
 };
@@ -1726,9 +1726,9 @@ pub const RenderPassEncoder = struct {
             null,
         );
 
-        var render_pass_encoder = try allocator.create(RenderPassEncoder);
-        errdefer allocator.destroy(render_pass_encoder);
-        render_pass_encoder.* = .{
+        var rpe = try allocator.create(RenderPassEncoder);
+        errdefer allocator.destroy(rpe);
+        rpe.* = .{
             .device = device,
             .encoder = encoder,
             .render_pass = render_pass,
@@ -1736,13 +1736,13 @@ pub const RenderPassEncoder = struct {
             .extent = extent.?,
             .clear_values = try clear_values.toOwnedSlice(),
         };
-        try device.frameRes().destruction_queue.append(allocator, .{ .render_pass_encoder = render_pass_encoder });
+        try device.frameRes().destruction_queue.append(allocator, .{ .render_pass_encoder = rpe });
 
-        return render_pass_encoder;
+        return rpe;
     }
 
     pub fn deinit(encoder: *RenderPassEncoder) void {
-        allocator.free(encoder.clear_values);
+        _ = encoder;
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {

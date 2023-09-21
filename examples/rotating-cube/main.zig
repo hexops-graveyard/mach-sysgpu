@@ -4,7 +4,10 @@ const glfw = @import("glfw");
 const gpu = @import("gpu");
 const dusk = @import("dusk");
 const objc = @import("../objc.zig");
+const zm = @import("../zmath.zig");
 const shader = @embedFile("shader.wgsl");
+const Vertex = @import("cube_mesh.zig").Vertex;
+const vertices = @import("cube_mesh.zig").vertices;
 
 pub const GPUInterface = dusk.Interface;
 // pub const GPUInterface = gpu.dawn.Interface;
@@ -12,6 +15,10 @@ pub const GPUInterface = dusk.Interface;
 fn baseLoader(_: u32, name: [*:0]const u8) ?*const fn () callconv(.C) void {
     return glfw.getInstanceProcAddress(null, name);
 }
+
+const UniformBufferObject = struct {
+    mat: zm.Mat,
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{ .stack_trace_frames = 10 }){};
@@ -102,6 +109,16 @@ pub fn main() !void {
     const shader_module = device.createShaderModuleWGSL("shader", shader);
     defer shader_module.release();
 
+    const vertex_attributes = [_]gpu.VertexAttribute{
+        .{ .format = .float32x4, .offset = @offsetOf(Vertex, "pos"), .shader_location = 0 },
+        .{ .format = .float32x2, .offset = @offsetOf(Vertex, "uv"), .shader_location = 1 },
+    };
+    const vertex_buffer_layout = gpu.VertexBufferLayout.init(.{
+        .array_stride = @sizeOf(Vertex),
+        .step_mode = .vertex,
+        .attributes = &vertex_attributes,
+    });
+
     const blend = gpu.BlendState{
         .color = .{ .dst_factor = .one },
         .alpha = .{ .dst_factor = .one },
@@ -116,18 +133,58 @@ pub fn main() !void {
         .entry_point = "fragment_main",
         .targets = &.{color_target},
     });
-    const vertex = gpu.VertexState{
-        .module = shader_module,
-        .entry_point = "vertex_main",
-    };
+
+    const bgle = gpu.BindGroupLayout.Entry.buffer(0, .{ .vertex = true }, .uniform, true, 0);
+    const bgl = device.createBindGroupLayout(
+        &gpu.BindGroupLayout.Descriptor.init(.{
+            .entries = &.{bgle},
+        }),
+    );
+
+    const bind_group_layouts = [_]*gpu.BindGroupLayout{bgl};
+    const pipeline_layout = device.createPipelineLayout(&gpu.PipelineLayout.Descriptor.init(.{
+        .bind_group_layouts = &bind_group_layouts,
+    }));
+
     const pipeline_descriptor = gpu.RenderPipeline.Descriptor{
         .fragment = &fragment,
-        .layout = null,
-        .depth_stencil = null,
-        .vertex = vertex,
-        .multisample = .{},
-        .primitive = .{},
+        .layout = pipeline_layout,
+        .vertex = gpu.VertexState.init(.{
+            .module = shader_module,
+            .entry_point = "vertex_main",
+            .buffers = &.{vertex_buffer_layout},
+        }),
+        .primitive = .{
+            .cull_mode = .back,
+        },
     };
+
+    const vertex_buffer = device.createBuffer(&.{
+        .usage = .{ .vertex = true },
+        .size = @sizeOf(Vertex) * vertices.len,
+        .mapped_at_creation = .true,
+    });
+    defer vertex_buffer.release();
+    var vertex_mapped = vertex_buffer.getMappedRange(Vertex, 0, vertices.len);
+    std.mem.copy(Vertex, vertex_mapped.?, vertices[0..]);
+    vertex_buffer.unmap();
+
+    const uniform_buffer = device.createBuffer(&.{
+        .usage = .{ .copy_dst = true, .uniform = true },
+        .size = @sizeOf(UniformBufferObject),
+        .mapped_at_creation = .false,
+    });
+    defer uniform_buffer.release();
+
+    const bind_group = device.createBindGroup(
+        &gpu.BindGroup.Descriptor.init(.{
+            .layout = bgl,
+            .entries = &.{
+                gpu.BindGroup.Entry.buffer(0, uniform_buffer, 0, @sizeOf(UniformBufferObject)),
+            },
+        }),
+    );
+    defer bind_group.release();
 
     const pipeline = device.createRenderPipeline(&pipeline_descriptor);
     defer pipeline.release();
@@ -136,6 +193,7 @@ pub fn main() !void {
     defer queue.release();
 
     var timer = try std.time.Timer.start();
+    var rotate_timer = try std.time.Timer.start();
     var frames: u32 = 0;
     var seconds: u32 = 0;
 
@@ -151,9 +209,9 @@ pub fn main() !void {
             swapchain_desc = next_swapchain_desc;
         }
 
-        const view = swap_chain.getCurrentTextureView().?;
+        const back_buffer_view = swap_chain.getCurrentTextureView().?;
         const color_attachment = gpu.RenderPassColorAttachment{
-            .view = view,
+            .view = back_buffer_view,
             .resolve_target = null,
             .clear_value = .{ .r = 0, .g = 0, .b = 0, .a = 0 },
             .load_op = .clear,
@@ -162,9 +220,35 @@ pub fn main() !void {
 
         const encoder = device.createCommandEncoder(null);
         const render_pass_info = gpu.RenderPassDescriptor.init(.{ .color_attachments = &.{color_attachment} });
+
+        {
+            const time = rotate_timer.read();
+            const rot_x = zm.rotationX(@as(f32, @floatFromInt(time)) * (std.math.pi / 2.0));
+            const rot_z = zm.rotationZ(@as(f32, @floatFromInt(time)) * (std.math.pi / 2.0));
+            const model = zm.mul(rot_x, rot_z);
+            const view = zm.lookAtRh(
+                zm.Vec{ 0, 4, 2, 1 },
+                zm.Vec{ 0, 0, 0, 1 },
+                zm.Vec{ 0, 0, 1, 0 },
+            );
+            const proj = zm.perspectiveFovRh(
+                (std.math.pi / 4.0),
+                @as(f32, @floatFromInt(swapchain_desc.width)) / @as(f32, @floatFromInt(swapchain_desc.height)),
+                0.1,
+                10,
+            );
+            const mvp = zm.mul(zm.mul(model, view), proj);
+            const ubo = UniformBufferObject{
+                .mat = zm.transpose(mvp),
+            };
+            encoder.writeBuffer(uniform_buffer, 0, &[_]UniformBufferObject{ubo});
+        }
+
         const pass = encoder.beginRenderPass(&render_pass_info);
         pass.setPipeline(pipeline);
-        pass.draw(3, 1, 0, 0);
+        pass.setVertexBuffer(0, vertex_buffer, 0, @sizeOf(Vertex) * vertices.len);
+        pass.setBindGroup(0, bind_group, &.{0});
+        pass.draw(vertices.len, 1, 0, 0);
         pass.end();
         pass.release();
 
@@ -174,7 +258,7 @@ pub fn main() !void {
         queue.submit(&[_]*gpu.CommandBuffer{command});
         command.release();
         swap_chain.present();
-        view.release();
+        back_buffer_view.release();
 
         glfw.pollEvents();
         window.swapBuffers();
