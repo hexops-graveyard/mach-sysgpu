@@ -94,12 +94,12 @@ pub const Interface = struct {
     }
 
     pub inline fn adapterReference(adapter_raw: *gpu.Adapter) void {
-        var adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
+        const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
         adapter.manager.reference();
     }
 
     pub inline fn adapterRelease(adapter_raw: *gpu.Adapter) void {
-        var adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
+        const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
         adapter.manager.release();
     }
 
@@ -109,14 +109,14 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn bindGroupReference(bind_group: *gpu.BindGroup) void {
-        _ = bind_group;
-        unreachable;
+    pub inline fn bindGroupReference(bind_group_raw: *gpu.BindGroup) void {
+        const bind_group: *impl.BindGroup = @ptrCast(@alignCast(bind_group_raw));
+        bind_group.manager.reference();
     }
 
-    pub inline fn bindGroupRelease(bind_group: *gpu.BindGroup) void {
-        _ = bind_group;
-        unreachable;
+    pub inline fn bindGroupRelease(bind_group_raw: *gpu.BindGroup) void {
+        const bind_group: *impl.BindGroup = @ptrCast(@alignCast(bind_group_raw));
+        bind_group.manager.release();
     }
 
     pub inline fn bindGroupLayoutSetLabel(bind_group_layout: *gpu.BindGroupLayout, label: [*:0]const u8) void {
@@ -125,14 +125,14 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn bindGroupLayoutReference(bind_group_layout: *gpu.BindGroupLayout) void {
-        _ = bind_group_layout;
-        unreachable;
+    pub inline fn bindGroupLayoutReference(bind_group_layout_raw: *gpu.BindGroupLayout) void {
+        const bind_group_layout: *impl.BindGroupLayout = @ptrCast(@alignCast(bind_group_layout_raw));
+        bind_group_layout.manager.reference();
     }
 
-    pub inline fn bindGroupLayoutRelease(bind_group_layout: *gpu.BindGroupLayout) void {
-        _ = bind_group_layout;
-        unreachable;
+    pub inline fn bindGroupLayoutRelease(bind_group_layout_raw: *gpu.BindGroupLayout) void {
+        const bind_group_layout: *impl.BindGroupLayout = @ptrCast(@alignCast(bind_group_layout_raw));
+        bind_group_layout.manager.release();
     }
 
     pub inline fn bufferDestroy(buffer: *gpu.Buffer) void {
@@ -140,18 +140,14 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn bufferGetConstMappedRange(buffer: *gpu.Buffer, offset: usize, size: usize) ?*const anyopaque {
-        _ = buffer;
-        _ = offset;
-        _ = size;
-        unreachable;
+    pub inline fn bufferGetConstMappedRange(buffer_raw: *gpu.Buffer, offset: usize, size: usize) ?*const anyopaque {
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        return buffer.getConstMappedRange(offset, size);
     }
 
-    pub inline fn bufferGetMappedRange(buffer: *gpu.Buffer, offset: usize, size: usize) ?*anyopaque {
-        _ = buffer;
-        _ = offset;
-        _ = size;
-        unreachable;
+    pub inline fn bufferGetMappedRange(buffer_raw: *gpu.Buffer, offset: usize, size: usize) ?*anyopaque {
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        return @constCast(buffer.getConstMappedRange(offset, size));
     }
 
     pub inline fn bufferGetSize(buffer: *gpu.Buffer) u64 {
@@ -164,14 +160,9 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn bufferMapAsync(buffer: *gpu.Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) void {
-        _ = buffer;
-        _ = mode;
-        _ = offset;
-        _ = size;
-        _ = callback;
-        _ = userdata;
-        unreachable;
+    pub inline fn bufferMapAsync(buffer_raw: *gpu.Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) void {
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        buffer.mapAsync(mode, offset, size, callback, userdata) catch unreachable;
     }
 
     pub inline fn bufferSetLabel(buffer: *gpu.Buffer, label: [*:0]const u8) void {
@@ -180,19 +171,19 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn bufferUnmap(buffer: *gpu.Buffer) void {
-        _ = buffer;
-        unreachable;
+    pub inline fn bufferUnmap(buffer_raw: *gpu.Buffer) void {
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        buffer.unmap();
     }
 
-    pub inline fn bufferReference(buffer: *gpu.Buffer) void {
-        _ = buffer;
-        unreachable;
+    pub inline fn bufferReference(buffer_raw: *gpu.Buffer) void {
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        buffer.manager.reference();
     }
 
-    pub inline fn bufferRelease(buffer: *gpu.Buffer) void {
-        _ = buffer;
-        unreachable;
+    pub inline fn bufferRelease(buffer_raw: *gpu.Buffer) void {
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        buffer.manager.release();
     }
 
     pub inline fn commandBufferSetLabel(command_buffer: *gpu.CommandBuffer, label: [*:0]const u8) void {
@@ -211,10 +202,10 @@ pub const Interface = struct {
         command_buffer.manager.release();
     }
 
-    pub inline fn commandEncoderBeginComputePass(command_encoder: *gpu.CommandEncoder, descriptor: ?*const gpu.ComputePassDescriptor) *gpu.ComputePassEncoder {
-        _ = command_encoder;
-        _ = descriptor;
-        unreachable;
+    pub inline fn commandEncoderBeginComputePass(command_encoder_raw: *gpu.CommandEncoder, descriptor: ?*const gpu.ComputePassDescriptor) *gpu.ComputePassEncoder {
+        const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
+        const compute_pass = command_encoder.beginComputePass(descriptor orelse &.{}) catch unreachable;
+        return @ptrCast(compute_pass);
     }
 
     pub inline fn commandEncoderBeginRenderPass(command_encoder_raw: *gpu.CommandEncoder, descriptor: *const gpu.RenderPassDescriptor) *gpu.RenderPassEncoder {
@@ -231,14 +222,12 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn commandEncoderCopyBufferToBuffer(command_encoder: *gpu.CommandEncoder, source: *gpu.Buffer, source_offset: u64, destination: *gpu.Buffer, destination_offset: u64, size: u64) void {
-        _ = command_encoder;
-        _ = source;
-        _ = source_offset;
-        _ = destination;
-        _ = destination_offset;
-        _ = size;
-        unreachable;
+    pub inline fn commandEncoderCopyBufferToBuffer(command_encoder_raw: *gpu.CommandEncoder, source_raw: *gpu.Buffer, source_offset: u64, destination_raw: *gpu.Buffer, destination_offset: u64, size: u64) void {
+        const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
+        const source: *impl.Buffer = @ptrCast(@alignCast(source_raw));
+        const destination: *impl.Buffer = @ptrCast(@alignCast(destination_raw));
+
+        command_encoder.copyBufferToBuffer(source, source_offset, destination, destination_offset, size) catch unreachable;
     }
 
     pub inline fn commandEncoderCopyBufferToTexture(command_encoder: *gpu.CommandEncoder, source: *const gpu.ImageCopyBuffer, destination: *const gpu.ImageCopyTexture, copy_size: *const gpu.Extent3D) void {
@@ -276,6 +265,7 @@ pub const Interface = struct {
     pub inline fn commandEncoderFinish(command_encoder_raw: *gpu.CommandEncoder, descriptor: ?*const gpu.CommandBuffer.Descriptor) *gpu.CommandBuffer {
         const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
         const command_buffer = command_encoder.finish(descriptor orelse &.{}) catch unreachable;
+        command_buffer.manager.reference();
         return @ptrCast(command_buffer);
     }
 
@@ -344,12 +334,9 @@ pub const Interface = struct {
         command_encoder.manager.release();
     }
 
-    pub inline fn computePassEncoderDispatchWorkgroups(compute_pass_encoder: *gpu.ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
-        _ = compute_pass_encoder;
-        _ = workgroup_count_x;
-        _ = workgroup_count_y;
-        _ = workgroup_count_z;
-        unreachable;
+    pub inline fn computePassEncoderDispatchWorkgroups(compute_pass_encoder_raw: *gpu.ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
+        const compute_pass_encoder: *impl.ComputePassEncoder = @ptrCast(@alignCast(compute_pass_encoder_raw));
+        compute_pass_encoder.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
     }
 
     pub inline fn computePassEncoderDispatchWorkgroupsIndirect(compute_pass_encoder: *gpu.ComputePassEncoder, indirect_buffer: *gpu.Buffer, indirect_offset: u64) void {
@@ -359,9 +346,9 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn computePassEncoderEnd(compute_pass_encoder: *gpu.ComputePassEncoder) void {
-        _ = compute_pass_encoder;
-        unreachable;
+    pub inline fn computePassEncoderEnd(compute_pass_encoder_raw: *gpu.ComputePassEncoder) void {
+        const compute_pass_encoder: *impl.ComputePassEncoder = @ptrCast(@alignCast(compute_pass_encoder_raw));
+        compute_pass_encoder.end();
     }
 
     pub inline fn computePassEncoderInsertDebugMarker(compute_pass_encoder: *gpu.ComputePassEncoder, marker_label: [*:0]const u8) void {
@@ -381,13 +368,10 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn computePassEncoderSetBindGroup(compute_pass_encoder: *gpu.ComputePassEncoder, group_index: u32, group: *gpu.BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) void {
-        _ = compute_pass_encoder;
-        _ = group_index;
-        _ = group;
-        _ = dynamic_offset_count;
-        _ = dynamic_offsets;
-        unreachable;
+    pub inline fn computePassEncoderSetBindGroup(compute_pass_encoder_raw: *gpu.ComputePassEncoder, group_index: u32, group_raw: *gpu.BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) void {
+        const compute_pass_encoder: *impl.ComputePassEncoder = @ptrCast(@alignCast(compute_pass_encoder_raw));
+        const group: *impl.BindGroup = @ptrCast(@alignCast(group_raw));
+        compute_pass_encoder.setBindGroup(group_index, group, dynamic_offset_count, dynamic_offsets) catch unreachable;
     }
 
     pub inline fn computePassEncoderSetLabel(compute_pass_encoder: *gpu.ComputePassEncoder, label: [*:0]const u8) void {
@@ -396,10 +380,10 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn computePassEncoderSetPipeline(compute_pass_encoder: *gpu.ComputePassEncoder, pipeline: *gpu.ComputePipeline) void {
-        _ = compute_pass_encoder;
-        _ = pipeline;
-        unreachable;
+    pub inline fn computePassEncoderSetPipeline(compute_pass_encoder_raw: *gpu.ComputePassEncoder, pipeline_raw: *gpu.ComputePipeline) void {
+        const compute_pass_encoder: *impl.ComputePassEncoder = @ptrCast(@alignCast(compute_pass_encoder_raw));
+        const pipeline: *impl.ComputePipeline = @ptrCast(@alignCast(pipeline_raw));
+        compute_pass_encoder.setPipeline(pipeline) catch unreachable;
     }
 
     pub inline fn computePassEncoderWriteTimestamp(compute_pass_encoder: *gpu.ComputePassEncoder, query_set: *gpu.QuerySet, query_index: u32) void {
@@ -409,20 +393,21 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn computePassEncoderReference(compute_pass_encoder: *gpu.ComputePassEncoder) void {
-        _ = compute_pass_encoder;
-        unreachable;
+    pub inline fn computePassEncoderReference(compute_pass_encoder_raw: *gpu.ComputePassEncoder) void {
+        const compute_pass_encoder: *impl.ComputePassEncoder = @ptrCast(@alignCast(compute_pass_encoder_raw));
+        compute_pass_encoder.manager.reference();
     }
 
-    pub inline fn computePassEncoderRelease(compute_pass_encoder: *gpu.ComputePassEncoder) void {
-        _ = compute_pass_encoder;
-        unreachable;
+    pub inline fn computePassEncoderRelease(compute_pass_encoder_raw: *gpu.ComputePassEncoder) void {
+        const compute_pass_encoder: *impl.ComputePassEncoder = @ptrCast(@alignCast(compute_pass_encoder_raw));
+        compute_pass_encoder.manager.release();
     }
 
-    pub inline fn computePipelineGetBindGroupLayout(compute_pipeline: *gpu.ComputePipeline, group_index: u32) *gpu.BindGroupLayout {
-        _ = compute_pipeline;
-        _ = group_index;
-        unreachable;
+    pub inline fn computePipelineGetBindGroupLayout(compute_pipeline_raw: *gpu.ComputePipeline, group_index: u32) *gpu.BindGroupLayout {
+        const compute_pipeline: *impl.ComputePipeline = @ptrCast(@alignCast(compute_pipeline_raw));
+        const layout = compute_pipeline.getBindGroupLayout(group_index);
+        layout.manager.reference();
+        return @ptrCast(layout);
     }
 
     pub inline fn computePipelineSetLabel(compute_pipeline: *gpu.ComputePipeline, label: [*:0]const u8) void {
@@ -431,20 +416,20 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn computePipelineReference(compute_pipeline: *gpu.ComputePipeline) void {
-        _ = compute_pipeline;
-        unreachable;
+    pub inline fn computePipelineReference(compute_pipeline_raw: *gpu.ComputePipeline) void {
+        const compute_pipeline: *impl.ComputePipeline = @ptrCast(@alignCast(compute_pipeline_raw));
+        compute_pipeline.manager.reference();
     }
 
-    pub inline fn computePipelineRelease(compute_pipeline: *gpu.ComputePipeline) void {
-        _ = compute_pipeline;
-        unreachable;
+    pub inline fn computePipelineRelease(compute_pipeline_raw: *gpu.ComputePipeline) void {
+        const compute_pipeline: *impl.ComputePipeline = @ptrCast(@alignCast(compute_pipeline_raw));
+        compute_pipeline.manager.release();
     }
 
-    pub inline fn deviceCreateBindGroup(device: *gpu.Device, descriptor: *const gpu.BindGroup.Descriptor) *gpu.BindGroup {
-        _ = device;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateBindGroup(device_raw: *gpu.Device, descriptor: *const gpu.BindGroup.Descriptor) *gpu.BindGroup {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const group = device.createBindGroup(descriptor) catch unreachable;
+        return @ptrCast(group);
     }
 
     pub inline fn deviceCreateBindGroupLayout(device: *gpu.Device, descriptor: *const gpu.BindGroupLayout.Descriptor) *gpu.BindGroupLayout {
@@ -453,22 +438,22 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceCreateBuffer(device: *gpu.Device, descriptor: *const gpu.Buffer.Descriptor) *gpu.Buffer {
-        _ = device;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateBuffer(device_raw: *gpu.Device, descriptor: *const gpu.Buffer.Descriptor) *gpu.Buffer {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const buffer = device.createBuffer(descriptor) catch unreachable;
+        return @ptrCast(buffer);
     }
 
     pub inline fn deviceCreateCommandEncoder(device_raw: *gpu.Device, descriptor: ?*const gpu.CommandEncoder.Descriptor) *gpu.CommandEncoder {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
-        const command_encoder = impl.Device.createCommandEncoder(device, descriptor orelse &.{}) catch unreachable;
+        const command_encoder = device.createCommandEncoder(descriptor orelse &.{}) catch unreachable;
         return @ptrCast(command_encoder);
     }
 
-    pub inline fn deviceCreateComputePipeline(device: *gpu.Device, descriptor: *const gpu.ComputePipeline.Descriptor) *gpu.ComputePipeline {
-        _ = device;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateComputePipeline(device_raw: *gpu.Device, descriptor: *const gpu.ComputePipeline.Descriptor) *gpu.ComputePipeline {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const pipeline = device.createComputePipeline(descriptor) catch unreachable;
+        return @ptrCast(pipeline);
     }
 
     pub inline fn deviceCreateComputePipelineAsync(device: *gpu.Device, descriptor: *const gpu.ComputePipeline.Descriptor, callback: gpu.CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
@@ -522,7 +507,7 @@ pub const Interface = struct {
 
     pub inline fn deviceCreateRenderPipeline(device_raw: *gpu.Device, descriptor: *const gpu.RenderPipeline.Descriptor) *gpu.RenderPipeline {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
-        const render_pipeline = impl.Device.createRenderPipeline(device, descriptor) catch unreachable;
+        const render_pipeline = device.createRenderPipeline(descriptor) catch unreachable;
         return @ptrCast(render_pipeline);
     }
 
@@ -566,11 +551,11 @@ pub const Interface = struct {
             };
             defer air.deinit(allocator);
 
-            const shader_module = impl.Device.createShaderModuleAir(device, &air) catch unreachable;
+            const shader_module = device.createShaderModuleAir(&air) catch unreachable;
             return @ptrCast(shader_module);
         } else if (utils.findChained(gpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
             const output = std.mem.sliceAsBytes(spirv_descriptor.code[0..spirv_descriptor.code_size]);
-            const shader_module = impl.Device.createShaderModuleSpirv(device, output) catch unreachable;
+            const shader_module = device.createShaderModuleSpirv(output) catch unreachable;
             return @ptrCast(shader_module);
         }
 
@@ -580,13 +565,13 @@ pub const Interface = struct {
     pub inline fn deviceCreateSwapChain(device_raw: *gpu.Device, surface_raw: ?*gpu.Surface, descriptor: *const gpu.SwapChain.Descriptor) *gpu.SwapChain {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const surface: *impl.Surface = @ptrCast(@alignCast(surface_raw.?));
-        const swapchain = impl.Device.createSwapChain(device, surface, descriptor) catch unreachable;
+        const swapchain = device.createSwapChain(surface, descriptor) catch unreachable;
         return @ptrCast(swapchain);
     }
 
     pub inline fn deviceCreateTexture(device_raw: *gpu.Device, descriptor: *const gpu.Texture.Descriptor) *gpu.Texture {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
-        const texture = impl.Device.createTexture(device, descriptor) catch unreachable;
+        const texture = device.createTexture(descriptor) catch unreachable;
         return @ptrCast(texture);
     }
 
@@ -681,8 +666,9 @@ pub const Interface = struct {
         device.err_cb_userdata = userdata;
     }
 
-    pub inline fn deviceTick(device: *gpu.Device) void {
-        _ = device;
+    pub inline fn deviceTick(device_raw: *gpu.Device) void {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        device.tick() catch unreachable;
     }
 
     pub inline fn machDeviceWaitForCommandsToBeScheduled(device: *gpu.Device) void {
@@ -690,12 +676,12 @@ pub const Interface = struct {
     }
 
     pub inline fn deviceReference(device_raw: *gpu.Device) void {
-        var device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         device.manager.reference();
     }
 
     pub inline fn deviceRelease(device_raw: *gpu.Device) void {
-        var device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         device.manager.release();
     }
 
@@ -722,7 +708,7 @@ pub const Interface = struct {
 
     pub inline fn instanceCreateSurface(instance_raw: *gpu.Instance, descriptor: *const gpu.Surface.Descriptor) *gpu.Surface {
         const instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
-        const surface = impl.Instance.createSurface(instance, descriptor) catch unreachable;
+        const surface = instance.createSurface(descriptor) catch unreachable;
         return @ptrCast(surface);
     }
 
@@ -745,12 +731,12 @@ pub const Interface = struct {
     }
 
     pub inline fn instanceReference(instance_raw: *gpu.Instance) void {
-        var instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
+        const instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
         instance.manager.reference();
     }
 
     pub inline fn instanceRelease(instance_raw: *gpu.Instance) void {
-        var instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
+        const instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
         instance.manager.release();
     }
 
@@ -850,12 +836,12 @@ pub const Interface = struct {
     }
 
     pub inline fn queueReference(queue_raw: *gpu.Queue) void {
-        var queue: *impl.Queue = @ptrCast(@alignCast(queue_raw));
+        const queue: *impl.Queue = @ptrCast(@alignCast(queue_raw));
         queue.manager.reference();
     }
 
     pub inline fn queueRelease(queue_raw: *gpu.Queue) void {
-        var queue: *impl.Queue = @ptrCast(@alignCast(queue_raw));
+        const queue: *impl.Queue = @ptrCast(@alignCast(queue_raw));
         queue.manager.release();
     }
 
@@ -1137,10 +1123,11 @@ pub const Interface = struct {
         render_pass_encoder.manager.release();
     }
 
-    pub inline fn renderPipelineGetBindGroupLayout(render_pipeline: *gpu.RenderPipeline, group_index: u32) *gpu.BindGroupLayout {
-        _ = render_pipeline;
-        _ = group_index;
-        unreachable;
+    pub inline fn renderPipelineGetBindGroupLayout(render_pipeline_raw: *gpu.RenderPipeline, group_index: u32) *gpu.BindGroupLayout {
+        const render_pipeline: *impl.RenderPipeline = @ptrCast(@alignCast(render_pipeline_raw));
+        const layout: *impl.BindGroupLayout = render_pipeline.getBindGroupLayout(group_index);
+        layout.manager.reference();
+        return @ptrCast(layout);
     }
 
     pub inline fn renderPipelineSetLabel(render_pipeline: *gpu.RenderPipeline, label: [*:0]const u8) void {
@@ -1150,12 +1137,12 @@ pub const Interface = struct {
     }
 
     pub inline fn renderPipelineReference(render_pipeline_raw: *gpu.RenderPipeline) void {
-        var render_pipeline: *impl.RenderPipeline = @ptrCast(@alignCast(render_pipeline_raw));
+        const render_pipeline: *impl.RenderPipeline = @ptrCast(@alignCast(render_pipeline_raw));
         render_pipeline.manager.reference();
     }
 
     pub inline fn renderPipelineRelease(render_pipeline_raw: *gpu.RenderPipeline) void {
-        var render_pipeline: *impl.RenderPipeline = @ptrCast(@alignCast(render_pipeline_raw));
+        const render_pipeline: *impl.RenderPipeline = @ptrCast(@alignCast(render_pipeline_raw));
         render_pipeline.manager.release();
     }
 
@@ -1189,12 +1176,12 @@ pub const Interface = struct {
     }
 
     pub inline fn shaderModuleReference(shader_module_raw: *gpu.ShaderModule) void {
-        var shader_module: *impl.ShaderModule = @ptrCast(@alignCast(shader_module_raw));
+        const shader_module: *impl.ShaderModule = @ptrCast(@alignCast(shader_module_raw));
         shader_module.manager.reference();
     }
 
     pub inline fn shaderModuleRelease(shader_module_raw: *gpu.ShaderModule) void {
-        var shader_module: *impl.ShaderModule = @ptrCast(@alignCast(shader_module_raw));
+        const shader_module: *impl.ShaderModule = @ptrCast(@alignCast(shader_module_raw));
         shader_module.manager.release();
     }
 
@@ -1262,12 +1249,12 @@ pub const Interface = struct {
     }
 
     pub inline fn surfaceReference(surface_raw: *gpu.Surface) void {
-        var surface: *impl.Surface = @ptrCast(@alignCast(surface_raw));
+        const surface: *impl.Surface = @ptrCast(@alignCast(surface_raw));
         surface.manager.reference();
     }
 
     pub inline fn surfaceRelease(surface_raw: *gpu.Surface) void {
-        var surface: *impl.Surface = @ptrCast(@alignCast(surface_raw));
+        const surface: *impl.Surface = @ptrCast(@alignCast(surface_raw));
         surface.manager.release();
     }
 
@@ -1297,17 +1284,17 @@ pub const Interface = struct {
     }
 
     pub inline fn swapChainReference(swap_chain_raw: *gpu.SwapChain) void {
-        var swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
+        const swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
         swap_chain.manager.reference();
     }
 
     pub inline fn swapChainRelease(swap_chain_raw: *gpu.SwapChain) void {
-        var swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
+        const swap_chain: *impl.SwapChain = @ptrCast(@alignCast(swap_chain_raw));
         swap_chain.manager.release();
     }
 
     pub inline fn textureCreateView(texture_raw: *gpu.Texture, descriptor: ?*const gpu.TextureView.Descriptor) *gpu.TextureView {
-        var texture: *impl.Texture = @ptrCast(@alignCast(texture_raw));
+        const texture: *impl.Texture = @ptrCast(@alignCast(texture_raw));
         const texture_view = texture.createView(descriptor) catch unreachable;
         return @ptrCast(texture_view);
     }

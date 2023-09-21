@@ -298,8 +298,26 @@ pub const Device = struct {
         allocator.destroy(device);
     }
 
+    pub fn createBindGroup(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
     pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
+    }
+
+    pub fn createComputePipeline(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+        _ = desc;
+        _ = device;
+        unreachable;
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
@@ -328,6 +346,11 @@ pub const Device = struct {
 
     pub fn getQueue(device: *Device) !*Queue {
         return device.queue;
+    }
+
+    pub fn tick(device: *Device) !void {
+        _ = device;
+        unreachable;
     }
 };
 
@@ -638,6 +661,42 @@ pub const SwapChain = struct {
     }
 };
 
+pub const Buffer = struct {
+    manager: utils.Manager(Buffer) = .{},
+
+    pub fn init(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(buffer: *Buffer) void {
+        _ = buffer;
+    }
+
+    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) ?*const anyopaque {
+        _ = size;
+        _ = offset;
+        _ = buffer;
+        unreachable;
+    }
+
+    pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
+        _ = userdata;
+        _ = callback;
+        _ = size;
+        _ = offset;
+        _ = mode;
+        _ = buffer;
+        unreachable;
+    }
+
+    pub fn unmap(buffer: *Buffer) void {
+        _ = buffer;
+        unreachable;
+    }
+};
+
 pub const Texture = struct {
     manager: utils.Manager(Texture) = .{},
     resource: *c.ID3D12Resource,
@@ -662,6 +721,71 @@ pub const TextureView = struct {
 
     pub fn deinit(view: *TextureView) void {
         _ = view;
+    }
+};
+
+pub const BindGroupLayout = struct {
+    manager: utils.Manager(BindGroupLayout) = .{},
+
+    pub fn deinit(layout: BindGroupLayout) void {
+        _ = layout;
+    }
+};
+
+pub const BindGroup = struct {
+    manager: utils.Manager(BindGroup) = .{},
+
+    pub fn init(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(group: *BindGroup) void {
+        _ = group;
+    }
+};
+
+pub const ShaderModule = struct {
+    manager: utils.Manager(ShaderModule) = .{},
+    code: []const u8,
+
+    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        _ = device;
+
+        const code = shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" }) catch unreachable;
+        defer allocator.free(code);
+
+        var module = try allocator.create(ShaderModule);
+        module.* = .{
+            .code = try allocator.dupe(u8, code),
+        };
+        return module;
+    }
+
+    pub fn deinit(shader_module: *ShaderModule) void {
+        allocator.free(shader_module.code);
+        allocator.destroy(shader_module);
+    }
+};
+
+pub const ComputePipeline = struct {
+    manager: utils.Manager(ComputePipeline) = .{},
+
+    pub fn init(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(pipeline: *ComputePipeline) void {
+        _ = pipeline;
+    }
+
+    pub fn getBindGroupLayout(pipeline: *ComputePipeline, group_index: u32) *BindGroupLayout {
+        _ = group_index;
+        _ = pipeline;
+        unreachable;
     }
 };
 
@@ -842,6 +966,136 @@ pub const RenderPipeline = struct {
     pub fn deinit(render_pipeline: *RenderPipeline) void {
         allocator.destroy(render_pipeline);
     }
+
+    pub fn getBindGroupLayout(pipeline: *RenderPipeline, group_index: u32) *BindGroupLayout {
+        _ = group_index;
+        _ = pipeline;
+        unreachable;
+    }
+};
+
+pub const CommandBuffer = struct {
+    manager: utils.Manager(CommandBuffer) = .{},
+    command_allocator: *c.ID3D12CommandAllocator,
+    command_list: *c.ID3D12GraphicsCommandList,
+
+    pub fn init(device: *Device) !*CommandBuffer {
+        const command_allocator = try device.command_manager.getCommandAllocator();
+        const command_list = try device.command_manager.createCommandList(command_allocator);
+
+        command_list.lpVtbl.*.SetGraphicsRootSignature.?(
+            command_list,
+            device.root_signature,
+        );
+
+        var cmd_buffer = try allocator.create(CommandBuffer);
+        cmd_buffer.* = .{
+            .command_allocator = command_allocator,
+            .command_list = command_list,
+        };
+        return cmd_buffer;
+    }
+
+    pub fn deinit(cmd_buffer: *CommandBuffer) void {
+        allocator.destroy(cmd_buffer);
+    }
+};
+
+pub const CommandEncoder = struct {
+    manager: utils.Manager(CommandEncoder) = .{},
+    cmd_buffer: *CommandBuffer,
+
+    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+        // TODO
+        _ = desc;
+
+        const cmd_buffer = try CommandBuffer.init(device);
+
+        var encoder = try allocator.create(CommandEncoder);
+        encoder.* = .{ .cmd_buffer = cmd_buffer };
+        return encoder;
+    }
+
+    pub fn deinit(cmd_encoder: *CommandEncoder) void {
+        allocator.destroy(cmd_encoder);
+    }
+
+    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+        _ = desc;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+        return RenderPassEncoder.init(cmd_encoder, desc);
+    }
+
+    pub fn copyBufferToBuffer(encoder: *CommandEncoder, source: *Buffer, source_offset: u64, destination: *Buffer, destination_offset: u64, size: u64) !void {
+        _ = size;
+        _ = destination_offset;
+        _ = destination;
+        _ = source_offset;
+        _ = source;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
+        // TODO
+        _ = desc;
+
+        const command_list = cmd_encoder.cmd_buffer.command_list;
+        var hr: c.HRESULT = undefined;
+
+        hr = command_list.lpVtbl.*.Close.?(command_list);
+        if (hr != c.S_OK) {
+            return error.CommandEncoderFinish;
+        }
+
+        return cmd_encoder.cmd_buffer;
+    }
+};
+
+pub const ComputePassEncoder = struct {
+    manager: utils.Manager(ComputePassEncoder) = .{},
+
+    pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+        _ = desc;
+        _ = command_encoder;
+        unreachable;
+    }
+
+    pub fn deinit(encoder: *ComputePassEncoder) void {
+        _ = encoder;
+    }
+
+    pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
+        _ = workgroup_count_z;
+        _ = workgroup_count_y;
+        _ = workgroup_count_x;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn setBindGroup(encoder: *ComputePassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
+        _ = dynamic_offsets;
+        _ = dynamic_offset_count;
+        _ = group;
+        _ = group_index;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn setPipeline(encoder: *ComputePassEncoder, pipeline: *ComputePipeline) !void {
+        _ = pipeline;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn end(encoder: *ComputePassEncoder) void {
+        _ = encoder;
+        unreachable;
+    }
 };
 
 pub const RenderPassEncoder = struct {
@@ -1006,72 +1260,6 @@ pub const RenderPassEncoder = struct {
     }
 };
 
-pub const CommandEncoder = struct {
-    manager: utils.Manager(CommandEncoder) = .{},
-    cmd_buffer: *CommandBuffer,
-
-    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
-        // TODO
-        _ = desc;
-
-        const cmd_buffer = try CommandBuffer.init(device);
-
-        var encoder = try allocator.create(CommandEncoder);
-        encoder.* = .{ .cmd_buffer = cmd_buffer };
-        return encoder;
-    }
-
-    pub fn deinit(cmd_encoder: *CommandEncoder) void {
-        allocator.destroy(cmd_encoder);
-    }
-
-    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
-        return RenderPassEncoder.init(cmd_encoder, desc);
-    }
-
-    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
-        // TODO
-        _ = desc;
-
-        const command_list = cmd_encoder.cmd_buffer.command_list;
-        var hr: c.HRESULT = undefined;
-
-        hr = command_list.lpVtbl.*.Close.?(command_list);
-        if (hr != c.S_OK) {
-            return error.CommandEncoderFinish;
-        }
-
-        return cmd_encoder.cmd_buffer;
-    }
-};
-
-pub const CommandBuffer = struct {
-    manager: utils.Manager(CommandBuffer) = .{},
-    command_allocator: *c.ID3D12CommandAllocator,
-    command_list: *c.ID3D12GraphicsCommandList,
-
-    pub fn init(device: *Device) !*CommandBuffer {
-        const command_allocator = try device.command_manager.getCommandAllocator();
-        const command_list = try device.command_manager.createCommandList(command_allocator);
-
-        command_list.lpVtbl.*.SetGraphicsRootSignature.?(
-            command_list,
-            device.root_signature,
-        );
-
-        var cmd_buffer = try allocator.create(CommandBuffer);
-        cmd_buffer.* = .{
-            .command_allocator = command_allocator,
-            .command_list = command_list,
-        };
-        return cmd_buffer;
-    }
-
-    pub fn deinit(cmd_buffer: *CommandBuffer) void {
-        allocator.destroy(cmd_buffer);
-    }
-};
-
 pub const Queue = struct {
     manager: utils.Manager(Queue) = .{},
     d3d_command_queue: *c.ID3D12CommandQueue,
@@ -1206,28 +1394,5 @@ pub const Queue = struct {
 
         const result = c.WaitForSingleObject(fence_event, c.INFINITE);
         std.debug.assert(result == c.WAIT_OBJECT_0);
-    }
-};
-
-pub const ShaderModule = struct {
-    manager: utils.Manager(ShaderModule) = .{},
-    code: []const u8,
-
-    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
-        _ = device;
-
-        const code = shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" }) catch unreachable;
-        defer allocator.free(code);
-
-        var module = try allocator.create(ShaderModule);
-        module.* = .{
-            .code = try allocator.dupe(u8, code),
-        };
-        return module;
-    }
-
-    pub fn deinit(shader_module: *ShaderModule) void {
-        allocator.free(shader_module.code);
-        allocator.destroy(shader_module);
     }
 };

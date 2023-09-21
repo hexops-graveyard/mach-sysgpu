@@ -7,6 +7,7 @@ Backends should be a single file with object in the following order:
 - Surface
 - SurfaceCapabilities
 - Device
+- SwapChain
 - Buffer
 - Texture
 - TextureView

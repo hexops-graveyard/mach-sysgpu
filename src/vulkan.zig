@@ -662,8 +662,26 @@ pub const Device = struct {
         }
     }
 
+    pub fn createBindGroup(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
     pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
+    }
+
+    pub fn createComputePipeline(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+        _ = desc;
+        _ = device;
+        unreachable;
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
@@ -693,6 +711,11 @@ pub const Device = struct {
             device.queue = try Queue.init(device);
         }
         return &device.queue.?;
+    }
+
+    pub fn tick(device: *Device) !void {
+        _ = device;
+        unreachable;
     }
 
     const device_layers = if (builtin.mode == .Debug)
@@ -986,6 +1009,42 @@ pub const SwapChain = struct {
     }
 };
 
+pub const Buffer = struct {
+    manager: utils.Manager(Buffer) = .{},
+
+    pub fn init(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(buffer: *Buffer) void {
+        _ = buffer;
+    }
+
+    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) ?*const anyopaque {
+        _ = size;
+        _ = offset;
+        _ = buffer;
+        unreachable;
+    }
+
+    pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
+        _ = userdata;
+        _ = callback;
+        _ = size;
+        _ = offset;
+        _ = mode;
+        _ = buffer;
+        unreachable;
+    }
+
+    pub fn unmap(buffer: *Buffer) void {
+        _ = buffer;
+        unreachable;
+    }
+};
+
 pub const Texture = struct {
     manager: utils.Manager(Texture) = .{},
     device: *Device,
@@ -1078,6 +1137,118 @@ pub const TextureView = struct {
 
     pub fn deinit(view: *TextureView) void {
         allocator.destroy(view);
+    }
+};
+
+pub const BindGroupLayout = struct {
+    manager: utils.Manager(BindGroupLayout) = .{},
+    layout: vk.DescriptorSetLayout,
+
+    pub fn deinit(layout: BindGroupLayout) void {
+        _ = layout;
+    }
+};
+
+pub const BindGroup = struct {
+    manager: utils.Manager(BindGroup) = .{},
+
+    pub fn init(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(group: *BindGroup) void {
+        _ = group;
+    }
+};
+
+pub const PipelineLayout = struct {
+    manager: utils.Manager(PipelineLayout) = .{},
+    device: *Device,
+    layout: vk.PipelineLayout,
+
+    pub fn init(device: *Device, descriptor: *const gpu.PipelineLayout.Descriptor) !PipelineLayout {
+        const groups = try allocator.alloc(vk.DescriptorSetLayout, descriptor.bind_group_layout_count);
+        defer allocator.free(groups);
+        for (groups, 0..) |*layout, i| {
+            layout.* = @as(*BindGroupLayout, @ptrCast(@alignCast(descriptor.bind_group_layouts.?[i]))).layout;
+        }
+
+        const layout = try vkd.createPipelineLayout(device.device, &.{
+            .set_layout_count = @as(u32, @intCast(groups.len)),
+            .p_set_layouts = groups.ptr,
+        }, null);
+
+        return .{
+            .device = device,
+            .layout = layout,
+        };
+    }
+
+    pub fn deinit(layout: *PipelineLayout) void {
+        vkd.destroyPipelineLayout(layout.device.device, layout.layout, null);
+    }
+};
+
+pub const ShaderModule = struct {
+    manager: utils.Manager(ShaderModule) = .{},
+    shader_module: vk.ShaderModule,
+    device: *Device,
+
+    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+        const code = shader.CodeGen.generate(allocator, air, .spirv, .{ .emit_source_file = "" }) catch unreachable;
+        defer allocator.free(code);
+
+        return ShaderModule.initSpirv(device, code);
+    }
+
+    pub fn initSpirv(device: *Device, code: []const u8) !*ShaderModule {
+        const vk_shader_module = try vkd.createShaderModule(
+            device.device,
+            &vk.ShaderModuleCreateInfo{
+                .code_size = code.len,
+                .p_code = @ptrCast(@alignCast(code.ptr)),
+            },
+            null,
+        );
+
+        var shader_module = try allocator.create(ShaderModule);
+        shader_module.* = .{
+            .device = device,
+            .shader_module = vk_shader_module,
+        };
+
+        return shader_module;
+    }
+
+    pub fn deinit(shader_module: *ShaderModule) void {
+        vkd.destroyShaderModule(
+            shader_module.device.device,
+            shader_module.shader_module,
+            null,
+        );
+        allocator.destroy(shader_module);
+    }
+};
+
+pub const ComputePipeline = struct {
+    manager: utils.Manager(ComputePipeline) = .{},
+
+    pub fn init(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(pipeline: *ComputePipeline) void {
+        _ = pipeline;
+    }
+
+    pub fn getBindGroupLayout(pipeline: *ComputePipeline, group_index: u32) *BindGroupLayout {
+        _ = group_index;
+        _ = pipeline;
+        unreachable;
     }
 };
 
@@ -1345,37 +1516,124 @@ pub const RenderPipeline = struct {
         allocator.destroy(render_pipeline);
     }
 
+    pub fn getBindGroupLayout(pipeline: *RenderPipeline, group_index: u32) *BindGroupLayout {
+        _ = group_index;
+        _ = pipeline;
+        unreachable;
+    }
+
     fn isDepthBiasEnabled(ds: ?*const gpu.DepthStencilState) vk.Bool32 {
         if (ds == null) return vk.FALSE;
         return @intFromBool(ds.?.depth_bias != 0 or ds.?.depth_bias_slope_scale != 0);
     }
 };
 
-pub const PipelineLayout = struct {
-    manager: utils.Manager(PipelineLayout) = .{},
+pub const CommandBuffer = struct {
+    manager: utils.Manager(CommandBuffer) = .{},
+    buffer: vk.CommandBuffer,
+
+    pub fn deinit(cmd_buffer: *CommandBuffer) void {
+        _ = cmd_buffer;
+    }
+};
+
+pub const CommandEncoder = struct {
+    manager: utils.Manager(CommandEncoder) = .{},
     device: *Device,
-    layout: vk.PipelineLayout,
+    buffer: CommandBuffer,
 
-    pub fn init(device: *Device, descriptor: *const gpu.PipelineLayout.Descriptor) !PipelineLayout {
-        const groups = try allocator.alloc(vk.DescriptorSetLayout, descriptor.bind_group_layout_count);
-        defer allocator.free(groups);
-        for (groups, 0..) |*layout, i| {
-            layout.* = @as(*BindGroupLayout, @ptrCast(@alignCast(descriptor.bind_group_layouts.?[i]))).layout;
-        }
+    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+        _ = desc;
 
-        const layout = try vkd.createPipelineLayout(device.device, &.{
-            .set_layout_count = @as(u32, @intCast(groups.len)),
-            .p_set_layouts = groups.ptr,
-        }, null);
+        var buffer = CommandBuffer{ .buffer = undefined };
+        try vkd.allocateCommandBuffers(device.device, &.{
+            .command_pool = device.cmd_pool,
+            .level = .primary,
+            .command_buffer_count = 1,
+        }, @ptrCast(&buffer));
+        try vkd.beginCommandBuffer(buffer.buffer, &.{ .flags = .{ .one_time_submit_bit = true } });
 
-        return .{
+        var cmd_encoder = try allocator.create(CommandEncoder);
+        errdefer allocator.destroy(cmd_encoder);
+        cmd_encoder.* = .{
             .device = device,
-            .layout = layout,
+            .buffer = buffer,
         };
+
+        try device.frameRes().destruction_queue.append(allocator, .{ .cmd_encoder = cmd_encoder });
+        return cmd_encoder;
     }
 
-    pub fn deinit(layout: *PipelineLayout) void {
-        vkd.destroyPipelineLayout(layout.device.device, layout.layout, null);
+    pub fn deinit(cmd_encoder: *CommandEncoder) void {
+        _ = cmd_encoder;
+    }
+
+    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+        _ = desc;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+        return RenderPassEncoder.init(cmd_encoder.device, cmd_encoder, desc);
+    }
+
+    pub fn copyBufferToBuffer(encoder: *CommandEncoder, source: *Buffer, source_offset: u64, destination: *Buffer, destination_offset: u64, size: u64) !void {
+        _ = size;
+        _ = destination_offset;
+        _ = destination;
+        _ = source_offset;
+        _ = source;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
+        _ = desc;
+        try vkd.endCommandBuffer(cmd_encoder.buffer.buffer);
+        return &cmd_encoder.buffer;
+    }
+};
+
+pub const ComputePassEncoder = struct {
+    manager: utils.Manager(ComputePassEncoder) = .{},
+
+    pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+        _ = desc;
+        _ = command_encoder;
+        unreachable;
+    }
+
+    pub fn deinit(encoder: *ComputePassEncoder) void {
+        _ = encoder;
+    }
+
+    pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
+        _ = workgroup_count_z;
+        _ = workgroup_count_y;
+        _ = workgroup_count_x;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn setBindGroup(encoder: *ComputePassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
+        _ = dynamic_offsets;
+        _ = dynamic_offset_count;
+        _ = group;
+        _ = group_index;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn setPipeline(encoder: *ComputePassEncoder, pipeline: *ComputePipeline) !void {
+        _ = pipeline;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn end(encoder: *ComputePassEncoder) void {
+        _ = encoder;
+        unreachable;
     }
 };
 
@@ -1530,57 +1788,6 @@ pub const RenderPassEncoder = struct {
     }
 };
 
-pub const CommandEncoder = struct {
-    manager: utils.Manager(CommandEncoder) = .{},
-    device: *Device,
-    buffer: CommandBuffer,
-
-    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
-        _ = desc;
-
-        var buffer = CommandBuffer{ .buffer = undefined };
-        try vkd.allocateCommandBuffers(device.device, &.{
-            .command_pool = device.cmd_pool,
-            .level = .primary,
-            .command_buffer_count = 1,
-        }, @ptrCast(&buffer));
-        try vkd.beginCommandBuffer(buffer.buffer, &.{ .flags = .{ .one_time_submit_bit = true } });
-
-        var cmd_encoder = try allocator.create(CommandEncoder);
-        errdefer allocator.destroy(cmd_encoder);
-        cmd_encoder.* = .{
-            .device = device,
-            .buffer = buffer,
-        };
-
-        try device.frameRes().destruction_queue.append(allocator, .{ .cmd_encoder = cmd_encoder });
-        return cmd_encoder;
-    }
-
-    pub fn deinit(cmd_encoder: *CommandEncoder) void {
-        _ = cmd_encoder;
-    }
-
-    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
-        return RenderPassEncoder.init(cmd_encoder.device, cmd_encoder, desc);
-    }
-
-    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
-        _ = desc;
-        try vkd.endCommandBuffer(cmd_encoder.buffer.buffer);
-        return &cmd_encoder.buffer;
-    }
-};
-
-pub const CommandBuffer = struct {
-    manager: utils.Manager(CommandBuffer) = .{},
-    buffer: vk.CommandBuffer,
-
-    pub fn deinit(cmd_buffer: *CommandBuffer) void {
-        _ = cmd_buffer;
-    }
-};
-
 pub const Queue = struct {
     manager: utils.Manager(Queue) = .{},
     device: *Device,
@@ -1622,56 +1829,6 @@ pub const Queue = struct {
             submits.ptr,
             queue.device.frameRes().render_fence,
         );
-    }
-};
-
-pub const ShaderModule = struct {
-    manager: utils.Manager(ShaderModule) = .{},
-    shader_module: vk.ShaderModule,
-    device: *Device,
-
-    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
-        const code = shader.CodeGen.generate(allocator, air, .spirv, .{ .emit_source_file = "" }) catch unreachable;
-        defer allocator.free(code);
-
-        return ShaderModule.initSpirv(device, code);
-    }
-
-    pub fn initSpirv(device: *Device, code: []const u8) !*ShaderModule {
-        const vk_shader_module = try vkd.createShaderModule(
-            device.device,
-            &vk.ShaderModuleCreateInfo{
-                .code_size = code.len,
-                .p_code = @ptrCast(@alignCast(code.ptr)),
-            },
-            null,
-        );
-
-        var shader_module = try allocator.create(ShaderModule);
-        shader_module.* = .{
-            .device = device,
-            .shader_module = vk_shader_module,
-        };
-
-        return shader_module;
-    }
-
-    pub fn deinit(shader_module: *ShaderModule) void {
-        vkd.destroyShaderModule(
-            shader_module.device.device,
-            shader_module.shader_module,
-            null,
-        );
-        allocator.destroy(shader_module);
-    }
-};
-
-pub const BindGroupLayout = struct {
-    manager: utils.Manager(BindGroupLayout) = .{},
-    layout: vk.DescriptorSetLayout,
-
-    pub fn deinit(layout: BindGroupLayout) void {
-        _ = layout;
     }
 };
 
