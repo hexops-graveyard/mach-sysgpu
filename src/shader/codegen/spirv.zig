@@ -33,7 +33,7 @@ next_result_id: Word = 1,
 compute_stage: ?ComputeStage = null,
 vertex_stage: ?VertexStage = null,
 fragment_stage: ?FragmentStage = null,
-store_return: ?IdRef = null,
+store_return: std.ArrayListUnmanaged(struct { ptr: IdRef, type: IdRef }) = .{},
 loop_merge_label: ?IdRef = null,
 loop_continue_label: ?IdRef = null,
 branched: std.AutoHashMapUnmanaged(RefIndex, void) = .{},
@@ -43,6 +43,7 @@ const Decl = struct {
     id: IdRef,
     type_id: IdRef,
     is_ptr: bool,
+    is_uniform: bool,
 };
 
 const ComputeStage = struct {
@@ -87,6 +88,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         spv.type_value_map.deinit(allocator);
         spv.decl_map.deinit(allocator);
         spv.branched.deinit(allocator);
+        spv.store_return.deinit(allocator);
         if (spv.compute_stage) |stage| allocator.free(stage.interface);
         if (spv.vertex_stage) |stage| allocator.free(stage.interface);
         if (spv.fragment_stage) |stage| allocator.free(stage.interface);
@@ -226,46 +228,91 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     var interface = std.ArrayList(IdRef).init(spv.allocator);
     errdefer interface.deinit();
 
-    var return_var_id: ?IdRef = null;
     if (inst.stage != .none and inst.return_type != .none) {
-        return_var_id = spv.allocId();
-        spv.store_return = return_var_id;
 
-        const return_var_name_slice = try std.mem.concat(
-            spv.allocator,
-            u8,
-            &.{ name_slice, "_return_output" },
-        );
-        defer spv.allocator.free(return_var_name_slice);
-        try spv.debugName(return_var_id.?, return_var_name_slice);
+        // TODO: eliminate duplicate code
+        if (spv.air.getInst(inst.return_type) == .@"struct") {
+            const struct_members = spv.air.refToList(spv.air.getInst(inst.return_type).@"struct".members);
 
-        const return_var_type_id = try spv.resolve(.{ .ptr_type = .{
-            .storage_class = .Output,
-            .elem_type = raw_return_type_id,
-        } });
-        try spv.global_section.emit(.OpVariable, .{
-            .id_result_type = return_var_type_id,
-            .id_result = return_var_id.?,
-            .storage_class = .Output,
-        });
+            for (struct_members) |member_index| {
+                const return_var_id = spv.allocId();
 
-        if (inst.return_attrs.builtin) |builtin| {
-            try spv.annotations_section.emit(.OpDecorate, .{
-                .target = return_var_id.?,
-                .decoration = .{ .BuiltIn = .{ .built_in = spirvBuiltin(builtin) } },
+                const member = spv.air.getInst(member_index).struct_member;
+                const member_type_id = try spv.emitType(member.type);
+
+                const return_var_name_slice = try std.mem.concat(
+                    spv.allocator,
+                    u8,
+                    &.{ name_slice, spv.air.getStr(member.name), "_return_output" },
+                );
+                defer spv.allocator.free(return_var_name_slice);
+                try spv.debugName(return_var_id, return_var_name_slice);
+
+                const return_var_type_id = try spv.resolve(.{ .ptr_type = .{
+                    .storage_class = .Output,
+                    .elem_type = member_type_id,
+                } });
+                try spv.global_section.emit(.OpVariable, .{
+                    .id_result_type = return_var_type_id,
+                    .id_result = return_var_id,
+                    .storage_class = .Output,
+                });
+
+                if (member.builtin) |builtin| {
+                    try spv.annotations_section.emit(.OpDecorate, .{
+                        .target = return_var_id,
+                        .decoration = .{ .BuiltIn = .{ .built_in = spirvBuiltin(builtin) } },
+                    });
+                }
+
+                if (member.location) |location| {
+                    try spv.annotations_section.emit(.OpDecorate, .{
+                        .target = return_var_id,
+                        .decoration = .{ .Location = .{ .location = location } },
+                    });
+                }
+
+                try interface.append(return_var_id);
+                try spv.store_return.append(spv.allocator, .{ .ptr = return_var_id, .type = member_type_id });
+            }
+        } else {
+            const return_var_id = spv.allocId();
+
+            const return_var_name_slice = try std.mem.concat(
+                spv.allocator,
+                u8,
+                &.{ name_slice, "_return_output" },
+            );
+            defer spv.allocator.free(return_var_name_slice);
+            try spv.debugName(return_var_id, return_var_name_slice);
+
+            const return_var_type_id = try spv.resolve(.{ .ptr_type = .{
+                .storage_class = .Output,
+                .elem_type = raw_return_type_id,
+            } });
+            try spv.global_section.emit(.OpVariable, .{
+                .id_result_type = return_var_type_id,
+                .id_result = return_var_id,
+                .storage_class = .Output,
             });
-        }
 
-        if (inst.return_attrs.location) |location| {
-            try spv.annotations_section.emit(.OpDecorate, .{
-                .target = return_var_id.?,
-                .decoration = .{ .Location = .{ .location = location } },
-            });
-        }
+            if (inst.return_attrs.builtin) |builtin| {
+                try spv.annotations_section.emit(.OpDecorate, .{
+                    .target = return_var_id,
+                    .decoration = .{ .BuiltIn = .{ .built_in = spirvBuiltin(builtin) } },
+                });
+            }
 
-        try interface.append(return_var_id.?);
-    } else {
-        spv.store_return = null;
+            if (inst.return_attrs.location) |location| {
+                try spv.annotations_section.emit(.OpDecorate, .{
+                    .target = return_var_id,
+                    .decoration = .{ .Location = .{ .location = location } },
+                });
+            }
+
+            try spv.store_return.append(spv.allocator, .{ .ptr = return_var_id, .type = raw_return_type_id });
+            try interface.append(return_var_id);
+        }
     }
 
     var params_type = std.ArrayList(IdRef).init(spv.allocator);
@@ -309,11 +356,19 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                     });
                 }
 
+                if (param_inst.location) |location| {
+                    try spv.annotations_section.emit(.OpDecorate, .{
+                        .target = param_id,
+                        .decoration = .{ .Location = .{ .location = location } },
+                    });
+                }
+
                 try interface.append(param_id);
                 try spv.decl_map.put(spv.allocator, param_inst_idx, .{
                     .id = param_id,
                     .type_id = elem_type_id,
                     .is_ptr = true,
+                    .is_uniform = false,
                 });
             } else {
                 const param_type_id = try spv.emitType(param_inst.type);
@@ -326,6 +381,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                     .id = param_id,
                     .type_id = param_type_id,
                     .is_ptr = false,
+                    .is_uniform = false,
                 });
             }
         }
@@ -412,6 +468,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
         .id = fn_id,
         .type_id = fn_type_id,
         .is_ptr = false,
+        .is_uniform = false,
     });
     return fn_id;
 }
@@ -471,25 +528,68 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     try spv.debugName(id, spv.air.getStr(inst.name));
 
     const storage_class = storageClassFromAddrSpace(inst.addr_space);
+    const is_uniform = inst.addr_space == .uniform;
+
     const type_id = try spv.emitType(inst.type);
+    const unifrom_type_id = if (is_uniform) try spv.resolve(.{ .struct_type = .{ .members = &.{type_id} } }) else undefined;
+
+    if (inst.binding != .none) {
+        const binding = spv.air.resolveConstExpr(inst.binding).?.int;
+        try spv.annotations_section.emit(.OpDecorate, .{
+            .target = id,
+            .decoration = .{ .Binding = .{ .binding_point = @intCast(binding) } },
+        });
+    }
+
+    if (inst.group != .none) {
+        const group = spv.air.resolveConstExpr(inst.group).?.int;
+        try spv.annotations_section.emit(.OpDecorate, .{
+            .target = id,
+            .decoration = .{ .DescriptorSet = .{ .descriptor_set = @intCast(group) } },
+        });
+    }
+
+    if (is_uniform) {
+        try spv.annotations_section.emit(.OpDecorate, .{ .target = unifrom_type_id, .decoration = .Block });
+        try spv.annotations_section.emit(.OpMemberDecorate, .{
+            .structure_type = unifrom_type_id,
+            .member = 0,
+            .decoration = .{ .Offset = .{ .byte_offset = 0 } },
+        });
+        try spv.annotations_section.emit(.OpMemberDecorate, .{
+            .structure_type = unifrom_type_id,
+            .member = 0,
+            .decoration = .ColMajor,
+        });
+
+        const mat_type_inst = spv.air.getInst(inst.type).matrix;
+        const stride = @as(u8, @intCast(@intFromEnum(mat_type_inst.cols))) * @intFromEnum(mat_type_inst.rows);
+        try spv.annotations_section.emit(.OpMemberDecorate, .{
+            .structure_type = unifrom_type_id,
+            .member = 0,
+            .decoration = .{ .MatrixStride = .{ .matrix_stride = stride } },
+        });
+    }
+
     const ptr_type_id = try spv.resolve(.{ .ptr_type = .{
-        .elem_type = type_id,
+        .elem_type = if (is_uniform) unifrom_type_id else type_id,
         .storage_class = storage_class,
     } });
 
-    const zero_id = try spv.resolve(.{ .null = type_id });
+    const initializer = if (is_uniform) null else try spv.resolve(.{ .null = if (is_uniform) unifrom_type_id else type_id });
 
     try section.emit(.OpVariable, .{
         .id_result_type = ptr_type_id,
         .id_result = id,
         .storage_class = storage_class,
-        .initializer = zero_id,
+        .initializer = initializer,
     });
 
     try spv.decl_map.put(spv.allocator, inst_idx, .{
         .id = id,
         .type_id = type_id,
         .is_ptr = true,
+        .is_uniform = is_uniform,
     });
 
     return id;
@@ -565,6 +665,7 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
                 .id = id,
                 .type_id = .{ .id = 0 },
                 .is_ptr = false,
+                .is_uniform = false,
             });
             return id;
         },
@@ -584,14 +685,35 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutO
             }
         },
         .@"return" => |inst| {
-            if (spv.store_return) |store_to| {
+            if (spv.store_return.items.len == 0) {
+                try spv.emitReturn(section, inst);
+            } else if (spv.store_return.items.len == 1) {
                 try section.emit(.OpStore, .{
-                    .pointer = store_to,
+                    .pointer = spv.store_return.items[0].ptr,
                     .object = try spv.emitExpr(section, inst),
                 });
                 try spv.emitReturn(section, .none);
+                spv.store_return.clearRetainingCapacity();
             } else {
-                try spv.emitReturn(section, inst);
+                // assume functions returns an struct
+                const base = try spv.emitExpr(section, inst);
+                for (spv.store_return.items, 0..) |store_item, i| {
+                    const id = spv.allocId();
+
+                    try section.emit(.OpCompositeExtract, .{
+                        .id_result_type = store_item.type,
+                        .id_result = id,
+                        .composite = base,
+                        .indexes = &[_]u32{@intCast(i)},
+                    });
+
+                    try section.emit(.OpStore, .{
+                        .pointer = store_item.ptr,
+                        .object = id,
+                    });
+                }
+                try spv.emitReturn(section, .none);
+                spv.store_return.clearRetainingCapacity();
             }
         },
         .call => |inst| _ = try spv.emitCall(section, inst),
@@ -827,7 +949,7 @@ fn emitContinue(spv: *SpirV, section: *Section) !void {
 }
 
 fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
-    const decl = try spv.emitDeclPtr(section, inst.lhs);
+    const decl = try spv.accessDeclPtr(section, inst.lhs);
 
     const expr = blk: {
         const op: Inst.Binary.Op = switch (inst.mod) {
@@ -859,9 +981,9 @@ fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
     });
 }
 
-fn emitDeclPtr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!IdRef {
+fn accessDeclPtr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!IdRef {
     switch (spv.air.getInst(inst)) {
-        .var_ref => |ref| return spv.decl_map.get(ref).?.id,
+        .var_ref => |var_ref| return spv.emitVarAccess(section, var_ref, true),
         .index_access => |index_access| return spv.emitIndexAccess(section, index_access, true),
         .field_access => |field_access| return spv.emitFieldAccess(section, field_access, true),
         else => unreachable,
@@ -873,8 +995,8 @@ fn emitReturn(spv: *SpirV, section: *Section, inst: InstIndex) !void {
     try section.emit(.OpReturnValue, .{ .value = try spv.emitExpr(section, inst) });
 }
 
-fn emitExpr(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
-    return switch (spv.air.getInst(inst_idx)) {
+fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!IdRef {
+    return switch (spv.air.getInst(inst)) {
         .bool => |boolean| spv.emitBool(section, boolean),
         .int => |int| spv.emitInt(section, int),
         .float => |float| spv.emitFloat(section, float),
@@ -882,25 +1004,57 @@ fn emitExpr(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemo
         .matrix => |matrix| spv.emitMatrix(section, matrix),
         .array => |array| spv.emitArray(section, array),
         .call => |call| spv.emitCall(section, call),
-        .var_ref => |var_ref| blk: {
-            const decl = spv.decl_map.get(var_ref).?;
-            if (decl.is_ptr) {
-                const load_id = spv.allocId();
-                try section.emit(.OpLoad, .{
-                    .id_result_type = decl.type_id,
-                    .id_result = load_id,
-                    .pointer = decl.id,
-                });
-                break :blk load_id;
-            }
-            break :blk decl.id;
-        },
         .swizzle_access => |swizzle_access| spv.emitSwizzleAccess(section, swizzle_access),
+        .var_ref => |var_ref| spv.emitVarAccess(section, var_ref, false),
         .index_access => |index_access| spv.emitIndexAccess(section, index_access, false),
+        .field_access => |field_access| spv.emitFieldAccess(section, field_access, false),
         .binary => |bin| spv.emitBinary(section, bin),
         .negate => |neg| spv.emitNegate(section, neg),
-        else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst_idx))}),
+        else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
+}
+
+fn emitVarAccess(spv: *SpirV, section: *Section, inst: InstIndex, ptr: bool) !IdRef {
+    const decl = spv.decl_map.get(inst).?;
+
+    if (decl.is_uniform) {
+        const id = spv.allocId();
+        const index_id = try spv.resolve(.{ .int = .{ .type = .u32, .value = 0 } });
+        const type_id = try spv.resolve(.{ .ptr_type = .{
+            .storage_class = .Uniform,
+            .elem_type = decl.type_id,
+        } });
+        try section.emit(.OpAccessChain, .{
+            .id_result_type = type_id,
+            .id_result = id,
+            .base = decl.id,
+            .indexes = &.{index_id},
+        });
+
+        if (!ptr) {
+            const load_id = spv.allocId();
+            try section.emit(.OpLoad, .{
+                .id_result_type = decl.type_id,
+                .id_result = load_id,
+                .pointer = id,
+            });
+            return load_id;
+        }
+
+        return id;
+    }
+
+    if (decl.is_ptr and !ptr) {
+        const load_id = spv.allocId();
+        try section.emit(.OpLoad, .{
+            .id_result_type = decl.type_id,
+            .id_result = load_id,
+            .pointer = decl.id,
+        });
+        return load_id;
+    }
+
+    return decl.id;
 }
 
 fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
@@ -1502,7 +1656,7 @@ fn emitSwizzleAccess(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) !
 
 fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess, ptr: bool) !IdRef {
     const type_id = try spv.emitType(inst.type);
-    const base_decl = try spv.emitDeclPtr(section, inst.base);
+    const base_decl = try spv.accessDeclPtr(section, inst.base);
 
     if (spv.air.resolveConstExpr(inst.index)) |_| { // TODO
         const id = spv.allocId();
@@ -1544,7 +1698,7 @@ fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess, ptr: 
 fn emitFieldAccess(spv: *SpirV, section: *Section, inst: Inst.FieldAccess, ptr: bool) !IdRef {
     const struct_member = spv.air.getInst(inst.field).struct_member;
     const type_id = try spv.emitType(struct_member.type);
-    const base_decl = try spv.emitDeclPtr(section, inst.base);
+    const base_decl = try spv.accessDeclPtr(section, inst.base);
 
     const access_chain_id = spv.allocId();
     const index_id = try spv.resolve(.{ .int = .{
