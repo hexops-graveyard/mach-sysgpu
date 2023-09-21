@@ -34,44 +34,47 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    const triangle = b.addExecutable(.{
-        .name = "triangle",
-        .root_source_file = .{ .path = "examples/triangle/main.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-    triangle.addModule("dusk", module);
-    triangle.addModule("gpu", gpu_mod);
-    triangle.addModule("glfw", glfw_mod);
-    triangle.addModule("objc", objc_mod);
-
-    if (target.isDarwin()) {
-        triangle.linkFramework("AppKit");
-        triangle.linkFramework("CoreGraphics");
-        triangle.linkFramework("Foundation");
-        triangle.linkFramework("Metal");
-        triangle.linkFramework("QuartzCore");
-    }
-
-    if (target.isWindows()) {
-        triangle.addCSourceFile(.{ .file = .{ .path = "src/d3d12/workarounds.c" }, .flags = &.{} });
-
-        triangle.linkLibrary(b.dependency("direct3d_headers", .{
+    inline for (&.{ "triangle", "rotating-cube" }) |example_name| {
+        const example = b.addExecutable(.{
+            .name = example_name,
+            .root_source_file = .{ .path = "examples/" ++ example_name ++ "/main.zig" },
             .target = target,
             .optimize = optimize,
-        }).artifact("direct3d-headers"));
-        @import("direct3d_headers").addLibraryPath(triangle);
-        triangle.linkSystemLibrary("d3d12");
-        triangle.linkSystemLibrary("d3dcompiler_47");
+        });
+        example.addModule("dusk", module);
+        example.addModule("gpu", gpu_mod);
+        example.addModule("glfw", glfw_mod);
+        example.addModule("objc", objc_mod);
+        example.main_pkg_path = .{ .path = "examples" };
+
+        if (target.isDarwin()) {
+            example.linkFramework("AppKit");
+            example.linkFramework("CoreGraphics");
+            example.linkFramework("Foundation");
+            example.linkFramework("Metal");
+            example.linkFramework("QuartzCore");
+        }
+
+        if (target.isWindows()) {
+            example.addCSourceFile(.{ .file = .{ .path = "src/d3d12/workarounds.c" }, .flags = &.{} });
+
+            example.linkLibrary(b.dependency("direct3d_headers", .{
+                .target = target,
+                .optimize = optimize,
+            }).artifact("direct3d-headers"));
+            @import("direct3d_headers").addLibraryPath(example);
+            example.linkSystemLibrary("d3d12");
+            example.linkSystemLibrary("d3dcompiler_47");
+        }
+
+        @import("mach_glfw").link(glfw_dep.builder, example);
+        try @import("mach_gpu").link(gpu_dep.builder, example, .{}); // link dawn
+        b.installArtifact(example);
+
+        const run_example_cmd = b.addRunArtifact(example);
+        const run_example_step = b.step(example_name, "Run the " ++ example_name ++ "example");
+        run_example_step.dependOn(&run_example_cmd.step);
     }
-
-    @import("mach_glfw").link(glfw_dep.builder, triangle);
-    try @import("mach_gpu").link(gpu_dep.builder, triangle, .{}); // link dawn
-    b.installArtifact(triangle);
-
-    const run_triangle_cmd = b.addRunArtifact(triangle);
-    const run_triangle_step = b.step("triangle", "Run the basic init example");
-    run_triangle_step.dependOn(&run_triangle_cmd.step);
 
     const tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
