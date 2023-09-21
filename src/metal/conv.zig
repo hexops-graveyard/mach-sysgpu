@@ -222,6 +222,13 @@ pub fn metalPrimitiveType(topology: gpu.PrimitiveTopology) mtl.PrimitiveType {
     };
 }
 
+pub fn metalResourceOptionsForBuffer(usage: gpu.Buffer.UsageFlags) mtl.ResourceOptions {
+    const cpu_cache_mode = if (usage.map_write and !usage.map_read) mtl.ResourceCPUCacheModeWriteCombined else mtl.ResourceCPUCacheModeDefaultCache;
+    const storage_mode = mtl.ResourceStorageModeShared; // optimizing for UMA only
+    const hazard_tracking_mode = mtl.ResourceHazardTrackingModeDefault;
+    return cpu_cache_mode | storage_mode | hazard_tracking_mode;
+}
+
 pub fn metalSamplerAddressMode(mode: gpu.AddressMode) mtl.SamplerAddressMode {
     return switch (mode) {
         .repeat => mtl.SamplerAddressModeRepeat,

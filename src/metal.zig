@@ -8,6 +8,7 @@ const shader = @import("shader.zig");
 const conv = @import("metal/conv.zig");
 
 const log = std.log.scoped(.metal);
+const slot_array_lengths = 20; // TODO - figure out number of slots
 
 var allocator: std.mem.Allocator = undefined;
 
@@ -127,6 +128,12 @@ pub const Surface = struct {
 };
 
 pub const Device = struct {
+    const MapAsyncCallback = struct {
+        callback: gpu.Buffer.MapCallback,
+        userdata: ?*anyopaque,
+        fence_value: u64,
+    };
+
     manager: utils.Manager(Device) = .{},
     mtl_device: *mtl.Device,
     queue: ?*Queue = null,
@@ -136,13 +143,17 @@ pub const Device = struct {
     log_cb_userdata: ?*anyopaque = null,
     err_cb: ?gpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
+    map_async_callbacks: std.ArrayList(MapAsyncCallback),
 
     pub fn init(adapter: *Adapter, desc: ?*const gpu.Device.Descriptor) !*Device {
         // TODO
         _ = desc;
 
         var device = try allocator.create(Device);
-        device.* = .{ .mtl_device = adapter.mtl_device };
+        device.* = .{
+            .mtl_device = adapter.mtl_device,
+            .map_async_callbacks = std.ArrayList(MapAsyncCallback).init(allocator),
+        };
         return device;
     }
 
@@ -151,12 +162,25 @@ pub const Device = struct {
             lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
         }
 
+        device.map_async_callbacks.deinit();
         if (device.queue) |queue| queue.manager.release();
         allocator.destroy(device);
     }
 
+    pub fn createBindGroup(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+        return BindGroup.init(device, desc);
+    }
+
+    pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+        return Buffer.init(device, desc);
+    }
+
     pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
+    }
+
+    pub fn createComputePipeline(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+        return ComputePipeline.init(device, desc);
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
@@ -186,6 +210,23 @@ pub const Device = struct {
             device.queue = try Queue.init(device);
         }
         return device.queue.?;
+    }
+
+    pub fn tick(device: *Device) !void {
+        const queue = try device.getQueue();
+
+        var i: usize = 0;
+        while (i < device.map_async_callbacks.items.len) {
+            const map_async_callback = device.map_async_callbacks.items[i];
+            const completed_value = queue.completed_value;
+
+            if (map_async_callback.fence_value <= completed_value) {
+                map_async_callback.callback(.success, map_async_callback.userdata);
+                _ = device.map_async_callbacks.swapRemove(i);
+            } else {
+                i += 1;
+            }
+        }
     }
 };
 
@@ -229,6 +270,63 @@ pub const SwapChain = struct {
             command_buffer.presentDrawable(@ptrCast(swapchain.current_drawable)); // TODO - objc casting?
             command_buffer.commit();
         }
+    }
+};
+
+pub const Buffer = struct {
+    manager: utils.Manager(Buffer) = .{},
+    device: *Device,
+    mtl_buffer: *mtl.Buffer,
+    last_used_fence_value: u64 = 0,
+
+    pub fn init(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+        const mtl_device = device.mtl_device;
+
+        const mtl_buffer = mtl_device.newBufferWithLength_options(
+            desc.size,
+            conv.metalResourceOptionsForBuffer(desc.usage),
+        ) orelse {
+            return error.newBufferFailed;
+        };
+        if (desc.label) |label| {
+            mtl_buffer.setLabel(ns.String.stringWithUTF8String(label));
+        }
+
+        var buffer = try allocator.create(Buffer);
+        buffer.* = .{
+            .device = device,
+            .mtl_buffer = mtl_buffer,
+        };
+        return buffer;
+    }
+
+    pub fn deinit(buffer: *Buffer) void {
+        buffer.mtl_buffer.release();
+        allocator.destroy(buffer);
+    }
+
+    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) ?*const anyopaque {
+        _ = size;
+        const mtl_buffer = buffer.mtl_buffer;
+        const base: [*]const u8 = @ptrCast(mtl_buffer.contents());
+        return base + offset;
+    }
+
+    pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
+        _ = size;
+        _ = offset;
+        _ = mode;
+
+        const device = buffer.device;
+        try device.map_async_callbacks.append(.{
+            .callback = callback,
+            .userdata = userdata,
+            .fence_value = buffer.last_used_fence_value,
+        });
+    }
+
+    pub fn unmap(buffer: *Buffer) void {
+        _ = buffer;
     }
 };
 
@@ -318,6 +416,82 @@ pub const TextureView = struct {
     }
 };
 
+pub const Sampler = struct {
+    manager: utils.Manager(TextureView) = .{},
+    mtl_sampler: *mtl.SamplerState,
+};
+
+pub const BindGroupLayout = struct {
+    manager: utils.Manager(BindGroupLayout) = .{},
+
+    pub fn init() !*BindGroupLayout {
+        var layout = try allocator.create(BindGroupLayout);
+        layout.* = .{};
+        return layout;
+    }
+
+    pub fn deinit(layout: *BindGroupLayout) void {
+        allocator.destroy(layout);
+    }
+};
+
+pub const BindGroup = struct {
+    const Kind = enum {
+        buffer,
+        sampler,
+        texture,
+    };
+
+    const Entry = struct {
+        kind: Kind,
+        binding: u32,
+        buffer: ?*Buffer = null,
+        offset: u32 = 0,
+        size: u32,
+        sampler: ?*mtl.SamplerState = null,
+        texture: ?*mtl.Texture = null,
+    };
+
+    manager: utils.Manager(BindGroup) = .{},
+    entries: []const Entry,
+
+    pub fn init(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+        _ = device;
+
+        var mtl_entries = try allocator.alloc(Entry, desc.entry_count);
+        errdefer allocator.free(mtl_entries);
+
+        for (desc.entries.?[0..desc.entry_count], 0..) |entry, i| {
+            var mtl_entry = &mtl_entries[i];
+            mtl_entry.binding = entry.binding;
+            if (entry.buffer) |buffer_raw| {
+                const buffer: *Buffer = @ptrCast(@alignCast(buffer_raw));
+                mtl_entry.kind = .buffer;
+                mtl_entry.buffer = buffer;
+                mtl_entry.offset = @intCast(entry.offset);
+                mtl_entry.size = @intCast(entry.size);
+            } else if (entry.sampler) |sampler_raw| {
+                const sampler: *Sampler = @ptrCast(@alignCast(sampler_raw));
+                mtl_entry.kind = .sampler;
+                mtl_entry.sampler = sampler.mtl_sampler;
+            } else if (entry.texture_view) |texture_view_raw| {
+                const texture_view: *TextureView = @ptrCast(@alignCast(texture_view_raw));
+                mtl_entry.kind = .texture;
+                mtl_entry.texture = texture_view.mtl_texture;
+            }
+        }
+
+        var group = try allocator.create(BindGroup);
+        group.* = .{ .entries = mtl_entries };
+        return group;
+    }
+
+    pub fn deinit(group: *BindGroup) void {
+        allocator.free(group.entries);
+        allocator.destroy(group);
+    }
+};
+
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     library: *mtl.Library,
@@ -393,9 +567,72 @@ pub const ShaderModule = struct {
     }
 };
 
+pub const ComputePipeline = struct {
+    manager: utils.Manager(ComputePipeline) = .{},
+    mtl_pipeline: *mtl.ComputePipelineState,
+    layout: *BindGroupLayout,
+    threadgroup_size: mtl.Size,
+
+    pub fn init(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+        const mtl_device = device.mtl_device;
+
+        var mtl_desc = mtl.ComputePipelineDescriptor.alloc().init();
+        defer mtl_desc.release();
+
+        if (desc.label) |label| {
+            mtl_desc.setLabel(ns.String.stringWithUTF8String(label));
+        }
+
+        const compute_module: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
+        const compute_fn = compute_module.library.newFunctionWithName(ns.String.stringWithUTF8String(desc.compute.entry_point)) orelse {
+            return error.InvalidDescriptor;
+        };
+        defer compute_fn.release();
+        mtl_desc.setComputeFunction(compute_fn);
+
+        const threadgroup_size = compute_module.threadgroup_sizes.get(std.mem.span(desc.compute.entry_point)) orelse {
+            return error.InvalidDescriptor;
+        };
+
+        // create
+        var err: ?*ns.Error = undefined;
+        const mtl_pipeline = mtl_device.newComputePipelineStateWithDescriptor_options_reflection_error(
+            mtl_desc,
+            mtl.PipelineOptionNone,
+            null,
+            &err,
+        ) orelse {
+            // TODO
+            std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
+            return error.InvalidDescriptor;
+        };
+
+        // result
+        var pipeline = try allocator.create(ComputePipeline);
+        pipeline.* = .{
+            .mtl_pipeline = mtl_pipeline,
+            .layout = try BindGroupLayout.init(),
+            .threadgroup_size = threadgroup_size,
+        };
+        return pipeline;
+    }
+
+    pub fn deinit(pipeline: *ComputePipeline) void {
+        pipeline.mtl_pipeline.release();
+        pipeline.layout.manager.release();
+        allocator.destroy(pipeline);
+    }
+
+    pub fn getBindGroupLayout(pipeline: *ComputePipeline, group_index: u32) *BindGroupLayout {
+        _ = group_index;
+        return pipeline.layout;
+    }
+};
+
 pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     mtl_pipeline: *mtl.RenderPipelineState,
+    layout: *BindGroupLayout,
     primitive_type: mtl.PrimitiveType,
     winding: mtl.Winding,
     cull_mode: mtl.CullMode,
@@ -523,9 +760,10 @@ pub const RenderPipeline = struct {
             return error.InvalidDescriptor;
         };
 
-        var render_pipeline = try allocator.create(RenderPipeline);
-        render_pipeline.* = .{
+        var pipeline = try allocator.create(RenderPipeline);
+        pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
+            .layout = try BindGroupLayout.init(),
             .primitive_type = primitive_type,
             .winding = winding,
             .cull_mode = cull_mode,
@@ -534,18 +772,25 @@ pub const RenderPipeline = struct {
             .depth_bias_slope_scale = depth_bias_slope_scale,
             .depth_bias_clamp = depth_bias_clamp,
         };
-        return render_pipeline;
+        return pipeline;
     }
 
-    pub fn deinit(render_pipeline: *RenderPipeline) void {
-        render_pipeline.mtl_pipeline.release();
-        allocator.destroy(render_pipeline);
+    pub fn deinit(pipeline: *RenderPipeline) void {
+        pipeline.mtl_pipeline.release();
+        pipeline.layout.manager.release();
+        allocator.destroy(pipeline);
+    }
+
+    pub fn getBindGroupLayout(pipeline: *RenderPipeline, group_index: u32) *BindGroupLayout {
+        _ = group_index;
+        return pipeline.layout;
     }
 };
 
 pub const CommandBuffer = struct {
     manager: utils.Manager(CommandBuffer) = .{},
     mtl_command_buffer: *mtl.CommandBuffer,
+    referenced_buffers: std.ArrayList(*Buffer),
 
     pub fn init(device: *Device) !*CommandBuffer {
         const queue = try device.getQueue();
@@ -554,18 +799,24 @@ pub const CommandBuffer = struct {
         };
 
         var cmd_buffer = try allocator.create(CommandBuffer);
-        cmd_buffer.* = .{ .mtl_command_buffer = mtl_command_buffer };
+        cmd_buffer.* = .{
+            .mtl_command_buffer = mtl_command_buffer,
+            .referenced_buffers = std.ArrayList(*Buffer).init(allocator),
+        };
         return cmd_buffer;
     }
 
     pub fn deinit(command_buffer: *CommandBuffer) void {
+        command_buffer.referenced_buffers.deinit();
         allocator.destroy(command_buffer);
     }
 };
 
 pub const CommandEncoder = struct {
     manager: utils.Manager(CommandEncoder) = .{},
+    device: *Device,
     command_buffer: *CommandBuffer,
+    referenced_buffers: *std.ArrayList(*Buffer),
 
     pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         // TODO
@@ -574,16 +825,50 @@ pub const CommandEncoder = struct {
         const command_buffer = try CommandBuffer.init(device);
 
         var encoder = try allocator.create(CommandEncoder);
-        encoder.* = .{ .command_buffer = command_buffer };
+        encoder.* = .{
+            .device = device,
+            .command_buffer = command_buffer,
+            .referenced_buffers = &command_buffer.referenced_buffers,
+        };
         return encoder;
     }
 
     pub fn deinit(encoder: *CommandEncoder) void {
+        encoder.command_buffer.manager.release();
         allocator.destroy(encoder);
+    }
+
+    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+        return ComputePassEncoder.init(encoder, desc);
     }
 
     pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
         return RenderPassEncoder.init(encoder, desc);
+    }
+
+    pub fn copyBufferToBuffer(encoder: *CommandEncoder, source: *Buffer, source_offset: u64, destination: *Buffer, destination_offset: u64, size: u64) !void {
+        const command_buffer = encoder.command_buffer;
+        const mtl_command_buffer = command_buffer.mtl_command_buffer;
+
+        var mtl_desc = mtl.BlitPassDescriptor.new();
+        defer mtl_desc.release();
+
+        const mtl_encoder = mtl_command_buffer.blitCommandEncoderWithDescriptor(mtl_desc) orelse {
+            return error.InvalidDescriptor;
+        };
+
+        mtl_encoder.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
+            source.mtl_buffer,
+            source_offset,
+            destination.mtl_buffer,
+            destination_offset,
+            size,
+        );
+
+        try encoder.referenced_buffers.append(source);
+        try encoder.referenced_buffers.append(destination);
+
+        mtl_encoder.endEncoding();
     }
 
     pub fn finish(encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
@@ -595,6 +880,90 @@ pub const CommandEncoder = struct {
         }
 
         return command_buffer;
+    }
+};
+
+pub const ComputePassEncoder = struct {
+    manager: utils.Manager(ComputePassEncoder) = .{},
+    mtl_encoder: *mtl.ComputeCommandEncoder,
+    threadgroup_size: mtl.Size,
+    array_lengths_buffer: *mtl.Buffer,
+    referenced_buffers: *std.ArrayList(*Buffer),
+
+    pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+        const mtl_device = command_encoder.device.mtl_device;
+        const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
+
+        var mtl_desc = mtl.ComputePassDescriptor.new();
+        defer mtl_desc.release();
+
+        const mtl_encoder = mtl_command_buffer.computeCommandEncoderWithDescriptor(mtl_desc) orelse {
+            return error.InvalidDescriptor;
+        };
+
+        if (desc.label) |label| {
+            mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
+        }
+
+        // TODO - needs to be N slots and recycle memory
+        const array_lengths_buffer = mtl_device.newBufferWithLength_options(@sizeOf(u32), 0) orelse {
+            return error.newBufferFailed;
+        };
+
+        mtl_encoder.setBuffer_offset_atIndex(array_lengths_buffer, 0, slot_array_lengths);
+
+        var encoder = try allocator.create(ComputePassEncoder);
+        encoder.* = .{
+            .mtl_encoder = mtl_encoder,
+            .threadgroup_size = mtl.Size.init(0, 0, 0),
+            .array_lengths_buffer = array_lengths_buffer,
+            .referenced_buffers = command_encoder.referenced_buffers,
+        };
+        return encoder;
+    }
+
+    pub fn deinit(encoder: *ComputePassEncoder) void {
+        encoder.array_lengths_buffer.release();
+        allocator.destroy(encoder);
+    }
+
+    pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.dispatchThreadgroups_threadsPerThreadgroup(
+            mtl.Size.init(workgroup_count_x, workgroup_count_y, workgroup_count_z),
+            encoder.threadgroup_size,
+        );
+    }
+
+    pub fn setBindGroup(encoder: *ComputePassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
+        _ = group_index;
+        _ = dynamic_offsets;
+        _ = dynamic_offset_count;
+
+        const mtl_encoder = encoder.mtl_encoder;
+
+        for (group.entries) |entry| {
+            switch (entry.kind) {
+                .buffer => {
+                    try encoder.referenced_buffers.append(entry.buffer.?);
+                    mtl_encoder.setBytes_length_atIndex(&entry.size, @sizeOf(u32), slot_array_lengths);
+                    mtl_encoder.setBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
+                },
+                .sampler => mtl_encoder.setSamplerState_atIndex(entry.sampler, entry.binding),
+                .texture => mtl_encoder.setTexture_atIndex(entry.texture, entry.binding),
+            }
+        }
+    }
+
+    pub fn setPipeline(encoder: *ComputePassEncoder, pipeline: *ComputePipeline) !void {
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.setComputePipelineState(pipeline.mtl_pipeline);
+        encoder.threadgroup_size = pipeline.threadgroup_size;
+    }
+
+    pub fn end(encoder: *ComputePassEncoder) void {
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.endEncoding();
     }
 };
 
@@ -717,8 +1086,15 @@ pub const RenderPassEncoder = struct {
 };
 
 pub const Queue = struct {
+    const CompletedContext = extern struct {
+        queue: *Queue,
+        fence_value: u64,
+    };
+
     manager: utils.Manager(Queue) = .{},
     command_queue: *mtl.CommandQueue,
+    fence_value: u64 = 0,
+    completed_value: u64 = 0, // TODO - this should be an atomic as it's updated in the callback on other threads
 
     pub fn init(device: *Device) !*Queue {
         const mtl_device = device.mtl_device;
@@ -738,10 +1114,27 @@ pub const Queue = struct {
     }
 
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
-        _ = queue;
-        for (commands) |commandBuffer| {
-            commandBuffer.mtl_command_buffer.commit();
+        for (commands) |command_buffer| {
+            const mtl_command_buffer = command_buffer.mtl_command_buffer;
+
+            queue.fence_value += 1;
+
+            for (command_buffer.referenced_buffers.items) |buffer| {
+                buffer.last_used_fence_value = queue.fence_value;
+            }
+
+            const ctx = CompletedContext{
+                .queue = queue,
+                .fence_value = queue.fence_value,
+            };
+            mtl_command_buffer.addCompletedHandler(ctx, completedHandler);
+            mtl_command_buffer.commit();
         }
+    }
+
+    pub fn completedHandler(ctx: CompletedContext, mtl_command_buffer: *mtl.CommandBuffer) void {
+        _ = mtl_command_buffer;
+        ctx.queue.completed_value = ctx.fence_value;
     }
 };
 

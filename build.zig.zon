@@ -15,8 +15,8 @@
             .hash = "122002e355cf42b8d257efc95229c9ee6be4cca189c1718f86179cb7c21225beeb75",
         },
         .mach_objc = .{
-            .url = "https://pkg.machengine.org/mach-objc/fbd5d65f27783abe462c78ae11b7f0fb191c08db.tar.gz",
-            .hash = "12207ca6f34bcebf4959351da00a6fde97f93533c6791b790d93c1f09d49dfaebb50",
+            .url = "https://pkg.machengine.org/mach-objc/61ca1cb201233412f827086195896fbf5010c40b.tar.gz",
+            .hash = "1220ad1a122f1be7fb1f74ef903b73b223a86ea4e59e2f2cb66a0d1fc5877da8e3d4",
         },
         .direct3d_headers = .{
             .url = "https://pkg.machengine.org/direct3d-headers/563ee4b888784df0614c1bb9c8fc9fc48fa18f2a.tar.gz",
