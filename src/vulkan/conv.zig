@@ -240,3 +240,49 @@ pub fn vulkanVertexFormat(format: gpu.VertexFormat) vk.Format {
         .undefined => unreachable,
     };
 }
+
+pub fn vulkanDescriptorType(entry: gpu.BindGroupLayout.Entry) vk.DescriptorType {
+    switch (entry.buffer.type) {
+        .undefined => {},
+
+        .uniform => if (entry.buffer.has_dynamic_offset == .true) {
+            return .uniform_buffer_dynamic;
+        } else {
+            return .uniform_buffer;
+        },
+
+        .storage,
+        .read_only_storage,
+        => if (entry.buffer.has_dynamic_offset == .true) {
+            return .storage_buffer_dynamic;
+        } else {
+            return .storage_buffer;
+        },
+    }
+
+    switch (entry.sampler.type) {
+        .undefined => {},
+        else => return .sampler,
+    }
+
+    // TODO: how to decide?
+    // switch (entry.texture.type) {
+    //     .undefined => {},
+    //     else => return .sampled_image,
+    // }
+
+    // switch (entry.storage_texture.type) {
+    //     .undefined => {},
+    //     else => return .storage_image,
+    // }
+
+    unreachable;
+}
+
+pub fn vulkanShaderStageFlags(entry: gpu.ShaderStageFlags) vk.ShaderStageFlags {
+    return .{
+        .vertex_bit = entry.vertex,
+        .fragment_bit = entry.fragment,
+        .compute_bit = entry.compute,
+    };
+}

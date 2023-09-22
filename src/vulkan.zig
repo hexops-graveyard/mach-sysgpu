@@ -667,6 +667,10 @@ pub const Device = struct {
         unreachable;
     }
 
+    pub fn createBindGroupLayout(device: *Device, descriptor: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+        return BindGroupLayout.init(device, descriptor);
+    }
+
     pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
         _ = desc;
         _ = device;
@@ -1142,10 +1146,53 @@ pub const TextureView = struct {
 
 pub const BindGroupLayout = struct {
     manager: utils.Manager(BindGroupLayout) = .{},
+    device: *Device,
     layout: vk.DescriptorSetLayout,
+    desc_types_count: std.AutoArrayHashMap(vk.DescriptorType, u32),
 
-    pub fn deinit(layout: BindGroupLayout) void {
-        _ = layout;
+    pub fn init(device: *Device, descriptor: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+        var bindings = try std.ArrayList(vk.DescriptorSetLayoutBinding).initCapacity(allocator, descriptor.entry_count);
+        defer bindings.deinit();
+
+        var desc_types_count = std.AutoArrayHashMap(vk.DescriptorType, u32).init(allocator);
+        errdefer desc_types_count.deinit();
+
+        if (descriptor.entries) |entries| {
+            for (entries[0..descriptor.entry_count]) |entry| {
+                const descriptor_type = conv.vulkanDescriptorType(entry);
+                if (desc_types_count.getPtr(descriptor_type)) |count| {
+                    count.* += 1;
+                } else {
+                    try desc_types_count.put(descriptor_type, 1);
+                }
+
+                bindings.appendAssumeCapacity(.{
+                    .binding = entry.binding,
+                    .descriptor_type = descriptor_type,
+                    .descriptor_count = 1,
+                    .stage_flags = conv.vulkanShaderStageFlags(entry.visibility),
+                });
+            }
+        }
+
+        const layout = try vkd.createDescriptorSetLayout(device.device, &vk.DescriptorSetLayoutCreateInfo{
+            .binding_count = @intCast(bindings.items.len),
+            .p_bindings = bindings.items.ptr,
+        }, null);
+
+        var bind_group_layout = try allocator.create(BindGroupLayout);
+        bind_group_layout.* = .{
+            .device = device,
+            .layout = layout,
+            .desc_types_count = desc_types_count,
+        };
+        return bind_group_layout;
+    }
+
+    pub fn deinit(layout: *BindGroupLayout) void {
+        layout.desc_types_count.deinit();
+        vkd.destroyDescriptorSetLayout(layout.device.device, layout.layout, null);
+        allocator.destroy(layout);
     }
 };
 
@@ -1153,9 +1200,47 @@ pub const BindGroup = struct {
     manager: utils.Manager(BindGroup) = .{},
 
     pub fn init(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
-        _ = desc;
-        _ = device;
-        unreachable;
+        const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.layout));
+
+        var pool_sizes = try std.ArrayList(vk.DescriptorPoolSize).initCapacity(allocator, layout.desc_types_count.count());
+        defer pool_sizes.deinit();
+
+        var total_desc_count: u32 = 0;
+        var desc_types_count_iter = layout.desc_types_count.iterator();
+        while (desc_types_count_iter.next()) |entry| {
+            pool_sizes.appendAssumeCapacity(.{
+                .type = entry.key_ptr.*,
+                .descriptor_count = entry.value_ptr.*,
+            });
+            total_desc_count += entry.value_ptr.*;
+        }
+
+        const descriptor_pool = try vkd.createDescriptorPool(device.device, &vk.DescriptorPoolCreateInfo{
+            .max_sets = total_desc_count,
+            .pool_size_count = @intCast(pool_sizes.items.len),
+            .p_pool_sizes = pool_sizes.items.ptr,
+        }, null);
+
+        var descriptor_sets = try allocator.alloc(vk.DescriptorSet, total_desc_count);
+        defer allocator.free(descriptor_sets);
+
+        var set_layouts = try allocator.alloc(vk.DescriptorSetLayout, total_desc_count);
+        defer allocator.free(set_layouts);
+        @memset(set_layouts, layout.layout);
+
+        try vkd.allocateDescriptorSets(device.device, &.{
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_count = total_desc_count,
+            .p_set_layouts = set_layouts.ptr,
+        }, descriptor_sets.ptr);
+
+        var writes = try std.ArrayList(vk.WriteDescriptorSet).initCapacity(allocator, desc.entry_count);
+        defer writes.deinit();
+
+        var copies = try std.ArrayList(vk.CopyDescriptorSet).initCapacity(allocator, desc.entry_count);
+        defer copies.deinit();
+
+        return undefined;
     }
 
     pub fn deinit(group: *BindGroup) void {
