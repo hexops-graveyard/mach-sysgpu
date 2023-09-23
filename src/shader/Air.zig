@@ -456,6 +456,7 @@ pub const Inst = union(enum) {
     fwidth: InstIndex,
     fwidth_coarse: InstIndex,
     fwidth_fine: InstIndex,
+    array_length: InstIndex,
 
     min: BuiltinBinary,
     max: BuiltinBinary,

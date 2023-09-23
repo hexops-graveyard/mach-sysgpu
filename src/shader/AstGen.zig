@@ -1907,6 +1907,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .fwidth => return astgen.genDerivativeBuiltin(scope, node, .fwidth),
             .fwidthCoarse => return astgen.genDerivativeBuiltin(scope, node, .fwidth_coarse),
             .fwidthFine => return astgen.genDerivativeBuiltin(scope, node, .fwidth_fine),
+            .arrayLength => return astgen.genArrayLengthBuiltin(scope, node),
             else => {
                 try astgen.errors.add(
                     node_loc,
@@ -2875,6 +2876,35 @@ fn genSmoothstepBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIn
     return error.AnalysisFail;
 }
 
+fn genArrayLengthBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == .none) {
+        return astgen.failArgCountMismatch(node_loc, 1, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len != 1) {
+        return astgen.failArgCountMismatch(node_loc, 1, arg_nodes.len);
+    }
+
+    const arg_node = arg_nodes[0];
+    const arg_node_loc = astgen.tree.nodeLoc(arg_node);
+    const arg = try astgen.genExpr(scope, arg_node);
+    const arg_res = try astgen.resolve(arg);
+    const arg_res_inst = astgen.getInst(arg_res);
+
+    if (arg_res_inst == .ptr_type) {
+        const ptr_elem_inst = astgen.getInst(arg_res_inst.ptr_type.elem_type);
+        if (ptr_elem_inst == .array) {
+            return astgen.addInst(.{ .array_length = arg });
+        }
+    }
+
+    try astgen.errors.add(arg_node_loc, "type mismatch", .{}, null);
+    return error.AnalysisFail;
+}
+
 fn genVarRef(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     return astgen.addInst(.{
         .var_ref = try astgen.findSymbol(scope, astgen.tree.nodeToken(node)),
@@ -3536,7 +3566,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             },
             .struct_construct => |struct_construct| return struct_construct.@"struct",
             .bitcast => |bitcast| return bitcast.result_type,
-            .addr_of => return idx,
+            .addr_of => |addr_of| return addr_of.result_type,
 
             inline .binary, .min, .max, .atan2 => |bin| return bin.result_type,
             .smoothstep => |smoothstep| return smoothstep.type,
@@ -3592,6 +3622,8 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .fwidth_coarse,
             .fwidth_fine,
             => |un| idx = un,
+
+            .array_length => return astgen.addInst(.{ .int = .{ .type = .u32, .value = null } }),
 
             .not, .negate => |un| return un.result_type,
 
@@ -3783,7 +3815,7 @@ const BuiltinFn = enum {
     all,
     any,
     select,
-    arrayLength, // unimplemented
+    arrayLength,
     abs,
     acos,
     acosh,
@@ -3791,7 +3823,7 @@ const BuiltinFn = enum {
     asinh,
     atan,
     atanh,
-    atan2, // unimplemented
+    atan2,
     ceil,
     clamp, // unimplemented
     cos,
