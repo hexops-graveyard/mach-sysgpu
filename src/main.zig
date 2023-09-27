@@ -746,14 +746,14 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn pipelineLayoutReference(pipeline_layout: *gpu.PipelineLayout) void {
-        _ = pipeline_layout;
-        unreachable;
+    pub inline fn pipelineLayoutReference(pipeline_layout_raw: *gpu.PipelineLayout) void {
+        const pipeline_layout: *impl.PipelineLayout = @ptrCast(@alignCast(pipeline_layout_raw));
+        pipeline_layout.manager.reference();
     }
 
-    pub inline fn pipelineLayoutRelease(pipeline_layout: *gpu.PipelineLayout) void {
-        _ = pipeline_layout;
-        unreachable;
+    pub inline fn pipelineLayoutRelease(pipeline_layout_raw: *gpu.PipelineLayout) void {
+        const pipeline_layout: *impl.PipelineLayout = @ptrCast(@alignCast(pipeline_layout_raw));
+        pipeline_layout.manager.release();
     }
 
     pub inline fn querySetDestroy(query_set: *gpu.QuerySet) void {
