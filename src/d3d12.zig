@@ -304,6 +304,12 @@ pub const Device = struct {
         unreachable;
     }
 
+    pub fn createBindGroupLayout(device: *Device, desc: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+        _ = device;
+        _ = desc;
+        unreachable;
+    }
+
     pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
         _ = desc;
         _ = device;
@@ -317,6 +323,12 @@ pub const Device = struct {
     pub fn createComputePipeline(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
         _ = desc;
         _ = device;
+        unreachable;
+    }
+
+    pub fn createPipelineLayout(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+        _ = device;
+        _ = desc;
         unreachable;
     }
 
@@ -674,7 +686,7 @@ pub const Buffer = struct {
         _ = buffer;
     }
 
-    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) ?*const anyopaque {
+    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) !*anyopaque {
         _ = size;
         _ = offset;
         _ = buffer;
@@ -742,6 +754,20 @@ pub const BindGroup = struct {
     }
 
     pub fn deinit(group: *BindGroup) void {
+        _ = group;
+    }
+};
+
+pub const PipelineLayout = struct {
+    manager: utils.Manager(PipelineLayout) = .{},
+
+    pub fn init(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(group: *PipelineLayout) void {
         _ = group;
     }
 };
@@ -1204,6 +1230,15 @@ pub const RenderPassEncoder = struct {
         allocator.destroy(encoder);
     }
 
+    pub fn setBindGroup(encoder: *RenderPassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
+        _ = dynamic_offsets;
+        _ = dynamic_offset_count;
+        _ = group;
+        _ = group_index;
+        _ = encoder;
+        unreachable;
+    }
+
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
         const command_list = encoder.command_list;
 
@@ -1216,6 +1251,15 @@ pub const RenderPassEncoder = struct {
             command_list,
             c.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, // TODO
         );
+    }
+
+    pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
+        _ = encoder;
+        _ = slot;
+        _ = buffer;
+        _ = offset;
+        _ = size;
+        unreachable;
     }
 
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
@@ -1394,5 +1438,14 @@ pub const Queue = struct {
 
         const result = c.WaitForSingleObject(fence_event, c.INFINITE);
         std.debug.assert(result == c.WAIT_OBJECT_0);
+    }
+
+    pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
+        _ = queue;
+        _ = buffer;
+        _ = offset;
+        _ = data;
+        _ = size;
+        unreachable;
     }
 };

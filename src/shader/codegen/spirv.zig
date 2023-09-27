@@ -535,7 +535,9 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
         const binding = spv.air.resolveConstExpr(inst.binding).?.int;
         try spv.annotations_section.emit(.OpDecorate, .{
             .target = id,
-            .decoration = .{ .Binding = .{ .binding_point = @intCast(binding) } },
+            .decoration = spec.Decoration.Extended{
+                .Binding = .{ .binding_point = @intCast(binding) },
+            },
         });
     }
 
@@ -543,7 +545,9 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
         const group = spv.air.resolveConstExpr(inst.group).?.int;
         try spv.annotations_section.emit(.OpDecorate, .{
             .target = id,
-            .decoration = .{ .DescriptorSet = .{ .descriptor_set = @intCast(group) } },
+            .decoration = spec.Decoration.Extended{
+                .DescriptorSet = .{ .descriptor_set = @intCast(group) },
+            },
         });
     }
 
