@@ -703,7 +703,7 @@ pub const Buffer = struct {
         unreachable;
     }
 
-    pub fn unmap(buffer: *Buffer) void {
+    pub fn unmap(buffer: *Buffer) !void {
         _ = buffer;
         unreachable;
     }
