@@ -337,7 +337,7 @@ pub const Buffer = struct {
         });
     }
 
-    pub fn unmap(buffer: *Buffer) void {
+    pub fn unmap(buffer: *Buffer) !void {
         _ = buffer;
     }
 };

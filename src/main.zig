@@ -173,7 +173,7 @@ pub const Interface = struct {
 
     pub inline fn bufferUnmap(buffer_raw: *gpu.Buffer) void {
         const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
-        buffer.unmap();
+        buffer.unmap() catch unreachable;
     }
 
     pub inline fn bufferReference(buffer_raw: *gpu.Buffer) void {

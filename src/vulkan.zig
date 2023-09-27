@@ -1024,14 +1024,20 @@ pub const Buffer = struct {
     device: *Device,
     buffer: vk.Buffer,
     memory: vk.DeviceMemory,
-    map: [*]u8,
+    stage_buffer: ?*Buffer,
+    size: usize,
+    map: ?[*]u8,
 
     pub fn init(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
         const size = @max(4, desc.size);
 
+        var usage = desc.usage;
+        if (desc.mapped_at_creation == .true and !desc.usage.map_write)
+            usage.copy_dst = true;
+
         const vk_buffer = try vkd.createBuffer(device.device, &.{
             .size = size,
-            .usage = conv.vulkanBufferUsageFlags(desc.usage),
+            .usage = conv.vulkanBufferUsageFlags(usage),
             .sharing_mode = .exclusive,
         }, null);
         const requirements = vkd.getBufferMemoryRequirements(device.device, vk_buffer);
@@ -1049,13 +1055,32 @@ pub const Buffer = struct {
         }, null);
 
         try vkd.bindBufferMemory(device.device, vk_buffer, memory, 0);
-        const map = try vkd.mapMemory(device.device, memory, 0, size, .{});
+
+        // upload buffer
+        var stage_buffer: ?*Buffer = null;
+        var map: ?*anyopaque = null;
+        if (desc.mapped_at_creation == .true) {
+            if (!desc.usage.map_write) {
+                stage_buffer = try Buffer.init(device, &.{
+                    .usage = .{
+                        .copy_src = true,
+                        .map_write = true,
+                    },
+                    .size = size,
+                });
+                map = try vkd.mapMemory(device.device, stage_buffer.?.memory, 0, size, .{});
+            } else {
+                map = try vkd.mapMemory(device.device, memory, 0, size, .{});
+            }
+        }
 
         var buffer = try allocator.create(Buffer);
         buffer.* = .{
             .device = device,
             .buffer = vk_buffer,
             .memory = memory,
+            .stage_buffer = stage_buffer,
+            .size = size,
             .map = @ptrCast(map),
         };
 
@@ -1063,12 +1088,15 @@ pub const Buffer = struct {
     }
 
     pub fn deinit(buffer: *Buffer) void {
+        if (buffer.stage_buffer) |stage_buffer| {
+            stage_buffer.manager.release();
+        }
         vkd.destroyBuffer(buffer.device.device, buffer.buffer, null);
         vkd.freeMemory(buffer.device.device, buffer.memory, null);
     }
 
     pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) !?*anyopaque {
-        return @ptrCast(buffer.map[offset .. offset + size]);
+        return @ptrCast(buffer.map.?[offset .. offset + size]);
     }
 
     pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
@@ -1081,8 +1109,31 @@ pub const Buffer = struct {
         unreachable;
     }
 
-    pub fn unmap(buffer: *Buffer) void {
-        vkd.unmapMemory(buffer.device.device, buffer.memory);
+    pub fn unmap(buffer: *Buffer) !void {
+        if (buffer.stage_buffer) |stage_buffer| {
+            vkd.unmapMemory(buffer.device.device, stage_buffer.memory);
+
+            var cmd_encoder = try CommandEncoder.init(buffer.device, null);
+            try cmd_encoder.copyBufferToBuffer(stage_buffer, 0, buffer, 0, buffer.size);
+            const cmd_buffer = try cmd_encoder.finish(&.{});
+
+            const queue = try buffer.device.getQueue();
+            try vkd.queueSubmit(
+                queue.queue,
+                1,
+                @ptrCast(&vk.SubmitInfo{
+                    .command_buffer_count = 1,
+                    .p_command_buffers = @ptrCast(&cmd_buffer.buffer),
+                }),
+                .null_handle,
+            );
+            try vkd.queueWaitIdle(queue.queue);
+
+            stage_buffer.manager.release();
+            buffer.stage_buffer = null;
+        } else {
+            vkd.unmapMemory(buffer.device.device, buffer.memory);
+        }
     }
 };
 
@@ -2026,11 +2077,23 @@ pub const Queue = struct {
     }
 
     pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
-        const stage_buffer = try Buffer.init(queue.device, &.{ .usage = .{ .copy_src = true }, .size = size });
-        @memcpy(stage_buffer.map[0..size], data[0..size]);
+        const stage_buffer = try Buffer.init(queue.device, &.{
+            .usage = .{
+                .copy_src = true,
+                .map_write = true,
+            },
+            .size = size,
+            .mapped_at_creation = .true,
+        });
+        defer stage_buffer.manager.release();
+
+        @memcpy(stage_buffer.map.?[0..size], data[0..size]);
         var cmd_encoder = try CommandEncoder.init(queue.device, null);
+        defer cmd_encoder.manager.release();
+
         try cmd_encoder.copyBufferToBuffer(stage_buffer, offset, buffer, offset, size);
         const cmd_buffer = try cmd_encoder.finish(&.{});
+        defer cmd_buffer.manager.release();
 
         try vkd.queueSubmit(
             queue.queue,
