@@ -134,12 +134,11 @@ pub fn main() !void {
         .targets = &.{color_target},
     });
 
-    const bgle = gpu.BindGroupLayout.Entry.buffer(0, .{ .vertex = true }, .uniform, true, 0);
-    const bgl = device.createBindGroupLayout(
-        &gpu.BindGroupLayout.Descriptor.init(.{
-            .entries = &.{bgle},
-        }),
-    );
+    const bgl = device.createBindGroupLayout(&gpu.BindGroupLayout.Descriptor.init(.{
+        .entries = &.{
+            gpu.BindGroupLayout.Entry.buffer(0, .{ .vertex = true }, .uniform, true, 0),
+        },
+    }));
 
     const bind_group_layouts = [_]*gpu.BindGroupLayout{bgl};
     const pipeline_layout = device.createPipelineLayout(&gpu.PipelineLayout.Descriptor.init(.{
@@ -166,7 +165,7 @@ pub fn main() !void {
     });
     defer vertex_buffer.release();
     var vertex_mapped = vertex_buffer.getMappedRange(Vertex, 0, vertices.len);
-    std.mem.copy(Vertex, vertex_mapped.?, vertices[0..]);
+    @memcpy(vertex_mapped.?, vertices[0..]);
     vertex_buffer.unmap();
 
     const uniform_buffer = device.createBuffer(&.{
@@ -218,14 +217,9 @@ pub fn main() !void {
             .store_op = .store,
         };
 
-        const encoder = device.createCommandEncoder(null);
-        const render_pass_info = gpu.RenderPassDescriptor.init(.{ .color_attachments = &.{color_attachment} });
-
         {
-            const time = rotate_timer.read();
-            const rot_x = zm.rotationX(@as(f32, @floatFromInt(time)) * (std.math.pi / 2.0));
-            const rot_z = zm.rotationZ(@as(f32, @floatFromInt(time)) * (std.math.pi / 2.0));
-            const model = zm.mul(rot_x, rot_z);
+            const time = @as(f32, @floatFromInt(rotate_timer.read())) / @as(f32, @floatFromInt(std.time.ns_per_s));
+            const model = zm.mul(zm.rotationX(time * (std.math.pi / 2.0)), zm.rotationZ(time * (std.math.pi / 2.0)));
             const view = zm.lookAtRh(
                 zm.Vec{ 0, 4, 2, 1 },
                 zm.Vec{ 0, 0, 0, 1 },
@@ -241,9 +235,11 @@ pub fn main() !void {
             const ubo = UniformBufferObject{
                 .mat = zm.transpose(mvp),
             };
-            encoder.writeBuffer(uniform_buffer, 0, &[_]UniformBufferObject{ubo});
+            queue.writeBuffer(uniform_buffer, 0, &[_]UniformBufferObject{ubo});
         }
 
+        const encoder = device.createCommandEncoder(null);
+        const render_pass_info = gpu.RenderPassDescriptor.init(.{ .color_attachments = &.{color_attachment} });
         const pass = encoder.beginRenderPass(&render_pass_info);
         pass.setPipeline(pipeline);
         pass.setVertexBuffer(0, vertex_buffer, 0, @sizeOf(Vertex) * vertices.len);
@@ -270,7 +266,7 @@ pub fn main() !void {
             window.setTitle(title);
             frames = 0;
             seconds += 1;
-            if (seconds >= 3) break;
+            if (seconds >= 30) break;
         }
         frames += 1;
     }

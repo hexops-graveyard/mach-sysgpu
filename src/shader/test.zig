@@ -302,7 +302,7 @@ test "must error" {
             \\const v1 = &v0 + 5;
         ;
         try expectError(source, .{
-            .msg = "invalid operation between addr_of and int",
+            .msg = "invalid operation between ptr_type and int",
             .loc = .{ .start = 29, .end = 30 },
         });
     }

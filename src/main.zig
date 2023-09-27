@@ -21,7 +21,7 @@ var inited = false;
 var allocator: std.mem.Allocator = undefined;
 
 pub const Interface = struct {
-    pub inline fn init(alloc: std.mem.Allocator, options: impl.InitOptions) !void {
+    pub fn init(alloc: std.mem.Allocator, options: impl.InitOptions) !void {
         inited = true;
         allocator = alloc;
         try impl.init(alloc, options);
@@ -142,12 +142,12 @@ pub const Interface = struct {
 
     pub inline fn bufferGetConstMappedRange(buffer_raw: *gpu.Buffer, offset: usize, size: usize) ?*const anyopaque {
         const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
-        return buffer.getConstMappedRange(offset, size);
+        return buffer.getConstMappedRange(offset, size) catch unreachable;
     }
 
     pub inline fn bufferGetMappedRange(buffer_raw: *gpu.Buffer, offset: usize, size: usize) ?*anyopaque {
         const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
-        return @constCast(buffer.getConstMappedRange(offset, size));
+        return buffer.getConstMappedRange(offset, size) catch unreachable;
     }
 
     pub inline fn bufferGetSize(buffer: *gpu.Buffer) u64 {
@@ -432,10 +432,10 @@ pub const Interface = struct {
         return @ptrCast(group);
     }
 
-    pub inline fn deviceCreateBindGroupLayout(device: *gpu.Device, descriptor: *const gpu.BindGroupLayout.Descriptor) *gpu.BindGroupLayout {
-        _ = device;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateBindGroupLayout(device_raw: *gpu.Device, descriptor: *const gpu.BindGroupLayout.Descriptor) *gpu.BindGroupLayout {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const layout = device.createBindGroupLayout(descriptor) catch unreachable;
+        return @ptrCast(layout);
     }
 
     pub inline fn deviceCreateBuffer(device_raw: *gpu.Device, descriptor: *const gpu.Buffer.Descriptor) *gpu.Buffer {
@@ -487,10 +487,10 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn deviceCreatePipelineLayout(device: *gpu.Device, pipeline_layout_descriptor: *const gpu.PipelineLayout.Descriptor) *gpu.PipelineLayout {
-        _ = device;
-        _ = pipeline_layout_descriptor;
-        unreachable;
+    pub inline fn deviceCreatePipelineLayout(device_raw: *gpu.Device, pipeline_layout_descriptor: *const gpu.PipelineLayout.Descriptor) *gpu.PipelineLayout {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const layout = device.createPipelineLayout(pipeline_layout_descriptor) catch unreachable;
+        return @ptrCast(layout);
     }
 
     pub inline fn deviceCreateQuerySet(device: *gpu.Device, descriptor: *const gpu.QuerySet.Descriptor) *gpu.QuerySet {
@@ -816,13 +816,10 @@ pub const Interface = struct {
         queue.submit(commands) catch unreachable;
     }
 
-    pub inline fn queueWriteBuffer(queue: *gpu.Queue, buffer: *gpu.Buffer, buffer_offset: u64, data: *const anyopaque, size: usize) void {
-        _ = queue;
-        _ = buffer;
-        _ = buffer_offset;
-        _ = data;
-        _ = size;
-        unreachable;
+    pub inline fn queueWriteBuffer(queue_raw: *gpu.Queue, buffer_raw: *gpu.Buffer, buffer_offset: u64, data: *const anyopaque, size: usize) void {
+        const queue: *impl.Queue = @ptrCast(@alignCast(queue_raw));
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        queue.writeBuffer(buffer, buffer_offset, @ptrCast(data), size) catch unreachable;
     }
 
     pub inline fn queueWriteTexture(queue: *gpu.Queue, destination: *const gpu.ImageCopyTexture, data: *const anyopaque, data_size: usize, data_layout: *const gpu.Texture.DataLayout, write_size: *const gpu.Extent3D) void {
@@ -1035,13 +1032,16 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn renderPassEncoderSetBindGroup(render_pass_encoder: *gpu.RenderPassEncoder, group_index: u32, group: *gpu.BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) void {
-        _ = render_pass_encoder;
-        _ = group_index;
-        _ = group;
-        _ = dynamic_offset_count;
-        _ = dynamic_offsets;
-        unreachable;
+    pub inline fn renderPassEncoderSetBindGroup(
+        render_pass_encoder_raw: *gpu.RenderPassEncoder,
+        group_index: u32,
+        group_raw: *gpu.BindGroup,
+        dynamic_offset_count: usize,
+        dynamic_offsets: ?[*]const u32,
+    ) void {
+        const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
+        const group: *impl.BindGroup = @ptrCast(@alignCast(group_raw));
+        render_pass_encoder.setBindGroup(group_index, group, dynamic_offset_count, dynamic_offsets) catch unreachable;
     }
 
     pub inline fn renderPassEncoderSetBlendConstant(render_pass_encoder: *gpu.RenderPassEncoder, color: *const gpu.Color) void {
@@ -1086,13 +1086,10 @@ pub const Interface = struct {
         unreachable;
     }
 
-    pub inline fn renderPassEncoderSetVertexBuffer(render_pass_encoder: *gpu.RenderPassEncoder, slot: u32, buffer: *gpu.Buffer, offset: u64, size: u64) void {
-        _ = render_pass_encoder;
-        _ = slot;
-        _ = buffer;
-        _ = offset;
-        _ = size;
-        unreachable;
+    pub inline fn renderPassEncoderSetVertexBuffer(render_pass_encoder_raw: *gpu.RenderPassEncoder, slot: u32, buffer_raw: *gpu.Buffer, offset: u64, size: u64) void {
+        const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        render_pass_encoder.setVertexBuffer(slot, buffer, offset, size) catch unreachable;
     }
 
     pub inline fn renderPassEncoderSetViewport(render_pass_encoder: *gpu.RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {

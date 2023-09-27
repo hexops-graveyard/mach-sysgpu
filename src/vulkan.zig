@@ -128,7 +128,8 @@ pub const Instance = struct {
             vk.extension_info.khr_surface.name,
             vk.extension_info.khr_xlib_surface.name,
             vk.extension_info.khr_xcb_surface.name,
-            vk.extension_info.khr_wayland_surface.name,
+            // TODO: renderdoc will not work with this extension
+            // vk.extension_info.khr_wayland_surface.name,
         },
         .windows => &.{
             vk.extension_info.khr_surface.name,
@@ -396,14 +397,17 @@ pub const Surface = struct {
                         null,
                     );
                 } else if (utils.findChained(gpu.Surface.DescriptorFromWaylandSurface, desc.next_in_chain.generic)) |wayland_desc| {
-                    break :blk try vki.createWaylandSurfaceKHR(
-                        instance.instance,
-                        &vk.WaylandSurfaceCreateInfoKHR{
-                            .display = @ptrCast(wayland_desc.display),
-                            .surface = @ptrCast(wayland_desc.surface),
-                        },
-                        null,
-                    );
+                    _ = wayland_desc;
+                    unreachable;
+                    // TODO: renderdoc will not work with wayland
+                    // break :blk try vki.createWaylandSurfaceKHR(
+                    //     instance.instance,
+                    //     &vk.WaylandSurfaceCreateInfoKHR{
+                    //         .display = @ptrCast(wayland_desc.display),
+                    //         .surface = @ptrCast(wayland_desc.surface),
+                    //     },
+                    //     null,
+                    // );
                 }
 
                 return error.InvalidDescriptor;
@@ -474,6 +478,7 @@ pub const Device = struct {
     frame_index: u32 = 0,
     render_passes: std.AutoHashMapUnmanaged(RenderPassKey, vk.RenderPass) = .{},
     cmd_pool: vk.CommandPool,
+    memory_allocator: MemoryAllocator,
     queue: ?Queue = null,
     lost_cb: ?gpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
@@ -595,12 +600,15 @@ pub const Device = struct {
             };
         }
 
+        const memory_allocator = MemoryAllocator.init(adapter.physical_device);
+
         var device = try allocator.create(Device);
         device.* = .{
             .adapter = adapter,
             .device = vk_device,
             .cmd_pool = cmd_pool,
             .frames_res = frames_res,
+            .memory_allocator = memory_allocator,
         };
         return device;
     }
@@ -662,19 +670,15 @@ pub const Device = struct {
     }
 
     pub fn createBindGroup(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
-        _ = desc;
-        _ = device;
-        unreachable;
+        return BindGroup.init(device, desc);
     }
 
-    pub fn createBindGroupLayout(device: *Device, descriptor: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
-        return BindGroupLayout.init(device, descriptor);
+    pub fn createBindGroupLayout(device: *Device, desc: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+        return BindGroupLayout.init(device, desc);
     }
 
     pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
-        _ = desc;
-        _ = device;
-        unreachable;
+        return Buffer.init(device, desc);
     }
 
     pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
@@ -685,6 +689,10 @@ pub const Device = struct {
         _ = desc;
         _ = device;
         unreachable;
+    }
+
+    pub fn createPipelineLayout(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+        return PipelineLayout.init(device, desc);
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
@@ -718,7 +726,6 @@ pub const Device = struct {
 
     pub fn tick(device: *Device) !void {
         _ = device;
-        unreachable;
     }
 
     const device_layers = if (builtin.mode == .Debug)
@@ -1014,22 +1021,54 @@ pub const SwapChain = struct {
 
 pub const Buffer = struct {
     manager: utils.Manager(Buffer) = .{},
+    device: *Device,
+    buffer: vk.Buffer,
+    memory: vk.DeviceMemory,
+    map: [*]u8,
 
     pub fn init(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
-        _ = desc;
-        _ = device;
-        unreachable;
+        const size = @max(4, desc.size);
+
+        const vk_buffer = try vkd.createBuffer(device.device, &.{
+            .size = size,
+            .usage = conv.vulkanBufferUsageFlags(desc.usage),
+            .sharing_mode = .exclusive,
+        }, null);
+        const requirements = vkd.getBufferMemoryRequirements(device.device, vk_buffer);
+
+        const mem_type: MemoryAllocator.MemoryKind = blk: {
+            if (desc.usage.map_read) break :blk .linear_read_mappable;
+            if (desc.usage.map_write) break :blk .linear_write_mappable;
+            break :blk .linear;
+        };
+        const mem_type_index = device.memory_allocator.findBestAllocator(requirements, mem_type) orelse unreachable; // TODO
+
+        const memory = try vkd.allocateMemory(device.device, &.{
+            .allocation_size = size,
+            .memory_type_index = mem_type_index,
+        }, null);
+
+        try vkd.bindBufferMemory(device.device, vk_buffer, memory, 0);
+        const map = try vkd.mapMemory(device.device, memory, 0, size, .{});
+
+        var buffer = try allocator.create(Buffer);
+        buffer.* = .{
+            .device = device,
+            .buffer = vk_buffer,
+            .memory = memory,
+            .map = @ptrCast(map),
+        };
+
+        return buffer;
     }
 
     pub fn deinit(buffer: *Buffer) void {
-        _ = buffer;
+        vkd.destroyBuffer(buffer.device.device, buffer.buffer, null);
+        vkd.freeMemory(buffer.device.device, buffer.memory, null);
     }
 
-    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) ?*const anyopaque {
-        _ = size;
-        _ = offset;
-        _ = buffer;
-        unreachable;
+    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) !?*anyopaque {
+        return @ptrCast(buffer.map[offset .. offset + size]);
     }
 
     pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
@@ -1043,8 +1082,7 @@ pub const Buffer = struct {
     }
 
     pub fn unmap(buffer: *Buffer) void {
-        _ = buffer;
-        unreachable;
+        vkd.unmapMemory(buffer.device.device, buffer.memory);
     }
 };
 
@@ -1148,22 +1186,23 @@ pub const BindGroupLayout = struct {
     manager: utils.Manager(BindGroupLayout) = .{},
     device: *Device,
     layout: vk.DescriptorSetLayout,
-    desc_types_count: std.AutoArrayHashMap(vk.DescriptorType, u32),
+    desc_types: std.AutoArrayHashMap(vk.DescriptorType, u32),
+    bindings: []const vk.DescriptorSetLayoutBinding,
 
     pub fn init(device: *Device, descriptor: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         var bindings = try std.ArrayList(vk.DescriptorSetLayoutBinding).initCapacity(allocator, descriptor.entry_count);
         defer bindings.deinit();
 
-        var desc_types_count = std.AutoArrayHashMap(vk.DescriptorType, u32).init(allocator);
-        errdefer desc_types_count.deinit();
+        var desc_types = std.AutoArrayHashMap(vk.DescriptorType, u32).init(allocator);
+        errdefer desc_types.deinit();
 
         if (descriptor.entries) |entries| {
             for (entries[0..descriptor.entry_count]) |entry| {
                 const descriptor_type = conv.vulkanDescriptorType(entry);
-                if (desc_types_count.getPtr(descriptor_type)) |count| {
+                if (desc_types.getPtr(descriptor_type)) |count| {
                     count.* += 1;
                 } else {
-                    try desc_types_count.put(descriptor_type, 1);
+                    try desc_types.put(descriptor_type, 1);
                 }
 
                 bindings.appendAssumeCapacity(.{
@@ -1184,13 +1223,15 @@ pub const BindGroupLayout = struct {
         bind_group_layout.* = .{
             .device = device,
             .layout = layout,
-            .desc_types_count = desc_types_count,
+            .desc_types = desc_types,
+            .bindings = try bindings.toOwnedSlice(),
         };
         return bind_group_layout;
     }
 
     pub fn deinit(layout: *BindGroupLayout) void {
-        layout.desc_types_count.deinit();
+        allocator.free(layout.bindings);
+        layout.desc_types.deinit();
         vkd.destroyDescriptorSetLayout(layout.device.device, layout.layout, null);
         allocator.destroy(layout);
     }
@@ -1198,53 +1239,89 @@ pub const BindGroupLayout = struct {
 
 pub const BindGroup = struct {
     manager: utils.Manager(BindGroup) = .{},
+    device: *Device,
+    desc_set: vk.DescriptorSet,
+    desc_pool: vk.DescriptorPool,
+
+    const max_sets = 512;
 
     pub fn init(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
         const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.layout));
 
-        var pool_sizes = try std.ArrayList(vk.DescriptorPoolSize).initCapacity(allocator, layout.desc_types_count.count());
+        var pool_sizes = try std.ArrayList(vk.DescriptorPoolSize).initCapacity(allocator, layout.desc_types.count());
         defer pool_sizes.deinit();
 
-        var total_desc_count: u32 = 0;
-        var desc_types_count_iter = layout.desc_types_count.iterator();
-        while (desc_types_count_iter.next()) |entry| {
+        var desc_types_iter = layout.desc_types.iterator();
+        while (desc_types_iter.next()) |entry| {
             pool_sizes.appendAssumeCapacity(.{
                 .type = entry.key_ptr.*,
-                .descriptor_count = entry.value_ptr.*,
+                .descriptor_count = max_sets * entry.value_ptr.*,
             });
-            total_desc_count += entry.value_ptr.*;
         }
 
-        const descriptor_pool = try vkd.createDescriptorPool(device.device, &vk.DescriptorPoolCreateInfo{
-            .max_sets = total_desc_count,
+        const desc_pool = try vkd.createDescriptorPool(device.device, &vk.DescriptorPoolCreateInfo{
+            .max_sets = max_sets,
             .pool_size_count = @intCast(pool_sizes.items.len),
             .p_pool_sizes = pool_sizes.items.ptr,
         }, null);
 
-        var descriptor_sets = try allocator.alloc(vk.DescriptorSet, total_desc_count);
-        defer allocator.free(descriptor_sets);
+        var desc_set: vk.DescriptorSet = undefined;
+        try vkd.allocateDescriptorSets(device.device, &vk.DescriptorSetAllocateInfo{
+            .descriptor_pool = desc_pool,
+            .descriptor_set_count = 1,
+            .p_set_layouts = @ptrCast(&layout.layout),
+        }, @ptrCast(&desc_set));
 
-        var set_layouts = try allocator.alloc(vk.DescriptorSetLayout, total_desc_count);
-        defer allocator.free(set_layouts);
-        @memset(set_layouts, layout.layout);
+        var writes = try allocator.alloc(vk.WriteDescriptorSet, layout.bindings.len);
+        defer allocator.free(writes);
+        var write_buffer_info = try allocator.alloc(vk.DescriptorBufferInfo, layout.bindings.len);
+        defer allocator.free(write_buffer_info);
+        // var write_image_info = try allocator.alloc(vk.DescriptorImageInfo, layout.bindings.len);
 
-        try vkd.allocateDescriptorSets(device.device, &.{
-            .descriptor_pool = descriptor_pool,
-            .descriptor_set_count = total_desc_count,
-            .p_set_layouts = set_layouts.ptr,
-        }, descriptor_sets.ptr);
+        for (layout.bindings, 0..) |binding, i| {
+            writes[i] = .{
+                .dst_set = desc_set,
+                .dst_binding = binding.binding,
+                .dst_array_element = 0,
+                .descriptor_count = 1,
+                .descriptor_type = binding.descriptor_type,
+                .p_image_info = undefined,
+                .p_buffer_info = undefined,
+                .p_texel_buffer_view = undefined,
+            };
 
-        var writes = try std.ArrayList(vk.WriteDescriptorSet).initCapacity(allocator, desc.entry_count);
-        defer writes.deinit();
+            switch (binding.descriptor_type) {
+                .uniform_buffer, .uniform_buffer_dynamic => {
+                    write_buffer_info[i] = .{
+                        .buffer = @as(*Buffer, @ptrCast(@alignCast(desc.entries.?[i].buffer.?))).buffer,
+                        .offset = desc.entries.?[i].offset,
+                        .range = desc.entries.?[i].size,
+                    };
+                    writes[i].p_buffer_info = @ptrCast(&write_buffer_info[i]);
+                },
+                else => unreachable, // TODO
+            }
+        }
 
-        var copies = try std.ArrayList(vk.CopyDescriptorSet).initCapacity(allocator, desc.entry_count);
-        defer copies.deinit();
+        vkd.updateDescriptorSets(device.device, @intCast(writes.len), writes.ptr, 0, undefined);
 
-        return undefined;
+        var bind_group = try allocator.create(BindGroup);
+        bind_group.* = .{
+            .device = device,
+            .desc_pool = desc_pool,
+            .desc_set = desc_set,
+        };
+        return bind_group;
     }
 
     pub fn deinit(group: *BindGroup) void {
-        _ = group;
+        vkd.destroyDescriptorPool(group.device.device, group.desc_pool, null);
+        vkd.freeDescriptorSets(
+            group.device.device,
+            group.desc_pool,
+            1,
+            @ptrCast(&group.desc_set),
+        ) catch unreachable;
     }
 };
 
@@ -1253,26 +1330,29 @@ pub const PipelineLayout = struct {
     device: *Device,
     layout: vk.PipelineLayout,
 
-    pub fn init(device: *Device, descriptor: *const gpu.PipelineLayout.Descriptor) !PipelineLayout {
+    pub fn init(device: *Device, descriptor: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
         const groups = try allocator.alloc(vk.DescriptorSetLayout, descriptor.bind_group_layout_count);
         defer allocator.free(groups);
         for (groups, 0..) |*layout, i| {
             layout.* = @as(*BindGroupLayout, @ptrCast(@alignCast(descriptor.bind_group_layouts.?[i]))).layout;
         }
 
-        const layout = try vkd.createPipelineLayout(device.device, &.{
+        const vk_layout = try vkd.createPipelineLayout(device.device, &.{
             .set_layout_count = @as(u32, @intCast(groups.len)),
             .p_set_layouts = groups.ptr,
         }, null);
 
-        return .{
+        var layout = try allocator.create(PipelineLayout);
+        layout.* = .{
             .device = device,
-            .layout = layout,
+            .layout = vk_layout,
         };
+        return layout;
     }
 
     pub fn deinit(layout: *PipelineLayout) void {
         vkd.destroyPipelineLayout(layout.device.device, layout.layout, null);
+        allocator.destroy(layout);
     }
 };
 
@@ -1341,6 +1421,7 @@ pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     device: *Device,
     pipeline: vk.Pipeline,
+    layout: *PipelineLayout,
 
     pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
         var stages = std.BoundedArray(vk.PipelineShaderStageCreateInfo, 2){};
@@ -1446,11 +1527,11 @@ pub const RenderPipeline = struct {
             .alpha_to_one_enable = vk.FALSE,
         };
 
-        var pipeline_layout = if (desc.layout) |layout|
-            @as(*PipelineLayout, @ptrCast(@alignCast(layout))).*
-        else
-            try PipelineLayout.init(device, &.{});
-        defer pipeline_layout.deinit();
+        var pipeline_layout: *PipelineLayout = if (desc.layout) |layout_raw| blk: {
+            const layout: *PipelineLayout = @ptrCast(@alignCast(layout_raw));
+            layout.manager.reference();
+            break :blk layout;
+        } else try PipelineLayout.init(device, &.{});
 
         var blend_attachments: []vk.PipelineColorBlendAttachmentState = &.{};
         defer if (desc.fragment != null) allocator.free(blend_attachments);
@@ -1590,6 +1671,7 @@ pub const RenderPipeline = struct {
         render_pipeline.* = .{
             .device = device,
             .pipeline = pipeline,
+            .layout = pipeline_layout,
         };
 
         return render_pipeline;
@@ -1597,6 +1679,7 @@ pub const RenderPipeline = struct {
 
     pub fn deinit(render_pipeline: *RenderPipeline) void {
         render_pipeline.device.waitAll() catch {};
+        render_pipeline.layout.manager.release();
         vkd.destroyPipeline(render_pipeline.device.device, render_pipeline.pipeline, null);
         allocator.destroy(render_pipeline);
     }
@@ -1664,13 +1747,12 @@ pub const CommandEncoder = struct {
     }
 
     pub fn copyBufferToBuffer(encoder: *CommandEncoder, source: *Buffer, source_offset: u64, destination: *Buffer, destination_offset: u64, size: u64) !void {
-        _ = size;
-        _ = destination_offset;
-        _ = destination;
-        _ = source_offset;
-        _ = source;
-        _ = encoder;
-        unreachable;
+        const region = vk.BufferCopy{
+            .src_offset = source_offset,
+            .dst_offset = destination_offset,
+            .size = size,
+        };
+        vkd.cmdCopyBuffer(encoder.buffer.buffer, source.buffer, destination.buffer, 1, @ptrCast(&region));
     }
 
     pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
@@ -1730,6 +1812,7 @@ pub const RenderPassEncoder = struct {
     framebuffer: vk.Framebuffer,
     extent: vk.Extent2D,
     clear_values: []const vk.ClearValue,
+    pipeline: ?*RenderPipeline = null,
 
     pub fn init(device: *Device, encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
         const depth_stencil_attachment_count = @intFromBool(descriptor.depth_stencil_attachment != null);
@@ -1830,6 +1913,25 @@ pub const RenderPassEncoder = struct {
         _ = encoder;
     }
 
+    pub fn setBindGroup(
+        encoder: *RenderPassEncoder,
+        group_index: u32,
+        group: *BindGroup,
+        dynamic_offset_count: usize,
+        dynamic_offsets: ?[*]const u32,
+    ) !void {
+        vkd.cmdBindDescriptorSets(
+            encoder.encoder.buffer.buffer,
+            .graphics,
+            encoder.pipeline.?.layout.layout,
+            group_index,
+            1,
+            @ptrCast(&group.desc_set),
+            @intCast(dynamic_offset_count),
+            if (dynamic_offsets) |offsets| offsets else &[_]u32{},
+        );
+    }
+
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
         const rect = vk.Rect2D{
             .offset = .{ .x = 0, .y = 0 },
@@ -1862,6 +1964,13 @@ pub const RenderPassEncoder = struct {
             }),
         );
         vkd.cmdSetScissor(encoder.encoder.buffer.buffer, 0, 1, @as(*const [1]vk.Rect2D, &rect));
+
+        encoder.pipeline = pipeline;
+    }
+
+    pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
+        _ = size;
+        vkd.cmdBindVertexBuffers(encoder.encoder.buffer.buffer, slot, 1, @ptrCast(&.{buffer.buffer}), @ptrCast(&offset));
     }
 
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
@@ -1914,6 +2023,102 @@ pub const Queue = struct {
             submits.ptr,
             queue.device.frameRes().render_fence,
         );
+    }
+
+    pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
+        const stage_buffer = try Buffer.init(queue.device, &.{ .usage = .{ .copy_src = true }, .size = size });
+        @memcpy(stage_buffer.map[0..size], data[0..size]);
+        var cmd_encoder = try CommandEncoder.init(queue.device, null);
+        try cmd_encoder.copyBufferToBuffer(stage_buffer, offset, buffer, offset, size);
+        const cmd_buffer = try cmd_encoder.finish(&.{});
+
+        try vkd.queueSubmit(
+            queue.queue,
+            1,
+            @ptrCast(&vk.SubmitInfo{
+                .command_buffer_count = 1,
+                .p_command_buffers = @ptrCast(&cmd_buffer.buffer),
+            }),
+            .null_handle,
+        );
+        try vkd.queueWaitIdle(queue.queue);
+    }
+};
+
+const MemoryAllocator = struct {
+    info: vk.PhysicalDeviceMemoryProperties,
+
+    const MemoryKind = enum {
+        lazily_allocated,
+        linear,
+        linear_read_mappable,
+        linear_write_mappable,
+    };
+
+    fn init(physical_device: vk.PhysicalDevice) MemoryAllocator {
+        const mem_info = vki.getPhysicalDeviceMemoryProperties(physical_device);
+        return .{ .info = mem_info };
+    }
+
+    fn findBestAllocator(
+        mem_alloc: *MemoryAllocator,
+        requirements: vk.MemoryRequirements,
+        mem_kind: MemoryKind,
+    ) ?u32 {
+        const mem_types = mem_alloc.info.memory_types[0..mem_alloc.info.memory_type_count];
+        const mem_heaps = mem_alloc.info.memory_heaps[0..mem_alloc.info.memory_heap_count];
+
+        var best_type: ?u32 = null;
+        for (mem_types, 0..) |mem_type, i| {
+            if (requirements.memory_type_bits & (@as(u32, @intCast(1)) << @intCast(i)) == 0) continue;
+
+            const flags = mem_type.property_flags;
+            const heap_size = mem_heaps[mem_type.heap_index].size;
+            const candidate = switch (mem_kind) {
+                .lazily_allocated => flags.lazily_allocated_bit,
+                .linear_write_mappable => flags.host_visible_bit and flags.host_coherent_bit,
+                .linear_read_mappable => blk: {
+                    if (flags.host_visible_bit and flags.host_coherent_bit) {
+                        if (best_type) |best| {
+                            if (mem_types[best].property_flags.host_cached_bit) {
+                                if (flags.host_cached_bit) {
+                                    const best_heap_size = mem_heaps[mem_types[best].heap_index].size;
+                                    if (heap_size > best_heap_size) {
+                                        break :blk true;
+                                    }
+                                }
+
+                                break :blk false;
+                            }
+                        }
+
+                        break :blk true;
+                    }
+
+                    break :blk false;
+                },
+                .linear => blk: {
+                    if (best_type) |best| {
+                        if (mem_types[best].property_flags.device_local_bit) {
+                            if (flags.device_local_bit) {
+                                const best_heap_size = mem_heaps[mem_types[best].heap_index].size;
+                                if (heap_size > best_heap_size or flags.host_visible_bit) {
+                                    break :blk true;
+                                }
+                            }
+
+                            break :blk false;
+                        }
+                    }
+
+                    break :blk true;
+                },
+            };
+
+            if (candidate) best_type = @intCast(i);
+        }
+
+        return best_type;
     }
 };
 

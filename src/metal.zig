@@ -171,6 +171,12 @@ pub const Device = struct {
         return BindGroup.init(device, desc);
     }
 
+    pub fn createBindGroupLayout(device: *Device, desc: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+        _ = device;
+        _ = desc;
+        unreachable;
+    }
+
     pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
         return Buffer.init(device, desc);
     }
@@ -181,6 +187,12 @@ pub const Device = struct {
 
     pub fn createComputePipeline(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
         return ComputePipeline.init(device, desc);
+    }
+
+    pub fn createPipelineLayout(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+        _ = device;
+        _ = desc;
+        unreachable;
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
@@ -305,11 +317,11 @@ pub const Buffer = struct {
         allocator.destroy(buffer);
     }
 
-    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) ?*const anyopaque {
+    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) !*anyopaque {
         _ = size;
         const mtl_buffer = buffer.mtl_buffer;
         const base: [*]const u8 = @ptrCast(mtl_buffer.contents());
-        return base + offset;
+        return @constCast(base + offset);
     }
 
     pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
@@ -489,6 +501,20 @@ pub const BindGroup = struct {
     pub fn deinit(group: *BindGroup) void {
         allocator.free(group.entries);
         allocator.destroy(group);
+    }
+};
+
+pub const PipelineLayout = struct {
+    manager: utils.Manager(PipelineLayout) = .{},
+
+    pub fn init(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(group: *PipelineLayout) void {
+        _ = group;
     }
 };
 
@@ -1068,6 +1094,15 @@ pub const RenderPassEncoder = struct {
         encoder.primitive_type = pipeline.primitive_type;
     }
 
+    pub fn setBindGroup(encoder: *RenderPassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
+        _ = dynamic_offsets;
+        _ = dynamic_offset_count;
+        _ = group;
+        _ = group_index;
+        _ = encoder;
+        unreachable;
+    }
+
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
         const mtl_encoder = encoder.mtl_encoder;
         mtl_encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
@@ -1077,6 +1112,15 @@ pub const RenderPassEncoder = struct {
             instance_count,
             first_instance,
         );
+    }
+
+    pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
+        _ = encoder;
+        _ = slot;
+        _ = buffer;
+        _ = offset;
+        _ = size;
+        unreachable;
     }
 
     pub fn end(encoder: *RenderPassEncoder) void {
@@ -1135,6 +1179,15 @@ pub const Queue = struct {
     pub fn completedHandler(ctx: CompletedContext, mtl_command_buffer: *mtl.CommandBuffer) void {
         _ = mtl_command_buffer;
         ctx.queue.completed_value = ctx.fence_value;
+    }
+
+    pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
+        _ = queue;
+        _ = buffer;
+        _ = offset;
+        _ = data;
+        _ = size;
+        unreachable;
     }
 };
 

@@ -279,10 +279,22 @@ pub fn vulkanDescriptorType(entry: gpu.BindGroupLayout.Entry) vk.DescriptorType 
     unreachable;
 }
 
-pub fn vulkanShaderStageFlags(entry: gpu.ShaderStageFlags) vk.ShaderStageFlags {
+pub fn vulkanShaderStageFlags(flags: gpu.ShaderStageFlags) vk.ShaderStageFlags {
     return .{
-        .vertex_bit = entry.vertex,
-        .fragment_bit = entry.fragment,
-        .compute_bit = entry.compute,
+        .vertex_bit = flags.vertex,
+        .fragment_bit = flags.fragment,
+        .compute_bit = flags.compute,
+    };
+}
+
+pub fn vulkanBufferUsageFlags(flags: gpu.Buffer.UsageFlags) vk.BufferUsageFlags {
+    return .{
+        .transfer_src_bit = flags.copy_src,
+        .transfer_dst_bit = flags.copy_dst or flags.query_resolve,
+        .uniform_buffer_bit = flags.uniform,
+        .storage_buffer_bit = flags.storage,
+        .index_buffer_bit = flags.index,
+        .vertex_buffer_bit = flags.vertex,
+        .indirect_buffer_bit = flags.indirect,
     };
 }
