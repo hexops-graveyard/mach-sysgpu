@@ -77,7 +77,6 @@ pub const DeviceFunctions = vk.DeviceWrapper(.{
     .deviceWaitIdle = true,
     .endCommandBuffer = true,
     .freeCommandBuffers = true,
-    .freeDescriptorSets = true,
     .freeMemory = true,
     .getBufferMemoryRequirements = true,
     .getDeviceQueue = true,

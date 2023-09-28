@@ -1088,11 +1088,10 @@ pub const Buffer = struct {
     }
 
     pub fn deinit(buffer: *Buffer) void {
-        if (buffer.stage_buffer) |stage_buffer| {
-            stage_buffer.manager.release();
-        }
+        if (buffer.stage_buffer) |stage_buffer| stage_buffer.manager.release();
         vkd.destroyBuffer(buffer.device.device, buffer.buffer, null);
         vkd.freeMemory(buffer.device.device, buffer.memory, null);
+        allocator.destroy(buffer);
     }
 
     pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) !?*anyopaque {
@@ -1127,7 +1126,6 @@ pub const Buffer = struct {
                 }),
                 .null_handle,
             );
-            try vkd.queueWaitIdle(queue.queue);
 
             stage_buffer.manager.release();
             buffer.stage_buffer = null;
@@ -1367,12 +1365,7 @@ pub const BindGroup = struct {
 
     pub fn deinit(group: *BindGroup) void {
         vkd.destroyDescriptorPool(group.device.device, group.desc_pool, null);
-        vkd.freeDescriptorSets(
-            group.device.device,
-            group.desc_pool,
-            1,
-            @ptrCast(&group.desc_set),
-        ) catch unreachable;
+        allocator.destroy(group);
     }
 };
 
@@ -2037,18 +2030,29 @@ pub const Queue = struct {
     manager: utils.Manager(Queue) = .{},
     device: *Device,
     queue: vk.Queue,
+    stage_buffer: *Buffer,
 
     pub fn init(device: *Device) !Queue {
         const queue = vkd.getDeviceQueue(device.device, device.adapter.queue_family, 0);
+        const stage_buffer = try Buffer.init(device, &.{
+            .usage = .{
+                .copy_src = true,
+                .map_write = true,
+            },
+            .size = 1024, // TODO: too small?
+            .mapped_at_creation = .true,
+        });
 
         return .{
             .device = device,
             .queue = queue,
+            .stage_buffer = stage_buffer,
         };
     }
 
     pub fn deinit(queue: *Queue) void {
-        _ = queue;
+        queue.stage_buffer.deinit();
+        queue.upload_cmd_encoder.deinit();
     }
 
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
@@ -2077,22 +2081,12 @@ pub const Queue = struct {
     }
 
     pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
-        const stage_buffer = try Buffer.init(queue.device, &.{
-            .usage = .{
-                .copy_src = true,
-                .map_write = true,
-            },
-            .size = size,
-            .mapped_at_creation = .true,
-        });
-        defer stage_buffer.manager.release();
+        @memcpy(queue.stage_buffer.map.?[0..size], data[0..size]);
+        const upload_cmd_encoder = try CommandEncoder.init(queue.device, null);
+        defer upload_cmd_encoder.manager.release();
 
-        @memcpy(stage_buffer.map.?[0..size], data[0..size]);
-        var cmd_encoder = try CommandEncoder.init(queue.device, null);
-        defer cmd_encoder.manager.release();
-
-        try cmd_encoder.copyBufferToBuffer(stage_buffer, offset, buffer, offset, size);
-        const cmd_buffer = try cmd_encoder.finish(&.{});
+        try upload_cmd_encoder.copyBufferToBuffer(queue.stage_buffer, offset, buffer, offset, size);
+        const cmd_buffer = try upload_cmd_encoder.finish(&.{});
         defer cmd_buffer.manager.release();
 
         try vkd.queueSubmit(
@@ -2104,7 +2098,6 @@ pub const Queue = struct {
             }),
             .null_handle,
         );
-        try vkd.queueWaitIdle(queue.queue);
     }
 };
 

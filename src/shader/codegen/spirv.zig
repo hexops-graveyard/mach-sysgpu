@@ -661,8 +661,8 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
 
             const member_list = spv.air.refToList(@"struct".members);
             var members = std.ArrayList(IdRef).init(spv.allocator);
-            try members.ensureTotalCapacityPrecise(member_list.len);
             defer members.deinit();
+            try members.ensureTotalCapacityPrecise(member_list.len);
 
             for (member_list) |member_inst_idx| {
                 const member_inst = spv.air.getInst(member_inst_idx).struct_member;
@@ -670,7 +670,7 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
                 members.appendAssumeCapacity(member);
             }
 
-            const id = try spv.resolve(.{ .struct_type = .{ .members = try members.toOwnedSlice() } });
+            const id = try spv.resolve(.{ .struct_type = .{ .members = members.items } });
 
             for (member_list, 0..) |member_inst_idx, i| {
                 const member_inst = spv.air.getInst(member_inst_idx).struct_member;

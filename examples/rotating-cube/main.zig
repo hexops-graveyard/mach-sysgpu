@@ -139,11 +139,13 @@ pub fn main() !void {
             gpu.BindGroupLayout.Entry.buffer(0, .{ .vertex = true }, .uniform, true, 0),
         },
     }));
+    defer bgl.release();
 
     const bind_group_layouts = [_]*gpu.BindGroupLayout{bgl};
     const pipeline_layout = device.createPipelineLayout(&gpu.PipelineLayout.Descriptor.init(.{
         .bind_group_layouts = &bind_group_layouts,
     }));
+    defer pipeline_layout.release();
 
     const pipeline_descriptor = gpu.RenderPipeline.Descriptor{
         .fragment = &fragment,
