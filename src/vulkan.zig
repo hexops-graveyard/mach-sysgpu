@@ -445,30 +445,12 @@ pub const Surface = struct {
 };
 
 pub const Device = struct {
-    const FrameObject = union(enum) {
-        cmd_encoder: *CommandEncoder,
-        render_pass_encoder: *RenderPassEncoder,
-
-        pub fn destroy(obj: FrameObject, device: *Device) void {
-            switch (obj) {
-                .cmd_encoder => |ce| {
-                    vkd.freeCommandBuffers(device.device, device.cmd_pool, 1, @ptrCast(&ce.buffer.buffer));
-                    allocator.destroy(ce);
-                },
-                .render_pass_encoder => |rpe| {
-                    allocator.free(rpe.clear_values);
-                    vkd.destroyFramebuffer(device.device, rpe.framebuffer, null);
-                    allocator.destroy(rpe);
-                },
-            }
-        }
-    };
-
     const FrameResource = struct {
-        destruction_queue: std.ArrayListUnmanaged(FrameObject),
+        framebuffers: std.ArrayListUnmanaged(vk.Framebuffer),
+        commands: std.ArrayListUnmanaged(*CommandBuffer),
         render_fence: vk.Fence,
-        render_semaphore: vk.Semaphore,
-        present_semaphore: vk.Semaphore,
+        wait_semaphore: vk.Semaphore,
+        signal_semaphore: vk.Semaphore,
     };
 
     manager: utils.Manager(Device) = .{},
@@ -593,10 +575,11 @@ pub const Device = struct {
         var frames_res: [frames_in_flight]FrameResource = undefined;
         for (&frames_res) |*fr| {
             fr.* = .{
-                .destruction_queue = .{},
+                .framebuffers = .{},
+                .commands = .{},
                 .render_fence = try vkd.createFence(vk_device, &.{ .flags = .{ .signaled_bit = true } }, null),
-                .render_semaphore = try vkd.createSemaphore(vk_device, &.{}, null),
-                .present_semaphore = try vkd.createSemaphore(vk_device, &.{}, null),
+                .wait_semaphore = try vkd.createSemaphore(vk_device, &.{}, null),
+                .signal_semaphore = try vkd.createSemaphore(vk_device, &.{}, null),
             };
         }
 
@@ -621,10 +604,10 @@ pub const Device = struct {
         device.waitAll() catch {};
 
         for (&device.frames_res) |*fr| {
-            while (fr.destruction_queue.popOrNull()) |obj| obj.destroy(device);
-            fr.destruction_queue.deinit(allocator);
-            vkd.destroySemaphore(device.device, fr.render_semaphore, null);
-            vkd.destroySemaphore(device.device, fr.present_semaphore, null);
+            fr.framebuffers.deinit(allocator);
+            fr.commands.deinit(allocator);
+            vkd.destroySemaphore(device.device, fr.wait_semaphore, null);
+            vkd.destroySemaphore(device.device, fr.signal_semaphore, null);
             vkd.destroyFence(device.device, fr.render_fence, null);
         }
 
@@ -635,6 +618,7 @@ pub const Device = struct {
         device.render_passes.deinit(allocator);
 
         vkd.destroyCommandPool(device.device, device.cmd_pool, null);
+        if (device.queue) |*queue| queue.manager.release();
         vkd.destroyDevice(device.device, null);
         allocator.destroy(device);
     }
@@ -643,30 +627,27 @@ pub const Device = struct {
         return &device.frames_res[device.frame_index];
     }
 
-    fn wait(device: *Device) !void {
+    fn wait(device: *Device, frame: *FrameResource) !void {
         _ = try vkd.waitForFences(
             device.device,
             1,
-            &[_]vk.Fence{device.frameRes().render_fence},
+            &[_]vk.Fence{frame.render_fence},
             vk.TRUE,
             std.math.maxInt(u64),
         );
+
+        for (frame.framebuffers.items) |fb| vkd.destroyFramebuffer(device.device, fb, null);
+        for (frame.commands.items) |cmd| cmd.manager.release();
+        frame.framebuffers.clearRetainingCapacity();
+        frame.commands.clearRetainingCapacity();
+    }
+
+    fn waitAll(device: *Device) !void {
+        for (&device.frames_res) |*fr| try device.wait(fr);
     }
 
     fn reset(device: *Device) !void {
         try vkd.resetFences(device.device, 1, &[_]vk.Fence{device.frameRes().render_fence});
-    }
-
-    fn waitAll(device: *Device) !void {
-        for (device.frames_res) |fr| {
-            _ = try vkd.waitForFences(
-                device.device,
-                1,
-                &[_]vk.Fence{fr.render_fence},
-                vk.TRUE,
-                std.math.maxInt(u64),
-            );
-        }
     }
 
     pub fn createBindGroup(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
@@ -720,6 +701,7 @@ pub const Device = struct {
     pub fn getQueue(device: *Device) !*Queue {
         if (device.queue == null) {
             device.queue = try Queue.init(device);
+            device.queue.?.manager.reference();
         }
         return &device.queue.?;
     }
@@ -985,17 +967,14 @@ pub const SwapChain = struct {
     }
 
     pub fn getCurrentTextureView(sc: *SwapChain) !*TextureView {
-        try sc.device.wait();
+        try sc.device.wait(sc.device.frameRes());
         try sc.device.reset();
-        while (sc.device.frameRes().destruction_queue.popOrNull()) |obj| {
-            obj.destroy(sc.device);
-        }
 
         const result = try vkd.acquireNextImageKHR(
             sc.device.device,
             sc.swapchain,
             std.math.maxInt(u64),
-            sc.device.frameRes().present_semaphore,
+            sc.device.frameRes().wait_semaphore,
             .null_handle,
         );
 
@@ -1010,7 +989,7 @@ pub const SwapChain = struct {
         const queue = try sc.device.getQueue();
         _ = try vkd.queuePresentKHR(queue.queue, &.{
             .wait_semaphore_count = 1,
-            .p_wait_semaphores = &[_]vk.Semaphore{sc.device.frameRes().render_semaphore},
+            .p_wait_semaphores = &[_]vk.Semaphore{sc.device.frameRes().signal_semaphore},
             .swapchain_count = 1,
             .p_swapchains = &[_]vk.SwapchainKHR{sc.swapchain},
             .p_image_indices = &[_]u32{sc.texture_index},
@@ -1113,8 +1092,10 @@ pub const Buffer = struct {
             vkd.unmapMemory(buffer.device.device, stage_buffer.memory);
 
             var cmd_encoder = try CommandEncoder.init(buffer.device, null);
+            defer cmd_encoder.manager.release();
             try cmd_encoder.copyBufferToBuffer(stage_buffer, 0, buffer, 0, buffer.size);
             const cmd_buffer = try cmd_encoder.finish(&.{});
+            defer cmd_buffer.manager.release();
 
             const queue = try buffer.device.getQueue();
             try vkd.queueSubmit(
@@ -1126,6 +1107,7 @@ pub const Buffer = struct {
                 }),
                 .null_handle,
             );
+            try vkd.queueWaitIdle(queue.queue);
 
             stage_buffer.manager.release();
             buffer.stage_buffer = null;
@@ -1742,42 +1724,53 @@ pub const RenderPipeline = struct {
 
 pub const CommandBuffer = struct {
     manager: utils.Manager(CommandBuffer) = .{},
+    device: *Device,
     buffer: vk.CommandBuffer,
 
+    pub fn init(device: *Device) !*CommandBuffer {
+        var buffer: vk.CommandBuffer = undefined;
+        try vkd.allocateCommandBuffers(device.device, &.{
+            .command_pool = device.cmd_pool,
+            .level = .primary,
+            .command_buffer_count = 1,
+        }, @ptrCast(&buffer));
+        try vkd.beginCommandBuffer(buffer, &.{ .flags = .{ .one_time_submit_bit = true } });
+
+        var cmd_buffer = try allocator.create(CommandBuffer);
+        cmd_buffer.* = .{
+            .device = device,
+            .buffer = buffer,
+        };
+        return cmd_buffer;
+    }
+
     pub fn deinit(cmd_buffer: *CommandBuffer) void {
-        _ = cmd_buffer;
+        vkd.freeCommandBuffers(cmd_buffer.device.device, cmd_buffer.device.cmd_pool, 1, @ptrCast(&cmd_buffer.buffer));
+        allocator.destroy(cmd_buffer);
     }
 };
 
 pub const CommandEncoder = struct {
     manager: utils.Manager(CommandEncoder) = .{},
     device: *Device,
-    buffer: CommandBuffer,
+    buffer: *CommandBuffer,
 
     pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
         _ = desc;
 
-        var buffer = CommandBuffer{ .buffer = undefined };
-        try vkd.allocateCommandBuffers(device.device, &.{
-            .command_pool = device.cmd_pool,
-            .level = .primary,
-            .command_buffer_count = 1,
-        }, @ptrCast(&buffer));
-        try vkd.beginCommandBuffer(buffer.buffer, &.{ .flags = .{ .one_time_submit_bit = true } });
+        const buffer = try CommandBuffer.init(device);
 
         var cmd_encoder = try allocator.create(CommandEncoder);
-        errdefer allocator.destroy(cmd_encoder);
         cmd_encoder.* = .{
             .device = device,
             .buffer = buffer,
         };
-
-        try device.frameRes().destruction_queue.append(allocator, .{ .cmd_encoder = cmd_encoder });
         return cmd_encoder;
     }
 
     pub fn deinit(cmd_encoder: *CommandEncoder) void {
-        _ = cmd_encoder;
+        cmd_encoder.buffer.manager.release();
+        allocator.destroy(cmd_encoder);
     }
 
     pub fn beginComputePass(encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
@@ -1802,7 +1795,7 @@ pub const CommandEncoder = struct {
     pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
         _ = desc;
         try vkd.endCommandBuffer(cmd_encoder.buffer.buffer);
-        return &cmd_encoder.buffer;
+        return cmd_encoder.buffer;
     }
 };
 
@@ -1937,6 +1930,7 @@ pub const RenderPassEncoder = struct {
             },
             null,
         );
+        try device.frameRes().framebuffers.append(allocator, framebuffer);
 
         var rpe = try allocator.create(RenderPassEncoder);
         errdefer allocator.destroy(rpe);
@@ -1948,13 +1942,13 @@ pub const RenderPassEncoder = struct {
             .extent = extent.?,
             .clear_values = try clear_values.toOwnedSlice(),
         };
-        try device.frameRes().destruction_queue.append(allocator, .{ .render_pass_encoder = rpe });
 
         return rpe;
     }
 
     pub fn deinit(encoder: *RenderPassEncoder) void {
-        _ = encoder;
+        allocator.free(encoder.clear_values);
+        allocator.destroy(encoder);
     }
 
     pub fn setBindGroup(
@@ -2052,7 +2046,6 @@ pub const Queue = struct {
 
     pub fn deinit(queue: *Queue) void {
         queue.stage_buffer.deinit();
-        queue.upload_cmd_encoder.deinit();
     }
 
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
@@ -2061,14 +2054,15 @@ pub const Queue = struct {
         defer allocator.free(submits);
 
         for (commands, 0..) |buf, i| {
+            buf.manager.reference();
             submits[i] = .{
                 .command_buffer_count = 1,
                 .p_command_buffers = @ptrCast(&buf.buffer),
                 .wait_semaphore_count = 1,
-                .p_wait_semaphores = @ptrCast(&queue.device.frameRes().present_semaphore),
+                .p_wait_semaphores = @ptrCast(&queue.device.frameRes().wait_semaphore),
                 .p_wait_dst_stage_mask = @ptrCast(&dst_stage_masks),
                 .signal_semaphore_count = 1,
-                .p_signal_semaphores = @ptrCast(&queue.device.frameRes().render_semaphore),
+                .p_signal_semaphores = @ptrCast(&queue.device.frameRes().signal_semaphore),
             };
         }
 
@@ -2078,6 +2072,8 @@ pub const Queue = struct {
             submits.ptr,
             queue.device.frameRes().render_fence,
         );
+
+        try queue.device.frameRes().commands.appendSlice(allocator, commands);
     }
 
     pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
@@ -2089,6 +2085,9 @@ pub const Queue = struct {
         const cmd_buffer = try upload_cmd_encoder.finish(&.{});
         defer cmd_buffer.manager.release();
 
+        // TODO: use semaphores so we can remove queueWaitIdle
+        // try queue.commands.append(allocator, cmd_buffer);
+
         try vkd.queueSubmit(
             queue.queue,
             1,
@@ -2098,6 +2097,7 @@ pub const Queue = struct {
             }),
             .null_handle,
         );
+        try vkd.queueWaitIdle(queue.queue);
     }
 };
 
