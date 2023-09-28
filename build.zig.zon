@@ -10,10 +10,6 @@
             .url = "https://pkg.machengine.org/mach-gpu/46d62d5c63f524228edeba06c7bb38f0015272cc.tar.gz",
             .hash = "12209e517b8b459b95fb66f045580a66f8901970e7416f2ae90613df63adb710e19c",
         },
-        .mach_glfw = .{
-            .url = "https://pkg.machengine.org/mach-glfw/321efd4065b57e31d8ab0bce720852c1d680d443.tar.gz",
-            .hash = "122002e355cf42b8d257efc95229c9ee6be4cca189c1718f86179cb7c21225beeb75",
-        },
         .mach_objc = .{
             .url = "https://pkg.machengine.org/mach-objc/ad08011e984e8b4fdec40a53c7f610a4cd997a96.tar.gz",
             .hash = "12207d49392dc735c03483cf12f87686da5805e88500961b839bd7afe1c9b78aa97e",
