@@ -1,8 +1,8 @@
 const std = @import("std");
-const gpu = @import("gpu");
 const ca = @import("objc").quartz_core.ca;
 const mtl = @import("objc").metal.mtl;
 const ns = @import("objc").foundation.ns;
+const dgpu = @import("dgpu/main.zig");
 const utils = @import("utils.zig");
 const shader = @import("shader.zig");
 const conv = @import("metal/conv.zig");
@@ -53,7 +53,7 @@ fn entrypointSlice(name: []const u8) []const u8 {
 pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
 
-    pub fn init(desc: *const gpu.Instance.Descriptor) !*Instance {
+    pub fn init(desc: *const dgpu.Instance.Descriptor) !*Instance {
         // TODO
         _ = desc;
 
@@ -70,7 +70,7 @@ pub const Instance = struct {
         allocator.destroy(instance);
     }
 
-    pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !*Surface {
+    pub fn createSurface(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
         return Surface.init(instance, desc);
     }
 };
@@ -79,7 +79,7 @@ pub const Adapter = struct {
     manager: utils.Manager(Adapter) = .{},
     mtl_device: *mtl.Device,
 
-    pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !*Adapter {
+    pub fn init(instance: *Instance, options: *const dgpu.RequestAdapterOptions) !*Adapter {
         _ = instance;
         _ = options;
 
@@ -98,11 +98,11 @@ pub const Adapter = struct {
         allocator.destroy(adapter);
     }
 
-    pub fn createDevice(adapter: *Adapter, desc: ?*const gpu.Device.Descriptor) !*Device {
+    pub fn createDevice(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
         return Device.init(adapter, desc);
     }
 
-    pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
+    pub fn getProperties(adapter: *Adapter) dgpu.Adapter.Properties {
         const mtl_device = adapter.mtl_device;
         return .{
             .vendor_id = 0, // TODO
@@ -122,10 +122,10 @@ pub const Surface = struct {
     manager: utils.Manager(Surface) = .{},
     layer: *ca.MetalLayer,
 
-    pub fn init(instance: *Instance, desc: *const gpu.Surface.Descriptor) !*Surface {
+    pub fn init(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
         _ = instance;
 
-        if (utils.findChained(gpu.Surface.DescriptorFromMetalLayer, desc.next_in_chain.generic)) |mtl_desc| {
+        if (utils.findChained(dgpu.Surface.DescriptorFromMetalLayer, desc.next_in_chain.generic)) |mtl_desc| {
             var surface = try allocator.create(Surface);
             surface.* = .{ .layer = @ptrCast(mtl_desc.layer) };
             return surface;
@@ -141,7 +141,7 @@ pub const Surface = struct {
 
 pub const Device = struct {
     const MapAsyncCallback = struct {
-        callback: gpu.Buffer.MapCallback,
+        callback: dgpu.Buffer.MapCallback,
         userdata: ?*anyopaque,
         fence_value: u64,
     };
@@ -149,15 +149,15 @@ pub const Device = struct {
     manager: utils.Manager(Device) = .{},
     mtl_device: *mtl.Device,
     queue: ?*Queue = null,
-    lost_cb: ?gpu.Device.LostCallback = null,
+    lost_cb: ?dgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
-    log_cb: ?gpu.LoggingCallback = null,
+    log_cb: ?dgpu.LoggingCallback = null,
     log_cb_userdata: ?*anyopaque = null,
-    err_cb: ?gpu.ErrorCallback = null,
+    err_cb: ?dgpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
     map_async_callbacks: std.ArrayList(MapAsyncCallback),
 
-    pub fn init(adapter: *Adapter, desc: ?*const gpu.Device.Descriptor) !*Device {
+    pub fn init(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
         // TODO
         _ = desc;
 
@@ -179,31 +179,31 @@ pub const Device = struct {
         allocator.destroy(device);
     }
 
-    pub fn createBindGroup(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn createBindGroup(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
         return BindGroup.init(device, desc);
     }
 
-    pub fn createBindGroupLayout(device: *Device, desc: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn createBindGroupLayout(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         return BindGroupLayout.init(device, desc);
     }
 
-    pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+    pub fn createBuffer(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
         return Buffer.init(device, desc);
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn createCommandEncoder(device: *Device, desc: *const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
     }
 
-    pub fn createComputePipeline(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn createComputePipeline(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         return ComputePipeline.init(device, desc);
     }
 
-    pub fn createPipelineLayout(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn createPipelineLayout(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         return PipelineLayout.init(device, desc);
     }
 
-    pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn createRenderPipeline(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
@@ -217,11 +217,11 @@ pub const Device = struct {
         return error.unsupported;
     }
 
-    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createTexture(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+    pub fn createTexture(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
         return Texture.init(device, desc);
     }
 
@@ -256,7 +256,7 @@ pub const SwapChain = struct {
     surface: *Surface,
     current_drawable: ?*ca.MetalDrawable = null,
 
-    pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn init(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
         // TODO
         _ = desc;
 
@@ -299,7 +299,7 @@ pub const Buffer = struct {
     mtl_buffer: *mtl.Buffer,
     last_used_fence_value: u64 = 0,
 
-    pub fn init(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+    pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
         const mtl_device = device.mtl_device;
 
         const mtl_buffer = mtl_device.newBufferWithLength_options(
@@ -332,7 +332,7 @@ pub const Buffer = struct {
         return @constCast(base + offset);
     }
 
-    pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
+    pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
         _ = size;
         _ = offset;
         _ = mode;
@@ -354,7 +354,7 @@ pub const Texture = struct {
     manager: utils.Manager(Texture) = .{},
     mtl_texture: *mtl.Texture,
 
-    pub fn init(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+    pub fn init(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
         const mtl_device = device.mtl_device;
 
         var mtl_desc = mtl.TextureDescriptor.alloc().init();
@@ -388,7 +388,7 @@ pub const Texture = struct {
         allocator.destroy(texture);
     }
 
-    pub fn createView(texture: *Texture, desc: ?*const gpu.TextureView.Descriptor) !*TextureView {
+    pub fn createView(texture: *Texture, desc: ?*const dgpu.TextureView.Descriptor) !*TextureView {
         return TextureView.init(texture, desc);
     }
 };
@@ -397,7 +397,7 @@ pub const TextureView = struct {
     manager: utils.Manager(TextureView) = .{},
     mtl_texture: *mtl.Texture,
 
-    pub fn init(texture: *Texture, opt_desc: ?*const gpu.TextureView.Descriptor) !*TextureView {
+    pub fn init(texture: *Texture, opt_desc: ?*const dgpu.TextureView.Descriptor) !*TextureView {
         var mtl_texture = texture.mtl_texture;
         if (opt_desc) |desc| {
             // TODO - analyze desc to see if we need to create a new view
@@ -444,7 +444,7 @@ pub const Sampler = struct {
 pub const BindGroupLayout = struct {
     manager: utils.Manager(BindGroupLayout) = .{},
 
-    pub fn init(device: *Device, descriptor: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn init(device: *Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         _ = descriptor;
         _ = device;
 
@@ -484,7 +484,7 @@ pub const BindGroup = struct {
     manager: utils.Manager(BindGroup) = .{},
     entries: []const Entry,
 
-    pub fn init(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn init(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
         _ = device;
 
         var mtl_entries = try allocator.alloc(Entry, desc.entry_count);
@@ -525,7 +525,7 @@ pub const BindGroup = struct {
 pub const PipelineLayout = struct {
     manager: utils.Manager(PipelineLayout) = .{},
 
-    pub fn init(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn init(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         _ = desc;
         _ = device;
 
@@ -609,7 +609,7 @@ pub const ComputePipeline = struct {
     layout: *BindGroupLayout,
     threadgroup_size: mtl.Size,
 
-    pub fn init(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         const mtl_device = device.mtl_device;
 
         var mtl_desc = mtl.ComputePipelineDescriptor.alloc().init();
@@ -678,7 +678,7 @@ pub const RenderPipeline = struct {
     depth_bias_slope_scale: f32,
     depth_bias_clamp: f32,
 
-    pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn init(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         const mtl_device = device.mtl_device;
 
         var mtl_desc = mtl.RenderPipelineDescriptor.alloc().init();
@@ -876,7 +876,7 @@ pub const CommandEncoder = struct {
     command_buffer: *CommandBuffer,
     referenced_buffers: *std.ArrayList(*Buffer),
 
-    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         // TODO
         _ = desc;
 
@@ -896,11 +896,11 @@ pub const CommandEncoder = struct {
         allocator.destroy(encoder);
     }
 
-    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         return ComputePassEncoder.init(encoder, desc);
     }
 
-    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         return RenderPassEncoder.init(encoder, desc);
     }
 
@@ -929,7 +929,7 @@ pub const CommandEncoder = struct {
         mtl_encoder.endEncoding();
     }
 
-    pub fn finish(encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
+    pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
         const command_buffer = encoder.command_buffer;
         const mtl_command_buffer = command_buffer.mtl_command_buffer;
 
@@ -948,7 +948,7 @@ pub const ComputePassEncoder = struct {
     referenced_buffers: *std.ArrayList(*Buffer),
     threadgroup_size: mtl.Size,
 
-    pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         const mtl_device = command_encoder.device.mtl_device;
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 
@@ -1033,7 +1033,7 @@ pub const RenderPassEncoder = struct {
     referenced_buffers: *std.ArrayList(*Buffer),
     primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
 
-    pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const mtl_device = command_encoder.device.mtl_device;
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 

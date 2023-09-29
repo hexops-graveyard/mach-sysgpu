@@ -1,5 +1,5 @@
 const std = @import("std");
-const gpu = @import("gpu");
+const dgpu = @import("dgpu/main.zig");
 
 pub fn Manager(comptime T: type) type {
     return struct {
@@ -19,8 +19,8 @@ pub fn Manager(comptime T: type) type {
     };
 }
 
-pub fn findChained(comptime T: type, next_in_chain: ?*const gpu.ChainedStruct) ?*const T {
-    const search = @as(*align(1) const gpu.ChainedStruct, @ptrCast(std.meta.fieldInfo(T, .chain).default_value.?));
+pub fn findChained(comptime T: type, next_in_chain: ?*const dgpu.ChainedStruct) ?*const T {
+    const search = @as(*align(1) const dgpu.ChainedStruct, @ptrCast(std.meta.fieldInfo(T, .chain).default_value.?));
     var chain = next_in_chain;
     while (chain) |c| {
         if (c.s_type == search.s_type) {

@@ -1,7 +1,7 @@
-const gpu = @import("gpu");
 const vk = @import("vulkan");
+const dgpu = @import("../dgpu/main.zig");
 
-pub fn vulkanBlendOp(op: gpu.BlendOperation) vk.BlendOp {
+pub fn vulkanBlendOp(op: dgpu.BlendOperation) vk.BlendOp {
     return switch (op) {
         .add => .add,
         .subtract => .subtract,
@@ -11,7 +11,7 @@ pub fn vulkanBlendOp(op: gpu.BlendOperation) vk.BlendOp {
     };
 }
 
-pub fn vulkanBlendFactor(op: gpu.BlendFactor) vk.BlendFactor {
+pub fn vulkanBlendFactor(op: dgpu.BlendFactor) vk.BlendFactor {
     return switch (op) {
         .zero => .zero,
         .one => .one,
@@ -33,7 +33,7 @@ pub fn vulkanBlendFactor(op: gpu.BlendFactor) vk.BlendFactor {
     };
 }
 
-pub fn vulkanCompareOp(op: gpu.CompareFunction) vk.CompareOp {
+pub fn vulkanCompareOp(op: dgpu.CompareFunction) vk.CompareOp {
     return switch (op) {
         .never => .never,
         .less => .less,
@@ -47,22 +47,22 @@ pub fn vulkanCompareOp(op: gpu.CompareFunction) vk.CompareOp {
     };
 }
 
-pub fn vulkanDepthBias(ds: ?*const gpu.DepthStencilState) f32 {
+pub fn vulkanDepthBias(ds: ?*const dgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return @floatFromInt(ds.?.depth_bias);
 }
 
-pub fn vulkanDepthBiasClamp(ds: ?*const gpu.DepthStencilState) f32 {
+pub fn vulkanDepthBiasClamp(ds: ?*const dgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return ds.?.depth_bias_clamp;
 }
 
-pub fn vulkanDepthBiasSlopeScale(ds: ?*const gpu.DepthStencilState) f32 {
+pub fn vulkanDepthBiasSlopeScale(ds: ?*const dgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return ds.?.depth_bias_slope_scale;
 }
 
-pub fn vulkanFormat(format: gpu.Texture.Format) vk.Format {
+pub fn vulkanFormat(format: dgpu.Texture.Format) vk.Format {
     return switch (format) {
         .r8_unorm => .r8_unorm,
         .r8_snorm => .r8_snorm,
@@ -176,7 +176,7 @@ pub fn vulkanSampleCount(samples: u32) vk.SampleCountFlags {
     };
 }
 
-pub fn vulkanStencilOp(op: gpu.StencilOperation) vk.StencilOp {
+pub fn vulkanStencilOp(op: dgpu.StencilOperation) vk.StencilOp {
     return switch (op) {
         .keep => .keep,
         .zero => .zero,
@@ -189,7 +189,7 @@ pub fn vulkanStencilOp(op: gpu.StencilOperation) vk.StencilOp {
     };
 }
 
-pub fn vulkanLoadOp(op: gpu.LoadOp) vk.AttachmentLoadOp {
+pub fn vulkanLoadOp(op: dgpu.LoadOp) vk.AttachmentLoadOp {
     return switch (op) {
         .load => .load,
         .clear => .clear,
@@ -197,7 +197,7 @@ pub fn vulkanLoadOp(op: gpu.LoadOp) vk.AttachmentLoadOp {
     };
 }
 
-pub fn vulkanStoreOp(op: gpu.StoreOp) vk.AttachmentStoreOp {
+pub fn vulkanStoreOp(op: dgpu.StoreOp) vk.AttachmentStoreOp {
     return switch (op) {
         .store => .store,
         .discard => .dont_care,
@@ -205,7 +205,7 @@ pub fn vulkanStoreOp(op: gpu.StoreOp) vk.AttachmentStoreOp {
     };
 }
 
-pub fn vulkanVertexFormat(format: gpu.VertexFormat) vk.Format {
+pub fn vulkanVertexFormat(format: dgpu.VertexFormat) vk.Format {
     return switch (format) {
         .uint8x2 => .r8g8_uint,
         .uint8x4 => .r8g8b8a8_uint,
@@ -241,7 +241,7 @@ pub fn vulkanVertexFormat(format: gpu.VertexFormat) vk.Format {
     };
 }
 
-pub fn vulkanDescriptorType(entry: gpu.BindGroupLayout.Entry) vk.DescriptorType {
+pub fn vulkanDescriptorType(entry: dgpu.BindGroupLayout.Entry) vk.DescriptorType {
     switch (entry.buffer.type) {
         .undefined => {},
 
@@ -279,7 +279,7 @@ pub fn vulkanDescriptorType(entry: gpu.BindGroupLayout.Entry) vk.DescriptorType 
     unreachable;
 }
 
-pub fn vulkanShaderStageFlags(flags: gpu.ShaderStageFlags) vk.ShaderStageFlags {
+pub fn vulkanShaderStageFlags(flags: dgpu.ShaderStageFlags) vk.ShaderStageFlags {
     return .{
         .vertex_bit = flags.vertex,
         .fragment_bit = flags.fragment,
@@ -287,7 +287,7 @@ pub fn vulkanShaderStageFlags(flags: gpu.ShaderStageFlags) vk.ShaderStageFlags {
     };
 }
 
-pub fn vulkanBufferUsageFlags(flags: gpu.Buffer.UsageFlags) vk.BufferUsageFlags {
+pub fn vulkanBufferUsageFlags(flags: dgpu.Buffer.UsageFlags) vk.BufferUsageFlags {
     return .{
         .transfer_src_bit = flags.copy_src,
         .transfer_dst_bit = flags.copy_dst or flags.query_resolve,

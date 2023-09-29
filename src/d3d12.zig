@@ -1,5 +1,5 @@
 const std = @import("std");
-const gpu = @import("gpu");
+const dgpu = @import("dgpu/main.zig");
 const utils = @import("utils.zig");
 const shader = @import("shader.zig");
 const c = @import("d3d12/c.zig");
@@ -32,7 +32,7 @@ pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
     dxgi_factory: *c.IDXGIFactory4,
 
-    pub fn init(desc: *const gpu.Instance.Descriptor) !*Instance {
+    pub fn init(desc: *const dgpu.Instance.Descriptor) !*Instance {
         // TODO
         _ = desc;
 
@@ -80,7 +80,7 @@ pub const Instance = struct {
         allocator.destroy(instance);
     }
 
-    pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !*Surface {
+    pub fn createSurface(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
         return Surface.init(instance, desc);
     }
 };
@@ -92,7 +92,7 @@ pub const Adapter = struct {
     d3d_device: *c.ID3D12Device,
     dxgi_desc: c.DXGI_ADAPTER_DESC1,
 
-    pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !*Adapter {
+    pub fn init(instance: *Instance, options: *const dgpu.RequestAdapterOptions) !*Adapter {
         // TODO - choose appropriate device from options
         _ = options;
 
@@ -150,11 +150,11 @@ pub const Adapter = struct {
         allocator.destroy(adapter);
     }
 
-    pub fn createDevice(adapter: *Adapter, desc: ?*const gpu.Device.Descriptor) !*Device {
+    pub fn createDevice(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
         return Device.init(adapter, desc);
     }
 
-    pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
+    pub fn getProperties(adapter: *Adapter) dgpu.Adapter.Properties {
         const dxgi_desc = adapter.dxgi_desc;
 
         return .{
@@ -175,10 +175,10 @@ pub const Surface = struct {
     manager: utils.Manager(Surface) = .{},
     hwnd: c.HWND,
 
-    pub fn init(instance: *Instance, desc: *const gpu.Surface.Descriptor) !*Surface {
+    pub fn init(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
         _ = instance;
 
-        if (utils.findChained(gpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
+        if (utils.findChained(dgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
             var surface = try allocator.create(Surface);
             surface.* = .{ .hwnd = hwndCast(win_desc.hwnd) };
             return surface;
@@ -200,14 +200,14 @@ pub const Device = struct {
     root_signature: *c.ID3D12RootSignature,
     command_manager: *CommandManager,
     queue: *Queue,
-    lost_cb: ?gpu.Device.LostCallback = null,
+    lost_cb: ?dgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
-    log_cb: ?gpu.LoggingCallback = null,
+    log_cb: ?dgpu.LoggingCallback = null,
     log_cb_userdata: ?*anyopaque = null,
-    err_cb: ?gpu.ErrorCallback = null,
+    err_cb: ?dgpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
 
-    pub fn init(adapter: *Adapter, desc: ?*const gpu.Device.Descriptor) !*Device {
+    pub fn init(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
         // TODO
         _ = desc;
 
@@ -298,41 +298,41 @@ pub const Device = struct {
         allocator.destroy(device);
     }
 
-    pub fn createBindGroup(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn createBindGroup(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
         _ = desc;
         _ = device;
         unreachable;
     }
 
-    pub fn createBindGroupLayout(device: *Device, desc: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn createBindGroupLayout(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         _ = device;
         _ = desc;
         unreachable;
     }
 
-    pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+    pub fn createBuffer(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
         _ = desc;
         _ = device;
         unreachable;
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn createCommandEncoder(device: *Device, desc: *const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
     }
 
-    pub fn createComputePipeline(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn createComputePipeline(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         _ = desc;
         _ = device;
         unreachable;
     }
 
-    pub fn createPipelineLayout(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn createPipelineLayout(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         _ = device;
         _ = desc;
         unreachable;
     }
 
-    pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn createRenderPipeline(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
@@ -346,11 +346,11 @@ pub const Device = struct {
         return error.unsupported;
     }
 
-    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createTexture(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+    pub fn createTexture(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
         _ = desc;
         _ = device;
         unreachable;
@@ -522,7 +522,7 @@ pub const SwapChain = struct {
     buffer_index: u32 = 0,
     texture_view: TextureView = undefined,
 
-    pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn init(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
         const dxgi_factory = device.adapter.instance.dxgi_factory;
         const d3d_device = device.d3d_device;
         const rtv_descriptor_heap = device.rtv_descriptor_heap;
@@ -676,7 +676,7 @@ pub const SwapChain = struct {
 pub const Buffer = struct {
     manager: utils.Manager(Buffer) = .{},
 
-    pub fn init(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+    pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
         _ = desc;
         _ = device;
         unreachable;
@@ -693,7 +693,7 @@ pub const Buffer = struct {
         unreachable;
     }
 
-    pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
+    pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
         _ = userdata;
         _ = callback;
         _ = size;
@@ -717,7 +717,7 @@ pub const Texture = struct {
         _ = view;
     }
 
-    pub fn createView(texture: *Texture, desc: ?*const gpu.TextureView.Descriptor) !*TextureView {
+    pub fn createView(texture: *Texture, desc: ?*const dgpu.TextureView.Descriptor) !*TextureView {
         _ = desc;
         _ = texture;
         unreachable;
@@ -747,7 +747,7 @@ pub const BindGroupLayout = struct {
 pub const BindGroup = struct {
     manager: utils.Manager(BindGroup) = .{},
 
-    pub fn init(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn init(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
         _ = desc;
         _ = device;
         unreachable;
@@ -761,7 +761,7 @@ pub const BindGroup = struct {
 pub const PipelineLayout = struct {
     manager: utils.Manager(PipelineLayout) = .{},
 
-    pub fn init(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn init(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         _ = desc;
         _ = device;
         unreachable;
@@ -798,7 +798,7 @@ pub const ShaderModule = struct {
 pub const ComputePipeline = struct {
     manager: utils.Manager(ComputePipeline) = .{},
 
-    pub fn init(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         _ = desc;
         _ = device;
         unreachable;
@@ -849,7 +849,7 @@ pub const RenderPipeline = struct {
         return shader_blob;
     }
 
-    pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn init(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         const d3d_device = device.d3d_device;
         var hr: c.HRESULT = undefined;
 
@@ -1031,7 +1031,7 @@ pub const CommandEncoder = struct {
     manager: utils.Manager(CommandEncoder) = .{},
     cmd_buffer: *CommandBuffer,
 
-    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         // TODO
         _ = desc;
 
@@ -1046,13 +1046,13 @@ pub const CommandEncoder = struct {
         allocator.destroy(cmd_encoder);
     }
 
-    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
         _ = encoder;
         unreachable;
     }
 
-    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         return RenderPassEncoder.init(cmd_encoder, desc);
     }
 
@@ -1066,7 +1066,7 @@ pub const CommandEncoder = struct {
         unreachable;
     }
 
-    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
+    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
         // TODO
         _ = desc;
 
@@ -1085,7 +1085,7 @@ pub const CommandEncoder = struct {
 pub const ComputePassEncoder = struct {
     manager: utils.Manager(ComputePassEncoder) = .{},
 
-    pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
         _ = command_encoder;
         unreachable;
@@ -1130,7 +1130,7 @@ pub const RenderPassEncoder = struct {
     color_attachment_count: usize,
     color_resources: [max_color_attachments]*c.ID3D12Resource,
 
-    pub fn init(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const command_list = cmd_encoder.cmd_buffer.command_list;
 
         var width: u32 = 0;
