@@ -336,7 +336,6 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
                 .greater_than_equal => return lhs.greaterThanEqual(rhs),
                 .logical_and => return lhs.logicalAnd(rhs),
                 .logical_or => return lhs.logicalOr(rhs),
-                .min, .max, .atan2 => unreachable, // TODO
             }
             return lhs;
         },
@@ -391,7 +390,9 @@ pub const Inst = union(enum) {
     external_texture_type,
 
     unary: Unary,
+    unary_intrinsic: UnaryIntrinsic,
     binary: Binary,
+    binary_intrinsic: BinaryIntrinsic,
 
     block: RefIndex,
     loop: InstIndex,
@@ -697,6 +698,15 @@ pub const Inst = union(enum) {
             negate,
             deref,
             addr_of,
+        };
+    };
+
+    pub const UnaryIntrinsic = struct {
+        result_type: InstIndex,
+        expr: InstIndex,
+        op: Op,
+
+        pub const Op = enum {
             all,
             any,
             abs,
@@ -775,6 +785,18 @@ pub const Inst = union(enum) {
             less_than_equal,
             greater_than,
             greater_than_equal,
+        };
+    };
+
+    pub const BinaryIntrinsic = struct {
+        op: Op,
+        result_type: InstIndex,
+        lhs_type: InstIndex,
+        rhs_type: InstIndex,
+        lhs: InstIndex,
+        rhs: InstIndex,
+
+        pub const Op = enum {
             min,
             max,
             atan2,

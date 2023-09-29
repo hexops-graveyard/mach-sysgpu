@@ -2635,7 +2635,7 @@ fn genBuiltinAllAny(astgen: *AstGen, scope: *Scope, node: NodeIndex, all: bool) 
             }
 
             const result_type = try astgen.addInst(.{ .bool = .{ .value = null } });
-            return astgen.addInst(.{ .unary = .{
+            return astgen.addInst(.{ .unary_intrinsic = .{
                 .op = if (all) .all else .any,
                 .expr = arg,
                 .result_type = result_type,
@@ -2714,7 +2714,7 @@ fn genDerivativeBuiltin(
     astgen: *AstGen,
     scope: *Scope,
     node: NodeIndex,
-    comptime op: Inst.Unary.Op,
+    comptime op: Inst.UnaryIntrinsic.Op,
 ) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
@@ -2729,7 +2729,7 @@ fn genDerivativeBuiltin(
 
     const arg = try astgen.genExpr(scope, arg_nodes[0]);
     const arg_res = try astgen.resolve(arg);
-    const inst = Inst{ .unary = .{
+    const inst = Inst{ .unary_intrinsic = .{
         .op = op,
         .expr = arg,
         .result_type = arg_res,
@@ -2761,7 +2761,7 @@ fn genSimpleBuiltin(
     astgen: *AstGen,
     scope: *Scope,
     node: NodeIndex,
-    comptime op: Inst.Unary.Op,
+    comptime op: Inst.UnaryIntrinsic.Op,
     comptime int_limit: []const Inst.Int.Type,
     comptime float_limit: []const Inst.Float.Type,
 ) !InstIndex {
@@ -2779,7 +2779,7 @@ fn genSimpleBuiltin(
     const arg = try astgen.genExpr(scope, arg_nodes[0]);
     const arg_res = try astgen.resolve(arg);
     const inst = Inst{
-        .unary = .{
+        .unary_intrinsic = .{
             .op = op,
             .expr = arg,
             .result_type = arg_res,
@@ -2814,7 +2814,7 @@ fn genSimpleBuiltin2(
     astgen: *AstGen,
     scope: *Scope,
     node: NodeIndex,
-    comptime op: Inst.Binary.Op,
+    comptime op: Inst.BinaryIntrinsic.Op,
 ) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
@@ -2850,7 +2850,7 @@ fn genSimpleBuiltin2(
         return error.AnalysisFail;
     }
 
-    return astgen.addInst(.{ .binary = .{
+    return astgen.addInst(.{ .binary_intrinsic = .{
         .op = op,
         .lhs = arg1,
         .rhs = arg2,
@@ -2926,7 +2926,7 @@ fn genArrayLengthBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstI
         const ptr_elem_inst = astgen.getInst(arg_res_inst.ptr_type.elem_type);
         if (ptr_elem_inst == .array) {
             const result_type = try astgen.addInst(.{ .int = .{ .type = .u32, .value = null } });
-            return astgen.addInst(.{ .unary = .{
+            return astgen.addInst(.{ .unary_intrinsic = .{
                 .op = .array_length,
                 .expr = arg,
                 .result_type = result_type,
@@ -3609,8 +3609,10 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .struct_construct => |struct_construct| return struct_construct.@"struct",
             .bitcast => |bitcast| return bitcast.result_type,
             .unary => |un| return un.result_type,
+            .unary_intrinsic => |un| return un.result_type,
 
             .binary => |bin| return bin.result_type,
+            .binary_intrinsic => |bin| return bin.result_type,
             .smoothstep => |smoothstep| return smoothstep.type,
             .select => |select| return select.type,
 
