@@ -305,9 +305,9 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
             }
             return .guaranteed;
         },
-        .negate, .not => |un| {
+        .unary => |un| {
             var value = air.resolveConstExpr(un.expr) orelse return null;
-            switch (inst) {
+            switch (un.op) {
                 .negate => value.negate(),
                 .not => value.not(),
                 else => unreachable,
@@ -336,6 +336,7 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
                 .greater_than_equal => return lhs.greaterThanEqual(rhs),
                 .logical_and => return lhs.logicalAnd(rhs),
                 .logical_or => return lhs.logicalOr(rhs),
+                .min, .max, .atan2 => unreachable, // TODO
             }
             return lhs;
         },
@@ -389,11 +390,7 @@ pub const Inst = union(enum) {
     comparison_sampler_type,
     external_texture_type,
 
-    not: Unary,
-    negate: Unary,
-    deref: Unary,
-    addr_of: Unary,
-
+    unary: Unary,
     binary: Binary,
 
     block: RefIndex,
@@ -419,60 +416,8 @@ pub const Inst = union(enum) {
     call: FnCall,
     struct_construct: StructConstruct,
     bitcast: Bitcast,
-    all: InstIndex,
-    any: InstIndex,
     select: BuiltinSelect,
-    abs: InstIndex,
-    acos: InstIndex,
-    acosh: InstIndex,
-    asin: InstIndex,
-    asinh: InstIndex,
-    atan: InstIndex,
-    atanh: InstIndex,
-    ceil: InstIndex,
-    cos: InstIndex,
-    cosh: InstIndex,
-    count_leading_zeros: InstIndex,
-    count_one_bits: InstIndex,
-    count_trailing_zeros: InstIndex,
-    degrees: InstIndex,
-    exp: InstIndex,
-    exp2: InstIndex,
-    first_leading_bit: InstIndex,
-    first_trailing_bit: InstIndex,
-    floor: InstIndex,
-    fract: InstIndex,
-    inverse_sqrt: InstIndex,
-    length: InstIndex,
-    log: InstIndex,
-    log2: InstIndex,
-    quantize_to_F16: InstIndex,
-    radians: InstIndex,
-    reverseBits: InstIndex,
-    round: InstIndex,
-    saturate: InstIndex,
-    sign: InstIndex,
-    sin: InstIndex,
-    sinh: InstIndex,
     smoothstep: BuiltinSmoothstep,
-    sqrt: InstIndex,
-    tan: InstIndex,
-    tanh: InstIndex,
-    trunc: InstIndex,
-    dpdx: InstIndex,
-    dpdx_coarse: InstIndex,
-    dpdx_fine: InstIndex,
-    dpdy: InstIndex,
-    dpdy_coarse: InstIndex,
-    dpdy_fine: InstIndex,
-    fwidth: InstIndex,
-    fwidth_coarse: InstIndex,
-    fwidth_fine: InstIndex,
-    array_length: InstIndex,
-
-    min: BuiltinBinary,
-    max: BuiltinBinary,
-    atan2: BuiltinBinary,
 
     pub const Var = struct {
         name: StringIndex,
@@ -745,10 +690,66 @@ pub const Inst = union(enum) {
     pub const Unary = struct {
         result_type: InstIndex,
         expr: InstIndex,
+        op: Op,
+
+        pub const Op = enum {
+            not,
+            negate,
+            deref,
+            addr_of,
+            all,
+            any,
+            abs,
+            acos,
+            acosh,
+            asin,
+            asinh,
+            atan,
+            atanh,
+            ceil,
+            cos,
+            cosh,
+            count_leading_zeros,
+            count_one_bits,
+            count_trailing_zeros,
+            degrees,
+            exp,
+            exp2,
+            first_leading_bit,
+            first_trailing_bit,
+            floor,
+            fract,
+            inverse_sqrt,
+            length,
+            log,
+            log2,
+            quantize_to_F16,
+            radians,
+            reverseBits,
+            round,
+            saturate,
+            sign,
+            sin,
+            sinh,
+            sqrt,
+            tan,
+            tanh,
+            trunc,
+            dpdx,
+            dpdx_coarse,
+            dpdx_fine,
+            dpdy,
+            dpdy_coarse,
+            dpdy_fine,
+            fwidth,
+            fwidth_coarse,
+            fwidth_fine,
+            array_length,
+        };
     };
 
     pub const Binary = struct {
-        op: Op, // TODO: move tags into Inst
+        op: Op,
         result_type: InstIndex,
         lhs_type: InstIndex,
         rhs_type: InstIndex,
@@ -774,6 +775,9 @@ pub const Inst = union(enum) {
             less_than_equal,
             greater_than,
             greater_than_equal,
+            min,
+            max,
+            atan2,
         };
     };
 
@@ -839,12 +843,6 @@ pub const Inst = union(enum) {
         type: InstIndex,
         expr: InstIndex,
         result_type: InstIndex,
-    };
-
-    pub const BuiltinBinary = struct {
-        result_type: InstIndex,
-        lhs: InstIndex,
-        rhs: InstIndex,
     };
 
     pub const BuiltinSelect = struct {
