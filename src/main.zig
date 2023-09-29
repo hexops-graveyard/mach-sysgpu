@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const gpu = @import("gpu");
+pub const dgpu = @import("dgpu/main.zig");
 const shader = @import("shader.zig");
 const utils = @import("utils.zig");
 
@@ -20,7 +21,7 @@ const impl = switch (backend_type) {
 var inited = false;
 var allocator: std.mem.Allocator = undefined;
 
-pub const Interface = struct {
+pub const Impl = struct {
     pub fn init(alloc: std.mem.Allocator, options: impl.InitOptions) !void {
         inited = true;
         allocator = alloc;
@@ -1379,5 +1380,5 @@ test "refAllDeclsRecursive" {
 }
 
 test "export" {
-    _ = gpu.Export(Interface);
+    _ = gpu.Export(Impl);
 }
