@@ -23,6 +23,8 @@ refs: std.ArrayListUnmanaged(InstIndex) = .{},
 strings: std.ArrayListUnmanaged(u8) = .{},
 values: std.ArrayListUnmanaged(u8) = .{},
 scratch: std.ArrayListUnmanaged(InstIndex) = .{},
+global_var_refs: std.AutoArrayHashMapUnmanaged(InstIndex, void) = .{},
+has_array_length: bool = false,
 compute_stage: InstIndex = .none,
 vertex_stage: InstIndex = .none,
 fragment_stage: InstIndex = .none,
@@ -406,6 +408,9 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
 }
 
 fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
+    astgen.global_var_refs.clearRetainingCapacity();
+    astgen.has_array_length = false;
+
     const fn_proto = astgen.tree.extraData(Node.FnProto, astgen.tree.nodeLHS(node));
     const node_rhs = astgen.tree.nodeRHS(node);
     const node_loc = astgen.tree.nodeLoc(node);
@@ -580,6 +585,8 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
+    const global_var_refs = try astgen.addRefList(astgen.global_var_refs.keys());
+
     const inst = try astgen.addInst(.{
         .@"fn" = .{
             .name = name,
@@ -589,6 +596,8 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
             .return_type = return_type,
             .return_attrs = return_attrs,
             .block = block,
+            .global_var_refs = global_var_refs,
+            .has_array_length = astgen.has_array_length,
         },
     });
 
@@ -2877,6 +2886,8 @@ fn genSmoothstepBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIn
 }
 
 fn genArrayLengthBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    astgen.has_array_length = true;
+
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
     if (node_lhs == .none) {
@@ -2906,8 +2917,18 @@ fn genArrayLengthBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstI
 }
 
 fn genVarRef(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const inst_idx = try astgen.findSymbol(scope, astgen.tree.nodeToken(node));
+    switch (astgen.getInst(inst_idx)) {
+        .@"var" => |inst| {
+            if (inst.addr_space != .function) {
+                try astgen.global_var_refs.put(astgen.allocator, inst_idx, {});
+            }
+        },
+        else => {},
+    }
+
     return astgen.addInst(.{
-        .var_ref = try astgen.findSymbol(scope, astgen.tree.nodeToken(node)),
+        .var_ref = inst_idx,
     });
 }
 
