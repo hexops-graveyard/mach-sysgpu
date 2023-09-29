@@ -8,7 +8,11 @@ const shader = @import("shader.zig");
 const conv = @import("metal/conv.zig");
 
 const log = std.log.scoped(.metal);
-const slot_array_lengths = 20; // TODO - figure out number of slots
+const max_storage_buffers_per_shader_stage = 8;
+const max_uniform_buffers_per_shader_stage = 12;
+const max_vertex_buffers = 8;
+const slot_vertex_buffers = 20;
+const slot_buffer_lengths = 28;
 
 var allocator: std.mem.Allocator = undefined;
 
@@ -19,7 +23,7 @@ pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
     allocator = alloc;
 }
 
-pub fn isDepthFormat(format: mtl.PixelFormat) bool {
+fn isDepthFormat(format: mtl.PixelFormat) bool {
     return switch (format) {
         mtl.PixelFormatDepth16Unorm => true,
         mtl.PixelFormatDepth24Unorm_Stencil8 => true,
@@ -29,13 +33,21 @@ pub fn isDepthFormat(format: mtl.PixelFormat) bool {
     };
 }
 
-pub fn isStencilFormat(format: mtl.PixelFormat) bool {
+fn isStencilFormat(format: mtl.PixelFormat) bool {
     return switch (format) {
         mtl.PixelFormatStencil8 => true,
         mtl.PixelFormatDepth24Unorm_Stencil8 => true,
         mtl.PixelFormatDepth32Float_Stencil8 => true,
         else => false,
     };
+}
+
+fn entrypointString(name: [*:0]const u8) [*:0]const u8 {
+    return if (std.mem.eql(u8, std.mem.span(name), "main")) "main_" else name;
+}
+
+fn entrypointSlice(name: []const u8) []const u8 {
+    return if (std.mem.eql(u8, name, "main")) "main_" else name;
 }
 
 pub const Instance = struct {
@@ -172,9 +184,7 @@ pub const Device = struct {
     }
 
     pub fn createBindGroupLayout(device: *Device, desc: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
-        _ = device;
-        _ = desc;
-        unreachable;
+        return BindGroupLayout.init(device, desc);
     }
 
     pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
@@ -190,9 +200,7 @@ pub const Device = struct {
     }
 
     pub fn createPipelineLayout(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
-        _ = device;
-        _ = desc;
-        unreachable;
+        return PipelineLayout.init(device, desc);
     }
 
     pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
@@ -436,7 +444,16 @@ pub const Sampler = struct {
 pub const BindGroupLayout = struct {
     manager: utils.Manager(BindGroupLayout) = .{},
 
-    pub fn init() !*BindGroupLayout {
+    pub fn init(device: *Device, descriptor: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+        _ = descriptor;
+        _ = device;
+
+        var layout = try allocator.create(BindGroupLayout);
+        layout.* = .{};
+        return layout;
+    }
+
+    pub fn initDefault() !*BindGroupLayout {
         var layout = try allocator.create(BindGroupLayout);
         layout.* = .{};
         return layout;
@@ -475,6 +492,7 @@ pub const BindGroup = struct {
 
         for (desc.entries.?[0..desc.entry_count], 0..) |entry, i| {
             var mtl_entry = &mtl_entries[i];
+            // TODO - need to remap user binding space [0, 1000) to API binding space
             mtl_entry.binding = entry.binding;
             if (entry.buffer) |buffer_raw| {
                 const buffer: *Buffer = @ptrCast(@alignCast(buffer_raw));
@@ -510,11 +528,14 @@ pub const PipelineLayout = struct {
     pub fn init(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
         _ = desc;
         _ = device;
-        unreachable;
+
+        var layout = try allocator.create(PipelineLayout);
+        layout.* = .{};
+        return layout;
     }
 
-    pub fn deinit(group: *PipelineLayout) void {
-        _ = group;
+    pub fn deinit(layout: *PipelineLayout) void {
+        allocator.destroy(layout);
     }
 };
 
@@ -567,29 +588,18 @@ pub const ShaderModule = struct {
 
     fn reflectFn(shader_module: *ShaderModule, air: *const shader.Air, inst_idx: shader.Air.InstIndex) !void {
         const inst = air.getInst(inst_idx).@"fn";
-        const name = air.getStr(inst.name);
+        const name = entrypointSlice(air.getStr(inst.name));
 
         switch (inst.stage) {
             .compute => |stage| {
                 try shader_module.threadgroup_sizes.put(name, mtl.Size.init(
-                    @intCast(resolveInt(air, stage.x) orelse 1),
-                    @intCast(resolveInt(air, stage.y) orelse 1),
-                    @intCast(resolveInt(air, stage.z) orelse 1),
+                    @intCast(air.resolveInt(stage.x) orelse 1),
+                    @intCast(air.resolveInt(stage.y) orelse 1),
+                    @intCast(air.resolveInt(stage.z) orelse 1),
                 ));
             },
             else => {},
         }
-    }
-
-    fn resolveInt(air: *const shader.Air, inst_idx: shader.Air.InstIndex) ?i64 {
-        if (air.resolveConstExpr(inst_idx)) |const_expr| {
-            switch (const_expr) {
-                .int => |x| return x,
-                else => {},
-            }
-        }
-
-        return null;
     }
 };
 
@@ -610,13 +620,14 @@ pub const ComputePipeline = struct {
         }
 
         const compute_module: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
-        const compute_fn = compute_module.library.newFunctionWithName(ns.String.stringWithUTF8String(desc.compute.entry_point)) orelse {
+        const entrypoint = entrypointString(desc.compute.entry_point);
+        const compute_fn = compute_module.library.newFunctionWithName(ns.String.stringWithUTF8String(entrypoint)) orelse {
             return error.InvalidDescriptor;
         };
         defer compute_fn.release();
         mtl_desc.setComputeFunction(compute_fn);
 
-        const threadgroup_size = compute_module.threadgroup_sizes.get(std.mem.span(desc.compute.entry_point)) orelse {
+        const threadgroup_size = compute_module.threadgroup_sizes.get(std.mem.span(entrypoint)) orelse {
             return error.InvalidDescriptor;
         };
 
@@ -637,7 +648,7 @@ pub const ComputePipeline = struct {
         var pipeline = try allocator.create(ComputePipeline);
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
-            .layout = try BindGroupLayout.init(),
+            .layout = try BindGroupLayout.initDefault(),
             .threadgroup_size = threadgroup_size,
         };
         return pipeline;
@@ -688,7 +699,28 @@ pub const RenderPipeline = struct {
         mtl_desc.setVertexFunction(vertex_fn);
 
         // vertex constants - TODO
-        // vertex buffers - TODO
+        if (desc.vertex.buffer_count > 0) {
+            const mtl_vertex_descriptor = mtl.VertexDescriptor.vertexDescriptor();
+            const mtl_layouts = mtl_vertex_descriptor.layouts();
+            const mtl_attributes = mtl_vertex_descriptor.attributes();
+
+            for (desc.vertex.buffers.?[0..desc.vertex.buffer_count], 0..) |buffer, i| {
+                const buffer_index = slot_vertex_buffers + i;
+                const mtl_layout = mtl_layouts.objectAtIndexedSubscript(buffer_index);
+                mtl_layout.setStride(buffer.array_stride);
+                mtl_layout.setStepFunction(conv.metalVertexStepFunction(buffer.step_mode));
+                mtl_layout.setStepRate(1);
+                for (buffer.attributes.?[0..buffer.attribute_count]) |attr| {
+                    const mtl_attribute = mtl_attributes.objectAtIndexedSubscript(attr.shader_location);
+
+                    mtl_attribute.setFormat(conv.metalVertexFormat(attr.format));
+                    mtl_attribute.setOffset(attr.offset);
+                    mtl_attribute.setBufferIndex(buffer_index);
+                }
+            }
+
+            mtl_desc.setVertexDescriptor(mtl_vertex_descriptor);
+        }
 
         // primitive
         const primitive_type = conv.metalPrimitiveType(desc.primitive.topology);
@@ -789,7 +821,7 @@ pub const RenderPipeline = struct {
         var pipeline = try allocator.create(RenderPipeline);
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
-            .layout = try BindGroupLayout.init(),
+            .layout = try BindGroupLayout.initDefault(),
             .primitive_type = primitive_type,
             .winding = winding,
             .cull_mode = cull_mode,
@@ -912,9 +944,9 @@ pub const CommandEncoder = struct {
 pub const ComputePassEncoder = struct {
     manager: utils.Manager(ComputePassEncoder) = .{},
     mtl_encoder: *mtl.ComputeCommandEncoder,
-    threadgroup_size: mtl.Size,
-    array_lengths_buffer: *mtl.Buffer,
+    lengths_buffer: *mtl.Buffer,
     referenced_buffers: *std.ArrayList(*Buffer),
+    threadgroup_size: mtl.Size,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
         const mtl_device = command_encoder.device.mtl_device;
@@ -932,24 +964,24 @@ pub const ComputePassEncoder = struct {
         }
 
         // TODO - needs to be N slots and recycle memory
-        const array_lengths_buffer = mtl_device.newBufferWithLength_options(@sizeOf(u32), 0) orelse {
+        const lengths_buffer = mtl_device.newBufferWithLength_options(@sizeOf(u32), 0) orelse {
             return error.newBufferFailed;
         };
 
-        mtl_encoder.setBuffer_offset_atIndex(array_lengths_buffer, 0, slot_array_lengths);
+        mtl_encoder.setBuffer_offset_atIndex(lengths_buffer, 0, slot_buffer_lengths);
 
         var encoder = try allocator.create(ComputePassEncoder);
         encoder.* = .{
             .mtl_encoder = mtl_encoder,
-            .threadgroup_size = mtl.Size.init(0, 0, 0),
-            .array_lengths_buffer = array_lengths_buffer,
+            .lengths_buffer = lengths_buffer,
             .referenced_buffers = command_encoder.referenced_buffers,
+            .threadgroup_size = mtl.Size.init(0, 0, 0),
         };
         return encoder;
     }
 
     pub fn deinit(encoder: *ComputePassEncoder) void {
-        encoder.array_lengths_buffer.release();
+        encoder.lengths_buffer.release();
         allocator.destroy(encoder);
     }
 
@@ -959,6 +991,11 @@ pub const ComputePassEncoder = struct {
             mtl.Size.init(workgroup_count_x, workgroup_count_y, workgroup_count_z),
             encoder.threadgroup_size,
         );
+    }
+
+    pub fn end(encoder: *ComputePassEncoder) void {
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.endEncoding();
     }
 
     pub fn setBindGroup(encoder: *ComputePassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
@@ -972,7 +1009,7 @@ pub const ComputePassEncoder = struct {
             switch (entry.kind) {
                 .buffer => {
                     try encoder.referenced_buffers.append(entry.buffer.?);
-                    mtl_encoder.setBytes_length_atIndex(&entry.size, @sizeOf(u32), slot_array_lengths);
+                    mtl_encoder.setBytes_length_atIndex(&entry.size, @sizeOf(u32), slot_buffer_lengths);
                     mtl_encoder.setBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
                 },
                 .sampler => mtl_encoder.setSamplerState_atIndex(entry.sampler, entry.binding),
@@ -986,19 +1023,18 @@ pub const ComputePassEncoder = struct {
         mtl_encoder.setComputePipelineState(pipeline.mtl_pipeline);
         encoder.threadgroup_size = pipeline.threadgroup_size;
     }
-
-    pub fn end(encoder: *ComputePassEncoder) void {
-        const mtl_encoder = encoder.mtl_encoder;
-        mtl_encoder.endEncoding();
-    }
 };
 
 pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
     mtl_encoder: *mtl.RenderCommandEncoder,
+    vertex_lengths_buffer: *mtl.Buffer,
+    fragment_lengths_buffer: *mtl.Buffer,
+    referenced_buffers: *std.ArrayList(*Buffer),
     primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+        const mtl_device = command_encoder.device.mtl_device;
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.RenderPassDescriptor.new();
@@ -1069,13 +1105,67 @@ pub const RenderPassEncoder = struct {
             mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
         }
 
+        // TODO - needs to be N slots and recycle memory
+        const vertex_lengths_buffer = mtl_device.newBufferWithLength_options(@sizeOf(u32), 0) orelse {
+            return error.newBufferFailed;
+        };
+        const fragment_lengths_buffer = mtl_device.newBufferWithLength_options(@sizeOf(u32), 0) orelse {
+            return error.newBufferFailed;
+        };
+
+        mtl_encoder.setVertexBuffer_offset_atIndex(vertex_lengths_buffer, 0, slot_buffer_lengths);
+        mtl_encoder.setFragmentBuffer_offset_atIndex(fragment_lengths_buffer, 0, slot_buffer_lengths);
+
         var encoder = try allocator.create(RenderPassEncoder);
-        encoder.* = .{ .mtl_encoder = mtl_encoder };
+        encoder.* = .{
+            .mtl_encoder = mtl_encoder,
+            .vertex_lengths_buffer = vertex_lengths_buffer,
+            .fragment_lengths_buffer = fragment_lengths_buffer,
+            .referenced_buffers = command_encoder.referenced_buffers,
+        };
         return encoder;
     }
 
     pub fn deinit(encoder: *RenderPassEncoder) void {
+        encoder.vertex_lengths_buffer.release();
+        encoder.fragment_lengths_buffer.release();
         allocator.destroy(encoder);
+    }
+
+    pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
+            encoder.primitive_type,
+            first_vertex,
+            vertex_count,
+            instance_count,
+            first_instance,
+        );
+    }
+
+    pub fn end(encoder: *RenderPassEncoder) void {
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.endEncoding();
+    }
+
+    pub fn setBindGroup(encoder: *RenderPassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
+        _ = dynamic_offsets;
+        _ = dynamic_offset_count;
+        _ = group_index;
+        const mtl_encoder = encoder.mtl_encoder;
+
+        // TODO - need stage info
+        for (group.entries) |entry| {
+            switch (entry.kind) {
+                .buffer => {
+                    try encoder.referenced_buffers.append(entry.buffer.?);
+                    mtl_encoder.setVertexBytes_length_atIndex(&entry.size, @sizeOf(u32), slot_buffer_lengths);
+                    mtl_encoder.setVertexBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
+                },
+                .sampler => mtl_encoder.setFragmentSamplerState_atIndex(entry.sampler, entry.binding),
+                .texture => mtl_encoder.setFragmentTexture_atIndex(entry.texture, entry.binding),
+            }
+        }
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
@@ -1094,38 +1184,12 @@ pub const RenderPassEncoder = struct {
         encoder.primitive_type = pipeline.primitive_type;
     }
 
-    pub fn setBindGroup(encoder: *RenderPassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
-        _ = dynamic_offsets;
-        _ = dynamic_offset_count;
-        _ = group;
-        _ = group_index;
-        _ = encoder;
-        unreachable;
-    }
-
-    pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-        const mtl_encoder = encoder.mtl_encoder;
-        mtl_encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
-            encoder.primitive_type,
-            first_vertex,
-            vertex_count,
-            instance_count,
-            first_instance,
-        );
-    }
-
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
-        _ = encoder;
-        _ = slot;
-        _ = buffer;
-        _ = offset;
-        _ = size;
-        unreachable;
-    }
-
-    pub fn end(encoder: *RenderPassEncoder) void {
         const mtl_encoder = encoder.mtl_encoder;
-        mtl_encoder.endEncoding();
+        const size_u32 = @as(u32, @intCast(size));
+        try encoder.referenced_buffers.append(buffer);
+        mtl_encoder.setVertexBytes_length_atIndex(&size_u32, @sizeOf(u32), slot_buffer_lengths);
+        mtl_encoder.setVertexBuffer_offset_atIndex(buffer.mtl_buffer, offset, slot_vertex_buffers + slot);
     }
 };
 
@@ -1136,6 +1200,7 @@ pub const Queue = struct {
     };
 
     manager: utils.Manager(Queue) = .{},
+    device: *Device,
     command_queue: *mtl.CommandQueue,
     fence_value: u64 = 0,
     completed_value: u64 = 0, // TODO - this should be an atomic as it's updated in the callback on other threads
@@ -1148,7 +1213,10 @@ pub const Queue = struct {
         };
 
         var queue = try allocator.create(Queue);
-        queue.* = .{ .command_queue = command_queue };
+        queue.* = .{
+            .device = device,
+            .command_queue = command_queue,
+        };
         return queue;
     }
 
@@ -1176,18 +1244,34 @@ pub const Queue = struct {
         }
     }
 
-    pub fn completedHandler(ctx: CompletedContext, mtl_command_buffer: *mtl.CommandBuffer) void {
-        _ = mtl_command_buffer;
-        ctx.queue.completed_value = ctx.fence_value;
+    pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
+        // TODO - need an upload manager
+        const stage_buffer = try Buffer.init(queue.device, &.{
+            .usage = .{
+                .copy_src = true,
+                .map_write = true,
+            },
+            .size = size,
+            .mapped_at_creation = .true,
+        });
+        defer stage_buffer.manager.release();
+
+        const map: [*]u8 = @ptrCast(stage_buffer.mtl_buffer.contents());
+        @memcpy(map[0..size], data[0..size]);
+        var cmd_encoder = try CommandEncoder.init(queue.device, null);
+        defer cmd_encoder.manager.release();
+
+        try cmd_encoder.copyBufferToBuffer(stage_buffer, offset, buffer, offset, size);
+        const cmd_buffer = try cmd_encoder.finish(&.{});
+        cmd_buffer.manager.reference(); // handled in main.zig
+        defer cmd_buffer.manager.release();
+
+        try queue.submit(&[_]*CommandBuffer{cmd_buffer});
     }
 
-    pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
-        _ = queue;
-        _ = buffer;
-        _ = offset;
-        _ = data;
-        _ = size;
-        unreachable;
+    fn completedHandler(ctx: CompletedContext, mtl_command_buffer: *mtl.CommandBuffer) void {
+        _ = mtl_command_buffer;
+        ctx.queue.completed_value = ctx.fence_value;
     }
 };
 

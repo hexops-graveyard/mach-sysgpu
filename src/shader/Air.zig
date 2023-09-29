@@ -43,6 +43,7 @@ pub fn generate(
     defer {
         astgen.instructions.deinit(allocator);
         astgen.scratch.deinit(allocator);
+        astgen.global_var_refs.deinit(allocator);
         astgen.scope_pool.deinit();
     }
     errdefer {
@@ -345,6 +346,17 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
     }
 }
 
+pub fn resolveInt(air: Air, inst_idx: InstIndex) ?i64 {
+    if (air.resolveConstExpr(inst_idx)) |const_expr| {
+        switch (const_expr) {
+            .int => |x| return x,
+            else => {},
+        }
+    }
+
+    return null;
+}
+
 pub const InstIndex = enum(u32) { none = std.math.maxInt(u32), _ };
 pub const RefIndex = enum(u32) { none = std.math.maxInt(u32), _ };
 pub const ValueIndex = enum(u32) { none = std.math.maxInt(u32), _ };
@@ -487,6 +499,8 @@ pub const Inst = union(enum) {
         return_type: InstIndex,
         return_attrs: ReturnAttrs,
         block: InstIndex,
+        global_var_refs: RefIndex,
+        has_array_length: bool,
 
         pub const Stage = union(enum) {
             none,
