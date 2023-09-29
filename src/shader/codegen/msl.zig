@@ -78,7 +78,7 @@ fn emitType(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
             .matrix => |inst| try msl.emitMatrixType(inst),
             .array => |inst| try msl.emitType(inst.elem_type),
             .@"struct" => |inst| try msl.writeAll(msl.air.getStr(inst.name)),
-            else => |inst| try msl.print("{}", .{inst}), // TODO
+            else => |inst| try msl.print("Type: {}", .{inst}), // TODO
         }
     }
 }
@@ -318,7 +318,7 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .assign => |inst| try msl.emitAssign(inst),
         .block => |block| try msl.emitBlock(block),
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
-        else => |inst| try msl.print("{}\n", .{inst}), // TODO
+        else => |inst| try msl.print("Statement: {}\n", .{inst}), // TODO
     }
 }
 
@@ -397,23 +397,27 @@ fn emitBlock(msl: *Msl, block: Air.RefIndex) !void {
 
 fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
     switch (msl.air.getInst(inst_idx)) {
+        .var_ref => |inst| try msl.emitVarRef(inst),
         //.bool => |inst| msl.emitBool(inst),
         //.int => |inst| msl.emitInt(inst),
         .float => |inst| try msl.emitFloat(inst),
         .vector => |inst| try msl.emitVector(inst),
         //.matrix => |inst| msl.emitMatrix(inst),
         .array => |inst| try msl.emitArray(inst),
-        //.call => |inst| msl.emitCall(inst),
-        .swizzle_access => |inst| try msl.emitSwizzleAccess(inst),
-        .var_ref => |inst| try msl.emitVarRef(inst),
-        .index_access => |inst| try msl.emitIndexAccess(inst),
-        .field_access => |inst| try msl.emitFieldAccess(inst),
-        .binary => |inst| try msl.emitBinary(inst),
         .unary => |inst| try msl.emitUnary(inst),
-        //.negate => |inst| msl.emitNegate(inst),
-        //.addr_of => |inst| try msl.emitAddrOf(inst),
+        .unary_intrinsic => |inst| try msl.emitUnaryIntrinsic(inst),
+        .binary => |inst| try msl.emitBinary(inst),
+        .binary_intrinsic => |inst| try msl.emitBinaryIntrinsic(inst),
+        .field_access => |inst| try msl.emitFieldAccess(inst),
+        .swizzle_access => |inst| try msl.emitSwizzleAccess(inst),
+        .index_access => |inst| try msl.emitIndexAccess(inst),
+        //.call => |inst| msl.emitCall(inst),
+        //.struct_construct: StructConstruct,
+        //.bitcast: Bitcast,
+        //.select: BuiltinSelect,
+        //.smoothstep: BuiltinSmoothstep,
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
-        else => |inst| try msl.print("{}", .{inst}), // TODO
+        else => |inst| try msl.print("Expr: {}", .{inst}), // TODO
     }
 }
 
@@ -487,7 +491,7 @@ fn emitVarRef(msl: *Msl, inst_idx: InstIndex) !void {
             }
             try msl.writeAll(msl.air.getStr(p.name));
         },
-        else => |x| try msl.print("{}", .{x}), // TODO
+        else => |x| try msl.print("VarRef: {}", .{x}), // TODO
     }
 }
 
@@ -501,6 +505,102 @@ fn emitIndexAccess(msl: *Msl, inst: Inst.IndexAccess) !void {
 fn emitFieldAccess(msl: *Msl, inst: Inst.FieldAccess) !void {
     try msl.emitExpr(inst.base);
     try msl.print(".{s}", .{msl.air.getStr(inst.name)});
+}
+
+fn emitUnary(msl: *Msl, inst: Inst.Unary) !void {
+    try msl.writeAll(switch (inst.op) {
+        .not => "!",
+        .negate => "-",
+        .deref => "*",
+        .addr_of => "&",
+    });
+    try msl.emitExpr(inst.expr);
+}
+
+fn emitUnaryIntrinsic(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
+    const result_type = msl.air.getInst(inst.result_type);
+    switch (inst.op) {
+        .array_length => try msl.emitArrayLength(inst),
+        else => {
+            try msl.writeAll(switch (inst.op) {
+                .all => "all",
+                .any => "any",
+                .abs => if (result_type == .float) "fabs" else "abs",
+                .acos => "acos",
+                .acosh => "acosh",
+                .asin => "asin",
+                .asinh => "asinh",
+                .atan => "atan",
+                .atanh => "atanh",
+                .ceil => "ceil",
+                .cos => "cos",
+                .cosh => "cosh",
+                .count_leading_zeros => "clz",
+                .count_one_bits => "popcount",
+                .count_trailing_zeros => "ctz",
+                //.degrees => "degrees",
+                .exp => "exp",
+                .exp2 => "exp2",
+                //.first_leading_bit => "first_leading_bit",
+                //.first_trailing_bit => "first_trailing_bit",
+                .floor => "floor",
+                .fract => "fract",
+                .inverse_sqrt => "rsqrt",
+                //.length => "length",
+                .log => "log",
+                .log2 => "log2",
+                //.quantize_to_F16 => "quantize_to_F16",
+                //.radians => "radians",
+                .reverseBits => "reverse_bits",
+                .round => "rint",
+                //.saturate => "saturate",
+                .sign => "sign",
+                .sin => "sin",
+                .sinh => "sinh",
+                .sqrt => "sqrt",
+                .tan => "tan",
+                .tanh => "tanh",
+                .trunc => "trunc",
+                .dpdx => "dfdx",
+                .dpdx_coarse => "dfdx",
+                .dpdx_fine => "dfdx",
+                .dpdy => "dfdy",
+                .dpdy_coarse => "dfdy",
+                .dpdy_fine => "dfdy",
+                .fwidth => "fwidth",
+                .fwidth_coarse => "fwidth",
+                .fwidth_fine => "fwidth",
+                else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst.op)}),
+            });
+            try msl.writeAll("(");
+            try msl.emitExpr(inst.expr);
+            try msl.writeAll(")");
+        },
+    }
+}
+
+fn emitArrayLength(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
+    switch (msl.air.getInst(inst.expr)) {
+        .unary => |un| switch (un.op) {
+            .addr_of => switch (msl.air.getInst(un.expr)) {
+                .var_ref => |var_ref_inst_idx| {
+                    switch (msl.air.getInst(var_ref_inst_idx)) {
+                        .@"var" => |var_inst| {
+                            if (msl.air.resolveInt(var_inst.binding)) |binding| {
+                                try msl.print("buffer_lengths[{}] / sizeof(", .{binding});
+                                try msl.emitType(var_inst.type);
+                                try msl.writeAll(")");
+                            }
+                        },
+                        else => {},
+                    }
+                },
+                else => {},
+            },
+            else => {},
+        },
+        else => {},
+    }
 }
 
 fn emitBinary(msl: *Msl, inst: Inst.Binary) !void {
@@ -525,37 +625,23 @@ fn emitBinary(msl: *Msl, inst: Inst.Binary) !void {
         .less_than_equal => "<=",
         .greater_than => ">",
         .greater_than_equal => ">=",
-        .min, .max, .atan2 => unreachable,
     }});
     try msl.emitExpr(inst.rhs);
     try msl.writeAll(")");
 }
 
-fn emitUnary(msl: *Msl, inst: Inst.Unary) !void {
-    switch (inst.op) {
-        .array_length => switch (msl.air.getInst(inst.expr)) {
-            .unary => |un| switch (un.op) {
-                .addr_of => switch (msl.air.getInst(un.expr)) {
-                    .var_ref => |var_ref_inst_idx| {
-                        switch (msl.air.getInst(var_ref_inst_idx)) {
-                            .@"var" => |var_inst| {
-                                if (msl.air.resolveInt(var_inst.binding)) |binding| {
-                                    try msl.print("buffer_lengths[{}] / sizeof(", .{binding});
-                                    try msl.emitType(var_inst.type);
-                                    try msl.writeAll(")");
-                                }
-                            },
-                            else => {},
-                        }
-                    },
-                    else => {},
-                },
-                else => unreachable,
-            },
-            else => {},
-        },
-        else => unreachable,
-    }
+fn emitBinaryIntrinsic(msl: *Msl, inst: Inst.BinaryIntrinsic) !void {
+    const result_type = msl.air.getInst(inst.result_type);
+    try msl.writeAll(switch (inst.op) {
+        .min => if (result_type == .float) "fmin" else "min",
+        .max => if (result_type == .float) "fmax" else "max",
+        .atan2 => "atan2",
+    });
+    try msl.writeAll("(");
+    try msl.emitExpr(inst.lhs);
+    try msl.writeAll(", ");
+    try msl.emitExpr(inst.rhs);
+    try msl.writeAll(")");
 }
 
 fn enterScope(msl: *Msl) void {

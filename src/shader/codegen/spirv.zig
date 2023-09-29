@@ -1060,6 +1060,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
         },
         .binary => |bin| spv.emitBinary(section, bin),
         .unary => |un| spv.emitUnary(section, un),
+        .unary_intrinsic => |un| spv.emitUnaryIntrinsic(section, un),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
 }
@@ -1549,6 +1550,13 @@ fn emitUnary(spv: *SpirV, section: *Section, unary: Inst.Unary) !IdRef {
 
             return id;
         },
+        .addr_of => return (try spv.accessPtr(section, unary.expr)).id,
+        else => unreachable,
+    }
+}
+
+fn emitUnaryIntrinsic(spv: *SpirV, section: *Section, unary: Inst.UnaryIntrinsic) !IdRef {
+    switch (unary.op) {
         .array_length => {
             const id = spv.allocId();
             const expr = try spv.emitExpr(section, unary.expr);
@@ -1563,7 +1571,6 @@ fn emitUnary(spv: *SpirV, section: *Section, unary: Inst.Unary) !IdRef {
 
             return id;
         },
-        .addr_of => return (try spv.accessPtr(section, unary.expr)).id,
         else => unreachable,
     }
 }
