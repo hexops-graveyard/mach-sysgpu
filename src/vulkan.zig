@@ -1,8 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const gpu = @import("gpu");
 const vk = @import("vulkan");
 const dusk = @import("main.zig");
+const dgpu = dusk.dgpu;
 const utils = @import("utils.zig");
 const shader = @import("shader.zig");
 const conv = @import("vulkan/conv.zig");
@@ -46,7 +46,7 @@ pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
     instance: vk.Instance,
 
-    pub fn init(desc: *const gpu.Instance.Descriptor) !*Instance {
+    pub fn init(desc: *const dgpu.Instance.Descriptor) !*Instance {
         _ = desc;
 
         // Query layers
@@ -156,17 +156,17 @@ pub const Instance = struct {
 
     pub fn requestAdapter(
         instance: *Instance,
-        options: ?*const gpu.RequestAdapterOptions,
-        callback: gpu.RequestAdapterCallback,
+        options: ?*const dgpu.RequestAdapterOptions,
+        callback: dgpu.RequestAdapterCallback,
         userdata: ?*anyopaque,
     ) !*Adapter {
-        return Adapter.init(instance, options orelse &gpu.RequestAdapterOptions{}) catch |err| {
+        return Adapter.init(instance, options orelse &dgpu.RequestAdapterOptions{}) catch |err| {
             callback(.err, undefined, @errorName(err), userdata);
             unreachable; // TODO - return dummy adapter
         };
     }
 
-    pub fn createSurface(instance: *Instance, desc: *const gpu.Surface.Descriptor) !*Surface {
+    pub fn createSurface(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
         return Surface.init(instance, desc);
     }
 };
@@ -181,7 +181,7 @@ pub const Adapter = struct {
     driver_desc: [:0]const u8,
     vendor_id: VendorID,
 
-    pub fn init(instance: *Instance, options: *const gpu.RequestAdapterOptions) !*Adapter {
+    pub fn init(instance: *Instance, options: *const dgpu.RequestAdapterOptions) !*Adapter {
         var count: u32 = 0;
         _ = try vki.enumeratePhysicalDevices(instance.instance, &count, null);
 
@@ -254,12 +254,12 @@ pub const Adapter = struct {
         allocator.destroy(adapter);
     }
 
-    pub fn createDevice(adapter: *Adapter, desc: ?*const gpu.Device.Descriptor) !*Device {
+    pub fn createDevice(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
         return Device.init(adapter, desc);
     }
 
-    pub fn getProperties(adapter: *Adapter) gpu.Adapter.Properties {
-        const adapter_type: gpu.Adapter.Type = switch (adapter.props.device_type) {
+    pub fn getProperties(adapter: *Adapter) dgpu.Adapter.Properties {
+        const adapter_type: dgpu.Adapter.Type = switch (adapter.props.device_type) {
             .integrated_gpu => .integrated_gpu,
             .discrete_gpu => .discrete_gpu,
             .cpu => .cpu,
@@ -306,7 +306,7 @@ pub const Adapter = struct {
     fn rateDevice(
         props: vk.PhysicalDeviceProperties,
         features: vk.PhysicalDeviceFeatures,
-        power_preference: gpu.PowerPreference,
+        power_preference: dgpu.PowerPreference,
     ) u32 {
         // Can't function without geometry shaders
         if (features.geometry_shader == vk.FALSE) {
@@ -384,10 +384,10 @@ pub const Surface = struct {
     instance: *Instance,
     surface: vk.SurfaceKHR,
 
-    pub fn init(instance: *Instance, desc: *const gpu.Surface.Descriptor) !*Surface {
+    pub fn init(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
         const vk_surface = switch (builtin.target.os.tag) {
             .linux => blk: {
-                if (utils.findChained(gpu.Surface.DescriptorFromXlibWindow, desc.next_in_chain.generic)) |x_desc| {
+                if (utils.findChained(dgpu.Surface.DescriptorFromXlibWindow, desc.next_in_chain.generic)) |x_desc| {
                     break :blk try vki.createXlibSurfaceKHR(
                         instance.instance,
                         &vk.XlibSurfaceCreateInfoKHR{
@@ -396,7 +396,7 @@ pub const Surface = struct {
                         },
                         null,
                     );
-                } else if (utils.findChained(gpu.Surface.DescriptorFromWaylandSurface, desc.next_in_chain.generic)) |wayland_desc| {
+                } else if (utils.findChained(dgpu.Surface.DescriptorFromWaylandSurface, desc.next_in_chain.generic)) |wayland_desc| {
                     _ = wayland_desc;
                     unreachable;
                     // TODO: renderdoc will not work with wayland
@@ -413,7 +413,7 @@ pub const Surface = struct {
                 return error.InvalidDescriptor;
             },
             .windows => blk: {
-                if (utils.findChained(gpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
+                if (utils.findChained(dgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
                     break :blk try vki.createWin32SurfaceKHR(
                         instance.instance,
                         &vk.Win32SurfaceCreateInfoKHR{
@@ -462,14 +462,14 @@ pub const Device = struct {
     cmd_pool: vk.CommandPool,
     memory_allocator: MemoryAllocator,
     queue: ?Queue = null,
-    lost_cb: ?gpu.Device.LostCallback = null,
+    lost_cb: ?dgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
-    log_cb: ?gpu.LoggingCallback = null,
+    log_cb: ?dgpu.LoggingCallback = null,
     log_cb_userdata: ?*anyopaque = null,
-    err_cb: ?gpu.ErrorCallback = null,
+    err_cb: ?dgpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
 
-    pub fn init(adapter: *Adapter, descriptor: ?*const gpu.Device.Descriptor) !*Device {
+    pub fn init(adapter: *Adapter, descriptor: ?*const dgpu.Device.Descriptor) !*Device {
         const queue_infos = &[_]vk.DeviceQueueCreateInfo{.{
             .queue_family_index = adapter.queue_family,
             .queue_count = 1,
@@ -650,33 +650,33 @@ pub const Device = struct {
         try vkd.resetFences(device.device, 1, &[_]vk.Fence{device.frameRes().render_fence});
     }
 
-    pub fn createBindGroup(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn createBindGroup(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
         return BindGroup.init(device, desc);
     }
 
-    pub fn createBindGroupLayout(device: *Device, desc: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn createBindGroupLayout(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         return BindGroupLayout.init(device, desc);
     }
 
-    pub fn createBuffer(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+    pub fn createBuffer(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
         return Buffer.init(device, desc);
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn createCommandEncoder(device: *Device, desc: *const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
     }
 
-    pub fn createComputePipeline(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn createComputePipeline(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         _ = desc;
         _ = device;
         unreachable;
     }
 
-    pub fn createPipelineLayout(device: *Device, desc: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn createPipelineLayout(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         return PipelineLayout.init(device, desc);
     }
 
-    pub fn createRenderPipeline(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn createRenderPipeline(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
@@ -688,11 +688,11 @@ pub const Device = struct {
         return ShaderModule.initSpirv(device, code);
     }
 
-    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createTexture(device: *Device, desc: *const gpu.Texture.Descriptor) !*Texture {
+    pub fn createTexture(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
         _ = desc;
         _ = device;
         unreachable;
@@ -718,17 +718,17 @@ pub const Device = struct {
 
     pub const ColorAttachmentKey = struct {
         format: vk.Format,
-        load_op: gpu.LoadOp,
-        store_op: gpu.StoreOp,
+        load_op: dgpu.LoadOp,
+        store_op: dgpu.StoreOp,
         resolve_format: ?vk.Format,
     };
 
     pub const DepthStencilAttachmentKey = struct {
         format: vk.Format,
-        depth_load_op: gpu.LoadOp,
-        depth_store_op: gpu.StoreOp,
-        stencil_load_op: gpu.LoadOp,
-        stencil_store_op: gpu.StoreOp,
+        depth_load_op: dgpu.LoadOp,
+        depth_store_op: dgpu.StoreOp,
+        stencil_load_op: dgpu.LoadOp,
+        stencil_store_op: dgpu.StoreOp,
         read_only: bool,
     };
 
@@ -847,9 +847,9 @@ pub const SwapChain = struct {
     textures: []*Texture,
     texture_views: []*TextureView,
     texture_index: u32 = 0,
-    format: gpu.Texture.Format,
+    format: dgpu.Texture.Format,
 
-    pub fn init(device: *Device, surface: *Surface, desc: *const gpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn init(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
         const capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(
             device.adapter.physical_device,
             surface.surface,
@@ -1007,7 +1007,7 @@ pub const Buffer = struct {
     size: usize,
     map: ?[*]u8,
 
-    pub fn init(device: *Device, desc: *const gpu.Buffer.Descriptor) !*Buffer {
+    pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
         const size = @max(4, desc.size);
 
         var usage = desc.usage;
@@ -1077,7 +1077,7 @@ pub const Buffer = struct {
         return @ptrCast(buffer.map.?[offset .. offset + size]);
     }
 
-    pub fn mapAsync(buffer: *Buffer, mode: gpu.MapModeFlags, offset: usize, size: usize, callback: gpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
+    pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
         _ = userdata;
         _ = callback;
         _ = size;
@@ -1137,8 +1137,8 @@ pub const Texture = struct {
         allocator.destroy(texture);
     }
 
-    pub fn createView(texture: *Texture, desc: ?*const gpu.TextureView.Descriptor) !*TextureView {
-        return TextureView.init(texture, desc orelse &gpu.TextureView.Descriptor{}, texture.extent);
+    pub fn createView(texture: *Texture, desc: ?*const dgpu.TextureView.Descriptor) !*TextureView {
+        return TextureView.init(texture, desc orelse &dgpu.TextureView.Descriptor{}, texture.extent);
     }
 };
 
@@ -1149,7 +1149,7 @@ pub const TextureView = struct {
     format: vk.Format,
     extent: vk.Extent2D,
 
-    pub fn init(texture: *Texture, desc: *const gpu.TextureView.Descriptor, extent: vk.Extent2D) !*TextureView {
+    pub fn init(texture: *Texture, desc: *const dgpu.TextureView.Descriptor, extent: vk.Extent2D) !*TextureView {
         const format = conv.vulkanFormat(desc.format);
         const aspect: vk.ImageAspectFlags = blk: {
             if (desc.aspect == .all) {
@@ -1220,7 +1220,7 @@ pub const BindGroupLayout = struct {
     desc_types: std.AutoArrayHashMap(vk.DescriptorType, u32),
     bindings: []const vk.DescriptorSetLayoutBinding,
 
-    pub fn init(device: *Device, descriptor: *const gpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn init(device: *Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         var bindings = try std.ArrayList(vk.DescriptorSetLayoutBinding).initCapacity(allocator, descriptor.entry_count);
         defer bindings.deinit();
 
@@ -1276,7 +1276,7 @@ pub const BindGroup = struct {
 
     const max_sets = 512;
 
-    pub fn init(device: *Device, desc: *const gpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn init(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
         const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.layout));
 
         var pool_sizes = try std.ArrayList(vk.DescriptorPoolSize).initCapacity(allocator, layout.desc_types.count());
@@ -1356,7 +1356,7 @@ pub const PipelineLayout = struct {
     device: *Device,
     layout: vk.PipelineLayout,
 
-    pub fn init(device: *Device, descriptor: *const gpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn init(device: *Device, descriptor: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         const groups = try allocator.alloc(vk.DescriptorSetLayout, descriptor.bind_group_layout_count);
         defer allocator.free(groups);
         for (groups, 0..) |*layout, i| {
@@ -1426,7 +1426,7 @@ pub const ShaderModule = struct {
 pub const ComputePipeline = struct {
     manager: utils.Manager(ComputePipeline) = .{},
 
-    pub fn init(device: *Device, desc: *const gpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         _ = desc;
         _ = device;
         unreachable;
@@ -1449,7 +1449,7 @@ pub const RenderPipeline = struct {
     pipeline: vk.Pipeline,
     layout: *PipelineLayout,
 
-    pub fn init(device: *Device, desc: *const gpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn init(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         var stages = std.BoundedArray(vk.PipelineShaderStageCreateInfo, 2){};
 
         const vertex_shader: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
@@ -1569,7 +1569,7 @@ pub const RenderPipeline = struct {
             blend_attachments = try allocator.alloc(vk.PipelineColorBlendAttachmentState, frag.target_count);
 
             for (frag.targets.?[0..frag.target_count], 0..) |target, i| {
-                const blend = target.blend orelse &gpu.BlendState{};
+                const blend = target.blend orelse &dgpu.BlendState{};
                 blend_attachments[i] = .{
                     .blend_enable = vk.FALSE,
                     .src_color_blend_factor = conv.vulkanBlendFactor(blend.color.src_factor),
@@ -1716,7 +1716,7 @@ pub const RenderPipeline = struct {
         unreachable;
     }
 
-    fn isDepthBiasEnabled(ds: ?*const gpu.DepthStencilState) vk.Bool32 {
+    fn isDepthBiasEnabled(ds: ?*const dgpu.DepthStencilState) vk.Bool32 {
         if (ds == null) return vk.FALSE;
         return @intFromBool(ds.?.depth_bias != 0 or ds.?.depth_bias_slope_scale != 0);
     }
@@ -1755,7 +1755,7 @@ pub const CommandEncoder = struct {
     device: *Device,
     buffer: *CommandBuffer,
 
-    pub fn init(device: *Device, desc: ?*const gpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         _ = desc;
 
         const buffer = try CommandBuffer.init(device);
@@ -1773,13 +1773,13 @@ pub const CommandEncoder = struct {
         allocator.destroy(cmd_encoder);
     }
 
-    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
         _ = encoder;
         unreachable;
     }
 
-    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         return RenderPassEncoder.init(cmd_encoder.device, cmd_encoder, desc);
     }
 
@@ -1792,7 +1792,7 @@ pub const CommandEncoder = struct {
         vkd.cmdCopyBuffer(encoder.buffer.buffer, source.buffer, destination.buffer, 1, @ptrCast(&region));
     }
 
-    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const gpu.CommandBuffer.Descriptor) !*CommandBuffer {
+    pub fn finish(cmd_encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
         _ = desc;
         try vkd.endCommandBuffer(cmd_encoder.buffer.buffer);
         return cmd_encoder.buffer;
@@ -1802,7 +1802,7 @@ pub const CommandEncoder = struct {
 pub const ComputePassEncoder = struct {
     manager: utils.Manager(ComputePassEncoder) = .{},
 
-    pub fn init(command_encoder: *CommandEncoder, desc: *const gpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
         _ = command_encoder;
         unreachable;
@@ -1851,7 +1851,7 @@ pub const RenderPassEncoder = struct {
     clear_values: []const vk.ClearValue,
     pipeline: ?*RenderPipeline = null,
 
-    pub fn init(device: *Device, encoder: *CommandEncoder, descriptor: *const gpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn init(device: *Device, encoder: *CommandEncoder, descriptor: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const depth_stencil_attachment_count = @intFromBool(descriptor.depth_stencil_attachment != null);
         const attachment_count = descriptor.color_attachment_count + depth_stencil_attachment_count;
 
