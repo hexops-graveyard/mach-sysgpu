@@ -1205,10 +1205,12 @@ fn genCompoundAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex
 pub fn isMutable(astgen: *AstGen, index: InstIndex) !bool {
     var idx = index;
     while (true) switch (astgen.getInst(idx)) {
-        // TODO: maybe adding `type` field to unary instructions will be useful?
-        .deref => |deref| return astgen.getInst(try astgen.resolve(deref.expr)).ptr_type.access_mode != .read,
-        .var_ref => |var_ref| idx = var_ref,
         inline .field_access, .swizzle_access, .index_access => |access| idx = access.base,
+        .unary => |un| switch (un.op) {
+            .deref => return astgen.getInst(try astgen.resolve(un.expr)).ptr_type.access_mode != .read,
+            else => unreachable,
+        },
+        .var_ref => |var_ref| idx = var_ref,
         .@"var" => |@"var"| return @"var".access_mode != .read,
         else => return false,
     };
@@ -1547,7 +1549,7 @@ fn genNot(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     const expr_res = try astgen.resolve(expr);
     if (astgen.getInst(expr_res) == .bool) {
-        return astgen.addInst(.{ .not = .{ .result_type = expr_res, .expr = expr } });
+        return astgen.addInst(.{ .unary = .{ .op = .not, .result_type = expr_res, .expr = expr } });
     }
 
     try astgen.errors.add(
@@ -1567,7 +1569,8 @@ fn genNegate(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const expr_res = try astgen.resolve(expr);
     switch (astgen.getInst(expr_res)) {
         .int, .float => return astgen.addInst(.{
-            .negate = .{
+            .unary = .{
+                .op = .negate,
                 .result_type = expr_res,
                 .expr = expr,
             },
@@ -1593,7 +1596,8 @@ fn genDeref(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     if (expr_res_inst == .ptr_type) {
         return astgen.addInst(.{
-            .deref = .{
+            .unary = .{
+                .op = .deref,
                 .result_type = expr_res_inst.ptr_type.elem_type,
                 .expr = expr,
             },
@@ -1621,7 +1625,8 @@ fn genAddrOf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     });
 
     const inst = try astgen.addInst(.{
-        .addr_of = .{
+        .unary = .{
+            .op = .addr_of,
             .result_type = result_type,
             .expr = expr,
         },
@@ -2629,11 +2634,12 @@ fn genBuiltinAllAny(astgen: *AstGen, scope: *Scope, node: NodeIndex, all: bool) 
                 return error.AnalysisFail;
             }
 
-            if (all) {
-                return astgen.addInst(.{ .all = arg });
-            } else {
-                return astgen.addInst(.{ .any = arg });
-            }
+            const result_type = try astgen.addInst(.{ .bool = .{ .value = null } });
+            return astgen.addInst(.{ .unary = .{
+                .op = if (all) .all else .any,
+                .expr = arg,
+                .result_type = result_type,
+            } });
         },
         else => {
             try astgen.errors.add(node_loc, "type mismatch", .{}, null);
@@ -2708,7 +2714,7 @@ fn genDerivativeBuiltin(
     astgen: *AstGen,
     scope: *Scope,
     node: NodeIndex,
-    comptime tag: std.meta.Tag(Inst),
+    comptime op: Inst.Unary.Op,
 ) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
@@ -2723,7 +2729,11 @@ fn genDerivativeBuiltin(
 
     const arg = try astgen.genExpr(scope, arg_nodes[0]);
     const arg_res = try astgen.resolve(arg);
-    const inst = @unionInit(Inst, @tagName(tag), arg);
+    const inst = Inst{ .unary = .{
+        .op = op,
+        .expr = arg,
+        .result_type = arg_res,
+    } };
     switch (astgen.getInst(arg_res)) {
         .float => |float| {
             if (float.type == .f32) {
@@ -2751,7 +2761,7 @@ fn genSimpleBuiltin(
     astgen: *AstGen,
     scope: *Scope,
     node: NodeIndex,
-    comptime tag: std.meta.Tag(Inst),
+    comptime op: Inst.Unary.Op,
     comptime int_limit: []const Inst.Int.Type,
     comptime float_limit: []const Inst.Float.Type,
 ) !InstIndex {
@@ -2768,7 +2778,13 @@ fn genSimpleBuiltin(
 
     const arg = try astgen.genExpr(scope, arg_nodes[0]);
     const arg_res = try astgen.resolve(arg);
-    const inst = @unionInit(Inst, @tagName(tag), arg);
+    const inst = Inst{
+        .unary = .{
+            .op = op,
+            .expr = arg,
+            .result_type = arg_res,
+        },
+    };
     switch (astgen.getInst(arg_res)) {
         .int => |int| if (std.mem.indexOfScalar(Inst.Int.Type, int_limit, int.type)) |_| {
             return astgen.addInst(inst);
@@ -2798,7 +2814,7 @@ fn genSimpleBuiltin2(
     astgen: *AstGen,
     scope: *Scope,
     node: NodeIndex,
-    comptime tag: std.meta.Tag(Inst),
+    comptime op: Inst.Binary.Op,
 ) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
@@ -2834,13 +2850,14 @@ fn genSimpleBuiltin2(
         return error.AnalysisFail;
     }
 
-    const inst = @unionInit(Inst, @tagName(tag), .{
-        .result_type = arg1_res,
+    return astgen.addInst(.{ .binary = .{
+        .op = op,
         .lhs = arg1,
         .rhs = arg2,
-    });
-
-    return astgen.addInst(inst);
+        .lhs_type = arg1_res,
+        .rhs_type = arg2_res,
+        .result_type = arg1_res,
+    } });
 }
 
 fn genSmoothstepBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -2908,7 +2925,12 @@ fn genArrayLengthBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstI
     if (arg_res_inst == .ptr_type) {
         const ptr_elem_inst = astgen.getInst(arg_res_inst.ptr_type.elem_type);
         if (ptr_elem_inst == .array) {
-            return astgen.addInst(.{ .array_length = arg });
+            const result_type = try astgen.addInst(.{ .int = .{ .type = .u32, .value = null } });
+            return astgen.addInst(.{ .unary = .{
+                .op = .array_length,
+                .expr = arg,
+                .result_type = result_type,
+            } });
         }
     }
 
@@ -3575,7 +3597,6 @@ fn findSymbol(astgen: *AstGen, scope: *Scope, token: TokenIndex) error{ OutOfMem
 }
 
 fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
-    var in_deref = false;
     var idx = index;
 
     while (true) {
@@ -3587,83 +3608,18 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             },
             .struct_construct => |struct_construct| return struct_construct.@"struct",
             .bitcast => |bitcast| return bitcast.result_type,
-            .addr_of => |addr_of| return addr_of.result_type,
+            .unary => |un| return un.result_type,
 
-            inline .binary, .min, .max, .atan2 => |bin| return bin.result_type,
+            .binary => |bin| return bin.result_type,
             .smoothstep => |smoothstep| return smoothstep.type,
             .select => |select| return select.type,
-
-            .all,
-            .any,
-            => return astgen.addInst(.{ .bool = .{ .value = null } }),
-
-            .abs,
-            .acos,
-            .acosh,
-            .asin,
-            .asinh,
-            .atan,
-            .atanh,
-            .ceil,
-            .cos,
-            .cosh,
-            .count_leading_zeros,
-            .count_one_bits,
-            .count_trailing_zeros,
-            .degrees,
-            .exp,
-            .exp2,
-            .first_leading_bit,
-            .first_trailing_bit,
-            .floor,
-            .fract,
-            .inverse_sqrt,
-            .length,
-            .log,
-            .log2,
-            .quantize_to_F16,
-            .radians,
-            .reverseBits,
-            .round,
-            .saturate,
-            .sign,
-            .sin,
-            .sinh,
-            .sqrt,
-            .tan,
-            .tanh,
-            .trunc,
-            .dpdx,
-            .dpdx_coarse,
-            .dpdx_fine,
-            .dpdy,
-            .dpdy_coarse,
-            .dpdy_fine,
-            .fwidth,
-            .fwidth_coarse,
-            .fwidth_fine,
-            => |un| idx = un,
-
-            .array_length => return astgen.addInst(.{ .int = .{ .type = .u32, .value = null } }),
-
-            .not, .negate => |un| return un.result_type,
-
-            .deref => {
-                in_deref = true;
-                idx = inst.deref.expr;
-            },
 
             .call => |call| return astgen.getInst(call.@"fn").@"fn".return_type,
             .var_ref => |var_ref| idx = var_ref,
 
-            .field_access => |field_access| {
-                const field_type = astgen.getInst(field_access.field).struct_member.type;
-                if (in_deref) return astgen.getInst(field_type).ptr_type.elem_type;
-                return field_type;
-            },
+            .field_access => |field_access| return astgen.getInst(field_access.field).struct_member.type,
             .swizzle_access => |swizzle_access| {
                 if (swizzle_access.size == .one) {
-                    if (in_deref) return astgen.getInst(swizzle_access.type).ptr_type.elem_type;
                     return swizzle_access.type;
                 }
                 return astgen.addInst(.{
@@ -3674,22 +3630,14 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
                     },
                 });
             },
-            .index_access => |index_access| {
-                if (in_deref) return astgen.getInst(index_access.type).ptr_type.elem_type;
-                return index_access.type;
-            },
+            .index_access => |index_access| return index_access.type,
 
             inline .@"var", .@"const" => |decl| {
                 std.debug.assert(index != idx);
 
                 const decl_type = decl.type;
                 const decl_expr = decl.expr;
-                if (decl_type != .none) {
-                    if (in_deref) {
-                        return astgen.getInst(decl_type).ptr_type.elem_type;
-                    }
-                    return decl_type;
-                }
+                if (decl_type != .none) return decl_type;
                 idx = decl_expr;
             },
 

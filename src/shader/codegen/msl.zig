@@ -409,8 +409,8 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .index_access => |inst| try msl.emitIndexAccess(inst),
         .field_access => |inst| try msl.emitFieldAccess(inst),
         .binary => |inst| try msl.emitBinary(inst),
+        .unary => |inst| try msl.emitUnary(inst),
         //.negate => |inst| msl.emitNegate(inst),
-        .array_length => |arg_inst_idx| try msl.emitArrayLength(arg_inst_idx),
         //.addr_of => |inst| try msl.emitAddrOf(inst),
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| try msl.print("{}", .{inst}), // TODO
@@ -525,31 +525,36 @@ fn emitBinary(msl: *Msl, inst: Inst.Binary) !void {
         .less_than_equal => "<=",
         .greater_than => ">",
         .greater_than_equal => ">=",
+        .min, .max, .atan2 => unreachable,
     }});
     try msl.emitExpr(inst.rhs);
     try msl.writeAll(")");
 }
 
-fn emitArrayLength(msl: *Msl, inst_idx: InstIndex) !void {
-    switch (msl.air.getInst(inst_idx)) {
-        .addr_of => |addr_of_inst| {
-            switch (msl.air.getInst(addr_of_inst.expr)) {
-                .var_ref => |var_ref_inst_idx| {
-                    switch (msl.air.getInst(var_ref_inst_idx)) {
-                        .@"var" => |var_inst| {
-                            if (msl.air.resolveInt(var_inst.binding)) |binding| {
-                                try msl.print("buffer_lengths[{}] / sizeof(", .{binding});
-                                try msl.emitType(var_inst.type);
-                                try msl.writeAll(")");
-                            }
-                        },
-                        else => {},
-                    }
+fn emitUnary(msl: *Msl, inst: Inst.Unary) !void {
+    switch (inst.op) {
+        .array_length => switch (msl.air.getInst(inst.expr)) {
+            .unary => |un| switch (un.op) {
+                .addr_of => switch (msl.air.getInst(un.expr)) {
+                    .var_ref => |var_ref_inst_idx| {
+                        switch (msl.air.getInst(var_ref_inst_idx)) {
+                            .@"var" => |var_inst| {
+                                if (msl.air.resolveInt(var_inst.binding)) |binding| {
+                                    try msl.print("buffer_lengths[{}] / sizeof(", .{binding});
+                                    try msl.emitType(var_inst.type);
+                                    try msl.writeAll(")");
+                                }
+                            },
+                            else => {},
+                        }
+                    },
+                    else => {},
                 },
-                else => {},
-            }
+                else => unreachable,
+            },
+            else => {},
         },
-        else => {},
+        else => unreachable,
     }
 }
 

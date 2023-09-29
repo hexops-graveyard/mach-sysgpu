@@ -966,7 +966,7 @@ fn emitContinue(spv: *SpirV, section: *Section) !void {
 }
 
 fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
-    const decl = try spv.emitAddrOf(section, inst.lhs);
+    const decl = try spv.accessPtr(section, inst.lhs);
 
     const expr = blk: {
         const op: Inst.Binary.Op = switch (inst.mod) {
@@ -1026,7 +1026,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
         },
         .index_access => |index_access| {
             if (spv.air.resolveConstExpr(index_access.index)) |const_expr| {
-                const composite = try spv.emitAddrOf(section, index_access.base);
+                const composite = try spv.accessPtr(section, index_access.base);
                 const type_id = try spv.emitType(index_access.type);
                 const id = spv.allocId();
                 try section.emit(.OpCompositeExtract, .{
@@ -1059,9 +1059,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
             return load_id;
         },
         .binary => |bin| spv.emitBinary(section, bin),
-        .negate => |neg| spv.emitNegate(section, neg),
-        .array_length => |arr_len| spv.emitArrayLength(section, arr_len),
-        .addr_of => |addr_of| (try spv.emitAddrOf(section, addr_of.expr)).id, // TODO: remove `addr_of.result_type`?
+        .unary => |un| spv.emitUnary(section, un),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
 }
@@ -1162,7 +1160,7 @@ fn extractSwizzle(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) ![]c
 
 fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess) !PtrAccess {
     const type_id = try spv.emitType(inst.type);
-    const base_ptr = try spv.emitAddrOf(section, inst.base);
+    const base_ptr = try spv.accessPtr(section, inst.base);
 
     const indexes: []const IdResult = blk: {
         const index = try spv.emitExpr(section, inst.index);
@@ -1200,7 +1198,7 @@ fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess) !PtrA
 fn emitFieldAccess(spv: *SpirV, section: *Section, inst: Inst.FieldAccess) !PtrAccess {
     const struct_member = spv.air.getInst(inst.field).struct_member;
     const type_id = try spv.emitType(struct_member.type);
-    const base_decl = try spv.emitAddrOf(section, inst.base);
+    const base_decl = try spv.accessPtr(section, inst.base);
 
     const id = spv.allocId();
     const index_id = try spv.resolve(.{ .int = .{
@@ -1528,40 +1526,49 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
     return id;
 }
 
-fn emitNegate(spv: *SpirV, section: *Section, negate: Inst.Unary) !IdRef {
-    const id = spv.allocId();
-    const expr = try spv.emitExpr(section, negate.expr);
-    const result_type = try spv.emitType(negate.result_type);
-    switch (spv.air.getInst(negate.result_type)) {
-        .int => try section.emit(.OpSNegate, .{
-            .id_result_type = result_type,
-            .id_result = id,
-            .operand = expr,
-        }),
-        .float => try section.emit(.OpFNegate, .{
-            .id_result_type = result_type,
-            .id_result = id,
-            .operand = expr,
-        }),
+fn emitUnary(spv: *SpirV, section: *Section, unary: Inst.Unary) !IdRef {
+    switch (unary.op) {
+        .negate => {
+            const id = spv.allocId();
+            const expr = try spv.emitExpr(section, unary.expr);
+            const result_type = try spv.emitType(unary.result_type);
+
+            switch (spv.air.getInst(unary.result_type)) {
+                .int => try section.emit(.OpSNegate, .{
+                    .id_result_type = result_type,
+                    .id_result = id,
+                    .operand = expr,
+                }),
+                .float => try section.emit(.OpFNegate, .{
+                    .id_result_type = result_type,
+                    .id_result = id,
+                    .operand = expr,
+                }),
+                else => unreachable,
+            }
+
+            return id;
+        },
+        .array_length => {
+            const id = spv.allocId();
+            const expr = try spv.emitExpr(section, unary.expr);
+            const result_type = try spv.emitType(unary.result_type);
+
+            try section.emit(.OpArrayLength, .{
+                .id_result_type = result_type,
+                .id_result = id,
+                .structure = expr,
+                .array_member = 0,
+            });
+
+            return id;
+        },
+        .addr_of => return (try spv.accessPtr(section, unary.expr)).id,
         else => unreachable,
     }
-    return id;
 }
 
-fn emitArrayLength(spv: *SpirV, section: *Section, arr_len: InstIndex) !IdRef {
-    const id = spv.allocId();
-    const decl = try spv.emitExpr(section, arr_len);
-    const result_type = try spv.resolve(.{ .int_type = .u32 });
-    try section.emit(.OpArrayLength, .{
-        .id_result_type = result_type,
-        .id_result = id,
-        .structure = decl,
-        .array_member = 0,
-    });
-    return id;
-}
-
-fn emitAddrOf(spv: *SpirV, section: *Section, decl: InstIndex) error{OutOfMemory}!PtrAccess {
+fn accessPtr(spv: *SpirV, section: *Section, decl: InstIndex) error{OutOfMemory}!PtrAccess {
     switch (spv.air.getInst(decl)) {
         .var_ref => |var_ref| return spv.emitVarAccess(section, var_ref),
         .index_access => |index_access| return spv.emitIndexAccess(section, index_access),
