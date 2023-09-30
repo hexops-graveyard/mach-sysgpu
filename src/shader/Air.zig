@@ -393,6 +393,7 @@ pub const Inst = union(enum) {
     unary_intrinsic: UnaryIntrinsic,
     binary: Binary,
     binary_intrinsic: BinaryIntrinsic,
+    triple_intrinsic: TripleIntrinsic,
 
     block: RefIndex,
     loop: InstIndex,
@@ -418,7 +419,6 @@ pub const Inst = union(enum) {
     struct_construct: StructConstruct,
     bitcast: Bitcast,
     select: BuiltinSelect,
-    smoothstep: BuiltinSmoothstep,
 
     pub const Var = struct {
         name: StringIndex,
@@ -755,6 +755,7 @@ pub const Inst = union(enum) {
             fwidth_coarse,
             fwidth_fine,
             array_length,
+            normalize,
         };
     };
 
@@ -800,6 +801,23 @@ pub const Inst = union(enum) {
             min,
             max,
             atan2,
+            distance,
+        };
+    };
+
+    pub const TripleIntrinsic = struct {
+        op: Op,
+        result_type: InstIndex,
+        a1_type: InstIndex,
+        a2_type: InstIndex,
+        a3_type: InstIndex,
+        a1: InstIndex,
+        a2: InstIndex,
+        a3: InstIndex,
+
+        pub const Op = enum {
+            smoothstep,
+            clamp,
         };
     };
 
@@ -872,13 +890,6 @@ pub const Inst = union(enum) {
         true: InstIndex,
         false: InstIndex,
         cond: InstIndex,
-    };
-
-    pub const BuiltinSmoothstep = struct {
-        type: InstIndex,
-        low: InstIndex,
-        high: InstIndex,
-        x: InstIndex,
     };
 
     pub const If = struct {
