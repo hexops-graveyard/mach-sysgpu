@@ -10,6 +10,7 @@ const conv = @import("metal/conv.zig");
 const log = std.log.scoped(.metal);
 const max_storage_buffers_per_shader_stage = 8;
 const max_uniform_buffers_per_shader_stage = 12;
+const max_buffers_per_stage = 20;
 const max_vertex_buffers = 8;
 const slot_vertex_buffers = 20;
 const slot_buffer_lengths = 28;
@@ -250,6 +251,56 @@ pub const Device = struct {
     }
 };
 
+pub const LengthsBuffer = struct {
+    mtl_buffer: *mtl.Buffer,
+    data: [max_buffers_per_stage]u32 = undefined,
+    apply_count: u32 = 0,
+
+    pub fn init(device: *Device) !LengthsBuffer {
+        const mtl_device = device.mtl_device;
+
+        // TODO - recycle memory
+        const mtl_buffer = mtl_device.newBufferWithLength_options(max_buffers_per_stage * @sizeOf(u32), 0) orelse {
+            return error.newBufferFailed;
+        };
+        errdefer mtl_buffer.release();
+
+        mtl_buffer.setLabel(ns.String.stringWithUTF8String("buffer lengths"));
+
+        return .{ .mtl_buffer = mtl_buffer };
+    }
+
+    pub fn deinit(lengths_buffer: *LengthsBuffer) void {
+        lengths_buffer.mtl_buffer.release();
+    }
+
+    pub fn set(lengths_buffer: *LengthsBuffer, slot: u32, size: u32) void {
+        lengths_buffer.data[slot] = size;
+        lengths_buffer.apply_count = @max(lengths_buffer.apply_count, slot + 1);
+    }
+
+    pub fn apply_compute(lengths_buffer: *LengthsBuffer, mtl_encoder: *mtl.ComputeCommandEncoder) void {
+        if (lengths_buffer.apply_count > 0) {
+            mtl_encoder.setBytes_length_atIndex(&lengths_buffer.data, lengths_buffer.apply_count * @sizeOf(u32), slot_buffer_lengths);
+            lengths_buffer.apply_count = 0;
+        }
+    }
+
+    pub fn apply_vertex(lengths_buffer: *LengthsBuffer, mtl_encoder: *mtl.RenderCommandEncoder) void {
+        if (lengths_buffer.apply_count > 0) {
+            mtl_encoder.setVertexBytes_length_atIndex(&lengths_buffer.data, lengths_buffer.apply_count * @sizeOf(u32), slot_buffer_lengths);
+            lengths_buffer.apply_count = 0;
+        }
+    }
+
+    pub fn apply_fragment(lengths_buffer: *LengthsBuffer, mtl_encoder: *mtl.RenderCommandEncoder) void {
+        if (lengths_buffer.apply_count > 0) {
+            mtl_encoder.setFragmentBytes_length_atIndex(&lengths_buffer.data, lengths_buffer.apply_count * @sizeOf(u32), slot_buffer_lengths);
+            lengths_buffer.apply_count = 0;
+        }
+    }
+};
+
 pub const SwapChain = struct {
     manager: utils.Manager(SwapChain) = .{},
     device: *Device,
@@ -308,6 +359,8 @@ pub const Buffer = struct {
         ) orelse {
             return error.newBufferFailed;
         };
+        errdefer mtl_buffer.release();
+
         if (desc.label) |label| {
             mtl_buffer.setLabel(ns.String.stringWithUTF8String(label));
         }
@@ -372,6 +425,8 @@ pub const Texture = struct {
         const mtl_texture = mtl_device.newTextureWithDescriptor(mtl_desc) orelse {
             return error.newTextureFailed;
         };
+        errdefer mtl_texture.release();
+
         if (desc.label) |label| {
             mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
         }
@@ -561,6 +616,7 @@ pub const ShaderModule = struct {
             std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
             return error.InvalidDescriptor;
         };
+        errdefer library.release();
 
         var module = try allocator.create(ShaderModule);
         module.* = .{
@@ -643,6 +699,7 @@ pub const ComputePipeline = struct {
             std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
             return error.InvalidDescriptor;
         };
+        errdefer mtl_pipeline.release();
 
         // result
         var pipeline = try allocator.create(ComputePipeline);
@@ -768,6 +825,8 @@ pub const RenderPipeline = struct {
                 break :blk null;
             }
         };
+        errdefer if (depth_stencil_state) |ds| ds.release();
+
         const depth_bias = if (desc.depth_stencil != null) @as(f32, @floatFromInt(desc.depth_stencil.?.depth_bias)) else 0.0; // TODO - int to float conversion
         const depth_bias_slope_scale = if (desc.depth_stencil != null) desc.depth_stencil.?.depth_bias_slope_scale else 0.0;
         const depth_bias_clamp = if (desc.depth_stencil != null) desc.depth_stencil.?.depth_bias_clamp else 0.0;
@@ -817,6 +876,7 @@ pub const RenderPipeline = struct {
             std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
             return error.InvalidDescriptor;
         };
+        errdefer mtl_pipeline.release();
 
         var pipeline = try allocator.create(RenderPipeline);
         pipeline.* = .{
@@ -944,12 +1004,13 @@ pub const CommandEncoder = struct {
 pub const ComputePassEncoder = struct {
     manager: utils.Manager(ComputePassEncoder) = .{},
     mtl_encoder: *mtl.ComputeCommandEncoder,
-    lengths_buffer: *mtl.Buffer,
+    lengths_buffer: LengthsBuffer,
     referenced_buffers: *std.ArrayList(*Buffer),
     threadgroup_size: mtl.Size,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         const mtl_device = command_encoder.device.mtl_device;
+        _ = mtl_device;
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.ComputePassDescriptor.new();
@@ -963,12 +1024,8 @@ pub const ComputePassEncoder = struct {
             mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
         }
 
-        // TODO - needs to be N slots and recycle memory
-        const lengths_buffer = mtl_device.newBufferWithLength_options(@sizeOf(u32), 0) orelse {
-            return error.newBufferFailed;
-        };
-
-        mtl_encoder.setBuffer_offset_atIndex(lengths_buffer, 0, slot_buffer_lengths);
+        const lengths_buffer = try LengthsBuffer.init(command_encoder.device);
+        mtl_encoder.setBuffer_offset_atIndex(lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
 
         var encoder = try allocator.create(ComputePassEncoder);
         encoder.* = .{
@@ -981,12 +1038,13 @@ pub const ComputePassEncoder = struct {
     }
 
     pub fn deinit(encoder: *ComputePassEncoder) void {
-        encoder.lengths_buffer.release();
+        encoder.lengths_buffer.deinit();
         allocator.destroy(encoder);
     }
 
     pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
         const mtl_encoder = encoder.mtl_encoder;
+        encoder.lengths_buffer.apply_compute(mtl_encoder);
         mtl_encoder.dispatchThreadgroups_threadsPerThreadgroup(
             mtl.Size.init(workgroup_count_x, workgroup_count_y, workgroup_count_z),
             encoder.threadgroup_size,
@@ -1009,7 +1067,7 @@ pub const ComputePassEncoder = struct {
             switch (entry.kind) {
                 .buffer => {
                     try encoder.referenced_buffers.append(entry.buffer.?);
-                    mtl_encoder.setBytes_length_atIndex(&entry.size, @sizeOf(u32), slot_buffer_lengths);
+                    encoder.lengths_buffer.set(entry.binding, entry.size);
                     mtl_encoder.setBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
                 },
                 .sampler => mtl_encoder.setSamplerState_atIndex(entry.sampler, entry.binding),
@@ -1028,13 +1086,14 @@ pub const ComputePassEncoder = struct {
 pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
     mtl_encoder: *mtl.RenderCommandEncoder,
-    vertex_lengths_buffer: *mtl.Buffer,
-    fragment_lengths_buffer: *mtl.Buffer,
+    vertex_lengths_buffer: LengthsBuffer,
+    fragment_lengths_buffer: LengthsBuffer,
     referenced_buffers: *std.ArrayList(*Buffer),
     primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const mtl_device = command_encoder.device.mtl_device;
+        _ = mtl_device;
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.RenderPassDescriptor.new();
@@ -1105,16 +1164,11 @@ pub const RenderPassEncoder = struct {
             mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
         }
 
-        // TODO - needs to be N slots and recycle memory
-        const vertex_lengths_buffer = mtl_device.newBufferWithLength_options(@sizeOf(u32), 0) orelse {
-            return error.newBufferFailed;
-        };
-        const fragment_lengths_buffer = mtl_device.newBufferWithLength_options(@sizeOf(u32), 0) orelse {
-            return error.newBufferFailed;
-        };
+        const vertex_lengths_buffer = try LengthsBuffer.init(command_encoder.device);
+        const fragment_lengths_buffer = try LengthsBuffer.init(command_encoder.device);
 
-        mtl_encoder.setVertexBuffer_offset_atIndex(vertex_lengths_buffer, 0, slot_buffer_lengths);
-        mtl_encoder.setFragmentBuffer_offset_atIndex(fragment_lengths_buffer, 0, slot_buffer_lengths);
+        mtl_encoder.setVertexBuffer_offset_atIndex(vertex_lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
+        mtl_encoder.setFragmentBuffer_offset_atIndex(fragment_lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
 
         var encoder = try allocator.create(RenderPassEncoder);
         encoder.* = .{
@@ -1127,13 +1181,15 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn deinit(encoder: *RenderPassEncoder) void {
-        encoder.vertex_lengths_buffer.release();
-        encoder.fragment_lengths_buffer.release();
+        encoder.vertex_lengths_buffer.deinit();
+        encoder.fragment_lengths_buffer.deinit();
         allocator.destroy(encoder);
     }
 
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
         const mtl_encoder = encoder.mtl_encoder;
+        encoder.vertex_lengths_buffer.apply_vertex(mtl_encoder);
+        encoder.fragment_lengths_buffer.apply_fragment(mtl_encoder);
         mtl_encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
             encoder.primitive_type,
             first_vertex,
@@ -1159,7 +1215,7 @@ pub const RenderPassEncoder = struct {
             switch (entry.kind) {
                 .buffer => {
                     try encoder.referenced_buffers.append(entry.buffer.?);
-                    mtl_encoder.setVertexBytes_length_atIndex(&entry.size, @sizeOf(u32), slot_buffer_lengths);
+                    encoder.vertex_lengths_buffer.set(entry.binding, entry.size);
                     mtl_encoder.setVertexBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
                 },
                 .sampler => mtl_encoder.setFragmentSamplerState_atIndex(entry.sampler, entry.binding),
@@ -1185,10 +1241,9 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
+        _ = size;
         const mtl_encoder = encoder.mtl_encoder;
-        const size_u32 = @as(u32, @intCast(size));
         try encoder.referenced_buffers.append(buffer);
-        mtl_encoder.setVertexBytes_length_atIndex(&size_u32, @sizeOf(u32), slot_buffer_lengths);
         mtl_encoder.setVertexBuffer_offset_atIndex(buffer.mtl_buffer, offset, slot_vertex_buffers + slot);
     }
 };
@@ -1211,6 +1266,7 @@ pub const Queue = struct {
         const command_queue = mtl_device.newCommandQueue() orelse {
             return error.NoCommandQueue;
         };
+        errdefer command_queue.release();
 
         var queue = try allocator.create(Queue);
         queue.* = .{

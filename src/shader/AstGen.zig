@@ -1873,43 +1873,43 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .all => return astgen.genBuiltinAllAny(scope, node, true),
             .any => return astgen.genBuiltinAllAny(scope, node, false),
             .select => return astgen.genBuiltinSelect(scope, node),
-            .abs => return astgen.genGenericUnaryBuiltin(scope, node, .abs, &.{ .u32, .i32 }, &.{ .f32, .f16 }, false),
-            .acos => return astgen.genGenericUnaryBuiltin(scope, node, .acos, &.{}, &.{ .f32, .f16 }, false),
-            .acosh => return astgen.genGenericUnaryBuiltin(scope, node, .acosh, &.{}, &.{ .f32, .f16 }, false),
-            .asin => return astgen.genGenericUnaryBuiltin(scope, node, .asin, &.{}, &.{ .f32, .f16 }, false),
-            .asinh => return astgen.genGenericUnaryBuiltin(scope, node, .asinh, &.{}, &.{ .f32, .f16 }, false),
-            .atan => return astgen.genGenericUnaryBuiltin(scope, node, .atan, &.{}, &.{ .f32, .f16 }, false),
-            .atanh => return astgen.genGenericUnaryBuiltin(scope, node, .atanh, &.{}, &.{ .f32, .f16 }, false),
-            .ceil => return astgen.genGenericUnaryBuiltin(scope, node, .ceil, &.{}, &.{ .f32, .f16 }, false),
-            .cos => return astgen.genGenericUnaryBuiltin(scope, node, .cos, &.{}, &.{ .f32, .f16 }, false),
-            .cosh => return astgen.genGenericUnaryBuiltin(scope, node, .cosh, &.{}, &.{ .f32, .f16 }, false),
-            .countLeadingZeros => return astgen.genGenericUnaryBuiltin(scope, node, .count_leading_zeros, &.{ .u32, .i32 }, &.{}, false),
-            .countOneBits => return astgen.genGenericUnaryBuiltin(scope, node, .count_one_bits, &.{ .u32, .i32 }, &.{}, false),
-            .countTrailingZeros => return astgen.genGenericUnaryBuiltin(scope, node, .count_trailing_zeros, &.{ .u32, .i32 }, &.{}, false),
-            .degrees => return astgen.genGenericUnaryBuiltin(scope, node, .degrees, &.{}, &.{ .f32, .f16 }, false),
-            .exp => return astgen.genGenericUnaryBuiltin(scope, node, .exp, &.{}, &.{ .f32, .f16 }, false),
-            .exp2 => return astgen.genGenericUnaryBuiltin(scope, node, .exp2, &.{}, &.{ .f32, .f16 }, false),
-            .firstLeadingBit => return astgen.genGenericUnaryBuiltin(scope, node, .first_leading_bit, &.{ .u32, .i32 }, &.{}, false),
-            .firstTrailingBit => return astgen.genGenericUnaryBuiltin(scope, node, .first_trailing_bit, &.{ .u32, .i32 }, &.{}, false),
-            .floor => return astgen.genGenericUnaryBuiltin(scope, node, .floor, &.{}, &.{ .f32, .f16 }, false),
-            .fract => return astgen.genGenericUnaryBuiltin(scope, node, .fract, &.{}, &.{ .f32, .f16 }, false),
-            .inverseSqrt => return astgen.genGenericUnaryBuiltin(scope, node, .inverse_sqrt, &.{}, &.{ .f32, .f16 }, false),
-            .length => return astgen.genGenericUnaryBuiltin(scope, node, .length, &.{}, &.{ .f32, .f16 }, false),
-            .log => return astgen.genGenericUnaryBuiltin(scope, node, .log, &.{}, &.{ .f32, .f16 }, false),
-            .log2 => return astgen.genGenericUnaryBuiltin(scope, node, .log2, &.{}, &.{ .f32, .f16 }, false),
-            .quantizeToF16 => return astgen.genGenericUnaryBuiltin(scope, node, .quantize_to_F16, &.{}, &.{.f32}, false),
-            .radians => return astgen.genGenericUnaryBuiltin(scope, node, .radians, &.{}, &.{ .f32, .f16 }, false),
-            .reverseBits => return astgen.genGenericUnaryBuiltin(scope, node, .reverseBits, &.{ .u32, .i32 }, &.{}, false),
-            .round => return astgen.genGenericUnaryBuiltin(scope, node, .round, &.{}, &.{ .f32, .f16 }, false),
-            .saturate => return astgen.genGenericUnaryBuiltin(scope, node, .saturate, &.{}, &.{ .f32, .f16 }, false),
-            .sign => return astgen.genGenericUnaryBuiltin(scope, node, .sign, &.{ .u32, .i32 }, &.{.f16}, false),
-            .sin => return astgen.genGenericUnaryBuiltin(scope, node, .sin, &.{}, &.{ .f32, .f16 }, false),
-            .sinh => return astgen.genGenericUnaryBuiltin(scope, node, .sinh, &.{}, &.{ .f32, .f16 }, false),
-            .sqrt => return astgen.genGenericUnaryBuiltin(scope, node, .sqrt, &.{}, &.{ .f32, .f16 }, false),
-            .tan => return astgen.genGenericUnaryBuiltin(scope, node, .tan, &.{}, &.{ .f32, .f16 }, false),
-            .tanh => return astgen.genGenericUnaryBuiltin(scope, node, .tanh, &.{}, &.{ .f32, .f16 }, false),
-            .trunc => return astgen.genGenericUnaryBuiltin(scope, node, .trunc, &.{}, &.{ .f32, .f16 }, false),
-            .normalize => return astgen.genGenericUnaryBuiltin(scope, node, .normalize, &.{}, &.{ .f32, .f16 }, true),
+            .abs => return astgen.genGenericUnaryBuiltin(scope, node, .abs, &.{ .u32, .i32 }, &.{ .f32, .f16 }, false, false),
+            .acos => return astgen.genGenericUnaryBuiltin(scope, node, .acos, &.{}, &.{ .f32, .f16 }, false, false),
+            .acosh => return astgen.genGenericUnaryBuiltin(scope, node, .acosh, &.{}, &.{ .f32, .f16 }, false, false),
+            .asin => return astgen.genGenericUnaryBuiltin(scope, node, .asin, &.{}, &.{ .f32, .f16 }, false, false),
+            .asinh => return astgen.genGenericUnaryBuiltin(scope, node, .asinh, &.{}, &.{ .f32, .f16 }, false, false),
+            .atan => return astgen.genGenericUnaryBuiltin(scope, node, .atan, &.{}, &.{ .f32, .f16 }, false, false),
+            .atanh => return astgen.genGenericUnaryBuiltin(scope, node, .atanh, &.{}, &.{ .f32, .f16 }, false, false),
+            .ceil => return astgen.genGenericUnaryBuiltin(scope, node, .ceil, &.{}, &.{ .f32, .f16 }, false, false),
+            .cos => return astgen.genGenericUnaryBuiltin(scope, node, .cos, &.{}, &.{ .f32, .f16 }, false, false),
+            .cosh => return astgen.genGenericUnaryBuiltin(scope, node, .cosh, &.{}, &.{ .f32, .f16 }, false, false),
+            .countLeadingZeros => return astgen.genGenericUnaryBuiltin(scope, node, .count_leading_zeros, &.{ .u32, .i32 }, &.{}, false, false),
+            .countOneBits => return astgen.genGenericUnaryBuiltin(scope, node, .count_one_bits, &.{ .u32, .i32 }, &.{}, false, false),
+            .countTrailingZeros => return astgen.genGenericUnaryBuiltin(scope, node, .count_trailing_zeros, &.{ .u32, .i32 }, &.{}, false, false),
+            .degrees => return astgen.genGenericUnaryBuiltin(scope, node, .degrees, &.{}, &.{ .f32, .f16 }, false, false),
+            .exp => return astgen.genGenericUnaryBuiltin(scope, node, .exp, &.{}, &.{ .f32, .f16 }, false, false),
+            .exp2 => return astgen.genGenericUnaryBuiltin(scope, node, .exp2, &.{}, &.{ .f32, .f16 }, false, false),
+            .firstLeadingBit => return astgen.genGenericUnaryBuiltin(scope, node, .first_leading_bit, &.{ .u32, .i32 }, &.{}, false, false),
+            .firstTrailingBit => return astgen.genGenericUnaryBuiltin(scope, node, .first_trailing_bit, &.{ .u32, .i32 }, &.{}, false, false),
+            .floor => return astgen.genGenericUnaryBuiltin(scope, node, .floor, &.{}, &.{ .f32, .f16 }, false, false),
+            .fract => return astgen.genGenericUnaryBuiltin(scope, node, .fract, &.{}, &.{ .f32, .f16 }, false, false),
+            .inverseSqrt => return astgen.genGenericUnaryBuiltin(scope, node, .inverse_sqrt, &.{}, &.{ .f32, .f16 }, false, false),
+            .length => return astgen.genGenericUnaryBuiltin(scope, node, .length, &.{}, &.{ .f32, .f16 }, true, true),
+            .log => return astgen.genGenericUnaryBuiltin(scope, node, .log, &.{}, &.{ .f32, .f16 }, false, false),
+            .log2 => return astgen.genGenericUnaryBuiltin(scope, node, .log2, &.{}, &.{ .f32, .f16 }, false, false),
+            .quantizeToF16 => return astgen.genGenericUnaryBuiltin(scope, node, .quantize_to_F16, &.{}, &.{.f32}, false, false),
+            .radians => return astgen.genGenericUnaryBuiltin(scope, node, .radians, &.{}, &.{ .f32, .f16 }, false, false),
+            .reverseBits => return astgen.genGenericUnaryBuiltin(scope, node, .reverseBits, &.{ .u32, .i32 }, &.{}, false, false),
+            .round => return astgen.genGenericUnaryBuiltin(scope, node, .round, &.{}, &.{ .f32, .f16 }, false, false),
+            .saturate => return astgen.genGenericUnaryBuiltin(scope, node, .saturate, &.{}, &.{ .f32, .f16 }, false, false),
+            .sign => return astgen.genGenericUnaryBuiltin(scope, node, .sign, &.{ .u32, .i32 }, &.{.f16}, false, false),
+            .sin => return astgen.genGenericUnaryBuiltin(scope, node, .sin, &.{}, &.{ .f32, .f16 }, false, false),
+            .sinh => return astgen.genGenericUnaryBuiltin(scope, node, .sinh, &.{}, &.{ .f32, .f16 }, false, false),
+            .sqrt => return astgen.genGenericUnaryBuiltin(scope, node, .sqrt, &.{}, &.{ .f32, .f16 }, false, false),
+            .tan => return astgen.genGenericUnaryBuiltin(scope, node, .tan, &.{}, &.{ .f32, .f16 }, false, false),
+            .tanh => return astgen.genGenericUnaryBuiltin(scope, node, .tanh, &.{}, &.{ .f32, .f16 }, false, false),
+            .trunc => return astgen.genGenericUnaryBuiltin(scope, node, .trunc, &.{}, &.{ .f32, .f16 }, false, false),
+            .normalize => return astgen.genGenericUnaryBuiltin(scope, node, .normalize, &.{}, &.{ .f32, .f16 }, true, false),
             .min => return astgen.genGenericBinaryBuiltin(scope, node, .min, false, true),
             .max => return astgen.genGenericBinaryBuiltin(scope, node, .max, false, true),
             .atan2 => return astgen.genGenericBinaryBuiltin(scope, node, .atan2, false, true),
@@ -2769,6 +2769,7 @@ fn genGenericUnaryBuiltin(
     comptime int_limit: []const Inst.Int.Type,
     comptime float_limit: []const Inst.Float.Type,
     comptime vector_only: bool,
+    comptime scalar_result: bool,
 ) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
@@ -2783,36 +2784,51 @@ fn genGenericUnaryBuiltin(
 
     const arg = try astgen.genExpr(scope, arg_nodes[0]);
     const arg_res = try astgen.resolve(arg);
-    const inst = Inst{
-        .unary_intrinsic = .{
-            .op = op,
-            .expr = arg,
-            .result_type = arg_res,
-        },
-    };
+    var result_type = arg_res;
+
     switch (astgen.getInst(arg_res)) {
-        .int => |int| if (!vector_only and indexOf(Inst.Int.Type, int_limit, int.type) != null) {
-            return astgen.addInst(inst);
+        .int => |int| if (vector_only or indexOf(Inst.Int.Type, int_limit, int.type) == null) {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
         },
-        .float => |float| if (!vector_only and indexOf(Inst.Float.Type, float_limit, float.type) != null) {
-            return astgen.addInst(inst);
+        .float => |float| if (vector_only or indexOf(Inst.Float.Type, float_limit, float.type) == null) {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
         },
         .vector => |vec| {
             switch (astgen.getInst(vec.elem_type)) {
-                .int => |int| if (indexOf(Inst.Int.Type, int_limit, int.type) != null) {
-                    return astgen.addInst(inst);
+                .bool => {
+                    try astgen.errors.add(node_loc, "invalid vector element type", .{}, null);
+                    return error.AnalysisFail;
                 },
-                .float => |float| if (indexOf(Inst.Float.Type, float_limit, float.type) != null) {
-                    return astgen.addInst(inst);
+                .int => |int| if (indexOf(Inst.Int.Type, int_limit, int.type) == null) {
+                    try astgen.errors.add(node_loc, "invalid vector element type", .{}, null);
+                    return error.AnalysisFail;
+                },
+                .float => |float| if (indexOf(Inst.Float.Type, float_limit, float.type) == null) {
+                    try astgen.errors.add(node_loc, "invalid vector element type", .{}, null);
+                    return error.AnalysisFail;
                 },
                 else => {},
             }
+
+            if (scalar_result) {
+                result_type = vec.elem_type;
+            }
         },
-        else => {},
+        else => {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
+        },
     }
 
-    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
-    return error.AnalysisFail;
+    return astgen.addInst(.{
+        .unary_intrinsic = .{
+            .op = op,
+            .expr = arg,
+            .result_type = result_type,
+        },
+    });
 }
 
 fn genGenericBinaryBuiltin(
