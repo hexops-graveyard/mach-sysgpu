@@ -1,2 +1,2 @@
-const gpu = @import("gpu");
+const dgpu = @import("../dgpu/main.zig");
 const c = @import("c.zig");
