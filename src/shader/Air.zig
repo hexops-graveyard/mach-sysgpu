@@ -347,10 +347,12 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
 }
 
 pub fn resolveInt(air: Air, inst_idx: InstIndex) ?i64 {
-    if (air.resolveConstExpr(inst_idx)) |const_expr| {
-        switch (const_expr) {
-            .int => |x| return x,
-            else => {},
+    if (inst_idx != .none) {
+        if (air.resolveConstExpr(inst_idx)) |const_expr| {
+            switch (const_expr) {
+                .int => |x| return x,
+                else => {},
+            }
         }
     }
 

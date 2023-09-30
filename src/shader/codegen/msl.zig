@@ -86,9 +86,20 @@ fn emitType(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
 fn emitTypeSuffix(msl: *Msl, inst_idx: InstIndex) !void {
     if (inst_idx != .none) {
         switch (msl.air.getInst(inst_idx)) {
-            .array => try msl.writeAll("[]"),
+            .array => |inst| try msl.emitArrayTypeSuffix(inst),
             else => {},
         }
+    }
+}
+
+fn emitArrayTypeSuffix(msl: *Msl, inst: Inst.Array) !void {
+    if (inst.len != .none) {
+        if (msl.air.resolveInt(inst.len)) |len| {
+            try msl.print("[{}]", .{len});
+        }
+    } else {
+        // Flexible array members are a C99 feature, but Metal validation checks actual resource size not what is in the shader.
+        try msl.writeAll("[1]");
     }
 }
 
@@ -307,16 +318,22 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
     try msl.writeIndent();
     switch (msl.air.getInst(inst_idx)) {
         .@"var" => |inst| try msl.emitVar(inst),
-        .@"return" => |return_inst_idx| try msl.emitReturn(return_inst_idx),
-        // .call => |inst| try msl.emitCall(inst),
-        .@"if" => |inst| try msl.emitIf(inst),
-        // .@"for" => |inst| try msl.emitFor(inst),
-        // .@"while" => |inst| try msl.emitWhile(inst),
-        // .loop => |inst| try msl.emitLoop(inst),
-        // .@"break" => try msl.emitBreak(),
-        // .@"continue" => try msl.emitContinue(),
-        .assign => |inst| try msl.emitAssign(inst),
         .block => |block| try msl.emitBlock(block),
+        // .loop => |inst| try msl.emitLoop(inst),
+        // .continuing
+        .@"return" => |return_inst_idx| try msl.emitReturn(return_inst_idx),
+        // .break_if
+        .@"if" => |inst| try msl.emitIf(inst),
+        // .@"while" => |inst| try msl.emitWhile(inst),
+        .@"for" => |inst| try msl.emitFor(inst),
+        // .switch
+        .assign => |inst| try msl.emitAssignStmt(inst),
+        // .increase
+        // .decrease
+        // .discard
+        // .@"break" => try msl.emitBreak(),
+        .@"continue" => try msl.writeAll("continue;\n"),
+        // .call => |inst| try msl.emitCall(inst),
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| try msl.print("Statement: {}\n", .{inst}), // TODO
     }
@@ -362,22 +379,25 @@ fn emitIf(msl: *Msl, inst: Inst.If) !void {
     try msl.writeAll("\n");
 }
 
-fn emitAssign(msl: *Msl, inst: Inst.Assign) !void {
-    try msl.emitExpr(inst.lhs);
-    try msl.print(" {s}= ", .{switch (inst.mod) {
-        .none => "",
-        .add => "+",
-        .sub => "-",
-        .mul => "*",
-        .div => "/",
-        .mod => "%",
-        .@"and" => "&",
-        .@"or" => "|",
-        .xor => "^",
-        .shl => "<<",
-        .shr => ">>",
-    }});
-    try msl.emitExpr(inst.rhs);
+fn emitFor(msl: *Msl, inst: Inst.For) !void {
+    try msl.writeAll("for (\n");
+    {
+        msl.enterScope();
+        defer msl.exitScope();
+
+        try msl.emitStatement(inst.init);
+        try msl.writeIndent();
+        try msl.emitExpr(inst.cond);
+        try msl.writeAll(";\n");
+        try msl.writeIndent();
+        try msl.emitExpr(inst.update);
+        try msl.writeAll(")\n");
+    }
+    try msl.emitStatement(inst.body);
+}
+
+fn emitAssignStmt(msl: *Msl, inst: Inst.Assign) !void {
+    try msl.emitAssign(inst);
     try msl.writeAll(";\n");
 }
 
@@ -399,7 +419,7 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
     switch (msl.air.getInst(inst_idx)) {
         .var_ref => |inst| try msl.emitVarRef(inst),
         //.bool => |inst| msl.emitBool(inst),
-        //.int => |inst| msl.emitInt(inst),
+        .int => |inst| try msl.emitInt(inst),
         .float => |inst| try msl.emitFloat(inst),
         .vector => |inst| try msl.emitVector(inst),
         //.matrix => |inst| msl.emitMatrix(inst),
@@ -408,17 +428,44 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .unary_intrinsic => |inst| try msl.emitUnaryIntrinsic(inst),
         .binary => |inst| try msl.emitBinary(inst),
         .binary_intrinsic => |inst| try msl.emitBinaryIntrinsic(inst),
+        .triple_intrinsic => |inst| try msl.emitTripleIntrinsic(inst),
+        .assign => |inst| try msl.emitAssign(inst),
         .field_access => |inst| try msl.emitFieldAccess(inst),
         .swizzle_access => |inst| try msl.emitSwizzleAccess(inst),
         .index_access => |inst| try msl.emitIndexAccess(inst),
         //.call => |inst| msl.emitCall(inst),
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
-        //.select: BuiltinSelect,
-        //.smoothstep: BuiltinSmoothstep,
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| try msl.print("Expr: {}", .{inst}), // TODO
     }
+}
+
+fn emitVarRef(msl: *Msl, inst_idx: InstIndex) !void {
+    switch (msl.air.getInst(inst_idx)) {
+        .@"var" => |v| try msl.writeAll(msl.air.getStr(v.name)),
+        .fn_param => |p| {
+            if (msl.isStageInParameter(inst_idx)) {
+                try msl.writeAll("in.");
+            }
+            try msl.writeAll(msl.air.getStr(p.name));
+        },
+        else => |x| try msl.print("VarRef: {}", .{x}), // TODO
+    }
+}
+
+fn emitInt(msl: *Msl, inst: Inst.Int) !void {
+    return switch (msl.air.getValue(Inst.Int.Value, inst.value.?)) {
+        .literal => |lit| try msl.print("{}", .{lit}),
+        .cast => |cast| msl.emitIntCast(inst, cast),
+    };
+}
+
+fn emitIntCast(msl: *Msl, dest_type: Inst.Int, cast: Inst.Cast) !void {
+    try msl.emitIntType(dest_type);
+    try msl.writeAll("(");
+    try msl.emitExpr(cast.value);
+    try msl.writeAll(")");
 }
 
 fn emitFloat(msl: *Msl, inst: Inst.Float) !void {
@@ -468,43 +515,6 @@ fn emitArray(msl: *Msl, inst: Inst.Array) !void {
         }
     }
     try msl.writeAll("}");
-}
-
-fn emitSwizzleAccess(msl: *Msl, inst: Inst.SwizzleAccess) !void {
-    if (inst.size == .one) {
-        try msl.emitExpr(inst.base);
-        switch (inst.pattern[0]) {
-            .x => try msl.writeAll(".x"),
-            .y => try msl.writeAll(".y"),
-            .z => try msl.writeAll(".z"),
-            .w => try msl.writeAll(".w"),
-        }
-    }
-}
-
-fn emitVarRef(msl: *Msl, inst_idx: InstIndex) !void {
-    switch (msl.air.getInst(inst_idx)) {
-        .@"var" => |v| try msl.writeAll(msl.air.getStr(v.name)),
-        .fn_param => |p| {
-            if (msl.isStageInParameter(inst_idx)) {
-                try msl.writeAll("in.");
-            }
-            try msl.writeAll(msl.air.getStr(p.name));
-        },
-        else => |x| try msl.print("VarRef: {}", .{x}), // TODO
-    }
-}
-
-fn emitIndexAccess(msl: *Msl, inst: Inst.IndexAccess) !void {
-    try msl.emitExpr(inst.base);
-    try msl.writeAll("[");
-    try msl.emitExpr(inst.index);
-    try msl.writeAll("]");
-}
-
-fn emitFieldAccess(msl: *Msl, inst: Inst.FieldAccess) !void {
-    try msl.emitExpr(inst.base);
-    try msl.print(".{s}", .{msl.air.getStr(inst.name)});
 }
 
 fn emitUnary(msl: *Msl, inst: Inst.Unary) !void {
@@ -570,6 +580,8 @@ fn emitUnaryIntrinsic(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
                 .fwidth => "fwidth",
                 .fwidth_coarse => "fwidth",
                 .fwidth_fine => "fwidth",
+                .normalize => "normalize",
+                .length => "length",
                 else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst.op)}),
             });
             try msl.writeAll("(");
@@ -582,25 +594,37 @@ fn emitUnaryIntrinsic(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
 fn emitArrayLength(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
     switch (msl.air.getInst(inst.expr)) {
         .unary => |un| switch (un.op) {
-            .addr_of => switch (msl.air.getInst(un.expr)) {
-                .var_ref => |var_ref_inst_idx| {
-                    switch (msl.air.getInst(var_ref_inst_idx)) {
-                        .@"var" => |var_inst| {
-                            if (msl.air.resolveInt(var_inst.binding)) |binding| {
-                                try msl.print("buffer_lengths[{}] / sizeof(", .{binding});
-                                try msl.emitType(var_inst.type);
-                                try msl.writeAll(")");
-                            }
-                        },
-                        else => {},
-                    }
-                },
-                else => {},
-            },
-            else => {},
+            .addr_of => try msl.emitArrayLengthTarget(un.expr, 0),
+            else => try msl.print("ArrayLength (unary_op): {}", .{un.op}),
         },
-        else => {},
+        else => |array_length_expr| try msl.print("ArrayLength (array_length_expr): {}", .{array_length_expr}),
     }
+}
+
+fn emitArrayLengthTarget(msl: *Msl, inst_idx: InstIndex, offset: usize) error{OutOfMemory}!void {
+    switch (msl.air.getInst(inst_idx)) {
+        .var_ref => |var_ref_inst_idx| try msl.emitArrayLengthVarRef(var_ref_inst_idx, offset),
+        .field_access => |inst| try msl.emitArrayLengthFieldAccess(inst, offset),
+        else => |inst| try msl.print("ArrayLengthTarget: {}", .{inst}),
+    }
+}
+
+fn emitArrayLengthVarRef(msl: *Msl, inst_idx: InstIndex, offset: usize) !void {
+    switch (msl.air.getInst(inst_idx)) {
+        .@"var" => |var_inst| {
+            if (msl.air.resolveInt(var_inst.binding)) |binding| {
+                try msl.print("(buffer_lengths[{}] / sizeof(", .{binding});
+                try msl.emitType(var_inst.type);
+                try msl.print(") - {})", .{offset});
+            }
+        },
+        else => |var_ref_expr| try msl.print("arrayLength (var_ref_expr): {}", .{var_ref_expr}),
+    }
+}
+
+fn emitArrayLengthFieldAccess(msl: *Msl, inst: Inst.FieldAccess, base_offset: usize) !void {
+    const member_offset = 0; // TODO
+    try msl.emitArrayLengthTarget(inst.base, base_offset + member_offset);
 }
 
 fn emitBinary(msl: *Msl, inst: Inst.Binary) !void {
@@ -643,6 +667,63 @@ fn emitBinaryIntrinsic(msl: *Msl, inst: Inst.BinaryIntrinsic) !void {
     try msl.writeAll(", ");
     try msl.emitExpr(inst.rhs);
     try msl.writeAll(")");
+}
+
+fn emitTripleIntrinsic(msl: *Msl, inst: Inst.TripleIntrinsic) !void {
+    try msl.writeAll(switch (inst.op) {
+        .clamp => "clamp",
+        else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst.op)}),
+    });
+    try msl.writeAll("(");
+    try msl.emitExpr(inst.a1);
+    try msl.writeAll(", ");
+    try msl.emitExpr(inst.a2);
+    try msl.writeAll(", ");
+    try msl.emitExpr(inst.a3);
+    try msl.writeAll(")");
+}
+
+fn emitAssign(msl: *Msl, inst: Inst.Assign) !void {
+    try msl.emitExpr(inst.lhs);
+    try msl.print(" {s}= ", .{switch (inst.mod) {
+        .none => "",
+        .add => "+",
+        .sub => "-",
+        .mul => "*",
+        .div => "/",
+        .mod => "%",
+        .@"and" => "&",
+        .@"or" => "|",
+        .xor => "^",
+        .shl => "<<",
+        .shr => ">>",
+    }});
+    try msl.emitExpr(inst.rhs);
+}
+
+fn emitFieldAccess(msl: *Msl, inst: Inst.FieldAccess) !void {
+    try msl.emitExpr(inst.base);
+    try msl.print(".{s}", .{msl.air.getStr(inst.name)});
+}
+
+fn emitSwizzleAccess(msl: *Msl, inst: Inst.SwizzleAccess) !void {
+    try msl.emitExpr(inst.base);
+    try msl.writeAll(".");
+    for (0..@intFromEnum(inst.size)) |i| {
+        switch (inst.pattern[i]) {
+            .x => try msl.writeAll("x"),
+            .y => try msl.writeAll("y"),
+            .z => try msl.writeAll("z"),
+            .w => try msl.writeAll("w"),
+        }
+    }
+}
+
+fn emitIndexAccess(msl: *Msl, inst: Inst.IndexAccess) !void {
+    try msl.emitExpr(inst.base);
+    try msl.writeAll("[");
+    try msl.emitExpr(inst.index);
+    try msl.writeAll("]");
 }
 
 fn enterScope(msl: *Msl) void {
