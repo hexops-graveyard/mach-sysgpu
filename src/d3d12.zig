@@ -1080,6 +1080,15 @@ pub const CommandEncoder = struct {
 
         return cmd_encoder.cmd_buffer;
     }
+
+    pub fn writeBuffer(encoder: *CommandEncoder, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
+        _ = size;
+        _ = data;
+        _ = offset;
+        _ = buffer;
+        _ = encoder;
+        unreachable;
+    }
 };
 
 pub const ComputePassEncoder = struct {
