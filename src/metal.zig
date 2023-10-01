@@ -157,9 +157,9 @@ pub const Device = struct {
     log_cb_userdata: ?*anyopaque = null,
     err_cb: ?dgpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
-    streaming_manager: *StreamingManager,
-    map_async_callbacks: std.ArrayList(MapAsyncCallback),
-    free_lengths_buffers: std.ArrayList(*mtl.Buffer),
+    streaming_manager: StreamingManager = undefined,
+    map_async_callbacks: std.ArrayListUnmanaged(MapAsyncCallback) = .{},
+    free_lengths_buffers: std.ArrayListUnmanaged(*mtl.Buffer) = .{},
 
     pub fn init(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
         // TODO
@@ -170,10 +170,8 @@ pub const Device = struct {
         var device = try allocator.create(Device);
         device.* = .{
             .mtl_device = mtl_device,
-            .streaming_manager = try StreamingManager.init(mtl_device),
-            .map_async_callbacks = std.ArrayList(MapAsyncCallback).init(allocator),
-            .free_lengths_buffers = std.ArrayList(*mtl.Buffer).init(allocator),
         };
+        device.streaming_manager = try StreamingManager.init(device);
         return device;
     }
 
@@ -181,11 +179,9 @@ pub const Device = struct {
         if (device.lost_cb) |lost_cb| {
             lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
         }
-        for (device.free_lengths_buffers.items) |mtl_buffer| {
-            mtl_buffer.release();
-        }
-        device.free_lengths_buffers.deinit();
-        device.map_async_callbacks.deinit();
+        for (device.free_lengths_buffers.items) |mtl_buffer| mtl_buffer.release();
+        device.free_lengths_buffers.deinit(allocator);
+        device.map_async_callbacks.deinit(allocator);
         device.streaming_manager.deinit();
         if (device.queue) |queue| queue.manager.release();
         allocator.destroy(device);
@@ -269,31 +265,21 @@ pub const StreamingManager = struct {
         fence_value: u64,
     };
 
-    mtl_device: *mtl.Device,
-    inflight_buffers: std.ArrayList(InflightBuffer),
-    free_buffers: std.ArrayList(*mtl.Buffer),
+    device: *Device,
+    inflight_buffers: std.ArrayListUnmanaged(InflightBuffer) = .{},
+    free_buffers: std.ArrayListUnmanaged(*mtl.Buffer) = .{},
 
-    pub fn init(mtl_device: *mtl.Device) !*StreamingManager {
-        var manager = try allocator.create(StreamingManager);
-        manager.* = .{
-            .mtl_device = mtl_device,
-            .inflight_buffers = std.ArrayList(InflightBuffer).init(allocator),
-            .free_buffers = std.ArrayList(*mtl.Buffer).init(allocator),
+    pub fn init(device: *Device) !StreamingManager {
+        return .{
+            .device = device,
         };
-        return manager;
     }
 
     pub fn deinit(manager: *StreamingManager) void {
-        for (manager.inflight_buffers.items) |inflight_buffer| {
-            inflight_buffer.mtl_buffer.release();
-        }
-        for (manager.free_buffers.items) |mtl_buffer| {
-            mtl_buffer.release();
-        }
-
-        manager.inflight_buffers.deinit();
-        manager.free_buffers.deinit();
-        allocator.destroy(manager);
+        for (manager.inflight_buffers.items) |inflight_buffer| inflight_buffer.mtl_buffer.release();
+        for (manager.free_buffers.items) |mtl_buffer| mtl_buffer.release();
+        manager.inflight_buffers.deinit(allocator);
+        manager.free_buffers.deinit(allocator);
     }
 
     pub fn acquire(manager: *StreamingManager) !*mtl.Buffer {
@@ -305,7 +291,7 @@ pub const StreamingManager = struct {
                 const completed_value = inflight_buffer.queue.completed_value.load(.Acquire);
 
                 if (inflight_buffer.fence_value <= completed_value) {
-                    try manager.free_buffers.append(inflight_buffer.mtl_buffer);
+                    try manager.free_buffers.append(allocator, inflight_buffer.mtl_buffer);
                     _ = manager.inflight_buffers.swapRemove(i);
                 } else {
                     i += 1;
@@ -315,14 +301,14 @@ pub const StreamingManager = struct {
 
         // Create new buffer
         if (manager.free_buffers.items.len == 0) {
-            const mtl_device = manager.mtl_device;
+            const mtl_device = manager.device.mtl_device;
 
             const mtl_buffer = mtl_device.newBufferWithLength_options(upload_page_size, mtl.ResourceCPUCacheModeWriteCombined) orelse {
                 return error.newBufferFailed;
             };
 
             mtl_buffer.setLabel(ns.String.stringWithUTF8String("upload"));
-            try manager.free_buffers.append(mtl_buffer);
+            try manager.free_buffers.append(allocator, mtl_buffer);
         }
 
         // Result
@@ -330,7 +316,7 @@ pub const StreamingManager = struct {
     }
 
     pub fn enqueue(manager: *StreamingManager, mtl_buffer: *mtl.Buffer, queue: *Queue, fence_value: u64) !void {
-        try manager.inflight_buffers.append(.{
+        try manager.inflight_buffers.append(allocator, .{
             .mtl_buffer = mtl_buffer,
             .queue = queue,
             .fence_value = fence_value,
@@ -366,7 +352,7 @@ pub const LengthsBuffer = struct {
 
     pub fn deinit(lengths_buffer: *LengthsBuffer) void {
         const device = lengths_buffer.device;
-        device.free_lengths_buffers.append(lengths_buffer.mtl_buffer) catch std.debug.panic("OutOfMemory", .{});
+        device.free_lengths_buffers.append(allocator, lengths_buffer.mtl_buffer) catch std.debug.panic("OutOfMemory", .{});
     }
 
     pub fn set(lengths_buffer: *LengthsBuffer, slot: u32, size: u32) void {
@@ -488,7 +474,7 @@ pub const Buffer = struct {
         _ = mode;
 
         const device = buffer.device;
-        try device.map_async_callbacks.append(.{
+        try device.map_async_callbacks.append(allocator, .{
             .callback = callback,
             .userdata = userdata,
             .fence_value = buffer.last_used_fence_value,
@@ -694,7 +680,7 @@ pub const PipelineLayout = struct {
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     library: *mtl.Library,
-    threadgroup_sizes: std.StringHashMap(mtl.Size),
+    threadgroup_sizes: std.StringHashMapUnmanaged(mtl.Size) = .{},
 
     pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
         const mtl_device = device.mtl_device;
@@ -718,7 +704,6 @@ pub const ShaderModule = struct {
         var module = try allocator.create(ShaderModule);
         module.* = .{
             .library = library,
-            .threadgroup_sizes = std.StringHashMap(mtl.Size).init(allocator),
         };
         try module.reflect(air);
         return module;
@@ -726,7 +711,7 @@ pub const ShaderModule = struct {
 
     pub fn deinit(shader_module: *ShaderModule) void {
         shader_module.library.release();
-        shader_module.threadgroup_sizes.deinit();
+        shader_module.threadgroup_sizes.deinit(allocator);
         allocator.destroy(shader_module);
     }
 
@@ -745,7 +730,7 @@ pub const ShaderModule = struct {
 
         switch (inst.stage) {
             .compute => |stage| {
-                try shader_module.threadgroup_sizes.put(name, mtl.Size.init(
+                try shader_module.threadgroup_sizes.put(allocator, name, mtl.Size.init(
                     @intCast(air.resolveInt(stage.x) orelse 1),
                     @intCast(air.resolveInt(stage.y) orelse 1),
                     @intCast(air.resolveInt(stage.z) orelse 1),
@@ -1012,8 +997,8 @@ pub const CommandBuffer = struct {
     manager: utils.Manager(CommandBuffer) = .{},
     device: *Device,
     mtl_command_buffer: *mtl.CommandBuffer,
-    referenced_buffers: std.ArrayList(*Buffer),
-    referenced_upload_pages: std.ArrayList(*mtl.Buffer),
+    referenced_buffers: std.ArrayListUnmanaged(*Buffer) = .{},
+    referenced_upload_pages: std.ArrayListUnmanaged(*mtl.Buffer) = .{},
     upload_buffer: ?*mtl.Buffer = null,
     upload_map: ?[*]u8 = null,
     next_offset: u32 = upload_page_size,
@@ -1028,26 +1013,24 @@ pub const CommandBuffer = struct {
         cmd_buffer.* = .{
             .device = device,
             .mtl_command_buffer = mtl_command_buffer,
-            .referenced_buffers = std.ArrayList(*Buffer).init(allocator),
-            .referenced_upload_pages = std.ArrayList(*mtl.Buffer).init(allocator),
         };
         return cmd_buffer;
     }
 
     pub fn deinit(command_buffer: *CommandBuffer) void {
-        command_buffer.referenced_buffers.deinit();
-        command_buffer.referenced_upload_pages.deinit();
+        command_buffer.referenced_buffers.deinit(allocator);
+        command_buffer.referenced_upload_pages.deinit(allocator);
         allocator.destroy(command_buffer);
     }
 
     pub fn upload(command_buffer: *CommandBuffer, size: u64) !StreamingResult {
         if (command_buffer.next_offset + size > upload_page_size) {
-            const streaming_manager = command_buffer.device.streaming_manager;
+            const streaming_manager = &command_buffer.device.streaming_manager;
 
             std.debug.assert(size <= upload_page_size); // TODO - support large uploads
             const mtl_buffer = try streaming_manager.acquire();
 
-            try command_buffer.referenced_upload_pages.append(mtl_buffer);
+            try command_buffer.referenced_upload_pages.append(allocator, mtl_buffer);
             command_buffer.upload_buffer = mtl_buffer;
             command_buffer.upload_map = @ptrCast(mtl_buffer.contents());
             command_buffer.next_offset = 0;
@@ -1067,7 +1050,7 @@ pub const CommandEncoder = struct {
     manager: utils.Manager(CommandEncoder) = .{},
     device: *Device,
     command_buffer: *CommandBuffer,
-    referenced_buffers: *std.ArrayList(*Buffer),
+    referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
     mtl_encoder: ?*mtl.BlitCommandEncoder = null,
 
     pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
@@ -1111,8 +1094,8 @@ pub const CommandEncoder = struct {
             size,
         );
 
-        try encoder.referenced_buffers.append(source);
-        try encoder.referenced_buffers.append(destination);
+        try encoder.referenced_buffers.append(allocator, source);
+        try encoder.referenced_buffers.append(allocator, destination);
     }
 
     pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
@@ -1141,7 +1124,7 @@ pub const CommandEncoder = struct {
             size,
         );
 
-        try encoder.referenced_buffers.append(buffer);
+        try encoder.referenced_buffers.append(allocator, buffer);
     }
 
     fn getBlitEncoder(encoder: *CommandEncoder) !*mtl.BlitCommandEncoder {
@@ -1171,7 +1154,7 @@ pub const ComputePassEncoder = struct {
     manager: utils.Manager(ComputePassEncoder) = .{},
     mtl_encoder: *mtl.ComputeCommandEncoder,
     lengths_buffer: LengthsBuffer,
-    referenced_buffers: *std.ArrayList(*Buffer),
+    referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
     threadgroup_size: mtl.Size,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
@@ -1229,7 +1212,7 @@ pub const ComputePassEncoder = struct {
         for (group.entries) |entry| {
             switch (entry.kind) {
                 .buffer => {
-                    try encoder.referenced_buffers.append(entry.buffer.?);
+                    try encoder.referenced_buffers.append(allocator, entry.buffer.?);
                     encoder.lengths_buffer.set(entry.binding, entry.size);
                     mtl_encoder.setBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
                 },
@@ -1252,7 +1235,7 @@ pub const RenderPassEncoder = struct {
     mtl_encoder: *mtl.RenderCommandEncoder,
     vertex_lengths_buffer: LengthsBuffer,
     fragment_lengths_buffer: LengthsBuffer,
-    referenced_buffers: *std.ArrayList(*Buffer),
+    referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
     primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
@@ -1374,7 +1357,7 @@ pub const RenderPassEncoder = struct {
         for (group.entries) |entry| {
             switch (entry.kind) {
                 .buffer => {
-                    try encoder.referenced_buffers.append(entry.buffer.?);
+                    try encoder.referenced_buffers.append(allocator, entry.buffer.?);
                     encoder.vertex_lengths_buffer.set(entry.binding, entry.size);
                     mtl_encoder.setVertexBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
                 },
@@ -1405,7 +1388,7 @@ pub const RenderPassEncoder = struct {
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
         _ = size;
         const mtl_encoder = encoder.mtl_encoder;
-        try encoder.referenced_buffers.append(buffer);
+        try encoder.referenced_buffers.append(allocator, buffer);
         mtl_encoder.setVertexBuffer_offset_atIndex(buffer.mtl_buffer, offset, slot_vertex_buffers + slot);
     }
 };
@@ -1474,7 +1457,7 @@ pub const Queue = struct {
     }
 
     fn submitCommandBuffer(queue: *Queue, command_buffer: *CommandBuffer) !void {
-        const streaming_manager = queue.device.streaming_manager;
+        const streaming_manager = &queue.device.streaming_manager;
         const mtl_command_buffer = command_buffer.mtl_command_buffer;
 
         queue.fence_value += 1;
