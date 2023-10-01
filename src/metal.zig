@@ -1,5 +1,6 @@
 const std = @import("std");
 const ca = @import("objc").quartz_core.ca;
+const cg = @import("objc").core_graphics.cg;
 const mtl = @import("objc").metal.mtl;
 const ns = @import("objc").foundation.ns;
 const dgpu = @import("dgpu/main.zig");
@@ -89,6 +90,7 @@ pub const Adapter = struct {
         const mtl_device = mtl.createSystemDefaultDevice() orelse {
             return error.NoAdapterFound;
         };
+        errdefer mtl_device.release();
 
         var adapter = try allocator.create(Adapter);
         adapter.* = .{ .mtl_device = mtl_device };
@@ -391,10 +393,15 @@ pub const SwapChain = struct {
     current_drawable: ?*ca.MetalDrawable = null,
 
     pub fn init(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
-        // TODO
-        _ = desc;
+        const layer = surface.layer;
+        const size = cg.Size{ .width = @floatFromInt(desc.width), .height = @floatFromInt(desc.height) };
 
-        surface.layer.setDevice(device.mtl_device);
+        layer.setDevice(device.mtl_device);
+        layer.setPixelFormat(conv.metalPixelFormat(desc.format));
+        layer.setFramebufferOnly(!(desc.usage.storage_binding or desc.usage.render_attachment));
+        layer.setDrawableSize(size);
+        layer.setMaximumDrawableCount(if (desc.present_mode == .mailbox) 3 else 2);
+        layer.setDisplaySyncEnabled(desc.present_mode != .immediate);
 
         var swapchain = try allocator.create(SwapChain);
         swapchain.* = .{ .device = device, .surface = surface };
@@ -408,10 +415,9 @@ pub const SwapChain = struct {
     pub fn getCurrentTextureView(swapchain: *SwapChain) !*TextureView {
         swapchain.current_drawable = swapchain.surface.layer.nextDrawable();
         if (swapchain.current_drawable) |drawable| {
-            return TextureView.initFromMtlTexture(drawable.texture().retain());
+            return TextureView.initFromMtlTexture(drawable.texture());
         } else {
-            // TODO - handle no drawable
-            unreachable;
+            std.debug.panic("getCurrentTextureView no drawable", .{});
         }
     }
 
@@ -551,6 +557,8 @@ pub const TextureView = struct {
             if (desc.label) |label| {
                 mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
             }
+        } else {
+            _ = mtl_texture.retain();
         }
 
         var view = try allocator.create(TextureView);
@@ -561,6 +569,8 @@ pub const TextureView = struct {
     }
 
     pub fn initFromMtlTexture(mtl_texture: *mtl.Texture) !*TextureView {
+        _ = mtl_texture.retain();
+
         var view = try allocator.create(TextureView);
         view.* = .{
             .mtl_texture = mtl_texture,
@@ -977,6 +987,7 @@ pub const RenderPipeline = struct {
 
     pub fn deinit(pipeline: *RenderPipeline) void {
         pipeline.mtl_pipeline.release();
+        if (pipeline.depth_stencil_state) |ds| ds.release();
         pipeline.layout.manager.release();
         allocator.destroy(pipeline);
     }
