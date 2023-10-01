@@ -308,13 +308,10 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn commandEncoderWriteBuffer(command_encoder: *dgpu.CommandEncoder, buffer: *dgpu.Buffer, buffer_offset: u64, data: [*]const u8, size: u64) void {
-        _ = command_encoder;
-        _ = buffer;
-        _ = buffer_offset;
-        _ = data;
-        _ = size;
-        unreachable;
+    pub inline fn commandEncoderWriteBuffer(command_encoder_raw: *dgpu.CommandEncoder, buffer_raw: *dgpu.Buffer, buffer_offset: u64, data: [*]const u8, size: u64) void {
+        const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        command_encoder.writeBuffer(buffer, buffer_offset, @ptrCast(data), size) catch unreachable;
     }
 
     pub inline fn commandEncoderWriteTimestamp(command_encoder: *dgpu.CommandEncoder, query_set: *dgpu.QuerySet, query_index: u32) void {

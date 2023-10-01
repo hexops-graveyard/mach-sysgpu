@@ -8,6 +8,7 @@ const shader = @import("shader.zig");
 const conv = @import("metal/conv.zig");
 
 const log = std.log.scoped(.metal);
+const upload_page_size = 16 * 1024 * 1024;
 const max_storage_buffers_per_shader_stage = 8;
 const max_uniform_buffers_per_shader_stage = 12;
 const max_buffers_per_stage = 20;
@@ -156,16 +157,22 @@ pub const Device = struct {
     log_cb_userdata: ?*anyopaque = null,
     err_cb: ?dgpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
+    streaming_manager: *StreamingManager,
     map_async_callbacks: std.ArrayList(MapAsyncCallback),
+    free_lengths_buffers: std.ArrayList(*mtl.Buffer),
 
     pub fn init(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
         // TODO
         _ = desc;
 
+        const mtl_device = adapter.mtl_device;
+
         var device = try allocator.create(Device);
         device.* = .{
-            .mtl_device = adapter.mtl_device,
+            .mtl_device = mtl_device,
+            .streaming_manager = try StreamingManager.init(mtl_device),
             .map_async_callbacks = std.ArrayList(MapAsyncCallback).init(allocator),
+            .free_lengths_buffers = std.ArrayList(*mtl.Buffer).init(allocator),
         };
         return device;
     }
@@ -174,8 +181,12 @@ pub const Device = struct {
         if (device.lost_cb) |lost_cb| {
             lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
         }
-
+        for (device.free_lengths_buffers.items) |mtl_buffer| {
+            mtl_buffer.release();
+        }
+        device.free_lengths_buffers.deinit();
         device.map_async_callbacks.deinit();
+        device.streaming_manager.deinit();
         if (device.queue) |queue| queue.manager.release();
         allocator.destroy(device);
     }
@@ -239,7 +250,7 @@ pub const Device = struct {
         var i: usize = 0;
         while (i < device.map_async_callbacks.items.len) {
             const map_async_callback = device.map_async_callbacks.items[i];
-            const completed_value = queue.completed_value;
+            const completed_value = queue.completed_value.load(.Acquire);
 
             if (map_async_callback.fence_value <= completed_value) {
                 map_async_callback.callback(.success, map_async_callback.userdata);
@@ -251,32 +262,118 @@ pub const Device = struct {
     }
 };
 
+pub const StreamingManager = struct {
+    const InflightBuffer = struct {
+        mtl_buffer: *mtl.Buffer,
+        queue: *Queue,
+        fence_value: u64,
+    };
+
+    mtl_device: *mtl.Device,
+    inflight_buffers: std.ArrayList(InflightBuffer),
+    free_buffers: std.ArrayList(*mtl.Buffer),
+
+    pub fn init(mtl_device: *mtl.Device) !*StreamingManager {
+        var manager = try allocator.create(StreamingManager);
+        manager.* = .{
+            .mtl_device = mtl_device,
+            .inflight_buffers = std.ArrayList(InflightBuffer).init(allocator),
+            .free_buffers = std.ArrayList(*mtl.Buffer).init(allocator),
+        };
+        return manager;
+    }
+
+    pub fn deinit(manager: *StreamingManager) void {
+        for (manager.inflight_buffers.items) |inflight_buffer| {
+            inflight_buffer.mtl_buffer.release();
+        }
+        for (manager.free_buffers.items) |mtl_buffer| {
+            mtl_buffer.release();
+        }
+
+        manager.inflight_buffers.deinit();
+        manager.free_buffers.deinit();
+        allocator.destroy(manager);
+    }
+
+    pub fn acquire(manager: *StreamingManager) !*mtl.Buffer {
+        // Recycle finished buffers
+        if (manager.free_buffers.items.len == 0) {
+            var i: u32 = 0;
+            while (i < manager.inflight_buffers.items.len) {
+                const inflight_buffer = manager.inflight_buffers.items[i];
+                const completed_value = inflight_buffer.queue.completed_value.load(.Acquire);
+
+                if (inflight_buffer.fence_value <= completed_value) {
+                    try manager.free_buffers.append(inflight_buffer.mtl_buffer);
+                    _ = manager.inflight_buffers.swapRemove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+
+        // Create new buffer
+        if (manager.free_buffers.items.len == 0) {
+            const mtl_device = manager.mtl_device;
+
+            const mtl_buffer = mtl_device.newBufferWithLength_options(upload_page_size, mtl.ResourceCPUCacheModeWriteCombined) orelse {
+                return error.newBufferFailed;
+            };
+
+            mtl_buffer.setLabel(ns.String.stringWithUTF8String("upload"));
+            try manager.free_buffers.append(mtl_buffer);
+        }
+
+        // Result
+        return manager.free_buffers.pop();
+    }
+
+    pub fn enqueue(manager: *StreamingManager, mtl_buffer: *mtl.Buffer, queue: *Queue, fence_value: u64) !void {
+        try manager.inflight_buffers.append(.{
+            .mtl_buffer = mtl_buffer,
+            .queue = queue,
+            .fence_value = fence_value,
+        });
+    }
+};
+
 pub const LengthsBuffer = struct {
+    device: *Device,
     mtl_buffer: *mtl.Buffer,
-    data: [max_buffers_per_stage]u32 = undefined,
+    data: [max_buffers_per_stage]u32,
     apply_count: u32 = 0,
 
     pub fn init(device: *Device) !LengthsBuffer {
         const mtl_device = device.mtl_device;
 
-        // TODO - recycle memory
-        const mtl_buffer = mtl_device.newBufferWithLength_options(max_buffers_per_stage * @sizeOf(u32), 0) orelse {
-            return error.newBufferFailed;
+        var mtl_buffer: *mtl.Buffer = undefined;
+        if (device.free_lengths_buffers.items.len > 0) {
+            mtl_buffer = device.free_lengths_buffers.pop();
+        } else {
+            mtl_buffer = mtl_device.newBufferWithLength_options(max_buffers_per_stage * @sizeOf(u32), 0) orelse {
+                return error.newBufferFailed;
+            };
+            mtl_buffer.setLabel(ns.String.stringWithUTF8String("buffer lengths"));
+        }
+
+        return .{
+            .device = device,
+            .mtl_buffer = mtl_buffer,
+            .data = std.mem.zeroes([max_buffers_per_stage]u32),
         };
-        errdefer mtl_buffer.release();
-
-        mtl_buffer.setLabel(ns.String.stringWithUTF8String("buffer lengths"));
-
-        return .{ .mtl_buffer = mtl_buffer };
     }
 
     pub fn deinit(lengths_buffer: *LengthsBuffer) void {
-        lengths_buffer.mtl_buffer.release();
+        const device = lengths_buffer.device;
+        device.free_lengths_buffers.append(lengths_buffer.mtl_buffer) catch std.debug.panic("OutOfMemory", .{});
     }
 
     pub fn set(lengths_buffer: *LengthsBuffer, slot: u32, size: u32) void {
-        lengths_buffer.data[slot] = size;
-        lengths_buffer.apply_count = @max(lengths_buffer.apply_count, slot + 1);
+        if (lengths_buffer.data[slot] != size) {
+            lengths_buffer.data[slot] = size;
+            lengths_buffer.apply_count = @max(lengths_buffer.apply_count, slot + 1);
+        }
     }
 
     pub fn apply_compute(lengths_buffer: *LengthsBuffer, mtl_encoder: *mtl.ComputeCommandEncoder) void {
@@ -906,9 +1003,20 @@ pub const RenderPipeline = struct {
 };
 
 pub const CommandBuffer = struct {
+    pub const StreamingResult = struct {
+        buffer: *mtl.Buffer,
+        map: [*]u8,
+        offset: u32,
+    };
+
     manager: utils.Manager(CommandBuffer) = .{},
+    device: *Device,
     mtl_command_buffer: *mtl.CommandBuffer,
     referenced_buffers: std.ArrayList(*Buffer),
+    referenced_upload_pages: std.ArrayList(*mtl.Buffer),
+    upload_buffer: ?*mtl.Buffer = null,
+    upload_map: ?[*]u8 = null,
+    next_offset: u32 = upload_page_size,
 
     pub fn init(device: *Device) !*CommandBuffer {
         const queue = try device.getQueue();
@@ -918,15 +1026,40 @@ pub const CommandBuffer = struct {
 
         var cmd_buffer = try allocator.create(CommandBuffer);
         cmd_buffer.* = .{
+            .device = device,
             .mtl_command_buffer = mtl_command_buffer,
             .referenced_buffers = std.ArrayList(*Buffer).init(allocator),
+            .referenced_upload_pages = std.ArrayList(*mtl.Buffer).init(allocator),
         };
         return cmd_buffer;
     }
 
     pub fn deinit(command_buffer: *CommandBuffer) void {
         command_buffer.referenced_buffers.deinit();
+        command_buffer.referenced_upload_pages.deinit();
         allocator.destroy(command_buffer);
+    }
+
+    pub fn upload(command_buffer: *CommandBuffer, size: u64) !StreamingResult {
+        if (command_buffer.next_offset + size > upload_page_size) {
+            const streaming_manager = command_buffer.device.streaming_manager;
+
+            std.debug.assert(size <= upload_page_size); // TODO - support large uploads
+            const mtl_buffer = try streaming_manager.acquire();
+
+            try command_buffer.referenced_upload_pages.append(mtl_buffer);
+            command_buffer.upload_buffer = mtl_buffer;
+            command_buffer.upload_map = @ptrCast(mtl_buffer.contents());
+            command_buffer.next_offset = 0;
+        }
+
+        const offset = command_buffer.next_offset;
+        command_buffer.next_offset = @intCast((offset + size + 255) / 256 * 256);
+        return StreamingResult{
+            .buffer = command_buffer.upload_buffer.?,
+            .map = command_buffer.upload_map.? + offset,
+            .offset = offset,
+        };
     }
 };
 
@@ -935,6 +1068,7 @@ pub const CommandEncoder = struct {
     device: *Device,
     command_buffer: *CommandBuffer,
     referenced_buffers: *std.ArrayList(*Buffer),
+    mtl_encoder: ?*mtl.BlitCommandEncoder = null,
 
     pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         // TODO
@@ -957,23 +1091,17 @@ pub const CommandEncoder = struct {
     }
 
     pub fn beginComputePass(encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
+        encoder.endBlitEncoder();
         return ComputePassEncoder.init(encoder, desc);
     }
 
     pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
+        encoder.endBlitEncoder();
         return RenderPassEncoder.init(encoder, desc);
     }
 
     pub fn copyBufferToBuffer(encoder: *CommandEncoder, source: *Buffer, source_offset: u64, destination: *Buffer, destination_offset: u64, size: u64) !void {
-        const command_buffer = encoder.command_buffer;
-        const mtl_command_buffer = command_buffer.mtl_command_buffer;
-
-        var mtl_desc = mtl.BlitPassDescriptor.new();
-        defer mtl_desc.release();
-
-        const mtl_encoder = mtl_command_buffer.blitCommandEncoderWithDescriptor(mtl_desc) orelse {
-            return error.InvalidDescriptor;
-        };
+        const mtl_encoder = try encoder.getBlitEncoder();
 
         mtl_encoder.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
             source.mtl_buffer,
@@ -985,19 +1113,57 @@ pub const CommandEncoder = struct {
 
         try encoder.referenced_buffers.append(source);
         try encoder.referenced_buffers.append(destination);
-
-        mtl_encoder.endEncoding();
     }
 
     pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
         const command_buffer = encoder.command_buffer;
         const mtl_command_buffer = command_buffer.mtl_command_buffer;
 
+        encoder.endBlitEncoder();
+
         if (desc.label) |label| {
             mtl_command_buffer.setLabel(ns.String.stringWithUTF8String(label));
         }
 
         return command_buffer;
+    }
+
+    pub fn writeBuffer(encoder: *CommandEncoder, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
+        const stream = try encoder.command_buffer.upload(size);
+        @memcpy(stream.map[0..size], data[0..size]);
+
+        const mtl_encoder = try encoder.getBlitEncoder();
+        mtl_encoder.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
+            stream.buffer,
+            stream.offset,
+            buffer.mtl_buffer,
+            offset,
+            size,
+        );
+
+        try encoder.referenced_buffers.append(buffer);
+    }
+
+    fn getBlitEncoder(encoder: *CommandEncoder) !*mtl.BlitCommandEncoder {
+        if (encoder.mtl_encoder) |mtl_encoder| return mtl_encoder;
+
+        const mtl_command_buffer = encoder.command_buffer.mtl_command_buffer;
+
+        var mtl_desc = mtl.BlitPassDescriptor.new();
+        defer mtl_desc.release();
+
+        const mtl_encoder = mtl_command_buffer.blitCommandEncoderWithDescriptor(mtl_desc) orelse {
+            return error.InvalidDescriptor;
+        };
+        encoder.mtl_encoder = mtl_encoder;
+        return mtl_encoder;
+    }
+
+    fn endBlitEncoder(encoder: *CommandEncoder) void {
+        if (encoder.mtl_encoder) |mtl_encoder| {
+            mtl_encoder.endEncoding();
+            encoder.mtl_encoder = null;
+        }
     }
 };
 
@@ -1009,8 +1175,6 @@ pub const ComputePassEncoder = struct {
     threadgroup_size: mtl.Size,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
-        const mtl_device = command_encoder.device.mtl_device;
-        _ = mtl_device;
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.ComputePassDescriptor.new();
@@ -1044,7 +1208,6 @@ pub const ComputePassEncoder = struct {
 
     pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
         const mtl_encoder = encoder.mtl_encoder;
-        encoder.lengths_buffer.apply_compute(mtl_encoder);
         mtl_encoder.dispatchThreadgroups_threadsPerThreadgroup(
             mtl.Size.init(workgroup_count_x, workgroup_count_y, workgroup_count_z),
             encoder.threadgroup_size,
@@ -1074,6 +1237,7 @@ pub const ComputePassEncoder = struct {
                 .texture => mtl_encoder.setTexture_atIndex(entry.texture, entry.binding),
             }
         }
+        encoder.lengths_buffer.apply_compute(mtl_encoder);
     }
 
     pub fn setPipeline(encoder: *ComputePassEncoder, pipeline: *ComputePipeline) !void {
@@ -1092,8 +1256,6 @@ pub const RenderPassEncoder = struct {
     primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
-        const mtl_device = command_encoder.device.mtl_device;
-        _ = mtl_device;
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.RenderPassDescriptor.new();
@@ -1188,8 +1350,6 @@ pub const RenderPassEncoder = struct {
 
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
         const mtl_encoder = encoder.mtl_encoder;
-        encoder.vertex_lengths_buffer.apply_vertex(mtl_encoder);
-        encoder.fragment_lengths_buffer.apply_fragment(mtl_encoder);
         mtl_encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
             encoder.primitive_type,
             first_vertex,
@@ -1222,6 +1382,8 @@ pub const RenderPassEncoder = struct {
                 .texture => mtl_encoder.setFragmentTexture_atIndex(entry.texture, entry.binding),
             }
         }
+        encoder.vertex_lengths_buffer.apply_vertex(mtl_encoder);
+        encoder.fragment_lengths_buffer.apply_fragment(mtl_encoder);
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
@@ -1258,7 +1420,8 @@ pub const Queue = struct {
     device: *Device,
     command_queue: *mtl.CommandQueue,
     fence_value: u64 = 0,
-    completed_value: u64 = 0, // TODO - this should be an atomic as it's updated in the callback on other threads
+    completed_value: std.atomic.Atomic(u64) = std.atomic.Atomic(u64).init(0),
+    command_encoder: ?*CommandEncoder = null,
 
     pub fn init(device: *Device) !*Queue {
         const mtl_device = device.mtl_device;
@@ -1282,52 +1445,59 @@ pub const Queue = struct {
     }
 
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
+        if (queue.command_encoder) |command_encoder| {
+            const command_buffer = try command_encoder.finish(&.{});
+            command_buffer.manager.reference(); // handled in main.zig
+            defer command_buffer.manager.release();
+
+            try queue.submitCommandBuffer(command_buffer);
+            command_encoder.manager.release();
+            queue.command_encoder = null;
+        }
+
         for (commands) |command_buffer| {
-            const mtl_command_buffer = command_buffer.mtl_command_buffer;
-
-            queue.fence_value += 1;
-
-            for (command_buffer.referenced_buffers.items) |buffer| {
-                buffer.last_used_fence_value = queue.fence_value;
-            }
-
-            const ctx = CompletedContext{
-                .queue = queue,
-                .fence_value = queue.fence_value,
-            };
-            mtl_command_buffer.addCompletedHandler(ctx, completedHandler);
-            mtl_command_buffer.commit();
+            try queue.submitCommandBuffer(command_buffer);
         }
     }
 
     pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
-        // TODO - need an upload manager
-        const stage_buffer = try Buffer.init(queue.device, &.{
-            .usage = .{
-                .copy_src = true,
-                .map_write = true,
-            },
-            .size = size,
-            .mapped_at_creation = .true,
-        });
-        defer stage_buffer.manager.release();
+        const encoder = try queue.getCommandEncoder();
+        try encoder.writeBuffer(buffer, offset, data, size);
+    }
 
-        const map: [*]u8 = @ptrCast(stage_buffer.mtl_buffer.contents());
-        @memcpy(map[0..size], data[0..size]);
-        var cmd_encoder = try CommandEncoder.init(queue.device, null);
-        defer cmd_encoder.manager.release();
+    fn getCommandEncoder(queue: *Queue) !*CommandEncoder {
+        if (queue.command_encoder) |command_encoder| return command_encoder;
 
-        try cmd_encoder.copyBufferToBuffer(stage_buffer, offset, buffer, offset, size);
-        const cmd_buffer = try cmd_encoder.finish(&.{});
-        cmd_buffer.manager.reference(); // handled in main.zig
-        defer cmd_buffer.manager.release();
+        const command_encoder = try CommandEncoder.init(queue.device, &.{});
+        queue.command_encoder = command_encoder;
+        return command_encoder;
+    }
 
-        try queue.submit(&[_]*CommandBuffer{cmd_buffer});
+    fn submitCommandBuffer(queue: *Queue, command_buffer: *CommandBuffer) !void {
+        const streaming_manager = queue.device.streaming_manager;
+        const mtl_command_buffer = command_buffer.mtl_command_buffer;
+
+        queue.fence_value += 1;
+
+        for (command_buffer.referenced_buffers.items) |buffer| {
+            buffer.last_used_fence_value = queue.fence_value;
+        }
+
+        for (command_buffer.referenced_upload_pages.items) |mtl_buffer| {
+            try streaming_manager.enqueue(mtl_buffer, queue, queue.fence_value);
+        }
+
+        const ctx = CompletedContext{
+            .queue = queue,
+            .fence_value = queue.fence_value,
+        };
+        mtl_command_buffer.addCompletedHandler(ctx, completedHandler);
+        mtl_command_buffer.commit();
     }
 
     fn completedHandler(ctx: CompletedContext, mtl_command_buffer: *mtl.CommandBuffer) void {
         _ = mtl_command_buffer;
-        ctx.queue.completed_value = ctx.fence_value;
+        ctx.queue.completed_value.store(ctx.fence_value, .Release);
     }
 };
 
