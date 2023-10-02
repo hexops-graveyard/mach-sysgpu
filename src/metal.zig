@@ -2,6 +2,7 @@ const std = @import("std");
 const ca = @import("objc").quartz_core.ca;
 const cg = @import("objc").core_graphics.cg;
 const mtl = @import("objc").metal.mtl;
+const objc = @import("objc").objc;
 const ns = @import("objc").foundation.ns;
 const dgpu = @import("dgpu/main.zig");
 const utils = @import("utils.zig");
@@ -113,7 +114,7 @@ pub const Adapter = struct {
             .vendor_name = "", // TODO
             .architecture = "", // TODO
             .device_id = 0, // TODO
-            .name = mtl_device.name().utf8String(),
+            .name = mtl_device.name().UTF8String(),
             .driver_description = "", // TODO
             .adapter_type = if (mtl_device.isLowPower()) .integrated_gpu else .discrete_gpu,
             .backend_type = .metal,
@@ -303,6 +304,9 @@ pub const StreamingManager = struct {
 
         // Create new buffer
         if (manager.free_buffers.items.len == 0) {
+            const pool = objc.autoreleasePoolPush();
+            defer objc.autoreleasePoolPop(pool);
+
             const mtl_device = manager.device.mtl_device;
 
             const mtl_buffer = mtl_device.newBufferWithLength_options(upload_page_size, mtl.ResourceCPUCacheModeWriteCombined) orelse {
@@ -333,6 +337,9 @@ pub const LengthsBuffer = struct {
     apply_count: u32 = 0,
 
     pub fn init(device: *Device) !LengthsBuffer {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const mtl_device = device.mtl_device;
 
         var mtl_buffer: *mtl.Buffer = undefined;
@@ -409,12 +416,20 @@ pub const SwapChain = struct {
     }
 
     pub fn deinit(swapchain: *SwapChain) void {
+        if (swapchain.current_drawable) |drawable| drawable.release();
         allocator.destroy(swapchain);
     }
 
     pub fn getCurrentTextureView(swapchain: *SwapChain) !*TextureView {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
+        if (swapchain.current_drawable) |drawable| drawable.release();
+
         swapchain.current_drawable = swapchain.surface.layer.nextDrawable();
+
         if (swapchain.current_drawable) |drawable| {
+            _ = drawable.retain();
             return TextureView.initFromMtlTexture(drawable.texture());
         } else {
             std.debug.panic("getCurrentTextureView no drawable", .{});
@@ -422,6 +437,9 @@ pub const SwapChain = struct {
     }
 
     pub fn present(swapchain: *SwapChain) !void {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         if (swapchain.current_drawable) |_| {
             const queue = try swapchain.device.getQueue();
             const command_buffer = queue.command_queue.commandBuffer() orelse {
@@ -440,6 +458,9 @@ pub const Buffer = struct {
     last_used_fence_value: u64 = 0,
 
     pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const mtl_device = device.mtl_device;
 
         const mtl_buffer = mtl_device.newBufferWithLength_options(
@@ -497,9 +518,14 @@ pub const Texture = struct {
     mtl_texture: *mtl.Texture,
 
     pub fn init(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const mtl_device = device.mtl_device;
 
         var mtl_desc = mtl.TextureDescriptor.alloc().init();
+        defer mtl_desc.release();
+
         mtl_desc.setTextureType(conv.metalTextureType(desc.dimension, desc.size, desc.sample_count));
         mtl_desc.setPixelFormat(conv.metalPixelFormat(desc.format));
         mtl_desc.setWidth(desc.size.width);
@@ -542,6 +568,9 @@ pub const TextureView = struct {
     mtl_texture: *mtl.Texture,
 
     pub fn init(texture: *Texture, opt_desc: ?*const dgpu.TextureView.Descriptor) !*TextureView {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         var mtl_texture = texture.mtl_texture;
         if (opt_desc) |desc| {
             // TODO - analyze desc to see if we need to create a new view
@@ -569,11 +598,9 @@ pub const TextureView = struct {
     }
 
     pub fn initFromMtlTexture(mtl_texture: *mtl.Texture) !*TextureView {
-        _ = mtl_texture.retain();
-
         var view = try allocator.create(TextureView);
         view.* = .{
-            .mtl_texture = mtl_texture,
+            .mtl_texture = mtl_texture.retain(),
         };
         return view;
     }
@@ -698,15 +725,17 @@ pub const ShaderModule = struct {
         const code = shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }) catch unreachable;
         defer allocator.free(code);
 
-        var err: ?*ns.Error = undefined;
-        var source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
+        const source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
             @constCast(code.ptr),
             code.len,
             ns.UTF8StringEncoding,
             false,
         );
-        var library = mtl_device.newLibraryWithSource_options_error(source, null, &err) orelse {
-            std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
+        defer source.release();
+
+        var err: ?*ns.Error = undefined;
+        const library = mtl_device.newLibraryWithSource_options_error(source, null, &err) orelse {
+            std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
             return error.InvalidDescriptor;
         };
         errdefer library.release();
@@ -758,6 +787,9 @@ pub const ComputePipeline = struct {
     threadgroup_size: mtl.Size,
 
     pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const mtl_device = device.mtl_device;
 
         var mtl_desc = mtl.ComputePipelineDescriptor.alloc().init();
@@ -788,7 +820,7 @@ pub const ComputePipeline = struct {
             &err,
         ) orelse {
             // TODO
-            std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
+            std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
             return error.InvalidDescriptor;
         };
         errdefer mtl_pipeline.release();
@@ -828,6 +860,9 @@ pub const RenderPipeline = struct {
     depth_bias_clamp: f32,
 
     pub fn init(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const mtl_device = device.mtl_device;
 
         var mtl_desc = mtl.RenderPipelineDescriptor.alloc().init();
@@ -965,7 +1000,7 @@ pub const RenderPipeline = struct {
         var err: ?*ns.Error = undefined;
         const mtl_pipeline = mtl_device.newRenderPipelineStateWithDescriptor_error(mtl_desc, &err) orelse {
             // TODO
-            std.log.err("{s}", .{err.?.localizedDescription().utf8String()});
+            std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
             return error.InvalidDescriptor;
         };
         errdefer mtl_pipeline.release();
@@ -1015,15 +1050,20 @@ pub const CommandBuffer = struct {
     next_offset: u32 = upload_page_size,
 
     pub fn init(device: *Device) !*CommandBuffer {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const queue = try device.getQueue();
-        var mtl_command_buffer = queue.command_queue.commandBuffer() orelse {
+
+        const mtl_command_buffer = queue.command_queue.commandBuffer() orelse {
             return error.newCommandBufferFailed;
         };
+        errdefer mtl_command_buffer.release();
 
         var cmd_buffer = try allocator.create(CommandBuffer);
         cmd_buffer.* = .{
             .device = device,
-            .mtl_command_buffer = mtl_command_buffer,
+            .mtl_command_buffer = mtl_command_buffer.retain(),
         };
         return cmd_buffer;
     }
@@ -1031,6 +1071,7 @@ pub const CommandBuffer = struct {
     pub fn deinit(command_buffer: *CommandBuffer) void {
         command_buffer.referenced_buffers.deinit(allocator);
         command_buffer.referenced_upload_pages.deinit(allocator);
+        command_buffer.mtl_command_buffer.release();
         allocator.destroy(command_buffer);
     }
 
@@ -1080,6 +1121,7 @@ pub const CommandEncoder = struct {
     }
 
     pub fn deinit(encoder: *CommandEncoder) void {
+        if (encoder.mtl_encoder) |mtl_encoder| return mtl_encoder.release();
         encoder.command_buffer.manager.release();
         allocator.destroy(encoder);
     }
@@ -1110,6 +1152,9 @@ pub const CommandEncoder = struct {
     }
 
     pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const command_buffer = encoder.command_buffer;
         const mtl_command_buffer = command_buffer.mtl_command_buffer;
 
@@ -1141,21 +1186,26 @@ pub const CommandEncoder = struct {
     fn getBlitEncoder(encoder: *CommandEncoder) !*mtl.BlitCommandEncoder {
         if (encoder.mtl_encoder) |mtl_encoder| return mtl_encoder;
 
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const mtl_command_buffer = encoder.command_buffer.mtl_command_buffer;
 
-        var mtl_desc = mtl.BlitPassDescriptor.new();
+        const mtl_desc = mtl.BlitPassDescriptor.new();
         defer mtl_desc.release();
 
         const mtl_encoder = mtl_command_buffer.blitCommandEncoderWithDescriptor(mtl_desc) orelse {
             return error.InvalidDescriptor;
         };
-        encoder.mtl_encoder = mtl_encoder;
+
+        encoder.mtl_encoder = mtl_encoder.retain();
         return mtl_encoder;
     }
 
     fn endBlitEncoder(encoder: *CommandEncoder) void {
         if (encoder.mtl_encoder) |mtl_encoder| {
             mtl_encoder.endEncoding();
+            mtl_encoder.release();
             encoder.mtl_encoder = null;
         }
     }
@@ -1169,6 +1219,9 @@ pub const ComputePassEncoder = struct {
     threadgroup_size: mtl.Size,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.ComputePassDescriptor.new();
@@ -1177,6 +1230,7 @@ pub const ComputePassEncoder = struct {
         const mtl_encoder = mtl_command_buffer.computeCommandEncoderWithDescriptor(mtl_desc) orelse {
             return error.InvalidDescriptor;
         };
+        errdefer mtl_encoder.release();
 
         if (desc.label) |label| {
             mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
@@ -1187,7 +1241,7 @@ pub const ComputePassEncoder = struct {
 
         var encoder = try allocator.create(ComputePassEncoder);
         encoder.* = .{
-            .mtl_encoder = mtl_encoder,
+            .mtl_encoder = mtl_encoder.retain(),
             .lengths_buffer = lengths_buffer,
             .referenced_buffers = command_encoder.referenced_buffers,
             .threadgroup_size = mtl.Size.init(0, 0, 0),
@@ -1197,6 +1251,7 @@ pub const ComputePassEncoder = struct {
 
     pub fn deinit(encoder: *ComputePassEncoder) void {
         encoder.lengths_buffer.deinit();
+        encoder.mtl_encoder.release();
         allocator.destroy(encoder);
     }
 
@@ -1250,6 +1305,9 @@ pub const RenderPassEncoder = struct {
     primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
         const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.RenderPassDescriptor.new();
@@ -1315,6 +1373,7 @@ pub const RenderPassEncoder = struct {
         const mtl_encoder = mtl_command_buffer.renderCommandEncoderWithDescriptor(mtl_desc) orelse {
             return error.InvalidDescriptor;
         };
+        errdefer mtl_encoder.release();
 
         if (desc.label) |label| {
             mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
@@ -1328,7 +1387,7 @@ pub const RenderPassEncoder = struct {
 
         var encoder = try allocator.create(RenderPassEncoder);
         encoder.* = .{
-            .mtl_encoder = mtl_encoder,
+            .mtl_encoder = mtl_encoder.retain(),
             .vertex_lengths_buffer = vertex_lengths_buffer,
             .fragment_lengths_buffer = fragment_lengths_buffer,
             .referenced_buffers = command_encoder.referenced_buffers,
@@ -1339,6 +1398,7 @@ pub const RenderPassEncoder = struct {
     pub fn deinit(encoder: *RenderPassEncoder) void {
         encoder.vertex_lengths_buffer.deinit();
         encoder.fragment_lengths_buffer.deinit();
+        encoder.mtl_encoder.release();
         allocator.destroy(encoder);
     }
 
@@ -1434,6 +1494,7 @@ pub const Queue = struct {
     }
 
     pub fn deinit(queue: *Queue) void {
+        if (queue.command_encoder) |command_encoder| command_encoder.manager.release();
         queue.command_queue.release();
         allocator.destroy(queue);
     }
