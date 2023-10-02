@@ -667,9 +667,7 @@ pub const Device = struct {
     }
 
     pub fn createComputePipeline(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
-        _ = desc;
-        _ = device;
-        unreachable;
+        return ComputePipeline.init(device, desc);
     }
 
     pub fn createPipelineLayout(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
@@ -1425,15 +1423,45 @@ pub const ShaderModule = struct {
 
 pub const ComputePipeline = struct {
     manager: utils.Manager(ComputePipeline) = .{},
+    device: *Device,
+    layout: *PipelineLayout,
+    pipeline: vk.Pipeline,
 
     pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
-        _ = desc;
-        _ = device;
-        unreachable;
+        var layout: *PipelineLayout = if (desc.layout) |layout_raw| blk: {
+            const layout: *PipelineLayout = @ptrCast(@alignCast(layout_raw));
+            layout.manager.reference();
+            break :blk layout;
+        } else try PipelineLayout.init(device, &.{});
+
+        const compute_shader: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
+        const stage = vk.PipelineShaderStageCreateInfo{
+            .stage = .{ .compute_bit = true },
+            .module = compute_shader.shader_module,
+            .p_name = desc.compute.entry_point,
+        };
+
+        var pipeline_vk: vk.Pipeline = undefined;
+        _ = try vkd.createComputePipelines(device.device, .null_handle, 1, &[_]vk.ComputePipelineCreateInfo{.{
+            .base_pipeline_index = -1,
+            .layout = layout.layout,
+            .stage = stage,
+        }}, null, @ptrCast(&pipeline_vk));
+
+        var pipeline = try allocator.create(ComputePipeline);
+        pipeline.* = .{
+            .device = device,
+            .pipeline = pipeline_vk,
+            .layout = layout,
+        };
+        return pipeline;
     }
 
     pub fn deinit(pipeline: *ComputePipeline) void {
-        _ = pipeline;
+        pipeline.device.waitAll() catch {};
+        pipeline.layout.manager.release();
+        vkd.destroyPipeline(pipeline.device.device, pipeline.pipeline, null);
+        allocator.destroy(pipeline);
     }
 
     pub fn getBindGroupLayout(pipeline: *ComputePipeline, group_index: u32) *BindGroupLayout {
