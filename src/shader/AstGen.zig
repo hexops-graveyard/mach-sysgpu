@@ -1677,7 +1677,7 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 }
 
                 if (rhs_res_inst == .vector) {
-                    if (astgen.eql(rhs_res_inst.vector.elem_type, lhs_res)) {
+                    if (try astgen.coerce(lhs_res, rhs_res_inst.vector.elem_type)) {
                         is_valid = true;
                         arithmetic_res_type = rhs_res;
                     }
@@ -1689,7 +1689,7 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     arithmetic_res_type = lhs_res;
                 }
 
-                if (astgen.eql(lhs_res_inst.vector.elem_type, rhs_res)) {
+                if (try astgen.coerce(rhs_res, lhs_res_inst.vector.elem_type)) {
                     is_valid = true;
                     arithmetic_res_type = lhs_res;
                 }
@@ -2998,9 +2998,7 @@ fn genVarRef(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         else => {},
     }
 
-    return astgen.addInst(.{
-        .var_ref = inst_idx,
-    });
+    return astgen.addInst(.{ .var_ref = inst_idx });
 }
 
 fn genIndexAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
