@@ -554,16 +554,17 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     const ptr_type_id = if (inst.addr_space == .uniform or inst.addr_space == .storage) blk: {
         const structured_type_id = try spv.resolve(.{ .struct_type = .{ .members = &.{type_id} } });
 
+        try spv.annotations_section.emit(.OpDecorate, .{
+            .target = structured_type_id,
+            .decoration = .Block,
+        });
+        try spv.annotations_section.emit(.OpMemberDecorate, .{
+            .structure_type = structured_type_id,
+            .member = 0,
+            .decoration = .{ .Offset = .{ .byte_offset = 0 } },
+        });
+
         if (inst.addr_space == .uniform) {
-            try spv.annotations_section.emit(.OpDecorate, .{
-                .target = structured_type_id,
-                .decoration = .Block,
-            });
-            try spv.annotations_section.emit(.OpMemberDecorate, .{
-                .structure_type = structured_type_id,
-                .member = 0,
-                .decoration = .{ .Offset = .{ .byte_offset = 0 } },
-            });
             try spv.annotations_section.emit(.OpMemberDecorate, .{
                 .structure_type = structured_type_id,
                 .member = 0,
@@ -575,6 +576,15 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
                 .structure_type = structured_type_id,
                 .member = 0,
                 .decoration = .{ .MatrixStride = .{ .matrix_stride = stride } },
+            });
+        }
+
+        if (inst.addr_space == .storage) {
+            // TODO: hardcoded
+            const stride = spv.air.getInst(type_inst.array.elem_type).float.type.width() / 8;
+            try spv.annotations_section.emit(.OpDecorate, .{
+                .target = type_id,
+                .decoration = .{ .ArrayStride = .{ .array_stride = stride } },
             });
         }
 

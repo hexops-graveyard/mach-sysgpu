@@ -47,6 +47,7 @@ pub const DeviceFunctions = vk.DeviceWrapper(.{
     .cmdSetScissor = true,
     .cmdSetViewport = true,
     .createBuffer = true,
+    .createComputePipelines = true,
     .createCommandPool = true,
     .createDescriptorPool = true,
     .createDescriptorSetLayout = true,
