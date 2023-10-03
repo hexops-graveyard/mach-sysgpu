@@ -29,6 +29,9 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    if (target.isWindows()) {
+        lib.addCSourceFile(.{ .file = .{ .path = "src/d3d12/workarounds.c" }, .flags = &.{} });
+    }
     link(b, lib);
     b.installArtifact(lib);
 
@@ -63,8 +66,6 @@ pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
 
     if (step.target.isWindows()) {
         step.linkLibC();
-        step.addCSourceFile(.{ .file = .{ .path = "src/d3d12/workarounds.c" }, .flags = &.{} });
-
         step.linkLibrary(b.dependency("direct3d_headers", .{
             .target = step.target,
             .optimize = step.optimize,
