@@ -18,8 +18,8 @@ var gpu_validation_enabled: bool = true;
 extern fn hwndCast(*anyopaque) c.HWND;
 
 pub const InitOptions = struct {
-    debug_enabled: bool = true,
-    gpu_validation_enabled: bool = true,
+    debug_enabled: bool = false,
+    gpu_validation_enabled: bool = false,
 };
 
 pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
@@ -362,7 +362,6 @@ pub const Device = struct {
 
     pub fn tick(device: *Device) !void {
         _ = device;
-        unreachable;
     }
 };
 
@@ -1043,6 +1042,7 @@ pub const CommandEncoder = struct {
     }
 
     pub fn deinit(cmd_encoder: *CommandEncoder) void {
+        cmd_encoder.cmd_buffer.manager.release();
         allocator.destroy(cmd_encoder);
     }
 
