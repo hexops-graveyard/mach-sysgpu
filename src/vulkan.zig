@@ -2024,7 +2024,7 @@ pub const RenderPassEncoder = struct {
         vkd.cmdEndRenderPass(encoder.encoder.buffer.buffer);
     }
 
-    pub fn setIndexBuffer(encoder: *RenderPassEncoder, buffer: *Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) void {
+    pub fn setIndexBuffer(encoder: *RenderPassEncoder, buffer: *Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) !void {
         _ = size;
         _ = offset;
         _ = format;
