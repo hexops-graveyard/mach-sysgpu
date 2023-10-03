@@ -18,12 +18,12 @@ pub const Impl = blk: {
 /// Verifies that a dgpu.Interface implementation exposes the expected function declarations.
 pub fn Interface(comptime T: type) type {
     // // dgpu.Device
-    // assertDecl(T, "deviceCreateRenderPipeline", fn (device: *dgpu.Device, descriptor: *const dgpu.RenderPipeline.Descriptor) callconv(.Inline) *dgpu.RenderPipeline);
-    // assertDecl(T, "deviceCreateRenderPipelineAsync", fn (device: *dgpu.Device, descriptor: *const dgpu.RenderPipeline.Descriptor, callback: dgpu.CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) callconv(.Inline) void);
+    // assertDecl(T, "deviceCreateRenderPipeline", fn (device: *dgpu.Device, descriptor: dgpu.RenderPipeline.Descriptor) callconv(.Inline) *dgpu.RenderPipeline);
+    // assertDecl(T, "deviceCreateRenderPipelineAsync", fn (device: *dgpu.Device, descriptor: dgpu.RenderPipeline.Descriptor, callback: dgpu.CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) callconv(.Inline) void);
     // assertDecl(T, "deviceCreatePipelineLayout", fn (device: *dgpu.Device, pipeline_layout_descriptor: *const dgpu.PipelineLayout.Descriptor) callconv(.Inline) *dgpu.PipelineLayout);
 
     // // dgpu.PipelineLayout
-    // assertDecl(T, "pipelineLayoutSetLabel", fn (pipeline_layout: *dgpu.PipelineLayout, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "pipelineLayoutSetLabel", fn (pipeline_layout: *dgpu.PipelineLayout, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "pipelineLayoutReference", fn (pipeline_layout: *dgpu.PipelineLayout) callconv(.Inline) void);
     // assertDecl(T, "pipelineLayoutRelease", fn (pipeline_layout: *dgpu.PipelineLayout) callconv(.Inline) void);
 
@@ -36,33 +36,33 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "renderPassEncoderSetBindGroup", fn (render_pass_encoder: *dgpu.RenderPassEncoder, group_index: u32, group: *dgpu.BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) callconv(.Inline) void);
 
     // // dgpu.BindGroup
-    // assertDecl(T, "bindGroupSetLabel", fn (bind_group: *dgpu.BindGroup, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "bindGroupSetLabel", fn (bind_group: *dgpu.BindGroup, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "bindGroupReference", fn (bind_group: *dgpu.BindGroup) callconv(.Inline) void);
     // assertDecl(T, "bindGroupRelease", fn (bind_group: *dgpu.BindGroup) callconv(.Inline) void);
 
     // // dgpu.BindGroupLayout
-    // assertDecl(T, "bindGroupLayoutSetLabel", fn (bind_group_layout: *dgpu.BindGroupLayout, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "bindGroupLayoutSetLabel", fn (bind_group_layout: *dgpu.BindGroupLayout, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "bindGroupLayoutReference", fn (bind_group_layout: *dgpu.BindGroupLayout) callconv(.Inline) void);
     // assertDecl(T, "bindGroupLayoutRelease", fn (bind_group_layout: *dgpu.BindGroupLayout) callconv(.Inline) void);
 
     // // dgpu.RenderPipeline
     // assertDecl(T, "renderPipelineGetBindGroupLayout", fn (render_pipeline: *dgpu.RenderPipeline, group_index: u32) callconv(.Inline) *dgpu.BindGroupLayout);
-    // assertDecl(T, "renderPipelineSetLabel", fn (render_pipeline: *dgpu.RenderPipeline, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "renderPipelineSetLabel", fn (render_pipeline: *dgpu.RenderPipeline, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "renderPipelineReference", fn (render_pipeline: *dgpu.RenderPipeline) callconv(.Inline) void);
     // assertDecl(T, "renderPipelineRelease", fn (render_pipeline: *dgpu.RenderPipeline) callconv(.Inline) void);
 
     // // dgpu.Instance
-    // assertDecl(T, "createInstance", fn (descriptor: ?*const dgpu.Instance.Descriptor) callconv(.Inline) ?*dgpu.Instance);
+    // assertDecl(T, "createInstance", fn (descriptor: dgpu.Instance.Descriptor) callconv(.Inline) ?*dgpu.Instance);
 
     // // dgpu.Adapter
-    // assertDecl(T, "adapterCreateDevice", fn (adapter: *dgpu.Adapter, descriptor: ?*const dgpu.Device.Descriptor) callconv(.Inline) ?*dgpu.Device);
+    // assertDecl(T, "adapterCreateDevice", fn (adapter: *dgpu.Adapter, descriptor: dgpu.Device.Descriptor) callconv(.Inline) ?*dgpu.Device);
     // assertDecl(T, "adapterEnumerateFeatures", fn (adapter: *dgpu.Adapter, features: ?[*]dgpu.FeatureName) callconv(.Inline) usize);
     // assertDecl(T, "adapterGetInstance", fn (adapter: *dgpu.Adapter) callconv(.Inline) *dgpu.Instance);
-    // assertDecl(T, "adapterGetLimits", fn (adapter: *dgpu.Adapter, limits: *dgpu.SupportedLimits) callconv(.Inline) u32);
+    // assertDecl(T, "adapterGetLimits", fn (adapter: *dgpu.Adapter, limits: *dgpu.Limits) callconv(.Inline) u32);
     // assertDecl(T, "adapterGetProperties", fn (adapter: *dgpu.Adapter, properties: *dgpu.Adapter.Properties) callconv(.Inline) void);
     // assertDecl(T, "adapterHasFeature", fn (adapter: *dgpu.Adapter, feature: dgpu.FeatureName) callconv(.Inline) u32);
     // assertDecl(T, "adapterPropertiesFreeMembers", fn (value: dgpu.Adapter.Properties) callconv(.Inline) void);
-    // assertDecl(T, "adapterRequestDevice", fn (adapter: *dgpu.Adapter, descriptor: ?*const dgpu.Device.Descriptor, callback: dgpu.RequestDeviceCallback, userdata: ?*anyopaque) callconv(.Inline) void);
+    // assertDecl(T, "adapterRequestDevice", fn (adapter: *dgpu.Adapter, descriptor: dgpu.Device.Descriptor, callback: dgpu.RequestDeviceCallback, userdata: ?*anyopaque) callconv(.Inline) void);
     // assertDecl(T, "adapterReference", fn (adapter: *dgpu.Adapter) callconv(.Inline) void);
     // assertDecl(T, "adapterRelease", fn (adapter: *dgpu.Adapter) callconv(.Inline) void);
 
@@ -73,31 +73,31 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "bufferGetSize", fn (buffer: *dgpu.Buffer) callconv(.Inline) u64);
     // assertDecl(T, "bufferGetUsage", fn (buffer: *dgpu.Buffer) callconv(.Inline) dgpu.Buffer.UsageFlags);
     // assertDecl(T, "bufferMapAsync", fn (buffer: *dgpu.Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) callconv(.Inline) void);
-    // assertDecl(T, "bufferSetLabel", fn (buffer: *dgpu.Buffer, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "bufferSetLabel", fn (buffer: *dgpu.Buffer, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "bufferUnmap", fn (buffer: *dgpu.Buffer) callconv(.Inline) void);
     // assertDecl(T, "bufferReference", fn (buffer: *dgpu.Buffer) callconv(.Inline) void);
     // assertDecl(T, "bufferRelease", fn (buffer: *dgpu.Buffer) callconv(.Inline) void);
 
     // // dgpu.CommandBuffer
-    // assertDecl(T, "commandBufferSetLabel", fn (command_buffer: *dgpu.CommandBuffer, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "commandBufferSetLabel", fn (command_buffer: *dgpu.CommandBuffer, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "commandBufferReference", fn (command_buffer: *dgpu.CommandBuffer) callconv(.Inline) void);
     // assertDecl(T, "commandBufferRelease", fn (command_buffer: *dgpu.CommandBuffer) callconv(.Inline) void);
 
     // // dgpu.CommandEncoder
-    // assertDecl(T, "commandEncoderBeginComputePass", fn (command_encoder: *dgpu.CommandEncoder, descriptor: ?*const dgpu.ComputePassDescriptor) callconv(.Inline) *dgpu.ComputePassEncoder);
-    // assertDecl(T, "commandEncoderBeginRenderPass", fn (command_encoder: *dgpu.CommandEncoder, descriptor: *const dgpu.RenderPassDescriptor) callconv(.Inline) *dgpu.RenderPassEncoder);
+    // assertDecl(T, "commandEncoderBeginComputePass", fn (command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.ComputePassDescriptor) callconv(.Inline) *dgpu.ComputePassEncoder);
+    // assertDecl(T, "commandEncoderBeginRenderPass", fn (command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.RenderPassDescriptor) callconv(.Inline) *dgpu.RenderPassEncoder);
     // assertDecl(T, "commandEncoderClearBuffer", fn (command_encoder: *dgpu.CommandEncoder, buffer: *dgpu.Buffer, offset: u64, size: u64) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderCopyBufferToBuffer", fn (command_encoder: *dgpu.CommandEncoder, source: *dgpu.Buffer, source_offset: u64, destination: *dgpu.Buffer, destination_offset: u64, size: u64) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderCopyBufferToTexture", fn (command_encoder: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyBuffer, destination: *const dgpu.ImageCopyTexture, copy_size: *const dgpu.Extent3D) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderCopyTextureToBuffer", fn (command_encoder: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyTexture, destination: *const dgpu.ImageCopyBuffer, copy_size: *const dgpu.Extent3D) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderCopyTextureToTexture", fn (command_encoder: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyTexture, destination: *const dgpu.ImageCopyTexture, copy_size: *const dgpu.Extent3D) callconv(.Inline) void);
-    // assertDecl(T, "commandEncoderFinish", fn (command_encoder: *dgpu.CommandEncoder, descriptor: ?*const dgpu.CommandBuffer.Descriptor) callconv(.Inline) *dgpu.CommandBuffer);
+    // assertDecl(T, "commandEncoderFinish", fn (command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.CommandBuffer.Descriptor) callconv(.Inline) *dgpu.CommandBuffer);
     // assertDecl(T, "commandEncoderInjectValidationError", fn (command_encoder: *dgpu.CommandEncoder, message: [*:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderInsertDebugMarker", fn (command_encoder: *dgpu.CommandEncoder, marker_label: [*:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderPopDebugGroup", fn (command_encoder: *dgpu.CommandEncoder) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderPushDebugGroup", fn (command_encoder: *dgpu.CommandEncoder, group_label: [*:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderResolveQuerySet", fn (command_encoder: *dgpu.CommandEncoder, query_set: *dgpu.QuerySet, first_query: u32, query_count: u32, destination: *dgpu.Buffer, destination_offset: u64) callconv(.Inline) void);
-    // assertDecl(T, "commandEncoderSetLabel", fn (command_encoder: *dgpu.CommandEncoder, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "commandEncoderSetLabel", fn (command_encoder: *dgpu.CommandEncoder, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderWriteBuffer", fn (command_encoder: *dgpu.CommandEncoder, buffer: *dgpu.Buffer, buffer_offset: u64, data: [*]const u8, size: u64) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderWriteTimestamp", fn (command_encoder: *dgpu.CommandEncoder, query_set: *dgpu.QuerySet, query_index: u32) callconv(.Inline) void);
     // assertDecl(T, "commandEncoderReference", fn (command_encoder: *dgpu.CommandEncoder) callconv(.Inline) void);
@@ -111,7 +111,7 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "computePassEncoderPopDebugGroup", fn (compute_pass_encoder: *dgpu.ComputePassEncoder) callconv(.Inline) void);
     // assertDecl(T, "computePassEncoderPushDebugGroup", fn (compute_pass_encoder: *dgpu.ComputePassEncoder, group_label: [*:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "computePassEncoderSetBindGroup", fn (compute_pass_encoder: *dgpu.ComputePassEncoder, group_index: u32, group: *dgpu.BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) callconv(.Inline) void);
-    // assertDecl(T, "computePassEncoderSetLabel", fn (compute_pass_encoder: *dgpu.ComputePassEncoder, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "computePassEncoderSetLabel", fn (compute_pass_encoder: *dgpu.ComputePassEncoder, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "computePassEncoderSetPipeline", fn (compute_pass_encoder: *dgpu.ComputePassEncoder, pipeline: *dgpu.ComputePipeline) callconv(.Inline) void);
     // assertDecl(T, "computePassEncoderWriteTimestamp", fn (compute_pass_encoder: *dgpu.ComputePassEncoder, query_set: *dgpu.QuerySet, query_index: u32) callconv(.Inline) void);
     // assertDecl(T, "computePassEncoderReference", fn (compute_pass_encoder: *dgpu.ComputePassEncoder) callconv(.Inline) void);
@@ -119,42 +119,42 @@ pub fn Interface(comptime T: type) type {
 
     // // dgpu.ComputePipeline
     // assertDecl(T, "computePipelineGetBindGroupLayout", fn (compute_pipeline: *dgpu.ComputePipeline, group_index: u32) callconv(.Inline) *dgpu.BindGroupLayout);
-    // assertDecl(T, "computePipelineSetLabel", fn (compute_pipeline: *dgpu.ComputePipeline, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "computePipelineSetLabel", fn (compute_pipeline: *dgpu.ComputePipeline, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "computePipelineReference", fn (compute_pipeline: *dgpu.ComputePipeline) callconv(.Inline) void);
     // assertDecl(T, "computePipelineRelease", fn (compute_pipeline: *dgpu.ComputePipeline) callconv(.Inline) void);
 
     // // dgpu.Device
     // assertDecl(T, "getProcAddress", fn (device: *dgpu.Device, proc_name: [*:0]const u8) callconv(.Inline) ?dgpu.Proc);
-    // assertDecl(T, "deviceCreateBindGroup", fn (device: *dgpu.Device, descriptor: *const dgpu.BindGroup.Descriptor) callconv(.Inline) *dgpu.BindGroup);
-    // assertDecl(T, "deviceCreateBindGroupLayout", fn (device: *dgpu.Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) callconv(.Inline) *dgpu.BindGroupLayout);
-    // assertDecl(T, "deviceCreateBuffer", fn (device: *dgpu.Device, descriptor: *const dgpu.Buffer.Descriptor) callconv(.Inline) *dgpu.Buffer);
-    // assertDecl(T, "deviceCreateCommandEncoder", fn (device: *dgpu.Device, descriptor: ?*const dgpu.CommandEncoder.Descriptor) callconv(.Inline) *dgpu.CommandEncoder);
-    // assertDecl(T, "deviceCreateComputePipeline", fn (device: *dgpu.Device, descriptor: *const dgpu.ComputePipeline.Descriptor) callconv(.Inline) *dgpu.ComputePipeline);
-    // assertDecl(T, "deviceCreateComputePipelineAsync", fn (device: *dgpu.Device, descriptor: *const dgpu.ComputePipeline.Descriptor, callback: dgpu.CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) callconv(.Inline) void);
-    // assertDecl(T, "deviceCreateErrorBuffer", fn (device: *dgpu.Device, descriptor: *const dgpu.Buffer.Descriptor) callconv(.Inline) *dgpu.Buffer);
+    // assertDecl(T, "deviceCreateBindGroup", fn (device: *dgpu.Device, descriptor: dgpu.BindGroup.Descriptor) callconv(.Inline) *dgpu.BindGroup);
+    // assertDecl(T, "deviceCreateBindGroupLayout", fn (device: *dgpu.Device, descriptor: dgpu.BindGroupLayout.Descriptor) callconv(.Inline) *dgpu.BindGroupLayout);
+    // assertDecl(T, "deviceCreateBuffer", fn (device: *dgpu.Device, descriptor: dgpu.Buffer.Descriptor) callconv(.Inline) *dgpu.Buffer);
+    // assertDecl(T, "deviceCreateCommandEncoder", fn (device: *dgpu.Device, descriptor: dgpu.CommandEncoder.Descriptor) callconv(.Inline) *dgpu.CommandEncoder);
+    // assertDecl(T, "deviceCreateComputePipeline", fn (device: *dgpu.Device, descriptor: dgpu.ComputePipeline.Descriptor) callconv(.Inline) *dgpu.ComputePipeline);
+    // assertDecl(T, "deviceCreateComputePipelineAsync", fn (device: *dgpu.Device, descriptor: dgpu.ComputePipeline.Descriptor, callback: dgpu.CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) callconv(.Inline) void);
+    // assertDecl(T, "deviceCreateErrorBuffer", fn (device: *dgpu.Device, descriptor: dgpu.Buffer.Descriptor) callconv(.Inline) *dgpu.Buffer);
     // assertDecl(T, "deviceCreateErrorExternalTexture", fn (device: *dgpu.Device) callconv(.Inline) *dgpu.ExternalTexture);
-    // assertDecl(T, "deviceCreateErrorTexture", fn (device: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) callconv(.Inline) *dgpu.Texture);
+    // assertDecl(T, "deviceCreateErrorTexture", fn (device: *dgpu.Device, descriptor: dgpu.Texture.Descriptor) callconv(.Inline) *dgpu.Texture);
     // assertDecl(T, "deviceCreateExternalTexture", fn (device: *dgpu.Device, external_texture_descriptor: *const dgpu.ExternalTexture.Descriptor) callconv(.Inline) *dgpu.ExternalTexture);
-    // assertDecl(T, "deviceCreateQuerySet", fn (device: *dgpu.Device, descriptor: *const dgpu.QuerySet.Descriptor) callconv(.Inline) *dgpu.QuerySet);
-    // assertDecl(T, "deviceCreateRenderBundleEncoder", fn (device: *dgpu.Device, descriptor: *const dgpu.RenderBundleEncoder.Descriptor) callconv(.Inline) *dgpu.RenderBundleEncoder);
+    // assertDecl(T, "deviceCreateQuerySet", fn (device: *dgpu.Device, descriptor: dgpu.QuerySet.Descriptor) callconv(.Inline) *dgpu.QuerySet);
+    // assertDecl(T, "deviceCreateRenderBundleEncoder", fn (device: *dgpu.Device, descriptor: dgpu.RenderBundleEncoder.Descriptor) callconv(.Inline) *dgpu.RenderBundleEncoder);
     // // TODO(self-hosted): this cannot be marked as inline for some reason:
     // // https://github.com/ziglang/zig/issues/12545
-    // assertDecl(T, "deviceCreateSampler", fn (device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler);
-    // assertDecl(T, "deviceCreateShaderModule", fn (device: *dgpu.Device, descriptor: *const dgpu.ShaderModule.Descriptor) callconv(.Inline) *dgpu.ShaderModule);
-    // assertDecl(T, "deviceCreateSwapChain", fn (device: *dgpu.Device, surface: ?*dgpu.Surface, descriptor: *const dgpu.SwapChain.Descriptor) callconv(.Inline) *dgpu.SwapChain);
-    // assertDecl(T, "deviceCreateTexture", fn (device: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) callconv(.Inline) *dgpu.Texture);
+    // assertDecl(T, "deviceCreateSampler", fn (device: *dgpu.Device, descriptor: dgpu.Sampler.Descriptor) *dgpu.Sampler);
+    // assertDecl(T, "deviceCreateShaderModule", fn (device: *dgpu.Device, descriptor: dgpu.ShaderModule.Descriptor) callconv(.Inline) *dgpu.ShaderModule);
+    // assertDecl(T, "deviceCreateSwapChain", fn (device: *dgpu.Device, surface: ?*dgpu.Surface, descriptor: dgpu.SwapChain.Descriptor) callconv(.Inline) *dgpu.SwapChain);
+    // assertDecl(T, "deviceCreateTexture", fn (device: *dgpu.Device, descriptor: dgpu.Texture.Descriptor) callconv(.Inline) *dgpu.Texture);
     // assertDecl(T, "deviceDestroy", fn (device: *dgpu.Device) callconv(.Inline) void);
     // assertDecl(T, "deviceEnumerateFeatures", fn (device: *dgpu.Device, features: ?[*]dgpu.FeatureName) callconv(.Inline) usize);
-    // assertDecl(T, "deviceGetLimits", fn (device: *dgpu.Device, limits: *dgpu.SupportedLimits) callconv(.Inline) u32);
+    // assertDecl(T, "deviceGetLimits", fn (device: *dgpu.Device, limits: *dgpu.Limits) callconv(.Inline) u32);
     // assertDecl(T, "deviceGetQueue", fn (device: *dgpu.Device) callconv(.Inline) *dgpu.Queue);
     // assertDecl(T, "deviceHasFeature", fn (device: *dgpu.Device, feature: dgpu.FeatureName) callconv(.Inline) u32);
-    // assertDecl(T, "deviceImportSharedFence", fn (device: *dgpu.Device, descriptor: *const dgpu.SharedFence.Descriptor) callconv(.Inline) *dgpu.SharedFence);
-    // assertDecl(T, "deviceImportSharedTextureMemory", fn (device: *dgpu.Device, descriptor: *const dgpu.SharedTextureMemory.Descriptor) callconv(.Inline) *dgpu.SharedTextureMemory);
+    // assertDecl(T, "deviceImportSharedFence", fn (device: *dgpu.Device, descriptor: dgpu.SharedFence.Descriptor) callconv(.Inline) *dgpu.SharedFence);
+    // assertDecl(T, "deviceImportSharedTextureMemory", fn (device: *dgpu.Device, descriptor: dgpu.SharedTextureMemory.Descriptor) callconv(.Inline) *dgpu.SharedTextureMemory);
     // assertDecl(T, "deviceInjectError", fn (device: *dgpu.Device, typ: dgpu.ErrorType, message: [*:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "devicePopErrorScope", fn (device: *dgpu.Device, callback: dgpu.ErrorCallback, userdata: ?*anyopaque) callconv(.Inline) void);
     // assertDecl(T, "devicePushErrorScope", fn (device: *dgpu.Device, filter: dgpu.ErrorFilter) callconv(.Inline) void);
     // assertDecl(T, "deviceSetDeviceLostCallback", fn (device: *dgpu.Device, callback: ?dgpu.Device.LostCallback, userdata: ?*anyopaque) callconv(.Inline) void);
-    // assertDecl(T, "deviceSetLabel", fn (device: *dgpu.Device, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "deviceSetLabel", fn (device: *dgpu.Device, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "deviceSetLoggingCallback", fn (device: *dgpu.Device, callback: ?dgpu.LoggingCallback, userdata: ?*anyopaque) callconv(.Inline) void);
     // assertDecl(T, "deviceSetUncapturedErrorCallback", fn (device: *dgpu.Device, callback: ?dgpu.ErrorCallback, userdata: ?*anyopaque) callconv(.Inline) void);
     // assertDecl(T, "deviceTick", fn (device: *dgpu.Device) callconv(.Inline) void);
@@ -164,12 +164,12 @@ pub fn Interface(comptime T: type) type {
 
     // // dgpu.ExternalTexture
     // assertDecl(T, "externalTextureDestroy", fn (external_texture: *dgpu.ExternalTexture) callconv(.Inline) void);
-    // assertDecl(T, "externalTextureSetLabel", fn (external_texture: *dgpu.ExternalTexture, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "externalTextureSetLabel", fn (external_texture: *dgpu.ExternalTexture, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "externalTextureReference", fn (external_texture: *dgpu.ExternalTexture) callconv(.Inline) void);
     // assertDecl(T, "externalTextureRelease", fn (external_texture: *dgpu.ExternalTexture) callconv(.Inline) void);
 
     // // dgpu.Instance
-    // assertDecl(T, "instanceCreateSurface", fn (instance: *dgpu.Instance, descriptor: *const dgpu.Surface.Descriptor) callconv(.Inline) *dgpu.Surface);
+    // assertDecl(T, "instanceCreateSurface", fn (instance: *dgpu.Instance, descriptor: dgpu.Surface.Descriptor) callconv(.Inline) *dgpu.Surface);
     // assertDecl(T, "instanceProcessEvents", fn (instance: *dgpu.Instance) callconv(.Inline) void);
     // assertDecl(T, "instanceRequestAdapter", fn (instance: *dgpu.Instance, options: ?*const dgpu.RequestAdapterOptions, callback: dgpu.RequestAdapterCallback, userdata: ?*anyopaque) callconv(.Inline) void);
     // assertDecl(T, "instanceReference", fn (instance: *dgpu.Instance) callconv(.Inline) void);
@@ -179,14 +179,14 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "querySetDestroy", fn (query_set: *dgpu.QuerySet) callconv(.Inline) void);
     // assertDecl(T, "querySetGetCount", fn (query_set: *dgpu.QuerySet) callconv(.Inline) u32);
     // assertDecl(T, "querySetGetType", fn (query_set: *dgpu.QuerySet) callconv(.Inline) dgpu.QueryType);
-    // assertDecl(T, "querySetSetLabel", fn (query_set: *dgpu.QuerySet, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "querySetSetLabel", fn (query_set: *dgpu.QuerySet, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "querySetReference", fn (query_set: *dgpu.QuerySet) callconv(.Inline) void);
     // assertDecl(T, "querySetRelease", fn (query_set: *dgpu.QuerySet) callconv(.Inline) void);
 
     // // dgpu.Queue
     // assertDecl(T, "queueCopyTextureForBrowser", fn (queue: *dgpu.Queue, source: *const dgpu.ImageCopyTexture, destination: *const dgpu.ImageCopyTexture, copy_size: *const dgpu.Extent3D, options: *const dgpu.CopyTextureForBrowserOptions) callconv(.Inline) void);
     // assertDecl(T, "queueOnSubmittedWorkDone", fn (queue: *dgpu.Queue, signal_value: u64, callback: dgpu.Queue.WorkDoneCallback, userdata: ?*anyopaque) callconv(.Inline) void);
-    // assertDecl(T, "queueSetLabel", fn (queue: *dgpu.Queue, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "queueSetLabel", fn (queue: *dgpu.Queue, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "queueSubmit", fn (queue: *dgpu.Queue, command_count: usize, commands: [*]const *const dgpu.CommandBuffer) callconv(.Inline) void);
     // assertDecl(T, "queueWriteBuffer", fn (queue: *dgpu.Queue, buffer: *dgpu.Buffer, buffer_offset: u64, data: *const anyopaque, size: usize) callconv(.Inline) void);
     // assertDecl(T, "queueWriteTexture", fn (queue: *dgpu.Queue, destination: *const dgpu.ImageCopyTexture, data: *const anyopaque, data_size: usize, data_layout: *const dgpu.Texture.DataLayout, write_size: *const dgpu.Extent3D) callconv(.Inline) void);
@@ -194,7 +194,7 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "queueRelease", fn (queue: *dgpu.Queue) callconv(.Inline) void);
 
     // // dgpu.RenderBundle
-    // assertDecl(T, "renderBundleSetLabel", fn (render_bundle: *dgpu.RenderBundle, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "renderBundleSetLabel", fn (render_bundle: *dgpu.RenderBundle, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "renderBundleReference", fn (render_bundle: *dgpu.RenderBundle) callconv(.Inline) void);
     // assertDecl(T, "renderBundleRelease", fn (render_bundle: *dgpu.RenderBundle) callconv(.Inline) void);
 
@@ -203,12 +203,12 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "renderBundleEncoderDrawIndexed", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) callconv(.Inline) void);
     // assertDecl(T, "renderBundleEncoderDrawIndexedIndirect", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, indirect_buffer: *dgpu.Buffer, indirect_offset: u64) callconv(.Inline) void);
     // assertDecl(T, "renderBundleEncoderDrawIndirect", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, indirect_buffer: *dgpu.Buffer, indirect_offset: u64) callconv(.Inline) void);
-    // assertDecl(T, "renderBundleEncoderFinish", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, descriptor: ?*const dgpu.RenderBundle.Descriptor) callconv(.Inline) *dgpu.RenderBundle);
+    // assertDecl(T, "renderBundleEncoderFinish", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, descriptor: dgpu.RenderBundle.Descriptor) callconv(.Inline) *dgpu.RenderBundle);
     // assertDecl(T, "renderBundleEncoderInsertDebugMarker", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, marker_label: [*:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "renderBundleEncoderPopDebugGroup", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder) callconv(.Inline) void);
     // assertDecl(T, "renderBundleEncoderPushDebugGroup", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, group_label: [*:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "renderBundleEncoderSetIndexBuffer", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, buffer: *dgpu.Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) callconv(.Inline) void);
-    // assertDecl(T, "renderBundleEncoderSetLabel", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "renderBundleEncoderSetLabel", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "renderBundleEncoderSetVertexBuffer", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder, slot: u32, buffer: *dgpu.Buffer, offset: u64, size: u64) callconv(.Inline) void);
     // assertDecl(T, "renderBundleEncoderReference", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder) callconv(.Inline) void);
     // assertDecl(T, "renderBundleEncoderRelease", fn (render_bundle_encoder: *dgpu.RenderBundleEncoder) callconv(.Inline) void);
@@ -227,7 +227,7 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "renderPassEncoderPushDebugGroup", fn (render_pass_encoder: *dgpu.RenderPassEncoder, group_label: [*:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "renderPassEncoderSetBlendConstant", fn (render_pass_encoder: *dgpu.RenderPassEncoder, color: *const dgpu.Color) callconv(.Inline) void);
     // assertDecl(T, "renderPassEncoderSetIndexBuffer", fn (render_pass_encoder: *dgpu.RenderPassEncoder, buffer: *dgpu.Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) callconv(.Inline) void);
-    // assertDecl(T, "renderPassEncoderSetLabel", fn (render_pass_encoder: *dgpu.RenderPassEncoder, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "renderPassEncoderSetLabel", fn (render_pass_encoder: *dgpu.RenderPassEncoder, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "renderPassEncoderSetScissorRect", fn (render_pass_encoder: *dgpu.RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) callconv(.Inline) void);
     // assertDecl(T, "renderPassEncoderSetStencilReference", fn (render_pass_encoder: *dgpu.RenderPassEncoder, reference: u32) callconv(.Inline) void);
     // assertDecl(T, "renderPassEncoderSetVertexBuffer", fn (render_pass_encoder: *dgpu.RenderPassEncoder, slot: u32, buffer: *dgpu.Buffer, offset: u64, size: u64) callconv(.Inline) void);
@@ -237,13 +237,13 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "renderPassEncoderRelease", fn (render_pass_encoder: *dgpu.RenderPassEncoder) callconv(.Inline) void);
 
     // // dgpu.Sampler
-    // assertDecl(T, "samplerSetLabel", fn (sampler: *dgpu.Sampler, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "samplerSetLabel", fn (sampler: *dgpu.Sampler, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "samplerReference", fn (sampler: *dgpu.Sampler) callconv(.Inline) void);
     // assertDecl(T, "samplerRelease", fn (sampler: *dgpu.Sampler) callconv(.Inline) void);
 
     // // dgpu.ShaderModule
     // assertDecl(T, "shaderModuleGetCompilationInfo", fn (shader_module: *dgpu.ShaderModule, callback: dgpu.CompilationInfoCallback, userdata: ?*anyopaque) callconv(.Inline) void);
-    // assertDecl(T, "shaderModuleSetLabel", fn (shader_module: *dgpu.ShaderModule, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "shaderModuleSetLabel", fn (shader_module: *dgpu.ShaderModule, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "shaderModuleReference", fn (shader_module: *dgpu.ShaderModule) callconv(.Inline) void);
     // assertDecl(T, "shaderModuleRelease", fn (shader_module: *dgpu.ShaderModule) callconv(.Inline) void);
 
@@ -253,12 +253,12 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "sharedFenceRelease", fn (shared_fence: *dgpu.SharedFence) callconv(.Inline) void);
 
     // // dgpu.SharedTextureMemory
-    // assertDecl(T, "sharedTextureMemoryBeginAccess", fn (shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: *const dgpu.SharedTextureMemory.BeginAccessDescriptor) callconv(.Inline) void);
-    // assertDecl(T, "sharedTextureMemoryCreateTexture", fn (shared_texture_memory: *dgpu.SharedTextureMemory, descriptor: *const dgpu.Texture.Descriptor) callconv(.Inline) *dgpu.Texture);
+    // assertDecl(T, "sharedTextureMemoryBeginAccess", fn (shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: dgpu.SharedTextureMemory.BeginAccessDescriptor) callconv(.Inline) void);
+    // assertDecl(T, "sharedTextureMemoryCreateTexture", fn (shared_texture_memory: *dgpu.SharedTextureMemory, descriptor: dgpu.Texture.Descriptor) callconv(.Inline) *dgpu.Texture);
     // assertDecl(T, "sharedTextureMemoryEndAccess", fn (shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: *dgpu.SharedTextureMemory.EndAccessState) callconv(.Inline) void);
     // assertDecl(T, "sharedTextureMemoryEndAccessStateFreeMembers", fn (value: dgpu.SharedTextureMemory.EndAccessState) callconv(.Inline) void);
     // assertDecl(T, "sharedTextureMemoryGetProperties", fn (shared_texture_memory: *dgpu.SharedTextureMemory, properties: *dgpu.SharedTextureMemory.Properties) callconv(.Inline) void);
-    // assertDecl(T, "sharedTextureMemorySetLabel", fn (shared_texture_memory: *dgpu.SharedTextureMemory, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "sharedTextureMemorySetLabel", fn (shared_texture_memory: *dgpu.SharedTextureMemory, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "sharedTextureMemoryReference", fn (shared_texture_memory: *dgpu.SharedTextureMemory) callconv(.Inline) void);
     // assertDecl(T, "sharedTextureMemoryRelease", fn (shared_texture_memory: *dgpu.SharedTextureMemory) callconv(.Inline) void);
 
@@ -274,7 +274,7 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "swapChainRelease", fn (swap_chain: *dgpu.SwapChain) callconv(.Inline) void);
 
     // // dgpu.Texture
-    // assertDecl(T, "textureCreateView", fn (texture: *dgpu.Texture, descriptor: ?*const dgpu.TextureView.Descriptor) callconv(.Inline) *dgpu.TextureView);
+    // assertDecl(T, "textureCreateView", fn (texture: *dgpu.Texture, descriptor: dgpu.TextureView.Descriptor) callconv(.Inline) *dgpu.TextureView);
     // assertDecl(T, "textureDestroy", fn (texture: *dgpu.Texture) callconv(.Inline) void);
     // assertDecl(T, "textureGetDepthOrArrayLayers", fn (texture: *dgpu.Texture) callconv(.Inline) u32);
     // assertDecl(T, "textureGetDimension", fn (texture: *dgpu.Texture) callconv(.Inline) dgpu.Texture.Dimension);
@@ -284,10 +284,10 @@ pub fn Interface(comptime T: type) type {
     // assertDecl(T, "textureGetSampleCount", fn (texture: *dgpu.Texture) callconv(.Inline) u32);
     // assertDecl(T, "textureGetUsage", fn (texture: *dgpu.Texture) callconv(.Inline) dgpu.Texture.UsageFlags);
     // assertDecl(T, "textureGetWidth", fn (texture: *dgpu.Texture) callconv(.Inline) u32);
-    // assertDecl(T, "textureSetLabel", fn (texture: *dgpu.Texture, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "textureSetLabel", fn (texture: *dgpu.Texture, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "textureReference", fn (texture: *dgpu.Texture) callconv(.Inline) void);
     // assertDecl(T, "textureRelease", fn (texture: *dgpu.Texture) callconv(.Inline) void);
-    // assertDecl(T, "textureViewSetLabel", fn (texture_view: *dgpu.TextureView, label: [*:0]const u8) callconv(.Inline) void);
+    // assertDecl(T, "textureViewSetLabel", fn (texture_view: *dgpu.TextureView, label: [:0]const u8) callconv(.Inline) void);
     // assertDecl(T, "textureViewReference", fn (texture_view: *dgpu.TextureView) callconv(.Inline) void);
     // assertDecl(T, "textureViewRelease", fn (texture_view: *dgpu.TextureView) callconv(.Inline) void);
     return T;
@@ -304,7 +304,7 @@ pub fn Export(comptime T: type) type {
     _ = Interface(T); // verify implementation is a valid interface
     return struct {
         // // DGPU_EXPORT WGPUInstance dgpuCreateInstance(WGPUInstanceDescriptor const * descriptor);
-        // export fn dgpuCreateInstance(descriptor: ?*const dgpu.Instance.Descriptor) ?*dgpu.Instance {
+        // export fn dgpuCreateInstance(descriptor: dgpu.Instance.Descriptor) ?*dgpu.Instance {
         //     return T.createInstance(descriptor);
         // }
 
@@ -314,7 +314,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUDevice dgpuAdapterCreateDevice(WGPUAdapter adapter, WGPUDeviceDescriptor const * descriptor /* nullable */);
-        // export fn dgpuAdapterCreateDevice(adapter: *dgpu.Adapter, descriptor: ?*const dgpu.Device.Descriptor) ?*dgpu.Device {
+        // export fn dgpuAdapterCreateDevice(adapter: *dgpu.Adapter, descriptor: dgpu.Device.Descriptor) ?*dgpu.Device {
         //     return T.adapterCreateDevice(adapter, descriptor);
         // }
 
@@ -329,7 +329,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUBool dgpuAdapterGetLimits(WGPUAdapter adapter, WGPUSupportedLimits * limits);
-        // export fn dgpuAdapterGetLimits(adapter: *dgpu.Adapter, limits: *dgpu.SupportedLimits) u32 {
+        // export fn dgpuAdapterGetLimits(adapter: *dgpu.Adapter, limits: *dgpu.Limits) u32 {
         //     return T.adapterGetLimits(adapter, limits);
         // }
 
@@ -349,7 +349,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuAdapterRequestDevice(WGPUAdapter adapter, WGPUDeviceDescriptor const * descriptor /* nullable */, WGPURequestDeviceCallback callback, void * userdata);
-        // export fn dgpuAdapterRequestDevice(adapter: *dgpu.Adapter, descriptor: ?*const dgpu.Device.Descriptor, callback: dgpu.RequestDeviceCallback, userdata: ?*anyopaque) void {
+        // export fn dgpuAdapterRequestDevice(adapter: *dgpu.Adapter, descriptor: dgpu.Device.Descriptor, callback: dgpu.RequestDeviceCallback, userdata: ?*anyopaque) void {
         //     T.adapterRequestDevice(adapter, descriptor, callback, userdata);
         // }
 
@@ -364,7 +364,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuBindGroupSetLabel(WGPUBindGroup bindGroup, char const * label);
-        // export fn dgpuBindGroupSetLabel(bind_group: *dgpu.BindGroup, label: [*:0]const u8) void {
+        // export fn dgpuBindGroupSetLabel(bind_group: *dgpu.BindGroup, label: [:0]const u8) void {
         //     T.bindGroupSetLabel(bind_group, label);
         // }
 
@@ -379,7 +379,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuBindGroupLayoutSetLabel(WGPUBindGroupLayout bindGroupLayout, char const * label);
-        // export fn dgpuBindGroupLayoutSetLabel(bind_group_layout: *dgpu.BindGroupLayout, label: [*:0]const u8) void {
+        // export fn dgpuBindGroupLayoutSetLabel(bind_group_layout: *dgpu.BindGroupLayout, label: [:0]const u8) void {
         //     T.bindGroupLayoutSetLabel(bind_group_layout, label);
         // }
 
@@ -424,7 +424,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuBufferSetLabel(WGPUBuffer buffer, char const * label);
-        // export fn dgpuBufferSetLabel(buffer: *dgpu.Buffer, label: [*:0]const u8) void {
+        // export fn dgpuBufferSetLabel(buffer: *dgpu.Buffer, label: [:0]const u8) void {
         //     T.bufferSetLabel(buffer, label);
         // }
 
@@ -444,7 +444,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuCommandBufferSetLabel(WGPUCommandBuffer commandBuffer, char const * label);
-        // export fn dgpuCommandBufferSetLabel(command_buffer: *dgpu.CommandBuffer, label: [*:0]const u8) void {
+        // export fn dgpuCommandBufferSetLabel(command_buffer: *dgpu.CommandBuffer, label: [:0]const u8) void {
         //     T.commandBufferSetLabel(command_buffer, label);
         // }
 
@@ -459,12 +459,12 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUComputePassEncoder dgpuCommandEncoderBeginComputePass(WGPUCommandEncoder commandEncoder, WGPUComputePassDescriptor const * descriptor /* nullable */);
-        // export fn dgpuCommandEncoderBeginComputePass(command_encoder: *dgpu.CommandEncoder, descriptor: ?*const dgpu.ComputePassDescriptor) *dgpu.ComputePassEncoder {
+        // export fn dgpuCommandEncoderBeginComputePass(command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.ComputePassDescriptor) *dgpu.ComputePassEncoder {
         //     return T.commandEncoderBeginComputePass(command_encoder, descriptor);
         // }
 
         // // DGPU_EXPORT WGPURenderPassEncoder dgpuCommandEncoderBeginRenderPass(WGPUCommandEncoder commandEncoder, WGPURenderPassDescriptor const * descriptor);
-        // export fn dgpuCommandEncoderBeginRenderPass(command_encoder: *dgpu.CommandEncoder, descriptor: *const dgpu.RenderPassDescriptor) *dgpu.RenderPassEncoder {
+        // export fn dgpuCommandEncoderBeginRenderPass(command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.RenderPassDescriptor) *dgpu.RenderPassEncoder {
         //     return T.commandEncoderBeginRenderPass(command_encoder, descriptor);
         // }
 
@@ -494,7 +494,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUCommandBuffer dgpuCommandEncoderFinish(WGPUCommandEncoder commandEncoder, WGPUCommandBufferDescriptor const * descriptor /* nullable */);
-        // export fn dgpuCommandEncoderFinish(command_encoder: *dgpu.CommandEncoder, descriptor: ?*const dgpu.CommandBuffer.Descriptor) *dgpu.CommandBuffer {
+        // export fn dgpuCommandEncoderFinish(command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.CommandBuffer.Descriptor) *dgpu.CommandBuffer {
         //     return T.commandEncoderFinish(command_encoder, descriptor);
         // }
 
@@ -524,7 +524,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuCommandEncoderSetLabel(WGPUCommandEncoder commandEncoder, char const * label);
-        // export fn dgpuCommandEncoderSetLabel(command_encoder: *dgpu.CommandEncoder, label: [*:0]const u8) void {
+        // export fn dgpuCommandEncoderSetLabel(command_encoder: *dgpu.CommandEncoder, label: [:0]const u8) void {
         //     T.commandEncoderSetLabel(command_encoder, label);
         // }
 
@@ -584,7 +584,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuComputePassEncoderSetLabel(WGPUComputePassEncoder computePassEncoder, char const * label);
-        // export fn dgpuComputePassEncoderSetLabel(compute_pass_encoder: *dgpu.ComputePassEncoder, label: [*:0]const u8) void {
+        // export fn dgpuComputePassEncoderSetLabel(compute_pass_encoder: *dgpu.ComputePassEncoder, label: [:0]const u8) void {
         //     T.computePassEncoderSetLabel(compute_pass_encoder, label);
         // }
 
@@ -614,7 +614,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuComputePipelineSetLabel(WGPUComputePipeline computePipeline, char const * label);
-        // export fn dgpuComputePipelineSetLabel(compute_pipeline: *dgpu.ComputePipeline, label: [*:0]const u8) void {
+        // export fn dgpuComputePipelineSetLabel(compute_pipeline: *dgpu.ComputePipeline, label: [:0]const u8) void {
         //     T.computePipelineSetLabel(compute_pipeline, label);
         // }
 
@@ -629,37 +629,37 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUBindGroup dgpuDeviceCreateBindGroup(WGPUDevice device, WGPUBindGroupDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateBindGroup(device: *dgpu.Device, descriptor: *const dgpu.BindGroup.Descriptor) *dgpu.BindGroup {
+        // export fn dgpuDeviceCreateBindGroup(device: *dgpu.Device, descriptor: dgpu.BindGroup.Descriptor) *dgpu.BindGroup {
         //     return T.deviceCreateBindGroup(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUBindGroupLayout dgpuDeviceCreateBindGroupLayout(WGPUDevice device, WGPUBindGroupLayout.Descriptor const * descriptor);
-        // export fn dgpuDeviceCreateBindGroupLayout(device: *dgpu.Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) *dgpu.BindGroupLayout {
+        // export fn dgpuDeviceCreateBindGroupLayout(device: *dgpu.Device, descriptor: dgpu.BindGroupLayout.Descriptor) *dgpu.BindGroupLayout {
         //     return T.deviceCreateBindGroupLayout(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUBuffer dgpuDeviceCreateBuffer(WGPUDevice device, WGPUBuffer.Descriptor const * descriptor);
-        // export fn dgpuDeviceCreateBuffer(device: *dgpu.Device, descriptor: *const dgpu.Buffer.Descriptor) *dgpu.Buffer {
+        // export fn dgpuDeviceCreateBuffer(device: *dgpu.Device, descriptor: dgpu.Buffer.Descriptor) *dgpu.Buffer {
         //     return T.deviceCreateBuffer(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUCommandEncoder dgpuDeviceCreateCommandEncoder(WGPUDevice device, WGPUCommandEncoderDescriptor const * descriptor /* nullable */);
-        // export fn dgpuDeviceCreateCommandEncoder(device: *dgpu.Device, descriptor: ?*const dgpu.CommandEncoder.Descriptor) *dgpu.CommandEncoder {
+        // export fn dgpuDeviceCreateCommandEncoder(device: *dgpu.Device, descriptor: dgpu.CommandEncoder.Descriptor) *dgpu.CommandEncoder {
         //     return T.deviceCreateCommandEncoder(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUComputePipeline dgpuDeviceCreateComputePipeline(WGPUDevice device, WGPUComputePipelineDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateComputePipeline(device: *dgpu.Device, descriptor: *const dgpu.ComputePipeline.Descriptor) *dgpu.ComputePipeline {
+        // export fn dgpuDeviceCreateComputePipeline(device: *dgpu.Device, descriptor: dgpu.ComputePipeline.Descriptor) *dgpu.ComputePipeline {
         //     return T.deviceCreateComputePipeline(device, descriptor);
         // }
 
         // // DGPU_EXPORT void dgpuDeviceCreateComputePipelineAsync(WGPUDevice device, WGPUComputePipelineDescriptor const * descriptor, WGPUCreateComputePipelineAsyncCallback callback, void * userdata);
-        // export fn dgpuDeviceCreateComputePipelineAsync(device: *dgpu.Device, descriptor: *const dgpu.ComputePipeline.Descriptor, callback: dgpu.CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
+        // export fn dgpuDeviceCreateComputePipelineAsync(device: *dgpu.Device, descriptor: dgpu.ComputePipeline.Descriptor, callback: dgpu.CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
         //     T.deviceCreateComputePipelineAsync(device, descriptor, callback, userdata);
         // }
 
         // // DGPU_EXPORT WGPUBuffer dgpuDeviceCreateErrorBuffer(WGPUDevice device, WGPUBufferDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateErrorBuffer(device: *dgpu.Device, descriptor: *const dgpu.Buffer.Descriptor) *dgpu.Buffer {
+        // export fn dgpuDeviceCreateErrorBuffer(device: *dgpu.Device, descriptor: dgpu.Buffer.Descriptor) *dgpu.Buffer {
         //     return T.deviceCreateErrorBuffer(device, descriptor);
         // }
 
@@ -669,7 +669,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUTexture dgpuDeviceCreateErrorTexture(WGPUDevice device, WGPUTextureDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateErrorTexture(device: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+        // export fn dgpuDeviceCreateErrorTexture(device: *dgpu.Device, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
         //     return T.deviceCreateErrorTexture(device, descriptor);
         // }
 
@@ -684,42 +684,42 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUQuerySet dgpuDeviceCreateQuerySet(WGPUDevice device, WGPUQuerySetDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateQuerySet(device: *dgpu.Device, descriptor: *const dgpu.QuerySet.Descriptor) *dgpu.QuerySet {
+        // export fn dgpuDeviceCreateQuerySet(device: *dgpu.Device, descriptor: dgpu.QuerySet.Descriptor) *dgpu.QuerySet {
         //     return T.deviceCreateQuerySet(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPURenderBundleEncoder dgpuDeviceCreateRenderBundleEncoder(WGPUDevice device, WGPURenderBundleEncoderDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateRenderBundleEncoder(device: *dgpu.Device, descriptor: *const dgpu.RenderBundleEncoder.Descriptor) *dgpu.RenderBundleEncoder {
+        // export fn dgpuDeviceCreateRenderBundleEncoder(device: *dgpu.Device, descriptor: dgpu.RenderBundleEncoder.Descriptor) *dgpu.RenderBundleEncoder {
         //     return T.deviceCreateRenderBundleEncoder(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPURenderPipeline dgpuDeviceCreateRenderPipeline(WGPUDevice device, WGPURenderPipelineDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateRenderPipeline(device: *dgpu.Device, descriptor: *const dgpu.RenderPipeline.Descriptor) *dgpu.RenderPipeline {
+        // export fn dgpuDeviceCreateRenderPipeline(device: *dgpu.Device, descriptor: dgpu.RenderPipeline.Descriptor) *dgpu.RenderPipeline {
         //     return T.deviceCreateRenderPipeline(device, descriptor);
         // }
 
         // // DGPU_EXPORT void dgpuDeviceCreateRenderPipelineAsync(WGPUDevice device, WGPURenderPipelineDescriptor const * descriptor, WGPUCreateRenderPipelineAsyncCallback callback, void * userdata);
-        // export fn dgpuDeviceCreateRenderPipelineAsync(device: *dgpu.Device, descriptor: *const dgpu.RenderPipeline.Descriptor, callback: dgpu.CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
+        // export fn dgpuDeviceCreateRenderPipelineAsync(device: *dgpu.Device, descriptor: dgpu.RenderPipeline.Descriptor, callback: dgpu.CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
         //     T.deviceCreateRenderPipelineAsync(device, descriptor, callback, userdata);
         // }
 
         // // DGPU_EXPORT WGPUSampler dgpuDeviceCreateSampler(WGPUDevice device, WGPUSamplerDescriptor const * descriptor /* nullable */);
-        // export fn dgpuDeviceCreateSampler(device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler {
+        // export fn dgpuDeviceCreateSampler(device: *dgpu.Device, descriptor: dgpu.Sampler.Descriptor) *dgpu.Sampler {
         //     return T.deviceCreateSampler(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUShaderModule dgpuDeviceCreateShaderModule(WGPUDevice device, WGPUShaderModuleDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateShaderModule(device: *dgpu.Device, descriptor: *const dgpu.ShaderModule.Descriptor) *dgpu.ShaderModule {
+        // export fn dgpuDeviceCreateShaderModule(device: *dgpu.Device, descriptor: dgpu.ShaderModule.Descriptor) *dgpu.ShaderModule {
         //     return T.deviceCreateShaderModule(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUSwapChain dgpuDeviceCreateSwapChain(WGPUDevice device, WGPUSurface surface /* nullable */, WGPUSwapChainDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateSwapChain(device: *dgpu.Device, surface: ?*dgpu.Surface, descriptor: *const dgpu.SwapChain.Descriptor) *dgpu.SwapChain {
+        // export fn dgpuDeviceCreateSwapChain(device: *dgpu.Device, surface: ?*dgpu.Surface, descriptor: dgpu.SwapChain.Descriptor) *dgpu.SwapChain {
         //     return T.deviceCreateSwapChain(device, surface, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUTexture dgpuDeviceCreateTexture(WGPUDevice device, WGPUTextureDescriptor const * descriptor);
-        // export fn dgpuDeviceCreateTexture(device: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+        // export fn dgpuDeviceCreateTexture(device: *dgpu.Device, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
         //     return T.deviceCreateTexture(device, descriptor);
         // }
 
@@ -734,17 +734,17 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUBool dgpuDeviceGetLimits(WGPUDevice device, WGPUSupportedLimits * limits);
-        // export fn dgpuDeviceGetLimits(device: *dgpu.Device, limits: *dgpu.SupportedLimits) u32 {
+        // export fn dgpuDeviceGetLimits(device: *dgpu.Device, limits: *dgpu.Limits) u32 {
         //     return T.deviceGetLimits(device, limits);
         // }
 
         // // DGPU_EXPORT WGPUSharedFence dgpuDeviceImportSharedFence(WGPUDevice device, WGPUSharedFenceDescriptor const * descriptor);
-        // export fn dgpuDeviceImportSharedFence(device: *dgpu.Device, descriptor: *const dgpu.SharedFence.Descriptor) *dgpu.SharedFence {
+        // export fn dgpuDeviceImportSharedFence(device: *dgpu.Device, descriptor: dgpu.SharedFence.Descriptor) *dgpu.SharedFence {
         //     return T.deviceImportSharedFence(device, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUSharedTextureMemory dgpuDeviceImportSharedTextureMemory(WGPUDevice device, WGPUSharedTextureMemoryDescriptor const * descriptor);
-        // export fn dgpuDeviceImportSharedTextureMemory(device: *dgpu.Device, descriptor: *const dgpu.SharedTextureMemory.Descriptor) *dgpu.SharedTextureMemory {
+        // export fn dgpuDeviceImportSharedTextureMemory(device: *dgpu.Device, descriptor: dgpu.SharedTextureMemory.Descriptor) *dgpu.SharedTextureMemory {
         //     return T.deviceImportSharedTextureMemory(device, descriptor);
         // }
 
@@ -780,7 +780,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuDeviceSetLabel(WGPUDevice device, char const * label);
-        // export fn dgpuDeviceSetLabel(device: *dgpu.Device, label: [*:0]const u8) void {
+        // export fn dgpuDeviceSetLabel(device: *dgpu.Device, label: [:0]const u8) void {
         //     T.deviceSetLabel(device, label);
         // }
 
@@ -822,7 +822,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuExternalTextureSetLabel(WGPUExternalTexture externalTexture, char const * label);
-        // export fn dgpuExternalTextureSetLabel(external_texture: *dgpu.ExternalTexture, label: [*:0]const u8) void {
+        // export fn dgpuExternalTextureSetLabel(external_texture: *dgpu.ExternalTexture, label: [:0]const u8) void {
         //     T.externalTextureSetLabel(external_texture, label);
         // }
 
@@ -837,7 +837,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUSurface dgpuInstanceCreateSurface(WGPUInstance instance, WGPUSurfaceDescriptor const * descriptor);
-        // export fn dgpuInstanceCreateSurface(instance: *dgpu.Instance, descriptor: *const dgpu.Surface.Descriptor) *dgpu.Surface {
+        // export fn dgpuInstanceCreateSurface(instance: *dgpu.Instance, descriptor: dgpu.Surface.Descriptor) *dgpu.Surface {
         //     return T.instanceCreateSurface(instance, descriptor);
         // }
 
@@ -862,7 +862,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuPipelineLayoutSetLabel(WGPUPipelineLayout pipelineLayout, char const * label);
-        // export fn dgpuPipelineLayoutSetLabel(pipeline_layout: *dgpu.PipelineLayout, label: [*:0]const u8) void {
+        // export fn dgpuPipelineLayoutSetLabel(pipeline_layout: *dgpu.PipelineLayout, label: [:0]const u8) void {
         //     T.pipelineLayoutSetLabel(pipeline_layout, label);
         // }
 
@@ -892,7 +892,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuQuerySetSetLabel(WGPUQuerySet querySet, char const * label);
-        // export fn dgpuQuerySetSetLabel(query_set: *dgpu.QuerySet, label: [*:0]const u8) void {
+        // export fn dgpuQuerySetSetLabel(query_set: *dgpu.QuerySet, label: [:0]const u8) void {
         //     T.querySetSetLabel(query_set, label);
         // }
 
@@ -917,7 +917,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuQueueSetLabel(WGPUQueue queue, char const * label);
-        // export fn dgpuQueueSetLabel(queue: *dgpu.Queue, label: [*:0]const u8) void {
+        // export fn dgpuQueueSetLabel(queue: *dgpu.Queue, label: [:0]const u8) void {
         //     T.queueSetLabel(queue, label);
         // }
 
@@ -947,7 +947,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuRenderBundleSetLabel(WGPURenderBundle renderBundle, char const * label);
-        // export fn dgpuRenderBundleSetLabel(render_bundle: *dgpu.RenderBundle, label: [*:0]const u8) void {
+        // export fn dgpuRenderBundleSetLabel(render_bundle: *dgpu.RenderBundle, label: [:0]const u8) void {
         //     T.renderBundleSetLabel(render_bundle, label);
         // }
 
@@ -982,7 +982,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPURenderBundle dgpuRenderBundleEncoderFinish(WGPURenderBundleEncoder renderBundleEncoder, WGPURenderBundleDescriptor const * descriptor /* nullable */);
-        // export fn dgpuRenderBundleEncoderFinish(render_bundle_encoder: *dgpu.RenderBundleEncoder, descriptor: ?*const dgpu.RenderBundle.Descriptor) *dgpu.RenderBundle {
+        // export fn dgpuRenderBundleEncoderFinish(render_bundle_encoder: *dgpu.RenderBundleEncoder, descriptor: dgpu.RenderBundle.Descriptor) *dgpu.RenderBundle {
         //     return T.renderBundleEncoderFinish(render_bundle_encoder, descriptor);
         // }
 
@@ -1012,7 +1012,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuRenderBundleEncoderSetLabel(WGPURenderBundleEncoder renderBundleEncoder, char const * label);
-        // export fn dgpuRenderBundleEncoderSetLabel(render_bundle_encoder: *dgpu.RenderBundleEncoder, label: [*:0]const u8) void {
+        // export fn dgpuRenderBundleEncoderSetLabel(render_bundle_encoder: *dgpu.RenderBundleEncoder, label: [:0]const u8) void {
         //     T.renderBundleEncoderSetLabel(render_bundle_encoder, label);
         // }
 
@@ -1107,7 +1107,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuRenderPassEncoderSetLabel(WGPURenderPassEncoder renderPassEncoder, char const * label);
-        // export fn dgpuRenderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: [*:0]const u8) void {
+        // export fn dgpuRenderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: [:0]const u8) void {
         //     T.renderPassEncoderSetLabel(render_pass_encoder, label);
         // }
 
@@ -1157,7 +1157,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuRenderPipelineSetLabel(WGPURenderPipeline renderPipeline, char const * label);
-        // export fn dgpuRenderPipelineSetLabel(render_pipeline: *dgpu.RenderPipeline, label: [*:0]const u8) void {
+        // export fn dgpuRenderPipelineSetLabel(render_pipeline: *dgpu.RenderPipeline, label: [:0]const u8) void {
         //     T.renderPipelineSetLabel(render_pipeline, label);
         // }
 
@@ -1172,7 +1172,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuSamplerSetLabel(WGPUSampler sampler, char const * label);
-        // export fn dgpuSamplerSetLabel(sampler: *dgpu.Sampler, label: [*:0]const u8) void {
+        // export fn dgpuSamplerSetLabel(sampler: *dgpu.Sampler, label: [:0]const u8) void {
         //     T.samplerSetLabel(sampler, label);
         // }
 
@@ -1192,7 +1192,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuShaderModuleSetLabel(WGPUShaderModule shaderModule, char const * label);
-        // export fn dgpuShaderModuleSetLabel(shader_module: *dgpu.ShaderModule, label: [*:0]const u8) void {
+        // export fn dgpuShaderModuleSetLabel(shader_module: *dgpu.ShaderModule, label: [:0]const u8) void {
         //     T.shaderModuleSetLabel(shader_module, label);
         // }
 
@@ -1222,12 +1222,12 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuSharedTextureMemoryBeginAccess(WGPUSharedTextureMemory sharedTextureMemory, WGPUTexture texture, WGPUSharedTextureMemoryBeginAccessDescriptor const * descriptor);
-        // export fn dgpuSharedTextureMemoryBeginAccess(shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: *const dgpu.SharedTextureMemory.BeginAccessDescriptor) void {
+        // export fn dgpuSharedTextureMemoryBeginAccess(shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: dgpu.SharedTextureMemory.BeginAccessDescriptor) void {
         //     T.sharedTextureMemoryBeginAccess(shared_texture_memory, texture, descriptor);
         // }
 
         // // DGPU_EXPORT WGPUTexture dgpuSharedTextureMemoryCreateTexture(WGPUSharedTextureMemory sharedTextureMemory, WGPUTextureDescriptor const * descriptor);
-        // export fn dgpuSharedTextureMemoryCreateTexture(shared_texture_memory: *dgpu.SharedTextureMemory, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+        // export fn dgpuSharedTextureMemoryCreateTexture(shared_texture_memory: *dgpu.SharedTextureMemory, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
         //     return T.sharedTextureMemoryCreateTexture(shared_texture_memory, descriptor);
         // }
 
@@ -1247,7 +1247,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuSharedTextureMemorySetLabel(WGPUSharedTextureMemory sharedTextureMemory, char const * label);
-        // export fn dgpuSharedTextureMemorySetLabel(shared_texture_memory: *dgpu.SharedTextureMemory, label: [*:0]const u8) void {
+        // export fn dgpuSharedTextureMemorySetLabel(shared_texture_memory: *dgpu.SharedTextureMemory, label: [:0]const u8) void {
         //     T.sharedTextureMemorySetLabel(shared_texture_memory, label);
         // }
 
@@ -1297,7 +1297,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT WGPUTextureView dgpuTextureCreateView(WGPUTexture texture, WGPUTextureViewDescriptor const * descriptor /* nullable */);
-        // export fn dgpuTextureCreateView(texture: *dgpu.Texture, descriptor: ?*const dgpu.TextureView.Descriptor) *dgpu.TextureView {
+        // export fn dgpuTextureCreateView(texture: *dgpu.Texture, descriptor: dgpu.TextureView.Descriptor) *dgpu.TextureView {
         //     return T.textureCreateView(texture, descriptor);
         // }
 
@@ -1347,7 +1347,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuTextureSetLabel(WGPUTexture texture, char const * label);
-        // export fn dgpuTextureSetLabel(texture: *dgpu.Texture, label: [*:0]const u8) void {
+        // export fn dgpuTextureSetLabel(texture: *dgpu.Texture, label: [:0]const u8) void {
         //     T.textureSetLabel(texture, label);
         // }
 
@@ -1362,7 +1362,7 @@ pub fn Export(comptime T: type) type {
         // }
 
         // // DGPU_EXPORT void dgpuTextureViewSetLabel(WGPUTextureView textureView, char const * label);
-        // export fn dgpuTextureViewSetLabel(texture_view: *dgpu.TextureView, label: [*:0]const u8) void {
+        // export fn dgpuTextureViewSetLabel(texture_view: *dgpu.TextureView, label: [:0]const u8) void {
         //     T.textureViewSetLabel(texture_view, label);
         // }
 
@@ -1380,7 +1380,7 @@ pub fn Export(comptime T: type) type {
 
 /// A stub dgpu.Interface in which every function is implemented by `unreachable;`
 pub const StubInterface = Interface(struct {
-    // pub inline fn createInstance(descriptor: ?*const dgpu.Instance.Descriptor) ?*dgpu.Instance {
+    // pub inline fn createInstance(descriptor: dgpu.Instance.Descriptor) ?*dgpu.Instance {
     //     _ = descriptor;
     //     unreachable;
     // }
@@ -1391,7 +1391,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn adapterCreateDevice(adapter: *dgpu.Adapter, descriptor: ?*const dgpu.Device.Descriptor) ?*dgpu.Device {
+    // pub inline fn adapterCreateDevice(adapter: *dgpu.Adapter, descriptor: dgpu.Device.Descriptor) ?*dgpu.Device {
     //     _ = adapter;
     //     _ = descriptor;
     //     unreachable;
@@ -1408,7 +1408,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn adapterGetLimits(adapter: *dgpu.Adapter, limits: *dgpu.SupportedLimits) u32 {
+    // pub inline fn adapterGetLimits(adapter: *dgpu.Adapter, limits: *dgpu.Limits) u32 {
     //     _ = adapter;
     //     _ = limits;
     //     unreachable;
@@ -1431,7 +1431,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn adapterRequestDevice(adapter: *dgpu.Adapter, descriptor: ?*const dgpu.Device.Descriptor, callback: dgpu.RequestDeviceCallback, userdata: ?*anyopaque) void {
+    // pub inline fn adapterRequestDevice(adapter: *dgpu.Adapter, descriptor: dgpu.Device.Descriptor, callback: dgpu.RequestDeviceCallback, userdata: ?*anyopaque) void {
     //     _ = adapter;
     //     _ = descriptor;
     //     _ = callback;
@@ -1449,7 +1449,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn bindGroupSetLabel(bind_group: *dgpu.BindGroup, label: [*:0]const u8) void {
+    // pub inline fn bindGroupSetLabel(bind_group: *dgpu.BindGroup, label: [:0]const u8) void {
     //     _ = bind_group;
     //     _ = label;
     //     unreachable;
@@ -1465,7 +1465,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn bindGroupLayoutSetLabel(bind_group_layout: *dgpu.BindGroupLayout, label: [*:0]const u8) void {
+    // pub inline fn bindGroupLayoutSetLabel(bind_group_layout: *dgpu.BindGroupLayout, label: [:0]const u8) void {
     //     _ = bind_group_layout;
     //     _ = label;
     //     unreachable;
@@ -1522,7 +1522,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn bufferSetLabel(buffer: *dgpu.Buffer, label: [*:0]const u8) void {
+    // pub inline fn bufferSetLabel(buffer: *dgpu.Buffer, label: [:0]const u8) void {
     //     _ = buffer;
     //     _ = label;
     //     unreachable;
@@ -1543,7 +1543,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn commandBufferSetLabel(command_buffer: *dgpu.CommandBuffer, label: [*:0]const u8) void {
+    // pub inline fn commandBufferSetLabel(command_buffer: *dgpu.CommandBuffer, label: [:0]const u8) void {
     //     _ = command_buffer;
     //     _ = label;
     //     unreachable;
@@ -1559,13 +1559,13 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn commandEncoderBeginComputePass(command_encoder: *dgpu.CommandEncoder, descriptor: ?*const dgpu.ComputePassDescriptor) *dgpu.ComputePassEncoder {
+    // pub inline fn commandEncoderBeginComputePass(command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.ComputePassDescriptor) *dgpu.ComputePassEncoder {
     //     _ = command_encoder;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn commandEncoderBeginRenderPass(command_encoder: *dgpu.CommandEncoder, descriptor: *const dgpu.RenderPassDescriptor) *dgpu.RenderPassEncoder {
+    // pub inline fn commandEncoderBeginRenderPass(command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.RenderPassDescriptor) *dgpu.RenderPassEncoder {
     //     _ = command_encoder;
     //     _ = descriptor;
     //     unreachable;
@@ -1613,7 +1613,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn commandEncoderFinish(command_encoder: *dgpu.CommandEncoder, descriptor: ?*const dgpu.CommandBuffer.Descriptor) *dgpu.CommandBuffer {
+    // pub inline fn commandEncoderFinish(command_encoder: *dgpu.CommandEncoder, descriptor: dgpu.CommandBuffer.Descriptor) *dgpu.CommandBuffer {
     //     _ = command_encoder;
     //     _ = descriptor;
     //     unreachable;
@@ -1652,7 +1652,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn commandEncoderSetLabel(command_encoder: *dgpu.CommandEncoder, label: [*:0]const u8) void {
+    // pub inline fn commandEncoderSetLabel(command_encoder: *dgpu.CommandEncoder, label: [:0]const u8) void {
     //     _ = command_encoder;
     //     _ = label;
     //     unreachable;
@@ -1730,7 +1730,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn computePassEncoderSetLabel(compute_pass_encoder: *dgpu.ComputePassEncoder, label: [*:0]const u8) void {
+    // pub inline fn computePassEncoderSetLabel(compute_pass_encoder: *dgpu.ComputePassEncoder, label: [:0]const u8) void {
     //     _ = compute_pass_encoder;
     //     _ = label;
     //     unreachable;
@@ -1765,7 +1765,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn computePipelineSetLabel(compute_pipeline: *dgpu.ComputePipeline, label: [*:0]const u8) void {
+    // pub inline fn computePipelineSetLabel(compute_pipeline: *dgpu.ComputePipeline, label: [:0]const u8) void {
     //     _ = compute_pipeline;
     //     _ = label;
     //     unreachable;
@@ -1781,37 +1781,37 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateBindGroup(device: *dgpu.Device, descriptor: *const dgpu.BindGroup.Descriptor) *dgpu.BindGroup {
+    // pub inline fn deviceCreateBindGroup(device: *dgpu.Device, descriptor: dgpu.BindGroup.Descriptor) *dgpu.BindGroup {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateBindGroupLayout(device: *dgpu.Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) *dgpu.BindGroupLayout {
+    // pub inline fn deviceCreateBindGroupLayout(device: *dgpu.Device, descriptor: dgpu.BindGroupLayout.Descriptor) *dgpu.BindGroupLayout {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateBuffer(device: *dgpu.Device, descriptor: *const dgpu.Buffer.Descriptor) *dgpu.Buffer {
+    // pub inline fn deviceCreateBuffer(device: *dgpu.Device, descriptor: dgpu.Buffer.Descriptor) *dgpu.Buffer {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateCommandEncoder(device: *dgpu.Device, descriptor: ?*const dgpu.CommandEncoder.Descriptor) *dgpu.CommandEncoder {
+    // pub inline fn deviceCreateCommandEncoder(device: *dgpu.Device, descriptor: dgpu.CommandEncoder.Descriptor) *dgpu.CommandEncoder {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateComputePipeline(device: *dgpu.Device, descriptor: *const dgpu.ComputePipeline.Descriptor) *dgpu.ComputePipeline {
+    // pub inline fn deviceCreateComputePipeline(device: *dgpu.Device, descriptor: dgpu.ComputePipeline.Descriptor) *dgpu.ComputePipeline {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateComputePipelineAsync(device: *dgpu.Device, descriptor: *const dgpu.ComputePipeline.Descriptor, callback: dgpu.CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
+    // pub inline fn deviceCreateComputePipelineAsync(device: *dgpu.Device, descriptor: dgpu.ComputePipeline.Descriptor, callback: dgpu.CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
     //     _ = device;
     //     _ = descriptor;
     //     _ = callback;
@@ -1819,7 +1819,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateErrorBuffer(device: *dgpu.Device, descriptor: *const dgpu.Buffer.Descriptor) *dgpu.Buffer {
+    // pub inline fn deviceCreateErrorBuffer(device: *dgpu.Device, descriptor: dgpu.Buffer.Descriptor) *dgpu.Buffer {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
@@ -1830,7 +1830,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateErrorTexture(device: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+    // pub inline fn deviceCreateErrorTexture(device: *dgpu.Device, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
@@ -1848,25 +1848,25 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateQuerySet(device: *dgpu.Device, descriptor: *const dgpu.QuerySet.Descriptor) *dgpu.QuerySet {
+    // pub inline fn deviceCreateQuerySet(device: *dgpu.Device, descriptor: dgpu.QuerySet.Descriptor) *dgpu.QuerySet {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateRenderBundleEncoder(device: *dgpu.Device, descriptor: *const dgpu.RenderBundleEncoder.Descriptor) *dgpu.RenderBundleEncoder {
+    // pub inline fn deviceCreateRenderBundleEncoder(device: *dgpu.Device, descriptor: dgpu.RenderBundleEncoder.Descriptor) *dgpu.RenderBundleEncoder {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateRenderPipeline(device: *dgpu.Device, descriptor: *const dgpu.RenderPipeline.Descriptor) *dgpu.RenderPipeline {
+    // pub inline fn deviceCreateRenderPipeline(device: *dgpu.Device, descriptor: dgpu.RenderPipeline.Descriptor) *dgpu.RenderPipeline {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateRenderPipelineAsync(device: *dgpu.Device, descriptor: *const dgpu.RenderPipeline.Descriptor, callback: dgpu.CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
+    // pub inline fn deviceCreateRenderPipelineAsync(device: *dgpu.Device, descriptor: dgpu.RenderPipeline.Descriptor, callback: dgpu.CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
     //     _ = device;
     //     _ = descriptor;
     //     _ = callback;
@@ -1876,26 +1876,26 @@ pub const StubInterface = Interface(struct {
 
     // // TODO(self-hosted): this cannot be marked as inline for some reason.
     // // https://github.com/ziglang/zig/issues/12545
-    // pub fn deviceCreateSampler(device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler {
+    // pub fn deviceCreateSampler(device: *dgpu.Device, descriptor: dgpu.Sampler.Descriptor) *dgpu.Sampler {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateShaderModule(device: *dgpu.Device, descriptor: *const dgpu.ShaderModule.Descriptor) *dgpu.ShaderModule {
+    // pub inline fn deviceCreateShaderModule(device: *dgpu.Device, descriptor: dgpu.ShaderModule.Descriptor) *dgpu.ShaderModule {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateSwapChain(device: *dgpu.Device, surface: ?*dgpu.Surface, descriptor: *const dgpu.SwapChain.Descriptor) *dgpu.SwapChain {
+    // pub inline fn deviceCreateSwapChain(device: *dgpu.Device, surface: ?*dgpu.Surface, descriptor: dgpu.SwapChain.Descriptor) *dgpu.SwapChain {
     //     _ = device;
     //     _ = surface;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceCreateTexture(device: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+    // pub inline fn deviceCreateTexture(device: *dgpu.Device, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
@@ -1912,7 +1912,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn deviceGetLimits(device: *dgpu.Device, limits: *dgpu.SupportedLimits) u32 {
+    // pub inline fn deviceGetLimits(device: *dgpu.Device, limits: *dgpu.Limits) u32 {
     //     _ = device;
     //     _ = limits;
     //     unreachable;
@@ -1929,13 +1929,13 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn deviceImportSharedFence(device: *dgpu.Device, descriptor: *const dgpu.SharedFence.Descriptor) *dgpu.SharedFence {
+    // pub inline fn deviceImportSharedFence(device: *dgpu.Device, descriptor: dgpu.SharedFence.Descriptor) *dgpu.SharedFence {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn deviceImportSharedTextureMemory(device: *dgpu.Device, descriptor: *const dgpu.SharedTextureMemory.Descriptor) *dgpu.SharedTextureMemory {
+    // pub inline fn deviceImportSharedTextureMemory(device: *dgpu.Device, descriptor: dgpu.SharedTextureMemory.Descriptor) *dgpu.SharedTextureMemory {
     //     _ = device;
     //     _ = descriptor;
     //     unreachable;
@@ -1973,7 +1973,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn deviceSetLabel(device: *dgpu.Device, label: [*:0]const u8) void {
+    // pub inline fn deviceSetLabel(device: *dgpu.Device, label: [:0]const u8) void {
     //     _ = device;
     //     _ = label;
     //     unreachable;
@@ -2018,7 +2018,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn externalTextureSetLabel(external_texture: *dgpu.ExternalTexture, label: [*:0]const u8) void {
+    // pub inline fn externalTextureSetLabel(external_texture: *dgpu.ExternalTexture, label: [:0]const u8) void {
     //     _ = external_texture;
     //     _ = label;
     //     unreachable;
@@ -2034,7 +2034,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn instanceCreateSurface(instance: *dgpu.Instance, descriptor: *const dgpu.Surface.Descriptor) *dgpu.Surface {
+    // pub inline fn instanceCreateSurface(instance: *dgpu.Instance, descriptor: dgpu.Surface.Descriptor) *dgpu.Surface {
     //     _ = instance;
     //     _ = descriptor;
     //     unreachable;
@@ -2063,7 +2063,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn pipelineLayoutSetLabel(pipeline_layout: *dgpu.PipelineLayout, label: [*:0]const u8) void {
+    // pub inline fn pipelineLayoutSetLabel(pipeline_layout: *dgpu.PipelineLayout, label: [:0]const u8) void {
     //     _ = pipeline_layout;
     //     _ = label;
     //     unreachable;
@@ -2094,7 +2094,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn querySetSetLabel(query_set: *dgpu.QuerySet, label: [*:0]const u8) void {
+    // pub inline fn querySetSetLabel(query_set: *dgpu.QuerySet, label: [:0]const u8) void {
     //     _ = query_set;
     //     _ = label;
     //     unreachable;
@@ -2127,7 +2127,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn queueSetLabel(queue: *dgpu.Queue, label: [*:0]const u8) void {
+    // pub inline fn queueSetLabel(queue: *dgpu.Queue, label: [:0]const u8) void {
     //     _ = queue;
     //     _ = label;
     //     unreachable;
@@ -2169,7 +2169,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn renderBundleSetLabel(render_bundle: *dgpu.RenderBundle, label: [*:0]const u8) void {
+    // pub inline fn renderBundleSetLabel(render_bundle: *dgpu.RenderBundle, label: [:0]const u8) void {
     //     _ = render_bundle;
     //     _ = label;
     //     unreachable;
@@ -2218,7 +2218,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn renderBundleEncoderFinish(render_bundle_encoder: *dgpu.RenderBundleEncoder, descriptor: ?*const dgpu.RenderBundle.Descriptor) *dgpu.RenderBundle {
+    // pub inline fn renderBundleEncoderFinish(render_bundle_encoder: *dgpu.RenderBundleEncoder, descriptor: dgpu.RenderBundle.Descriptor) *dgpu.RenderBundle {
     //     _ = render_bundle_encoder;
     //     _ = descriptor;
     //     unreachable;
@@ -2259,7 +2259,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn renderBundleEncoderSetLabel(render_bundle_encoder: *dgpu.RenderBundleEncoder, label: [*:0]const u8) void {
+    // pub inline fn renderBundleEncoderSetLabel(render_bundle_encoder: *dgpu.RenderBundleEncoder, label: [:0]const u8) void {
     //     _ = render_bundle_encoder;
     //     _ = label;
     //     unreachable;
@@ -2387,7 +2387,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn renderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: [*:0]const u8) void {
+    // pub inline fn renderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: [:0]const u8) void {
     //     _ = render_pass_encoder;
     //     _ = label;
     //     unreachable;
@@ -2457,7 +2457,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn renderPipelineSetLabel(render_pipeline: *dgpu.RenderPipeline, label: [*:0]const u8) void {
+    // pub inline fn renderPipelineSetLabel(render_pipeline: *dgpu.RenderPipeline, label: [:0]const u8) void {
     //     _ = render_pipeline;
     //     _ = label;
     //     unreachable;
@@ -2473,7 +2473,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn samplerSetLabel(sampler: *dgpu.Sampler, label: [*:0]const u8) void {
+    // pub inline fn samplerSetLabel(sampler: *dgpu.Sampler, label: [:0]const u8) void {
     //     _ = sampler;
     //     _ = label;
     //     unreachable;
@@ -2496,7 +2496,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn shaderModuleSetLabel(shader_module: *dgpu.ShaderModule, label: [*:0]const u8) void {
+    // pub inline fn shaderModuleSetLabel(shader_module: *dgpu.ShaderModule, label: [:0]const u8) void {
     //     _ = shader_module;
     //     _ = label;
     //     unreachable;
@@ -2528,14 +2528,14 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn sharedTextureMemoryBeginAccess(shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: *const dgpu.SharedTextureMemory.BeginAccessDescriptor) void {
+    // pub inline fn sharedTextureMemoryBeginAccess(shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: dgpu.SharedTextureMemory.BeginAccessDescriptor) void {
     //     _ = shared_texture_memory;
     //     _ = texture;
     //     _ = descriptor;
     //     unreachable;
     // }
 
-    // pub inline fn sharedTextureMemoryCreateTexture(shared_texture_memory: *dgpu.SharedTextureMemory, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+    // pub inline fn sharedTextureMemoryCreateTexture(shared_texture_memory: *dgpu.SharedTextureMemory, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
     //     _ = shared_texture_memory;
     //     _ = descriptor;
     //     unreachable;
@@ -2559,7 +2559,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn sharedTextureMemorySetLabel(shared_texture_memory: *dgpu.SharedTextureMemory, label: [*:0]const u8) void {
+    // pub inline fn sharedTextureMemorySetLabel(shared_texture_memory: *dgpu.SharedTextureMemory, label: [:0]const u8) void {
     //     _ = shared_texture_memory;
     //     _ = label;
     //     unreachable;
@@ -2610,7 +2610,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn textureCreateView(texture: *dgpu.Texture, descriptor: ?*const dgpu.TextureView.Descriptor) *dgpu.TextureView {
+    // pub inline fn textureCreateView(texture: *dgpu.Texture, descriptor: dgpu.TextureView.Descriptor) *dgpu.TextureView {
     //     _ = texture;
     //     _ = descriptor;
     //     unreachable;
@@ -2661,7 +2661,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn textureSetLabel(texture: *dgpu.Texture, label: [*:0]const u8) void {
+    // pub inline fn textureSetLabel(texture: *dgpu.Texture, label: [:0]const u8) void {
     //     _ = texture;
     //     _ = label;
     //     unreachable;
@@ -2677,7 +2677,7 @@ pub const StubInterface = Interface(struct {
     //     unreachable;
     // }
 
-    // pub inline fn textureViewSetLabel(texture_view: *dgpu.TextureView, label: [*:0]const u8) void {
+    // pub inline fn textureViewSetLabel(texture_view: *dgpu.TextureView, label: [:0]const u8) void {
     //     _ = texture_view;
     //     _ = label;
     //     unreachable;

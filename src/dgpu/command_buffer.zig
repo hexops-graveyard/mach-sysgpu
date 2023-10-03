@@ -1,13 +1,11 @@
-const ChainedStruct = @import("main.zig").ChainedStruct;
 const Impl = @import("interface.zig").Impl;
 
 pub const CommandBuffer = opaque {
-    pub const Descriptor = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
-        label: ?[*:0]const u8 = null,
+    pub const Descriptor = struct {
+        label: ?[:0]const u8 = null,
     };
 
-    pub inline fn setLabel(command_buffer: *CommandBuffer, label: [*:0]const u8) void {
+    pub inline fn setLabel(command_buffer: *CommandBuffer, label: [:0]const u8) void {
         Impl.commandBufferSetLabel(command_buffer, label);
     }
 

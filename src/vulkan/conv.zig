@@ -47,17 +47,17 @@ pub fn vulkanCompareOp(op: dgpu.CompareFunction) vk.CompareOp {
     };
 }
 
-pub fn vulkanDepthBias(ds: ?*const dgpu.DepthStencilState) f32 {
+pub fn vulkanDepthBias(ds: ?dgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return @floatFromInt(ds.?.depth_bias);
 }
 
-pub fn vulkanDepthBiasClamp(ds: ?*const dgpu.DepthStencilState) f32 {
+pub fn vulkanDepthBiasClamp(ds: ?dgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return ds.?.depth_bias_clamp;
 }
 
-pub fn vulkanDepthBiasSlopeScale(ds: ?*const dgpu.DepthStencilState) f32 {
+pub fn vulkanDepthBiasSlopeScale(ds: ?dgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return ds.?.depth_bias_slope_scale;
 }
@@ -242,41 +242,13 @@ pub fn vulkanVertexFormat(format: dgpu.VertexFormat) vk.Format {
 }
 
 pub fn vulkanDescriptorType(entry: dgpu.BindGroupLayout.Entry) vk.DescriptorType {
-    switch (entry.buffer.type) {
-        .undefined => {},
-
-        .uniform => if (entry.buffer.has_dynamic_offset == .true) {
-            return .uniform_buffer_dynamic;
-        } else {
-            return .uniform_buffer;
-        },
-
-        .storage,
-        .read_only_storage,
-        => if (entry.buffer.has_dynamic_offset == .true) {
-            return .storage_buffer_dynamic;
-        } else {
-            return .storage_buffer;
-        },
-    }
-
-    switch (entry.sampler.type) {
-        .undefined => {},
-        else => return .sampler,
-    }
-
-    // TODO: how to decide?
-    // switch (entry.texture.type) {
-    //     .undefined => {},
-    //     else => return .sampled_image,
-    // }
-
-    // switch (entry.storage_texture.type) {
-    //     .undefined => {},
-    //     else => return .storage_image,
-    // }
-
-    unreachable;
+    return switch (entry.resource_layout) {
+        .buffer => |buf| if (buf.has_dynamic_offset) .uniform_buffer_dynamic else .uniform_buffer,
+        .sampler => .sampler,
+        .texture => .sampled_image,
+        .storage_texture => .storage_image,
+        .external_texture => unreachable, // TODO
+    };
 }
 
 pub fn vulkanShaderStageFlags(flags: dgpu.ShaderStageFlags) vk.ShaderStageFlags {

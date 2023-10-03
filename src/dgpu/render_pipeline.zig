@@ -1,4 +1,3 @@
-const ChainedStruct = @import("main.zig").ChainedStruct;
 const DepthStencilState = @import("main.zig").DepthStencilState;
 const MultisampleState = @import("main.zig").MultisampleState;
 const VertexState = @import("main.zig").VertexState;
@@ -9,22 +8,21 @@ const BindGroupLayout = @import("bind_group_layout.zig").BindGroupLayout;
 const Impl = @import("interface.zig").Impl;
 
 pub const RenderPipeline = opaque {
-    pub const Descriptor = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
-        label: ?[*:0]const u8 = null,
+    pub const Descriptor = struct {
+        label: ?[:0]const u8 = null,
         layout: ?*PipelineLayout = null,
         vertex: VertexState,
         primitive: PrimitiveState = .{},
-        depth_stencil: ?*const DepthStencilState = null,
+        depth_stencil: ?DepthStencilState = null,
         multisample: MultisampleState = .{},
-        fragment: ?*const FragmentState = null,
+        fragment: ?FragmentState = null,
     };
 
     pub inline fn getBindGroupLayout(render_pipeline: *RenderPipeline, group_index: u32) *BindGroupLayout {
         return Impl.renderPipelineGetBindGroupLayout(render_pipeline, group_index);
     }
 
-    pub inline fn setLabel(render_pipeline: *RenderPipeline, label: [*:0]const u8) void {
+    pub inline fn setLabel(render_pipeline: *RenderPipeline, label: [:0]const u8) void {
         Impl.renderPipelineSetLabel(render_pipeline, label);
     }
 

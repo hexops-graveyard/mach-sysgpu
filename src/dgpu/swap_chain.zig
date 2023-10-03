@@ -1,13 +1,11 @@
-const ChainedStruct = @import("main.zig").ChainedStruct;
 const PresentMode = @import("main.zig").PresentMode;
 const Texture = @import("texture.zig").Texture;
 const TextureView = @import("texture_view.zig").TextureView;
 const Impl = @import("interface.zig").Impl;
 
 pub const SwapChain = opaque {
-    pub const Descriptor = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
-        label: ?[*:0]const u8 = null,
+    pub const Descriptor = struct {
+        label: ?[:0]const u8 = null,
         usage: Texture.UsageFlags,
         format: Texture.Format,
         width: u32,

@@ -5,7 +5,7 @@ const shader = @import("shader.zig");
 const utils = @import("utils.zig");
 
 const backend_type: dgpu.BackendType = switch (builtin.target.os.tag) {
-    .linux => .vulkan,
+    .linux => .webgpu,
     .macos, .ios => .metal,
     .windows => .d3d12,
     else => @compileError("unsupported platform"),
@@ -14,6 +14,7 @@ const impl = switch (backend_type) {
     .d3d12 => @import("d3d12.zig"),
     .metal => @import("metal.zig"),
     .vulkan => @import("vulkan.zig"),
+    .webgpu => @import("webgpu.zig"),
     else => unreachable,
 };
 
@@ -27,12 +28,12 @@ pub const Impl = struct {
         try impl.init(alloc, options);
     }
 
-    pub inline fn createInstance(descriptor: ?*const dgpu.Instance.Descriptor) ?*dgpu.Instance {
+    pub inline fn createInstance(descriptor: dgpu.Instance.Descriptor) ?*dgpu.Instance {
         if (builtin.mode == .Debug and !inited) {
             std.log.err("dusk not initialized; did you forget to call dgpu.Impl.init()?", .{});
         }
 
-        const instance = impl.Instance.init(descriptor orelse &dgpu.Instance.Descriptor{}) catch unreachable;
+        const instance = impl.Instance.init(descriptor) catch unreachable;
         return @as(*dgpu.Instance, @ptrCast(instance));
     }
 
@@ -42,13 +43,9 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn adapterCreateDevice(adapter_raw: *dgpu.Adapter, descriptor: ?*const dgpu.Device.Descriptor) ?*dgpu.Device {
+    pub inline fn adapterCreateDevice(adapter_raw: *dgpu.Adapter, descriptor: dgpu.Device.Descriptor) ?*dgpu.Device {
         const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
         const device = adapter.createDevice(descriptor) catch return null;
-        if (descriptor) |desc| {
-            device.lost_cb = desc.device_lost_callback;
-            device.lost_cb_userdata = desc.device_lost_userdata;
-        }
         return @as(*dgpu.Device, @ptrCast(device));
     }
 
@@ -58,7 +55,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn adapterGetLimits(adapter: *dgpu.Adapter, limits: *dgpu.SupportedLimits) u32 {
+    pub inline fn adapterGetLimits(adapter: *dgpu.Adapter, limits: *dgpu.Limits) u32 {
         _ = adapter;
         _ = limits;
         unreachable;
@@ -69,9 +66,9 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn adapterGetProperties(adapter_raw: *dgpu.Adapter, properties: *dgpu.Adapter.Properties) void {
+    pub inline fn adapterGetProperties(adapter_raw: *dgpu.Adapter) dgpu.Adapter.Properties {
         const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
-        properties.* = adapter.getProperties();
+        return adapter.getProperties();
     }
 
     pub inline fn adapterHasFeature(adapter: *dgpu.Adapter, feature: dgpu.FeatureName) u32 {
@@ -85,14 +82,6 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn adapterRequestDevice(adapter: *dgpu.Adapter, descriptor: ?*const dgpu.Device.Descriptor, callback: dgpu.RequestDeviceCallback, userdata: ?*anyopaque) void {
-        _ = adapter;
-        _ = descriptor;
-        _ = callback;
-        _ = userdata;
-        unreachable;
-    }
-
     pub inline fn adapterReference(adapter_raw: *dgpu.Adapter) void {
         const adapter: *impl.Adapter = @ptrCast(@alignCast(adapter_raw));
         adapter.manager.reference();
@@ -103,7 +92,7 @@ pub const Impl = struct {
         adapter.manager.release();
     }
 
-    pub inline fn bindGroupSetLabel(bind_group: *dgpu.BindGroup, label: [*:0]const u8) void {
+    pub inline fn bindGroupSetLabel(bind_group: *dgpu.BindGroup, label: []const u8) void {
         _ = bind_group;
         _ = label;
         unreachable;
@@ -119,7 +108,7 @@ pub const Impl = struct {
         bind_group.manager.release();
     }
 
-    pub inline fn bindGroupLayoutSetLabel(bind_group_layout: *dgpu.BindGroupLayout, label: [*:0]const u8) void {
+    pub inline fn bindGroupLayoutSetLabel(bind_group_layout: *dgpu.BindGroupLayout, label: []const u8) void {
         _ = bind_group_layout;
         _ = label;
         unreachable;
@@ -165,7 +154,7 @@ pub const Impl = struct {
         buffer.mapAsync(mode, offset, size, callback, userdata) catch unreachable;
     }
 
-    pub inline fn bufferSetLabel(buffer: *dgpu.Buffer, label: [*:0]const u8) void {
+    pub inline fn bufferSetLabel(buffer: *dgpu.Buffer, label: []const u8) void {
         _ = buffer;
         _ = label;
         unreachable;
@@ -186,7 +175,7 @@ pub const Impl = struct {
         buffer.manager.release();
     }
 
-    pub inline fn commandBufferSetLabel(command_buffer: *dgpu.CommandBuffer, label: [*:0]const u8) void {
+    pub inline fn commandBufferSetLabel(command_buffer: *dgpu.CommandBuffer, label: []const u8) void {
         _ = command_buffer;
         _ = label;
         unreachable;
@@ -202,13 +191,13 @@ pub const Impl = struct {
         command_buffer.manager.release();
     }
 
-    pub inline fn commandEncoderBeginComputePass(command_encoder_raw: *dgpu.CommandEncoder, descriptor: ?*const dgpu.ComputePassDescriptor) *dgpu.ComputePassEncoder {
+    pub inline fn commandEncoderBeginComputePass(command_encoder_raw: *dgpu.CommandEncoder, descriptor: dgpu.ComputePassDescriptor) *dgpu.ComputePassEncoder {
         const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
-        const compute_pass = command_encoder.beginComputePass(descriptor orelse &.{}) catch unreachable;
+        const compute_pass = command_encoder.beginComputePass(descriptor) catch unreachable;
         return @ptrCast(compute_pass);
     }
 
-    pub inline fn commandEncoderBeginRenderPass(command_encoder_raw: *dgpu.CommandEncoder, descriptor: *const dgpu.RenderPassDescriptor) *dgpu.RenderPassEncoder {
+    pub inline fn commandEncoderBeginRenderPass(command_encoder_raw: *dgpu.CommandEncoder, descriptor: dgpu.RenderPassDescriptor) *dgpu.RenderPassEncoder {
         const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
         const render_pass = command_encoder.beginRenderPass(descriptor) catch unreachable;
         return @ptrCast(render_pass);
@@ -262,10 +251,9 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn commandEncoderFinish(command_encoder_raw: *dgpu.CommandEncoder, descriptor: ?*const dgpu.CommandBuffer.Descriptor) *dgpu.CommandBuffer {
+    pub inline fn commandEncoderFinish(command_encoder_raw: *dgpu.CommandEncoder, descriptor: dgpu.CommandBuffer.Descriptor) *dgpu.CommandBuffer {
         const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
-        const command_buffer = command_encoder.finish(descriptor orelse &.{}) catch unreachable;
-        command_buffer.manager.reference();
+        const command_buffer = command_encoder.finish(descriptor) catch unreachable;
         return @ptrCast(command_buffer);
     }
 
@@ -302,7 +290,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn commandEncoderSetLabel(command_encoder: *dgpu.CommandEncoder, label: [*:0]const u8) void {
+    pub inline fn commandEncoderSetLabel(command_encoder: *dgpu.CommandEncoder, label: []const u8) void {
         _ = command_encoder;
         _ = label;
         unreachable;
@@ -371,7 +359,7 @@ pub const Impl = struct {
         compute_pass_encoder.setBindGroup(group_index, group, dynamic_offset_count, dynamic_offsets) catch unreachable;
     }
 
-    pub inline fn computePassEncoderSetLabel(compute_pass_encoder: *dgpu.ComputePassEncoder, label: [*:0]const u8) void {
+    pub inline fn computePassEncoderSetLabel(compute_pass_encoder: *dgpu.ComputePassEncoder, label: []const u8) void {
         _ = compute_pass_encoder;
         _ = label;
         unreachable;
@@ -407,7 +395,7 @@ pub const Impl = struct {
         return @ptrCast(layout);
     }
 
-    pub inline fn computePipelineSetLabel(compute_pipeline: *dgpu.ComputePipeline, label: [*:0]const u8) void {
+    pub inline fn computePipelineSetLabel(compute_pipeline: *dgpu.ComputePipeline, label: []const u8) void {
         _ = compute_pipeline;
         _ = label;
         unreachable;
@@ -423,45 +411,37 @@ pub const Impl = struct {
         compute_pipeline.manager.release();
     }
 
-    pub inline fn deviceCreateBindGroup(device_raw: *dgpu.Device, descriptor: *const dgpu.BindGroup.Descriptor) *dgpu.BindGroup {
+    pub inline fn deviceCreateBindGroup(device_raw: *dgpu.Device, descriptor: dgpu.BindGroup.Descriptor) *dgpu.BindGroup {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const group = device.createBindGroup(descriptor) catch unreachable;
         return @ptrCast(group);
     }
 
-    pub inline fn deviceCreateBindGroupLayout(device_raw: *dgpu.Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) *dgpu.BindGroupLayout {
+    pub inline fn deviceCreateBindGroupLayout(device_raw: *dgpu.Device, descriptor: dgpu.BindGroupLayout.Descriptor) *dgpu.BindGroupLayout {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const layout = device.createBindGroupLayout(descriptor) catch unreachable;
         return @ptrCast(layout);
     }
 
-    pub inline fn deviceCreateBuffer(device_raw: *dgpu.Device, descriptor: *const dgpu.Buffer.Descriptor) *dgpu.Buffer {
+    pub inline fn deviceCreateBuffer(device_raw: *dgpu.Device, descriptor: dgpu.Buffer.Descriptor) *dgpu.Buffer {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const buffer = device.createBuffer(descriptor) catch unreachable;
         return @ptrCast(buffer);
     }
 
-    pub inline fn deviceCreateCommandEncoder(device_raw: *dgpu.Device, descriptor: ?*const dgpu.CommandEncoder.Descriptor) *dgpu.CommandEncoder {
+    pub inline fn deviceCreateCommandEncoder(device_raw: *dgpu.Device, descriptor: dgpu.CommandEncoder.Descriptor) *dgpu.CommandEncoder {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
-        const command_encoder = device.createCommandEncoder(descriptor orelse &.{}) catch unreachable;
+        const command_encoder = device.createCommandEncoder(descriptor) catch unreachable;
         return @ptrCast(command_encoder);
     }
 
-    pub inline fn deviceCreateComputePipeline(device_raw: *dgpu.Device, descriptor: *const dgpu.ComputePipeline.Descriptor) *dgpu.ComputePipeline {
+    pub inline fn deviceCreateComputePipeline(device_raw: *dgpu.Device, descriptor: dgpu.ComputePipeline.Descriptor) *dgpu.ComputePipeline {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const pipeline = device.createComputePipeline(descriptor) catch unreachable;
         return @ptrCast(pipeline);
     }
 
-    pub inline fn deviceCreateComputePipelineAsync(device: *dgpu.Device, descriptor: *const dgpu.ComputePipeline.Descriptor, callback: dgpu.CreateComputePipelineAsyncCallback, userdata: ?*anyopaque) void {
-        _ = device;
-        _ = descriptor;
-        _ = callback;
-        _ = userdata;
-        unreachable;
-    }
-
-    pub inline fn deviceCreateErrorBuffer(device: *dgpu.Device, descriptor: *const dgpu.Buffer.Descriptor) *dgpu.Buffer {
+    pub inline fn deviceCreateErrorBuffer(device: *dgpu.Device, descriptor: dgpu.Buffer.Descriptor) *dgpu.Buffer {
         _ = device;
         _ = descriptor;
         unreachable;
@@ -472,101 +452,99 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn deviceCreateErrorTexture(device: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+    pub inline fn deviceCreateErrorTexture(device: *dgpu.Device, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
         _ = device;
         _ = descriptor;
         unreachable;
     }
 
-    pub inline fn deviceCreateExternalTexture(device: *dgpu.Device, external_texture_descriptor: *const dgpu.ExternalTexture.Descriptor) *dgpu.ExternalTexture {
+    pub inline fn deviceCreateExternalTexture(device: *dgpu.Device, external_texture_descriptor: dgpu.ExternalTexture.Descriptor) *dgpu.ExternalTexture {
         _ = device;
         _ = external_texture_descriptor;
         unreachable;
     }
 
-    pub inline fn deviceCreatePipelineLayout(device_raw: *dgpu.Device, pipeline_layout_descriptor: *const dgpu.PipelineLayout.Descriptor) *dgpu.PipelineLayout {
+    pub inline fn deviceCreatePipelineLayout(device_raw: *dgpu.Device, pipeline_layout_descriptor: dgpu.PipelineLayout.Descriptor) *dgpu.PipelineLayout {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const layout = device.createPipelineLayout(pipeline_layout_descriptor) catch unreachable;
         return @ptrCast(layout);
     }
 
-    pub inline fn deviceCreateQuerySet(device: *dgpu.Device, descriptor: *const dgpu.QuerySet.Descriptor) *dgpu.QuerySet {
+    pub inline fn deviceCreateQuerySet(device: *dgpu.Device, descriptor: dgpu.QuerySet.Descriptor) *dgpu.QuerySet {
         _ = device;
         _ = descriptor;
         unreachable;
     }
 
-    pub inline fn deviceCreateRenderBundleEncoder(device: *dgpu.Device, descriptor: *const dgpu.RenderBundleEncoder.Descriptor) *dgpu.RenderBundleEncoder {
+    pub inline fn deviceCreateRenderBundleEncoder(device: *dgpu.Device, descriptor: dgpu.RenderBundleEncoder.Descriptor) *dgpu.RenderBundleEncoder {
         _ = device;
         _ = descriptor;
         unreachable;
     }
 
-    pub inline fn deviceCreateRenderPipeline(device_raw: *dgpu.Device, descriptor: *const dgpu.RenderPipeline.Descriptor) *dgpu.RenderPipeline {
+    pub inline fn deviceCreateRenderPipeline(device_raw: *dgpu.Device, descriptor: dgpu.RenderPipeline.Descriptor) *dgpu.RenderPipeline {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const render_pipeline = device.createRenderPipeline(descriptor) catch unreachable;
         return @ptrCast(render_pipeline);
     }
 
-    pub inline fn deviceCreateRenderPipelineAsync(device: *dgpu.Device, descriptor: *const dgpu.RenderPipeline.Descriptor, callback: dgpu.CreateRenderPipelineAsyncCallback, userdata: ?*anyopaque) void {
-        _ = device;
-        _ = descriptor;
-        _ = callback;
-        _ = userdata;
-        unreachable;
-    }
-
-    pub fn deviceCreateSampler(device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler {
+    pub fn deviceCreateSampler(device: *dgpu.Device, descriptor: dgpu.Sampler.Descriptor) *dgpu.Sampler {
         _ = device;
         _ = descriptor;
         unreachable;
     }
 
-    pub inline fn deviceCreateShaderModule(device_raw: *dgpu.Device, descriptor: *const dgpu.ShaderModule.Descriptor) *dgpu.ShaderModule {
+    pub inline fn deviceCreateShaderModule(device_raw: *dgpu.Device, descriptor: dgpu.ShaderModule.Descriptor) *dgpu.ShaderModule {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
 
         var errors = try shader.ErrorList.init(allocator);
         defer errors.deinit();
-        if (utils.findChained(dgpu.ShaderModule.WGSLDescriptor, descriptor.next_in_chain.generic)) |wgsl_descriptor| {
-            const source = std.mem.span(wgsl_descriptor.code);
 
-            var ast = shader.Ast.parse(allocator, &errors, source) catch |err| switch (err) {
-                error.Parsing => {
-                    errors.print(source, null) catch unreachable;
-                    std.process.exit(1);
-                },
-                else => unreachable,
-            };
-            defer ast.deinit(allocator);
+        switch (descriptor.code) {
+            .wgsl => |code| {
+                if (backend_type == .webgpu) {
+                    const shader_module = device.createShaderModuleWGSLCode(code) catch unreachable;
+                    return @ptrCast(shader_module);
+                }
 
-            var air = shader.Air.generate(allocator, &ast, &errors, null) catch |err| switch (err) {
-                error.AnalysisFail => {
-                    errors.print(source, null) catch unreachable;
-                    std.process.exit(1);
-                },
-                else => unreachable,
-            };
-            defer air.deinit(allocator);
+                var ast = shader.Ast.parse(allocator, &errors, code) catch |err| switch (err) {
+                    error.Parsing => {
+                        errors.print(code, null) catch unreachable;
+                        std.process.exit(1);
+                    },
+                    else => unreachable,
+                };
+                defer ast.deinit(allocator);
 
-            const shader_module = device.createShaderModuleAir(&air) catch unreachable;
-            return @ptrCast(shader_module);
-        } else if (utils.findChained(dgpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
-            const output = std.mem.sliceAsBytes(spirv_descriptor.code[0..spirv_descriptor.code_size]);
-            const shader_module = device.createShaderModuleSpirv(output) catch unreachable;
-            return @ptrCast(shader_module);
+                var air = shader.Air.generate(allocator, &ast, &errors, null) catch |err| switch (err) {
+                    error.AnalysisFail => {
+                        errors.print(code, null) catch unreachable;
+                        std.process.exit(1);
+                    },
+                    else => unreachable,
+                };
+                defer air.deinit(allocator);
+
+                const shader_module = device.createShaderModuleAir(&air) catch unreachable;
+                return @ptrCast(shader_module);
+            },
+            .spirv => |code| {
+                const shader_module = device.createShaderModuleSpirv(code) catch unreachable;
+                return @ptrCast(shader_module);
+            },
         }
 
         unreachable;
     }
 
-    pub inline fn deviceCreateSwapChain(device_raw: *dgpu.Device, surface_raw: ?*dgpu.Surface, descriptor: *const dgpu.SwapChain.Descriptor) *dgpu.SwapChain {
+    pub inline fn deviceCreateSwapChain(device_raw: *dgpu.Device, surface_raw: ?*dgpu.Surface, descriptor: dgpu.SwapChain.Descriptor) *dgpu.SwapChain {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const surface: *impl.Surface = @ptrCast(@alignCast(surface_raw.?));
         const swapchain = device.createSwapChain(surface, descriptor) catch unreachable;
         return @ptrCast(swapchain);
     }
 
-    pub inline fn deviceCreateTexture(device_raw: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+    pub inline fn deviceCreateTexture(device_raw: *dgpu.Device, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const texture = device.createTexture(descriptor) catch unreachable;
         return @ptrCast(texture);
@@ -583,7 +561,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn deviceGetLimits(device: *dgpu.Device, limits: *dgpu.SupportedLimits) u32 {
+    pub inline fn deviceGetLimits(device: *dgpu.Device, limits: *dgpu.Limits) u32 {
         _ = device;
         _ = limits;
         unreachable;
@@ -592,7 +570,6 @@ pub const Impl = struct {
     pub inline fn deviceGetQueue(device_raw: *dgpu.Device) *dgpu.Queue {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         const queue = device.getQueue() catch unreachable;
-        queue.manager.reference();
         return @ptrCast(queue);
     }
 
@@ -602,13 +579,13 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn deviceImportSharedFence(device: *dgpu.Device, descriptor: *const dgpu.SharedFence.Descriptor) *dgpu.SharedFence {
+    pub inline fn deviceImportSharedFence(device: *dgpu.Device, descriptor: dgpu.SharedFence.Descriptor) *dgpu.SharedFence {
         _ = device;
         _ = descriptor;
         unreachable;
     }
 
-    pub inline fn deviceImportSharedTextureMemory(device: *dgpu.Device, descriptor: *const dgpu.SharedTextureMemory.Descriptor) *dgpu.SharedTextureMemory {
+    pub inline fn deviceImportSharedTextureMemory(device: *dgpu.Device, descriptor: dgpu.SharedTextureMemory.Descriptor) *dgpu.SharedTextureMemory {
         _ = device;
         _ = descriptor;
         unreachable;
@@ -639,25 +616,25 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn deviceSetDeviceLostCallback(device_raw: *dgpu.Device, callback: ?dgpu.Device.LostCallback, userdata: ?*anyopaque) void {
+    pub inline fn deviceSetDeviceLostCallback(device_raw: *dgpu.Device, userdata: ?*anyopaque, callback: ?dgpu.Device.LostCallback) void {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         device.lost_cb = callback;
         device.lost_cb_userdata = userdata;
     }
 
-    pub inline fn deviceSetLabel(device: *dgpu.Device, label: [*:0]const u8) void {
+    pub inline fn deviceSetLabel(device: *dgpu.Device, label: []const u8) void {
         _ = device;
         _ = label;
         unreachable;
     }
 
-    pub inline fn deviceSetLoggingCallback(device_raw: *dgpu.Device, callback: ?dgpu.LoggingCallback, userdata: ?*anyopaque) void {
+    pub inline fn deviceSetLoggingCallback(device_raw: *dgpu.Device, userdata: ?*anyopaque, callback: ?dgpu.LoggingCallback) void {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         device.log_cb = callback;
         device.log_cb_userdata = userdata;
     }
 
-    pub inline fn deviceSetUncapturedErrorCallback(device_raw: *dgpu.Device, callback: ?dgpu.ErrorCallback, userdata: ?*anyopaque) void {
+    pub inline fn deviceSetUncapturedErrorCallback(device_raw: *dgpu.Device, userdata: ?*anyopaque, callback: ?dgpu.ErrorCallback) void {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         device.err_cb = callback;
         device.err_cb_userdata = userdata;
@@ -687,7 +664,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn externalTextureSetLabel(external_texture: *dgpu.ExternalTexture, label: [*:0]const u8) void {
+    pub inline fn externalTextureSetLabel(external_texture: *dgpu.ExternalTexture, label: []const u8) void {
         _ = external_texture;
         _ = label;
         unreachable;
@@ -703,7 +680,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn instanceCreateSurface(instance_raw: *dgpu.Instance, descriptor: *const dgpu.Surface.Descriptor) *dgpu.Surface {
+    pub inline fn instanceCreateSurface(instance_raw: *dgpu.Instance, descriptor: dgpu.Surface.Descriptor) *dgpu.Surface {
         const instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
         const surface = instance.createSurface(descriptor) catch unreachable;
         return @ptrCast(surface);
@@ -714,17 +691,10 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn instanceRequestAdapter(
-        instance_raw: *dgpu.Instance,
-        options: ?*const dgpu.RequestAdapterOptions,
-        callback: dgpu.RequestAdapterCallback,
-        userdata: ?*anyopaque,
-    ) void {
+    pub inline fn instanceCreateAdapter(instance_raw: *dgpu.Instance, descriptor: dgpu.Adapter.Descriptor) *dgpu.Adapter {
         const instance: *impl.Instance = @ptrCast(@alignCast(instance_raw));
-        const adapter = impl.Adapter.init(instance, options orelse &dgpu.RequestAdapterOptions{}) catch |err| {
-            return callback(.err, undefined, @errorName(err), userdata);
-        };
-        callback(.success, @as(*dgpu.Adapter, @ptrCast(adapter)), null, userdata);
+        const adapter = instance.createAdapter(descriptor) catch unreachable;
+        return @ptrCast(adapter);
     }
 
     pub inline fn instanceReference(instance_raw: *dgpu.Instance) void {
@@ -737,7 +707,7 @@ pub const Impl = struct {
         instance.manager.release();
     }
 
-    pub inline fn pipelineLayoutSetLabel(pipeline_layout: *dgpu.PipelineLayout, label: [*:0]const u8) void {
+    pub inline fn pipelineLayoutSetLabel(pipeline_layout: *dgpu.PipelineLayout, label: []const u8) void {
         _ = pipeline_layout;
         _ = label;
         unreachable;
@@ -768,7 +738,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn querySetSetLabel(query_set: *dgpu.QuerySet, label: [*:0]const u8) void {
+    pub inline fn querySetSetLabel(query_set: *dgpu.QuerySet, label: []const u8) void {
         _ = query_set;
         _ = label;
         unreachable;
@@ -801,7 +771,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn queueSetLabel(queue: *dgpu.Queue, label: [*:0]const u8) void {
+    pub inline fn queueSetLabel(queue: *dgpu.Queue, label: []const u8) void {
         _ = queue;
         _ = label;
         unreachable;
@@ -888,7 +858,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderBundleEncoderFinish(render_bundle_encoder: *dgpu.RenderBundleEncoder, descriptor: ?*const dgpu.RenderBundle.Descriptor) *dgpu.RenderBundle {
+    pub inline fn renderBundleEncoderFinish(render_bundle_encoder: *dgpu.RenderBundleEncoder, descriptor: dgpu.RenderBundle.Descriptor) *dgpu.RenderBundle {
         _ = render_bundle_encoder;
         _ = descriptor;
         unreachable;
@@ -929,7 +899,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderBundleEncoderSetLabel(render_bundle_encoder: *dgpu.RenderBundleEncoder, label: [*:0]const u8) void {
+    pub inline fn renderBundleEncoderSetLabel(render_bundle_encoder: *dgpu.RenderBundleEncoder, label: []const u8) void {
         _ = render_bundle_encoder;
         _ = label;
         unreachable;
@@ -1048,7 +1018,7 @@ pub const Impl = struct {
         render_pass_encoder.setIndexBuffer(buffer, format, offset, size) catch unreachable;
     }
 
-    pub inline fn renderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: [*:0]const u8) void {
+    pub inline fn renderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: []const u8) void {
         _ = render_pass_encoder;
         _ = label;
         unreachable;
@@ -1116,7 +1086,7 @@ pub const Impl = struct {
         return @ptrCast(layout);
     }
 
-    pub inline fn renderPipelineSetLabel(render_pipeline: *dgpu.RenderPipeline, label: [*:0]const u8) void {
+    pub inline fn renderPipelineSetLabel(render_pipeline: *dgpu.RenderPipeline, label: []const u8) void {
         _ = render_pipeline;
         _ = label;
         unreachable;
@@ -1132,7 +1102,7 @@ pub const Impl = struct {
         render_pipeline.manager.release();
     }
 
-    pub inline fn samplerSetLabel(sampler: *dgpu.Sampler, label: [*:0]const u8) void {
+    pub inline fn samplerSetLabel(sampler: *dgpu.Sampler, label: []const u8) void {
         _ = sampler;
         _ = label;
         unreachable;
@@ -1155,7 +1125,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn shaderModuleSetLabel(shader_module: *dgpu.ShaderModule, label: [*:0]const u8) void {
+    pub inline fn shaderModuleSetLabel(shader_module: *dgpu.ShaderModule, label: []const u8) void {
         _ = shader_module;
         _ = label;
         unreachable;
@@ -1171,7 +1141,7 @@ pub const Impl = struct {
         shader_module.manager.release();
     }
 
-    pub inline fn sharedFenceExportInfo(shared_fence: *dgpu.SharedFence, info: *dgpu.SharedFence.ExportInfo) void {
+    pub inline fn sharedFenceExportInfo(shared_fence: *dgpu.SharedFence, info: *dgpu.SharedFence.BackendHandle) void {
         _ = shared_fence;
         _ = info;
         unreachable;
@@ -1187,14 +1157,14 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn sharedTextureMemoryBeginAccess(shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: *const dgpu.SharedTextureMemory.BeginAccessDescriptor) void {
+    pub inline fn sharedTextureMemoryBeginAccess(shared_texture_memory: *dgpu.SharedTextureMemory, texture: *dgpu.Texture, descriptor: dgpu.SharedTextureMemory.BeginAccessDescriptor) void {
         _ = shared_texture_memory;
         _ = texture;
         _ = descriptor;
         unreachable;
     }
 
-    pub inline fn sharedTextureMemoryCreateTexture(shared_texture_memory: *dgpu.SharedTextureMemory, descriptor: *const dgpu.Texture.Descriptor) *dgpu.Texture {
+    pub inline fn sharedTextureMemoryCreateTexture(shared_texture_memory: *dgpu.SharedTextureMemory, descriptor: dgpu.Texture.Descriptor) *dgpu.Texture {
         _ = shared_texture_memory;
         _ = descriptor;
         unreachable;
@@ -1218,7 +1188,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn sharedTextureMemorySetLabel(shared_texture_memory: *dgpu.SharedTextureMemory, label: [*:0]const u8) void {
+    pub inline fn sharedTextureMemorySetLabel(shared_texture_memory: *dgpu.SharedTextureMemory, label: []const u8) void {
         _ = shared_texture_memory;
         _ = label;
         unreachable;
@@ -1279,7 +1249,7 @@ pub const Impl = struct {
         swap_chain.manager.release();
     }
 
-    pub inline fn textureCreateView(texture_raw: *dgpu.Texture, descriptor: ?*const dgpu.TextureView.Descriptor) *dgpu.TextureView {
+    pub inline fn textureCreateView(texture_raw: *dgpu.Texture, descriptor: dgpu.TextureView.Descriptor) *dgpu.TextureView {
         const texture: *impl.Texture = @ptrCast(@alignCast(texture_raw));
         const texture_view = texture.createView(descriptor) catch unreachable;
         return @ptrCast(texture_view);
@@ -1330,7 +1300,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn textureSetLabel(texture: *dgpu.Texture, label: [*:0]const u8) void {
+    pub inline fn textureSetLabel(texture: *dgpu.Texture, label: []const u8) void {
         _ = texture;
         _ = label;
         unreachable;
@@ -1346,7 +1316,7 @@ pub const Impl = struct {
         texture.manager.release();
     }
 
-    pub inline fn textureViewSetLabel(texture_view: *dgpu.TextureView, label: [*:0]const u8) void {
+    pub inline fn textureViewSetLabel(texture_view: *dgpu.TextureView, label: []const u8) void {
         _ = texture_view;
         _ = label;
         unreachable;

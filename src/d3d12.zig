@@ -166,7 +166,7 @@ pub const Adapter = struct {
             .driver_description = "", // TODO
             .adapter_type = .unknown,
             .backend_type = .d3d12,
-            .compatibility_mode = .false,
+            .compatibility_mode = false,
         };
     }
 };
@@ -340,7 +340,7 @@ pub const Device = struct {
         return ShaderModule.initAir(device, air);
     }
 
-    pub fn createShaderModuleSpirv(device: *Device, code: []const u8) !*ShaderModule {
+    pub fn createShaderModuleSpirv(device: *Device, code: []const u32) !*ShaderModule {
         _ = code;
         _ = device;
         return error.unsupported;

@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) !void {
         .source_file = .{ .path = "src/main.zig" },
         .dependencies = &.{
             .{ .name = "vulkan", .module = vulkan_dep.module("vulkan-zig-generated") },
-            .{ .name = "gpu", .module = mach_gpu_dep.module("mach-gpu") },
+            .{ .name = "webgpu", .module = mach_gpu_dep.module("mach-gpu") },
             .{ .name = "objc", .module = mach_objc_dep.module("mach-objc") },
         },
     });

@@ -18,15 +18,3 @@ pub fn Manager(comptime T: type) type {
         }
     };
 }
-
-pub fn findChained(comptime T: type, next_in_chain: ?*const dgpu.ChainedStruct) ?*const T {
-    const search = @as(*align(1) const dgpu.ChainedStruct, @ptrCast(std.meta.fieldInfo(T, .chain).default_value.?));
-    var chain = next_in_chain;
-    while (chain) |c| {
-        if (c.s_type == search.s_type) {
-            return @as(*const T, @ptrCast(c));
-        }
-        chain = c.next;
-    }
-    return null;
-}

@@ -1,36 +1,33 @@
 const std = @import("std");
-const Bool32 = @import("main.zig").Bool32;
-const ChainedStruct = @import("main.zig").ChainedStruct;
-const dawn = @import("dawn.zig");
 const MapModeFlags = @import("main.zig").MapModeFlags;
 const Impl = @import("interface.zig").Impl;
 
 pub const Buffer = opaque {
-    pub const MapCallback = *const fn (status: MapAsyncStatus, userdata: ?*anyopaque) callconv(.C) void;
+    pub const MapCallback = *const fn (status: MapAsyncStatus, userdata: ?*anyopaque) void;
 
-    pub const BindingType = enum(u32) {
-        undefined = 0x00000000,
-        uniform = 0x00000001,
-        storage = 0x00000002,
-        read_only_storage = 0x00000003,
+    pub const BindingType = enum {
+        undefined,
+        uniform,
+        storage,
+        read_only_storage,
     };
 
-    pub const MapState = enum(u32) {
-        unmapped = 0x00000000,
-        pending = 0x00000001,
-        mapped = 0x00000002,
+    pub const MapState = enum {
+        unmapped,
+        pending,
+        mapped,
     };
 
-    pub const MapAsyncStatus = enum(u32) {
-        success = 0x00000000,
-        validation_error = 0x00000001,
-        unknown = 0x00000002,
-        device_lost = 0x00000003,
-        destroyed_before_callback = 0x00000004,
-        unmapped_before_callback = 0x00000005,
-        mapping_already_pending = 0x00000006,
-        offset_out_of_range = 0x00000007,
-        size_out_of_range = 0x00000008,
+    pub const MapAsyncStatus = enum {
+        success,
+        validation_error,
+        unknown,
+        device_lost,
+        destroyed_before_callback,
+        unmapped_before_callback,
+        mapping_already_pending,
+        offset_out_of_range,
+        size_out_of_range,
     };
 
     pub const UsageFlags = packed struct(u32) {
@@ -47,38 +44,22 @@ pub const Buffer = opaque {
 
         _padding: u22 = 0,
 
-        comptime {
-            std.debug.assert(
-                @sizeOf(@This()) == @sizeOf(u32) and
-                    @bitSizeOf(@This()) == @bitSizeOf(u32),
-            );
-        }
-
-        pub const none = UsageFlags{};
-
         pub fn equal(a: UsageFlags, b: UsageFlags) bool {
             return @as(u10, @truncate(@as(u32, @bitCast(a)))) == @as(u10, @truncate(@as(u32, @bitCast(b))));
         }
     };
 
-    pub const BindingLayout = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
+    pub const BindingLayout = struct {
         type: BindingType = .undefined,
-        has_dynamic_offset: Bool32 = .false,
+        has_dynamic_offset: bool = false,
         min_binding_size: u64 = 0,
     };
 
-    pub const Descriptor = extern struct {
-        pub const NextInChain = extern union {
-            generic: ?*const ChainedStruct,
-            dawn_buffer_descriptor_error_info_from_wire_client: *const dawn.BufferDescriptorErrorInfoFromWireClient,
-        };
-
-        next_in_chain: NextInChain = .{ .generic = null },
-        label: ?[*:0]const u8 = null,
+    pub const Descriptor = struct {
+        label: ?[:0]const u8 = null,
         usage: UsageFlags,
         size: u64,
-        mapped_at_creation: Bool32 = .false,
+        mapped_at_creation: bool = false,
     };
 
     pub inline fn destroy(buffer: *Buffer) void {
@@ -139,16 +120,10 @@ pub const Buffer = opaque {
         context: anytype,
         comptime callback: fn (ctx: @TypeOf(context), status: MapAsyncStatus) callconv(.Inline) void,
     ) void {
-        const Context = @TypeOf(context);
-        const Helper = struct {
-            pub fn cCallback(status: MapAsyncStatus, userdata: ?*anyopaque) callconv(.C) void {
-                callback(if (Context == void) {} else @as(Context, @ptrCast(@alignCast(userdata))), status);
-            }
-        };
-        Impl.bufferMapAsync(buffer, mode, offset, size, Helper.cCallback, if (Context == void) null else context);
+        Impl.bufferMapAsync(buffer, mode, offset, size, context, callback);
     }
 
-    pub inline fn setLabel(buffer: *Buffer, label: [*:0]const u8) void {
+    pub inline fn setLabel(buffer: *Buffer, label: [:0]const u8) void {
         Impl.bufferSetLabel(buffer, label);
     }
 

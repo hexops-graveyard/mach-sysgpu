@@ -118,7 +118,7 @@ pub const Adapter = struct {
             .driver_description = "", // TODO
             .adapter_type = if (mtl_device.isLowPower()) .integrated_gpu else .discrete_gpu,
             .backend_type = .metal,
-            .compatibility_mode = .false,
+            .compatibility_mode = false,
         };
     }
 };
@@ -222,7 +222,7 @@ pub const Device = struct {
         return ShaderModule.initAir(device, air);
     }
 
-    pub fn createShaderModuleSpirv(device: *Device, code: []const u8) !*ShaderModule {
+    pub fn createShaderModuleSpirv(device: *Device, code: []const u32) !*ShaderModule {
         _ = code;
         _ = device;
         return error.unsupported;
@@ -940,7 +940,7 @@ pub const RenderPipeline = struct {
                 defer depth_stencil_desc.release();
 
                 depth_stencil_desc.setDepthCompareFunction(conv.metalCompareFunction(ds.depth_compare));
-                depth_stencil_desc.setDepthWriteEnabled(ds.depth_write_enabled == .true);
+                depth_stencil_desc.setDepthWriteEnabled(ds.depth_write_enabled);
                 depth_stencil_desc.setFrontFaceStencil(front_desc);
                 depth_stencil_desc.setBackFaceStencil(back_desc);
                 if (desc.label) |label| {
@@ -961,7 +961,7 @@ pub const RenderPipeline = struct {
         // multisample
         mtl_desc.setSampleCount(desc.multisample.count);
         // mask - TODO
-        mtl_desc.setAlphaToCoverageEnabled(desc.multisample.alpha_to_coverage_enabled == .true);
+        mtl_desc.setAlphaToCoverageEnabled(desc.multisample.alpha_to_coverage_enabled);
 
         // fragment
         if (desc.fragment) |frag| {

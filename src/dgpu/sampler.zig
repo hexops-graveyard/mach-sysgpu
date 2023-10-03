@@ -1,31 +1,28 @@
-const ChainedStruct = @import("main.zig").ChainedStruct;
 const FilterMode = @import("main.zig").FilterMode;
 const MipmapFilterMode = @import("main.zig").MipmapFilterMode;
 const CompareFunction = @import("main.zig").CompareFunction;
 const Impl = @import("interface.zig").Impl;
 
 pub const Sampler = opaque {
-    pub const AddressMode = enum(u32) {
-        repeat = 0x00000000,
-        mirror_repeat = 0x00000001,
-        clamp_to_edge = 0x00000002,
+    pub const AddressMode = enum {
+        repeat,
+        mirror_repeat,
+        clamp_to_edge,
     };
 
-    pub const BindingType = enum(u32) {
-        undefined = 0x00000000,
-        filtering = 0x00000001,
-        non_filtering = 0x00000002,
-        comparison = 0x00000003,
+    pub const BindingType = enum {
+        undefined,
+        filtering,
+        non_filtering,
+        comparison,
     };
 
-    pub const BindingLayout = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
+    pub const BindingLayout = struct {
         type: BindingType = .undefined,
     };
 
-    pub const Descriptor = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
-        label: ?[*:0]const u8 = null,
+    pub const Descriptor = struct {
+        label: ?[:0]const u8 = null,
         address_mode_u: AddressMode = .clamp_to_edge,
         address_mode_v: AddressMode = .clamp_to_edge,
         address_mode_w: AddressMode = .clamp_to_edge,
@@ -38,7 +35,7 @@ pub const Sampler = opaque {
         max_anisotropy: u16 = 1,
     };
 
-    pub inline fn setLabel(sampler: *Sampler, label: [*:0]const u8) void {
+    pub inline fn setLabel(sampler: *Sampler, label: [:0]const u8) void {
         Impl.samplerSetLabel(sampler, label);
     }
 

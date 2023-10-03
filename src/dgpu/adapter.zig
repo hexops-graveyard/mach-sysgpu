@@ -1,19 +1,29 @@
 const std = @import("std");
 const testing = std.testing;
-const dawn = @import("dawn.zig");
-const Bool32 = @import("main.zig").Bool32;
-const ChainedStructOut = @import("main.zig").ChainedStructOut;
 const Device = @import("device.zig").Device;
 const Instance = @import("instance.zig").Instance;
 const FeatureName = @import("main.zig").FeatureName;
-const SupportedLimits = @import("main.zig").SupportedLimits;
-const RequestDeviceStatus = @import("main.zig").RequestDeviceStatus;
+const Limits = @import("main.zig").Limits;
+const Surface = @import("surface.zig").Surface;
 const BackendType = @import("main.zig").BackendType;
-const RequestDeviceCallback = @import("main.zig").RequestDeviceCallback;
 const Impl = @import("interface.zig").Impl;
 
 pub const Adapter = opaque {
-    pub const Type = enum(u32) {
+    pub const Descriptor = struct {
+        compatible_surface: ?*Surface = null,
+        power_preference: PowerPreference = .undefined,
+        backend_type: BackendType = .undefined,
+        force_fallback_adapter: bool = false,
+        compatibility_mode: bool = false,
+    };
+
+    pub const PowerPreference = enum {
+        undefined,
+        low_power,
+        high_performance,
+    };
+
+    pub const Type = enum {
         discrete_gpu,
         integrated_gpu,
         cpu,
@@ -29,25 +39,19 @@ pub const Adapter = opaque {
         }
     };
 
-    pub const Properties = extern struct {
-        pub const NextInChain = extern union {
-            generic: ?*const ChainedStructOut,
-            dawn_adapter_properties_power_preference: *const dawn.AdapterPropertiesPowerPreference,
-        };
-
-        next_in_chain: NextInChain = .{ .generic = null },
+    pub const Properties = struct {
         vendor_id: u32,
-        vendor_name: [*:0]const u8,
-        architecture: [*:0]const u8,
+        vendor_name: []const u8,
+        architecture: []const u8,
         device_id: u32,
-        name: [*:0]const u8,
-        driver_description: [*:0]const u8,
+        name: []const u8,
+        driver_description: []const u8,
         adapter_type: Type,
         backend_type: BackendType,
-        compatibility_mode: Bool32 = .false,
+        compatibility_mode: bool = false,
     };
 
-    pub inline fn createDevice(adapter: *Adapter, descriptor: ?*const Device.Descriptor) ?*Device {
+    pub inline fn createDevice(adapter: *Adapter, descriptor: Device.Descriptor) ?*Device {
         return Impl.adapterCreateDevice(adapter, descriptor);
     }
 
@@ -71,41 +75,16 @@ pub const Adapter = opaque {
         return Impl.adapterGetInstance(adapter);
     }
 
-    pub inline fn getLimits(adapter: *Adapter, limits: *SupportedLimits) bool {
-        return Impl.adapterGetLimits(adapter, limits);
+    pub inline fn getLimits(adapter: *Adapter) Limits {
+        return Impl.adapterGetLimits(adapter);
     }
 
-    pub inline fn getProperties(adapter: *Adapter, properties: *Adapter.Properties) void {
-        Impl.adapterGetProperties(adapter, properties);
+    pub inline fn getProperties(adapter: *Adapter) Adapter.Properties {
+        return Impl.adapterGetProperties(adapter);
     }
 
     pub inline fn hasFeature(adapter: *Adapter, feature: FeatureName) bool {
         return Impl.adapterHasFeature(adapter, feature);
-    }
-
-    pub inline fn requestDevice(
-        adapter: *Adapter,
-        descriptor: ?*const Device.Descriptor,
-        context: anytype,
-        comptime callback: fn (
-            ctx: @TypeOf(context),
-            status: RequestDeviceStatus,
-            device: *Device,
-            message: ?[*:0]const u8,
-        ) callconv(.Inline) void,
-    ) void {
-        const Context = @TypeOf(context);
-        const Helper = struct {
-            pub fn cCallback(status: RequestDeviceStatus, device: *Device, message: ?[*:0]const u8, userdata: ?*anyopaque) callconv(.C) void {
-                callback(
-                    if (Context == void) {} else @as(Context, @ptrCast(@alignCast(userdata))),
-                    status,
-                    device,
-                    message,
-                );
-            }
-        };
-        Impl.adapterRequestDevice(adapter, descriptor, Helper.cCallback, if (Context == void) null else context);
     }
 
     pub inline fn reference(adapter: *Adapter) void {
@@ -116,7 +95,3 @@ pub const Adapter = opaque {
         Impl.adapterRelease(adapter);
     }
 };
-
-test "Adapter.Type name" {
-    try testing.expectEqualStrings("Discrete GPU", Adapter.Type.discrete_gpu.name());
-}

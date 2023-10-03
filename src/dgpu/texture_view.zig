@@ -1,32 +1,31 @@
-const ChainedStruct = @import("main.zig").ChainedStruct;
+const std = @import("std");
 const Texture = @import("texture.zig").Texture;
 const Impl = @import("interface.zig").Impl;
 const types = @import("main.zig");
 
 pub const TextureView = opaque {
-    pub const Dimension = enum(u32) {
-        dimension_undefined = 0x00000000,
-        dimension_1d = 0x00000001,
-        dimension_2d = 0x00000002,
-        dimension_2d_array = 0x00000003,
-        dimension_cube = 0x00000004,
-        dimension_cube_array = 0x00000005,
-        dimension_3d = 0x00000006,
+    pub const Dimension = enum {
+        dimension_undefined,
+        dimension_1d,
+        dimension_2d,
+        dimension_2d_array,
+        dimension_cube,
+        dimension_cube_array,
+        dimension_3d,
     };
 
-    pub const Descriptor = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
-        label: ?[*:0]const u8 = null,
+    pub const Descriptor = struct {
+        label: ?[:0]const u8 = null,
         format: Texture.Format = .undefined,
         dimension: Dimension = .dimension_undefined,
         base_mip_level: u32 = 0,
-        mip_level_count: u32 = types.mip_level_count_undefined,
+        mip_level_count: u32 = std.math.maxInt(u32),
         base_array_layer: u32 = 0,
-        array_layer_count: u32 = types.array_layer_count_undefined,
+        array_layer_count: u32 = std.math.maxInt(u32),
         aspect: Texture.Aspect = .all,
     };
 
-    pub inline fn setLabel(texture_view: *TextureView, label: [*:0]const u8) void {
+    pub inline fn setLabel(texture_view: *TextureView, label: [:0]const u8) void {
         Impl.textureViewSetLabel(texture_view, label);
     }
 
