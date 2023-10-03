@@ -971,14 +971,9 @@ pub const Impl = struct {
         render_pass_encoder.draw(vertex_count, instance_count, first_vertex, first_instance);
     }
 
-    pub inline fn renderPassEncoderDrawIndexed(render_pass_encoder: *dgpu.RenderPassEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) void {
-        _ = render_pass_encoder;
-        _ = index_count;
-        _ = instance_count;
-        _ = first_index;
-        _ = base_vertex;
-        _ = first_instance;
-        unreachable;
+    pub inline fn renderPassEncoderDrawIndexed(render_pass_encoder_raw: *dgpu.RenderPassEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) void {
+        const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
+        render_pass_encoder.drawIndexed(index_count, instance_count, first_index, base_vertex, first_instance);
     }
 
     pub inline fn renderPassEncoderDrawIndexedIndirect(render_pass_encoder: *dgpu.RenderPassEncoder, indirect_buffer: *dgpu.Buffer, indirect_offset: u64) void {
@@ -1047,13 +1042,10 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderPassEncoderSetIndexBuffer(render_pass_encoder: *dgpu.RenderPassEncoder, buffer: *dgpu.Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) void {
-        _ = render_pass_encoder;
-        _ = buffer;
-        _ = format;
-        _ = offset;
-        _ = size;
-        unreachable;
+    pub inline fn renderPassEncoderSetIndexBuffer(render_pass_encoder_raw: *dgpu.RenderPassEncoder, buffer_raw: *dgpu.Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) void {
+        const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
+        const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
+        render_pass_encoder.setIndexBuffer(buffer, format, offset, size) catch unreachable;
     }
 
     pub inline fn renderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: [*:0]const u8) void {

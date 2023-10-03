@@ -78,10 +78,19 @@ pub fn metalCullMode(mode: dgpu.CullMode) mtl.CullMode {
     };
 }
 
-pub fn metalIndexType(face: dgpu.FrontFace) mtl.IndexType {
-    return switch (face) {
+pub fn metalIndexType(format: dgpu.IndexFormat) mtl.IndexType {
+    return switch (format) {
+        .undefined => unreachable,
         .uint16 => mtl.IndexTypeUInt16,
         .uint32 => mtl.IndexTypeUInt32,
+    };
+}
+
+pub fn metalIndexElementSize(format: dgpu.IndexFormat) mtl.IndexType {
+    return switch (format) {
+        .undefined => unreachable,
+        .uint16 => 2,
+        .uint32 => 4,
     };
 }
 
@@ -134,8 +143,8 @@ pub fn metalPixelFormat(format: dgpu.Texture.Format) mtl.PixelFormat {
         .rgba32_sint => mtl.PixelFormatRGBA32Sint,
         .stencil8 => mtl.PixelFormatStencil8,
         .depth16_unorm => mtl.PixelFormatDepth16Unorm,
-        .depth24_plus => mtl.PixelFormatDepth24Unorm_Stencil8,
-        .depth24_plus_stencil8 => mtl.PixelFormatDepth24Unorm_Stencil8,
+        .depth24_plus => mtl.PixelFormatDepth32Float, // mtl.PixelFormatDepth24Unorm_Stencil8 only for non-Apple Silicon
+        .depth24_plus_stencil8 => mtl.PixelFormatDepth32Float_Stencil8, // mtl.PixelFormatDepth24Unorm_Stencil8 only for non-Apple Silicon
         .depth32_float => mtl.PixelFormatDepth32Float,
         .depth32_float_stencil8 => mtl.PixelFormatDepth32Float_Stencil8,
         .bc1_rgba_unorm => mtl.PixelFormatBC1_RGBA,
