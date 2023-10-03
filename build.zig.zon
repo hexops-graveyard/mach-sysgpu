@@ -18,5 +18,9 @@
             .url = "https://pkg.machengine.org/direct3d-headers/563ee4b888784df0614c1bb9c8fc9fc48fa18f2a.tar.gz",
             .hash = "1220c7fc160384063b9584c6dc766cfcc9a06a392f7549c40cb2ec94e50d9d5110ae",
         },
+        .xcode_frameworks = .{
+            .url = "https://github.com/hexops/xcode-frameworks-pkg/archive/f8b854f9a1f4b4602b4f998ee42588d524d44e52.tar.gz",
+            .hash = "1220ab440d1b8484038d619f743ef6a71e3683d13152eae941aa2d6bcb12fcea3135",
+        },
     },
 }

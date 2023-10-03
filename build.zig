@@ -1,66 +1,76 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) !void {
-    const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const target = b.standardTargetOptions(.{});
 
     const vulkan_dep = b.dependency("vulkan_zig_generated", .{});
-    const vulkan_mod = vulkan_dep.module("vulkan-zig-generated");
-
-    const gpu_dep = b.dependency("mach_gpu", .{
+    const mach_gpu_dep = b.dependency("mach_gpu", .{
         .target = target,
         .optimize = optimize,
     });
-    const gpu_mod = gpu_dep.module("mach-gpu");
-
-    const objc_dep = b.dependency("mach_objc", .{
+    const mach_objc_dep = b.dependency("mach_objc", .{
         .target = target,
         .optimize = optimize,
     });
-    const objc_mod = objc_dep.module("mach-objc");
 
-    _ = b.addModule("mach-dusk", .{
+    const module = b.addModule("mach-dusk", .{
         .source_file = .{ .path = "src/main.zig" },
         .dependencies = &.{
-            .{ .name = "vulkan", .module = vulkan_mod },
-            .{ .name = "gpu", .module = gpu_mod },
-            .{ .name = "objc", .module = objc_mod },
+            .{ .name = "vulkan", .module = vulkan_dep.module("vulkan-zig-generated") },
+            .{ .name = "gpu", .module = mach_gpu_dep.module("mach-gpu") },
+            .{ .name = "objc", .module = mach_objc_dep.module("mach-objc") },
         },
     });
 
-    const tests = b.addTest(.{
+    const lib = b.addStaticLibrary(.{
+        .name = "mach-dusk",
+        .root_source_file = b.addWriteFiles().add("empty.c", ""),
+        .target = target,
+        .optimize = optimize,
+    });
+    link(b, lib);
+    b.installArtifact(lib);
+
+    const test_step = b.step("test", "Run library tests");
+    const main_tests = b.addTest(.{
+        .name = "dusk-tests",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
     });
-    tests.linkLibC();
-    tests.addModule("vulkan", vulkan_mod);
-    tests.addModule("gpu", gpu_mod);
-    tests.addModule("objc", objc_mod);
 
-    if (target.isDarwin()) {
-        tests.linkFramework("AppKit");
-        tests.linkFramework("CoreGraphics");
-        tests.linkFramework("Foundation");
-        tests.linkFramework("Metal");
-        tests.linkFramework("QuartzCore");
+    var iter = module.dependencies.iterator();
+    while (iter.next()) |e| {
+        main_tests.addModule(e.key_ptr.*, e.value_ptr.*);
+    }
+    main_tests.linkLibrary(lib);
+    link(b, main_tests);
+    b.installArtifact(main_tests);
+
+    test_step.dependOn(&b.addRunArtifact(main_tests).step);
+}
+
+pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
+    if (step.target.isDarwin()) {
+        @import("xcode_frameworks").addPaths(b, step);
+        step.linkFramework("AppKit");
+        step.linkFramework("CoreGraphics");
+        step.linkFramework("Foundation");
+        step.linkFramework("Metal");
+        step.linkFramework("QuartzCore");
     }
 
-    if (target.isWindows()) {
-        tests.addCSourceFile(.{ .file = .{ .path = "src/d3d12/workarounds.c" }, .flags = &.{} });
+    if (step.target.isWindows()) {
+        step.linkLibC();
+        step.addCSourceFile(.{ .file = .{ .path = "src/d3d12/workarounds.c" }, .flags = &.{} });
 
-        tests.linkLibrary(b.dependency("direct3d_headers", .{
-            .target = target,
-            .optimize = optimize,
+        step.linkLibrary(b.dependency("direct3d_headers", .{
+            .target = step.target,
+            .optimize = step.optimize,
         }).artifact("direct3d-headers"));
-        @import("direct3d_headers").addLibraryPath(tests);
-        tests.linkSystemLibrary("d3d12");
-        tests.linkSystemLibrary("d3dcompiler_47");
+        @import("direct3d_headers").addLibraryPath(step);
+        step.linkSystemLibrary("d3d12");
+        step.linkSystemLibrary("d3dcompiler_47");
     }
-
-    b.installArtifact(tests);
-
-    const run_tests = b.addRunArtifact(tests);
-    const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&run_tests.step);
 }
