@@ -10,7 +10,7 @@ const shader = @import("shader.zig");
 const conv = @import("metal/conv.zig");
 
 const log = std.log.scoped(.metal);
-const upload_page_size = 16 * 1024 * 1024;
+const upload_page_size = 64 * 1024 * 1024; // TODO - split writes and/or support large uploads
 const max_storage_buffers_per_shader_stage = 8;
 const max_uniform_buffers_per_shader_stage = 12;
 const max_buffers_per_stage = 20;
@@ -992,8 +992,11 @@ pub const RenderPipeline = struct {
             }
         }
         if (desc.depth_stencil) |ds| {
-            mtl_desc.setDepthAttachmentPixelFormat(conv.metalPixelFormat(ds.format));
-            mtl_desc.setStencilAttachmentPixelFormat(conv.metalPixelFormat(ds.format));
+            const format = conv.metalPixelFormat(ds.format);
+            if (isDepthFormat(format))
+                mtl_desc.setDepthAttachmentPixelFormat(format);
+            if (isStencilFormat(format))
+                mtl_desc.setStencilAttachmentPixelFormat(format);
         }
 
         // create
@@ -1302,7 +1305,11 @@ pub const RenderPassEncoder = struct {
     vertex_lengths_buffer: LengthsBuffer,
     fragment_lengths_buffer: LengthsBuffer,
     referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
-    primitive_type: mtl.PrimitiveType = mtl.PrimitiveTypeTriangle,
+    primitive_type: mtl.PrimitiveType = undefined,
+    index_type: mtl.IndexType = undefined,
+    index_element_size: usize = undefined,
+    index_buffer: *mtl.Buffer = undefined,
+    index_buffer_offset: ns.UInteger = undefined,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const pool = objc.autoreleasePoolPush();
@@ -1413,6 +1420,20 @@ pub const RenderPassEncoder = struct {
         );
     }
 
+    pub fn drawIndexed(encoder: *RenderPassEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) void {
+        const mtl_encoder = encoder.mtl_encoder;
+        mtl_encoder.drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset_instanceCount_baseVertex_baseInstance(
+            encoder.primitive_type,
+            index_count,
+            encoder.index_type,
+            encoder.index_buffer,
+            encoder.index_buffer_offset + first_index * encoder.index_element_size,
+            instance_count,
+            base_vertex,
+            first_instance,
+        );
+    }
+
     pub fn end(encoder: *RenderPassEncoder) void {
         const mtl_encoder = encoder.mtl_encoder;
         mtl_encoder.endEncoding();
@@ -1438,6 +1459,14 @@ pub const RenderPassEncoder = struct {
         }
         encoder.vertex_lengths_buffer.apply_vertex(mtl_encoder);
         encoder.fragment_lengths_buffer.apply_fragment(mtl_encoder);
+    }
+
+    pub fn setIndexBuffer(encoder: *RenderPassEncoder, buffer: *Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) !void {
+        _ = size;
+        encoder.index_type = conv.metalIndexType(format);
+        encoder.index_element_size = conv.metalIndexElementSize(format);
+        encoder.index_buffer = buffer.mtl_buffer;
+        encoder.index_buffer_offset = offset;
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
@@ -1494,6 +1523,9 @@ pub const Queue = struct {
     }
 
     pub fn deinit(queue: *Queue) void {
+        // TODO - avoid spin loop
+        while (queue.completed_value.load(.Acquire) < queue.fence_value) {}
+
         if (queue.command_encoder) |command_encoder| command_encoder.manager.release();
         queue.command_queue.release();
         allocator.destroy(queue);

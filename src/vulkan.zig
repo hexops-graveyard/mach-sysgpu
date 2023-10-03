@@ -1988,6 +1988,19 @@ pub const RenderPassEncoder = struct {
         allocator.destroy(encoder);
     }
 
+    pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
+        vkd.cmdDraw(encoder.encoder.buffer.buffer, vertex_count, instance_count, first_vertex, first_instance);
+    }
+
+    pub fn drawIndexed(encoder: *RenderPassEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) void {
+        _ = first_instance;
+        _ = base_vertex;
+        _ = first_index;
+        _ = instance_count;
+        _ = index_count;
+        _ = encoder;
+    }
+
     pub fn setBindGroup(
         encoder: *RenderPassEncoder,
         group_index: u32,
@@ -2005,6 +2018,19 @@ pub const RenderPassEncoder = struct {
             @intCast(dynamic_offset_count),
             if (dynamic_offsets) |offsets| offsets else &[_]u32{},
         );
+    }
+
+    pub fn end(encoder: *RenderPassEncoder) void {
+        vkd.cmdEndRenderPass(encoder.encoder.buffer.buffer);
+    }
+
+    pub fn setIndexBuffer(encoder: *RenderPassEncoder, buffer: *Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) void {
+        _ = size;
+        _ = offset;
+        _ = format;
+        _ = buffer;
+        _ = encoder;
+        unreachable;
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
@@ -2046,14 +2072,6 @@ pub const RenderPassEncoder = struct {
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
         _ = size;
         vkd.cmdBindVertexBuffers(encoder.encoder.buffer.buffer, slot, 1, @ptrCast(&.{buffer.buffer}), @ptrCast(&offset));
-    }
-
-    pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-        vkd.cmdDraw(encoder.encoder.buffer.buffer, vertex_count, instance_count, first_vertex, first_instance);
-    }
-
-    pub fn end(encoder: *RenderPassEncoder) void {
-        vkd.cmdEndRenderPass(encoder.encoder.buffer.buffer);
     }
 };
 

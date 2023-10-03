@@ -162,6 +162,8 @@ fn emitStruct(msl: *Msl, inst: Inst.Struct) !void {
         try msl.emitTypeSuffix(member.type);
         if (member.builtin) |builtin| {
             try msl.emitBuiltin(builtin);
+        } else if (member.location) |location| {
+            try msl.print(" [[attribute({})]]", .{location});
         }
         try msl.writeAll(";\n");
     }

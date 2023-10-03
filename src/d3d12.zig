@@ -1239,11 +1239,29 @@ pub const RenderPassEncoder = struct {
         allocator.destroy(encoder);
     }
 
+    pub fn drawIndexed(encoder: *RenderPassEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) void {
+        _ = first_instance;
+        _ = base_vertex;
+        _ = first_index;
+        _ = instance_count;
+        _ = index_count;
+        _ = encoder;
+    }
+
     pub fn setBindGroup(encoder: *RenderPassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
         _ = dynamic_offsets;
         _ = dynamic_offset_count;
         _ = group;
         _ = group_index;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn setIndexBuffer(encoder: *RenderPassEncoder, buffer: *Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) void {
+        _ = size;
+        _ = offset;
+        _ = format;
+        _ = buffer;
         _ = encoder;
         unreachable;
     }
