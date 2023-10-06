@@ -31,11 +31,12 @@ pub const TextureView = @import("texture_view.zig").TextureView;
 const instance = @import("instance.zig");
 const device = @import("device.zig");
 const interface = @import("interface.zig");
+const c_api = @import("c_api.zig");
 
 pub const Impl = interface.Impl;
 pub const StubInterface = interface.StubInterface;
-pub const Export = interface.Export;
 pub const Interface = interface.Interface;
+pub const Export = c_api.Export;
 
 pub inline fn createInstance(descriptor: instance.Instance.Descriptor) ?*instance.Instance {
     return Impl.createInstance(descriptor);
@@ -207,7 +208,7 @@ pub const ErrorType = enum {
     device_lost,
 };
 
-pub const FeatureName = enum {
+pub const FeatureName = enum(u8) {
     undefined,
     depth_clip_control,
     depth32_float_stencil8,

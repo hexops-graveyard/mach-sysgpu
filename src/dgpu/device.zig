@@ -29,11 +29,11 @@ const Impl = @import("interface.zig").Impl;
 pub const Device = opaque {
     pub const LostCallback = *const fn (
         reason: LostReason,
-        message: []const u8,
+        message: [*:0]const u8,
         userdata: ?*anyopaque,
-    ) void;
+    ) callconv(.C) void;
 
-    pub const LostReason = enum {
+    pub const LostReason = enum(u8) {
         undefined,
         destroyed,
     };
@@ -187,7 +187,7 @@ pub const Device = opaque {
                     cb(if (Context == void) {} else @as(Context, @ptrCast(@alignCast(userdata))), reason, message);
                 }
             };
-            Impl.deviceSetDeviceLostCallback(device, if (Context == void) null else context, Helper.cCallback);
+            Impl.deviceSetDeviceLostCallback(device, Helper.cCallback, if (Context == void) null else context);
         } else {
             Impl.deviceSetDeviceLostCallback(device, null, null);
         }
@@ -209,7 +209,7 @@ pub const Device = opaque {
                     cb(if (Context == void) {} else @as(Context, @ptrCast(@alignCast(userdata))), log_type, message);
                 }
             };
-            Impl.deviceSetLoggingCallback(device, if (Context == void) null else context, Helper.cCallback);
+            Impl.deviceSetLoggingCallback(device, Helper.cCallback, if (Context == void) null else context);
         } else {
             Impl.deviceSetLoggingCallback(device, null, null);
         }
@@ -227,7 +227,7 @@ pub const Device = opaque {
                     cb(if (Context == void) {} else @as(Context, @ptrCast(@alignCast(userdata))), error_type, message);
                 }
             };
-            Impl.deviceSetUncapturedErrorCallback(device, if (Context == void) null else context, Helper.cCallback);
+            Impl.deviceSetUncapturedErrorCallback(device, Helper.cCallback, if (Context == void) null else context);
         } else {
             Impl.deviceSetUncapturedErrorCallback(device, null, null);
         }

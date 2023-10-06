@@ -37,7 +37,7 @@ pub const Impl = struct {
         return @as(*dgpu.Instance, @ptrCast(instance));
     }
 
-    pub inline fn getProcAddress(device: *dgpu.Device, proc_name: [*:0]const u8) ?dgpu.Proc {
+    pub inline fn getProcAddress(device: *dgpu.Device, proc_name: [:0]const u8) ?dgpu.Proc {
         _ = device;
         _ = proc_name;
         unreachable;
@@ -92,7 +92,7 @@ pub const Impl = struct {
         adapter.manager.release();
     }
 
-    pub inline fn bindGroupSetLabel(bind_group: *dgpu.BindGroup, label: []const u8) void {
+    pub inline fn bindGroupSetLabel(bind_group: *dgpu.BindGroup, label: [:0]const u8) void {
         _ = bind_group;
         _ = label;
         unreachable;
@@ -108,7 +108,7 @@ pub const Impl = struct {
         bind_group.manager.release();
     }
 
-    pub inline fn bindGroupLayoutSetLabel(bind_group_layout: *dgpu.BindGroupLayout, label: []const u8) void {
+    pub inline fn bindGroupLayoutSetLabel(bind_group_layout: *dgpu.BindGroupLayout, label: [:0]const u8) void {
         _ = bind_group_layout;
         _ = label;
         unreachable;
@@ -154,7 +154,7 @@ pub const Impl = struct {
         buffer.mapAsync(mode, offset, size, callback, userdata) catch unreachable;
     }
 
-    pub inline fn bufferSetLabel(buffer: *dgpu.Buffer, label: []const u8) void {
+    pub inline fn bufferSetLabel(buffer: *dgpu.Buffer, label: [:0]const u8) void {
         _ = buffer;
         _ = label;
         unreachable;
@@ -175,7 +175,7 @@ pub const Impl = struct {
         buffer.manager.release();
     }
 
-    pub inline fn commandBufferSetLabel(command_buffer: *dgpu.CommandBuffer, label: []const u8) void {
+    pub inline fn commandBufferSetLabel(command_buffer: *dgpu.CommandBuffer, label: [:0]const u8) void {
         _ = command_buffer;
         _ = label;
         unreachable;
@@ -257,13 +257,13 @@ pub const Impl = struct {
         return @ptrCast(command_buffer);
     }
 
-    pub inline fn commandEncoderInjectValidationError(command_encoder: *dgpu.CommandEncoder, message: [*:0]const u8) void {
+    pub inline fn commandEncoderInjectValidationError(command_encoder: *dgpu.CommandEncoder, message: [:0]const u8) void {
         _ = command_encoder;
         _ = message;
         unreachable;
     }
 
-    pub inline fn commandEncoderInsertDebugMarker(command_encoder: *dgpu.CommandEncoder, marker_label: [*:0]const u8) void {
+    pub inline fn commandEncoderInsertDebugMarker(command_encoder: *dgpu.CommandEncoder, marker_label: [:0]const u8) void {
         _ = command_encoder;
         _ = marker_label;
         unreachable;
@@ -274,7 +274,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn commandEncoderPushDebugGroup(command_encoder: *dgpu.CommandEncoder, group_label: [*:0]const u8) void {
+    pub inline fn commandEncoderPushDebugGroup(command_encoder: *dgpu.CommandEncoder, group_label: [:0]const u8) void {
         _ = command_encoder;
         _ = group_label;
         unreachable;
@@ -290,7 +290,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn commandEncoderSetLabel(command_encoder: *dgpu.CommandEncoder, label: []const u8) void {
+    pub inline fn commandEncoderSetLabel(command_encoder: *dgpu.CommandEncoder, label: [:0]const u8) void {
         _ = command_encoder;
         _ = label;
         unreachable;
@@ -336,7 +336,7 @@ pub const Impl = struct {
         compute_pass_encoder.end();
     }
 
-    pub inline fn computePassEncoderInsertDebugMarker(compute_pass_encoder: *dgpu.ComputePassEncoder, marker_label: [*:0]const u8) void {
+    pub inline fn computePassEncoderInsertDebugMarker(compute_pass_encoder: *dgpu.ComputePassEncoder, marker_label: [:0]const u8) void {
         _ = compute_pass_encoder;
         _ = marker_label;
         unreachable;
@@ -347,7 +347,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn computePassEncoderPushDebugGroup(compute_pass_encoder: *dgpu.ComputePassEncoder, group_label: [*:0]const u8) void {
+    pub inline fn computePassEncoderPushDebugGroup(compute_pass_encoder: *dgpu.ComputePassEncoder, group_label: [:0]const u8) void {
         _ = compute_pass_encoder;
         _ = group_label;
         unreachable;
@@ -359,7 +359,7 @@ pub const Impl = struct {
         compute_pass_encoder.setBindGroup(group_index, group, dynamic_offset_count, dynamic_offsets) catch unreachable;
     }
 
-    pub inline fn computePassEncoderSetLabel(compute_pass_encoder: *dgpu.ComputePassEncoder, label: []const u8) void {
+    pub inline fn computePassEncoderSetLabel(compute_pass_encoder: *dgpu.ComputePassEncoder, label: [:0]const u8) void {
         _ = compute_pass_encoder;
         _ = label;
         unreachable;
@@ -395,7 +395,7 @@ pub const Impl = struct {
         return @ptrCast(layout);
     }
 
-    pub inline fn computePipelineSetLabel(compute_pipeline: *dgpu.ComputePipeline, label: []const u8) void {
+    pub inline fn computePipelineSetLabel(compute_pipeline: *dgpu.ComputePipeline, label: [:0]const u8) void {
         _ = compute_pipeline;
         _ = label;
         unreachable;
@@ -591,7 +591,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn deviceInjectError(device: *dgpu.Device, typ: dgpu.ErrorType, message: [*:0]const u8) void {
+    pub inline fn deviceInjectError(device: *dgpu.Device, typ: dgpu.ErrorType, message: [:0]const u8) void {
         _ = device;
         _ = typ;
         _ = message;
@@ -616,25 +616,25 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn deviceSetDeviceLostCallback(device_raw: *dgpu.Device, userdata: ?*anyopaque, callback: ?dgpu.Device.LostCallback) void {
+    pub inline fn deviceSetDeviceLostCallback(device_raw: *dgpu.Device, callback: ?dgpu.Device.LostCallback, userdata: ?*anyopaque) void {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         device.lost_cb = callback;
         device.lost_cb_userdata = userdata;
     }
 
-    pub inline fn deviceSetLabel(device: *dgpu.Device, label: []const u8) void {
+    pub inline fn deviceSetLabel(device: *dgpu.Device, label: [:0]const u8) void {
         _ = device;
         _ = label;
         unreachable;
     }
 
-    pub inline fn deviceSetLoggingCallback(device_raw: *dgpu.Device, userdata: ?*anyopaque, callback: ?dgpu.LoggingCallback) void {
+    pub inline fn deviceSetLoggingCallback(device_raw: *dgpu.Device, callback: ?dgpu.LoggingCallback, userdata: ?*anyopaque) void {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         device.log_cb = callback;
         device.log_cb_userdata = userdata;
     }
 
-    pub inline fn deviceSetUncapturedErrorCallback(device_raw: *dgpu.Device, userdata: ?*anyopaque, callback: ?dgpu.ErrorCallback) void {
+    pub inline fn deviceSetUncapturedErrorCallback(device_raw: *dgpu.Device, callback: ?dgpu.ErrorCallback, userdata: ?*anyopaque) void {
         const device: *impl.Device = @ptrCast(@alignCast(device_raw));
         device.err_cb = callback;
         device.err_cb_userdata = userdata;
@@ -664,7 +664,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn externalTextureSetLabel(external_texture: *dgpu.ExternalTexture, label: []const u8) void {
+    pub inline fn externalTextureSetLabel(external_texture: *dgpu.ExternalTexture, label: [:0]const u8) void {
         _ = external_texture;
         _ = label;
         unreachable;
@@ -707,7 +707,7 @@ pub const Impl = struct {
         instance.manager.release();
     }
 
-    pub inline fn pipelineLayoutSetLabel(pipeline_layout: *dgpu.PipelineLayout, label: []const u8) void {
+    pub inline fn pipelineLayoutSetLabel(pipeline_layout: *dgpu.PipelineLayout, label: [:0]const u8) void {
         _ = pipeline_layout;
         _ = label;
         unreachable;
@@ -738,7 +738,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn querySetSetLabel(query_set: *dgpu.QuerySet, label: []const u8) void {
+    pub inline fn querySetSetLabel(query_set: *dgpu.QuerySet, label: [:0]const u8) void {
         _ = query_set;
         _ = label;
         unreachable;
@@ -771,7 +771,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn queueSetLabel(queue: *dgpu.Queue, label: []const u8) void {
+    pub inline fn queueSetLabel(queue: *dgpu.Queue, label: [:0]const u8) void {
         _ = queue;
         _ = label;
         unreachable;
@@ -819,7 +819,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderBundleSetLabel(render_bundle: *dgpu.RenderBundle, name: [*:0]const u8) void {
+    pub inline fn renderBundleSetLabel(render_bundle: *dgpu.RenderBundle, name: [:0]const u8) void {
         _ = name;
         _ = render_bundle;
         unreachable;
@@ -864,7 +864,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderBundleEncoderInsertDebugMarker(render_bundle_encoder: *dgpu.RenderBundleEncoder, marker_label: [*:0]const u8) void {
+    pub inline fn renderBundleEncoderInsertDebugMarker(render_bundle_encoder: *dgpu.RenderBundleEncoder, marker_label: [:0]const u8) void {
         _ = render_bundle_encoder;
         _ = marker_label;
         unreachable;
@@ -875,7 +875,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderBundleEncoderPushDebugGroup(render_bundle_encoder: *dgpu.RenderBundleEncoder, group_label: [*:0]const u8) void {
+    pub inline fn renderBundleEncoderPushDebugGroup(render_bundle_encoder: *dgpu.RenderBundleEncoder, group_label: [:0]const u8) void {
         _ = render_bundle_encoder;
         _ = group_label;
         unreachable;
@@ -899,7 +899,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderBundleEncoderSetLabel(render_bundle_encoder: *dgpu.RenderBundleEncoder, label: []const u8) void {
+    pub inline fn renderBundleEncoderSetLabel(render_bundle_encoder: *dgpu.RenderBundleEncoder, label: [:0]const u8) void {
         _ = render_bundle_encoder;
         _ = label;
         unreachable;
@@ -977,7 +977,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderPassEncoderInsertDebugMarker(render_pass_encoder: *dgpu.RenderPassEncoder, marker_label: [*:0]const u8) void {
+    pub inline fn renderPassEncoderInsertDebugMarker(render_pass_encoder: *dgpu.RenderPassEncoder, marker_label: [:0]const u8) void {
         _ = render_pass_encoder;
         _ = marker_label;
         unreachable;
@@ -988,7 +988,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn renderPassEncoderPushDebugGroup(render_pass_encoder: *dgpu.RenderPassEncoder, group_label: [*:0]const u8) void {
+    pub inline fn renderPassEncoderPushDebugGroup(render_pass_encoder: *dgpu.RenderPassEncoder, group_label: [:0]const u8) void {
         _ = render_pass_encoder;
         _ = group_label;
         unreachable;
@@ -1018,7 +1018,7 @@ pub const Impl = struct {
         render_pass_encoder.setIndexBuffer(buffer, format, offset, size) catch unreachable;
     }
 
-    pub inline fn renderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: []const u8) void {
+    pub inline fn renderPassEncoderSetLabel(render_pass_encoder: *dgpu.RenderPassEncoder, label: [:0]const u8) void {
         _ = render_pass_encoder;
         _ = label;
         unreachable;
@@ -1086,7 +1086,7 @@ pub const Impl = struct {
         return @ptrCast(layout);
     }
 
-    pub inline fn renderPipelineSetLabel(render_pipeline: *dgpu.RenderPipeline, label: []const u8) void {
+    pub inline fn renderPipelineSetLabel(render_pipeline: *dgpu.RenderPipeline, label: [:0]const u8) void {
         _ = render_pipeline;
         _ = label;
         unreachable;
@@ -1102,7 +1102,7 @@ pub const Impl = struct {
         render_pipeline.manager.release();
     }
 
-    pub inline fn samplerSetLabel(sampler: *dgpu.Sampler, label: []const u8) void {
+    pub inline fn samplerSetLabel(sampler: *dgpu.Sampler, label: [:0]const u8) void {
         _ = sampler;
         _ = label;
         unreachable;
@@ -1125,7 +1125,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn shaderModuleSetLabel(shader_module: *dgpu.ShaderModule, label: []const u8) void {
+    pub inline fn shaderModuleSetLabel(shader_module: *dgpu.ShaderModule, label: [:0]const u8) void {
         _ = shader_module;
         _ = label;
         unreachable;
@@ -1188,7 +1188,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn sharedTextureMemorySetLabel(shared_texture_memory: *dgpu.SharedTextureMemory, label: []const u8) void {
+    pub inline fn sharedTextureMemorySetLabel(shared_texture_memory: *dgpu.SharedTextureMemory, label: [:0]const u8) void {
         _ = shared_texture_memory;
         _ = label;
         unreachable;
@@ -1300,7 +1300,7 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn textureSetLabel(texture: *dgpu.Texture, label: []const u8) void {
+    pub inline fn textureSetLabel(texture: *dgpu.Texture, label: [:0]const u8) void {
         _ = texture;
         _ = label;
         unreachable;
@@ -1316,7 +1316,7 @@ pub const Impl = struct {
         texture.manager.release();
     }
 
-    pub inline fn textureViewSetLabel(texture_view: *dgpu.TextureView, label: []const u8) void {
+    pub inline fn textureViewSetLabel(texture_view: *dgpu.TextureView, label: [:0]const u8) void {
         _ = texture_view;
         _ = label;
         unreachable;
