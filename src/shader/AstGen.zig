@@ -1069,7 +1069,7 @@ fn genFor(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .let => try astgen.genLet(for_scope, extra.init),
         else => unreachable,
     };
-    scope.decls.putAssumeCapacity(extra.init, init);
+    for_scope.decls.putAssumeCapacity(extra.init, init);
 
     const cond_node_loc = astgen.tree.nodeLoc(extra.cond);
     const cond = try astgen.genExpr(for_scope, extra.cond);
@@ -1084,7 +1084,7 @@ fn genFor(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .increase => try astgen.genIncreaseDecrease(for_scope, extra.update, true),
         .decrease => try astgen.genIncreaseDecrease(for_scope, extra.update, false),
         .compound_assign => try astgen.genCompoundAssign(for_scope, extra.update),
-        .call => try astgen.genFnCall(scope, extra.update),
+        .call => try astgen.genFnCall(for_scope, extra.update),
         else => unreachable,
     };
 
@@ -1731,7 +1731,7 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         if (lhs_res_inst.matrix.cols == rhs_res_inst.matrix.rows) {
                             is_valid = true;
                             arithmetic_res_type = try astgen.addInst(.{ .matrix = .{
-                                .elem_type = lhs_res_inst.vector.elem_type,
+                                .elem_type = lhs_res_inst.matrix.elem_type,
                                 .cols = rhs_res_inst.matrix.cols,
                                 .rows = lhs_res_inst.matrix.rows,
                                 .value = null,
@@ -1742,7 +1742,7 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         if (rhs_res_inst.matrix.cols == lhs_res_inst.matrix.rows) {
                             is_valid = true;
                             arithmetic_res_type = try astgen.addInst(.{ .matrix = .{
-                                .elem_type = lhs_res_inst.vector.elem_type,
+                                .elem_type = lhs_res_inst.matrix.elem_type,
                                 .cols = lhs_res_inst.matrix.cols,
                                 .rows = rhs_res_inst.matrix.rows,
                                 .value = null,
@@ -1910,12 +1910,15 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .tanh => return astgen.genGenericUnaryBuiltin(scope, node, .tanh, &.{}, &.{ .f32, .f16 }, false, false),
             .trunc => return astgen.genGenericUnaryBuiltin(scope, node, .trunc, &.{}, &.{ .f32, .f16 }, false, false),
             .normalize => return astgen.genGenericUnaryBuiltin(scope, node, .normalize, &.{}, &.{ .f32, .f16 }, true, false),
-            .min => return astgen.genGenericBinaryBuiltin(scope, node, .min, false, true),
-            .max => return astgen.genGenericBinaryBuiltin(scope, node, .max, false, true),
-            .atan2 => return astgen.genGenericBinaryBuiltin(scope, node, .atan2, false, true),
-            .distance => return astgen.genGenericBinaryBuiltin(scope, node, .distance, false, false),
+            .min => return astgen.genGenericBinaryBuiltin(scope, node, .min, .any_in_any_out, true),
+            .max => return astgen.genGenericBinaryBuiltin(scope, node, .max, .any_in_any_out, true),
+            .atan2 => return astgen.genGenericBinaryBuiltin(scope, node, .atan2, .any_in_any_out, true),
+            .distance => return astgen.genGenericBinaryBuiltin(scope, node, .distance, .any_in_scalar_out, false),
+            .dot => return astgen.genGenericBinaryBuiltin(scope, node, .dot, .vector_in_scalar_out, false),
+            .pow => return astgen.genGenericBinaryBuiltin(scope, node, .pow, .any_in_any_out, false),
             .smoothstep => return astgen.genGenericFloatTripleBuiltin(scope, node, .smoothstep),
             .clamp => return astgen.genGenericFloatTripleBuiltin(scope, node, .clamp),
+            .mix => return astgen.genGenericFloatTripleBuiltin(scope, node, .mix),
             .dpdx => return astgen.genDerivativeBuiltin(scope, node, .dpdx),
             .dpdxCoarse => return astgen.genDerivativeBuiltin(scope, node, .dpdx_coarse),
             .dpdxFine => return astgen.genDerivativeBuiltin(scope, node, .dpdx_fine),
@@ -2836,7 +2839,7 @@ fn genGenericBinaryBuiltin(
     scope: *Scope,
     node: NodeIndex,
     comptime op: Inst.BinaryIntrinsic.Op,
-    comptime scalar_result: bool,
+    comptime form: enum { any_in_any_out, any_in_scalar_out, vector_in_scalar_out },
     comptime allow_int: bool,
 ) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
@@ -2857,8 +2860,11 @@ fn genGenericBinaryBuiltin(
     var result_type = arg1_res;
 
     switch (astgen.getInst(arg1_res)) {
-        .float => {},
-        .int => if (!allow_int) {
+        .float => if (form == .vector_in_scalar_out) {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
+        },
+        .int => if (!allow_int or form == .vector_in_scalar_out) {
             try astgen.errors.add(node_loc, "type mismatch", .{}, null);
             return error.AnalysisFail;
         },
@@ -2875,8 +2881,9 @@ fn genGenericBinaryBuiltin(
                 else => {},
             }
 
-            if (scalar_result) {
-                result_type = vec.elem_type;
+            switch (form) {
+                .any_in_scalar_out, .vector_in_scalar_out => result_type = vec.elem_type,
+                .any_in_any_out => {},
             }
         },
         else => {
