@@ -804,6 +804,8 @@ pub const Inst = union(enum) {
             max,
             atan2,
             distance,
+            dot,
+            pow,
         };
     };
 
@@ -820,6 +822,7 @@ pub const Inst = union(enum) {
         pub const Op = enum {
             smoothstep,
             clamp,
+            mix,
         };
     };
 

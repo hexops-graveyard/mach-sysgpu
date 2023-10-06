@@ -663,6 +663,8 @@ fn emitBinaryIntrinsic(msl: *Msl, inst: Inst.BinaryIntrinsic) !void {
         .max => if (result_type == .float) "fmax" else "max",
         .atan2 => "atan2",
         .distance => "distance",
+        .dot => "dot",
+        .pow => "pow",
     });
     try msl.writeAll("(");
     try msl.emitExpr(inst.lhs);

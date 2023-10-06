@@ -117,29 +117,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
             .@"fn" => _ = try spv.emitFn(inst_idx),
             .@"const" => _ = try spv.emitConst(inst_idx),
             .@"var" => _ = try spv.emitVarProto(&spv.global_section, inst_idx),
-            .@"struct" => |@"struct"| {
-                const member_list = spv.air.refToList(@"struct".members);
-                var members = std.ArrayList(IdRef).init(spv.allocator);
-                defer members.deinit();
-                try members.ensureTotalCapacityPrecise(member_list.len);
-
-                const id = spv.allocId();
-
-                try spv.debugName(id, spv.air.getStr(@"struct".name));
-                for (member_list, 0..) |member_inst_idx, i| {
-                    const member_inst = spv.air.getInst(member_inst_idx).struct_member;
-                    const member = try spv.emitType(member_inst.type);
-                    try spv.debugMemberName(id, i, spv.air.getStr(member_inst.name));
-                    members.appendAssumeCapacity(member);
-                }
-
-                try spv.global_section.emit(.OpTypeStruct, .{
-                    .id_result = id,
-                    .id_ref = members.items,
-                });
-
-                try spv.struct_map.put(spv.allocator, inst_idx, id);
-            },
+            .@"struct" => _ = try spv.emitStruct(inst_idx),
             else => unreachable,
         }
     }
@@ -684,19 +662,18 @@ fn emitStride(spv: *SpirV, inst: InstIndex, id: IdRef) !void {
     const @"struct" = spv.air.getInst(inst).@"struct";
     for (spv.air.refToList(@"struct".members)) |member| {
         const member_inst = spv.air.getInst(member).struct_member;
-        const stride = spv.getStride(member_inst.type);
         switch (spv.air.getInst(member_inst.type)) {
             .array => try spv.annotations_section.emit(.OpMemberDecorate, .{
                 .structure_type = id,
                 .member = 0,
-                .decoration = .{ .ArrayStride = .{ .array_stride = stride } },
+                .decoration = .{ .ArrayStride = .{ .array_stride = spv.getStride(member_inst.type) } },
             }),
             .matrix => try spv.annotations_section.emit(.OpMemberDecorate, .{
                 .structure_type = id,
                 .member = 0,
-                .decoration = .{ .MatrixStride = .{ .matrix_stride = stride } },
+                .decoration = .{ .MatrixStride = .{ .matrix_stride = spv.getStride(member_inst.type) } },
             }),
-            else => unreachable,
+            else => {},
         }
     }
 }
@@ -705,6 +682,7 @@ fn getStride(spv: *SpirV, inst: InstIndex) u8 {
     return switch (spv.air.getInst(inst)) {
         inline .int, .float => |num| num.type.width() / 8,
         .array => |arr| spv.getStride(arr.elem_type),
+        .vector => |vec| return spv.getStride(vec.elem_type),
         .matrix => |mat| return @as(u8, @intCast(@intFromEnum(mat.cols))) * spv.getStride(mat.elem_type),
         else => unreachable, // TODO
     };
@@ -713,6 +691,8 @@ fn getStride(spv: *SpirV, inst: InstIndex) u8 {
 fn getSize(spv: *SpirV, inst: InstIndex) u8 {
     return switch (spv.air.getInst(inst)) {
         inline .int, .float => |num| num.type.width() / 8,
+        .array => |arr| return @intCast(spv.air.resolveInt(arr.len).? * spv.getSize(arr.elem_type)),
+        .vector => |vec| return @intFromEnum(vec.size),
         .matrix => |mat| return @as(u8, @intCast(@intFromEnum(mat.cols))) * @intFromEnum(mat.rows) * spv.getSize(mat.elem_type),
         else => unreachable, // TODO
     };
@@ -762,9 +742,37 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
             },
         }),
         .atomic_type => |atomic| try spv.emitType(atomic.elem_type),
-        .@"struct" => spv.struct_map.get(inst).?,
+        .@"struct" => spv.struct_map.get(inst) orelse try spv.emitStruct(inst),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
+}
+
+fn emitStruct(spv: *SpirV, inst_idx: InstIndex) !IdRef {
+    const inst = spv.air.getInst(inst_idx).@"struct";
+
+    const member_list = spv.air.refToList(inst.members);
+    var members = std.ArrayList(IdRef).init(spv.allocator);
+    defer members.deinit();
+    try members.ensureTotalCapacityPrecise(member_list.len);
+
+    const id = spv.allocId();
+
+    try spv.debugName(id, spv.air.getStr(inst.name));
+    for (member_list, 0..) |member_inst_idx, i| {
+        const member_inst = spv.air.getInst(member_inst_idx).struct_member;
+        const member = try spv.emitType(member_inst.type);
+        try spv.debugMemberName(id, i, spv.air.getStr(member_inst.name));
+        members.appendAssumeCapacity(member);
+    }
+
+    try spv.global_section.emit(.OpTypeStruct, .{
+        .id_result = id,
+        .id_ref = members.items,
+    });
+
+    try spv.struct_map.put(spv.allocator, inst_idx, id);
+
+    return id;
 }
 
 fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!void {
@@ -1629,12 +1637,37 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
         },
         .matrix => switch (binary.op) {
             .mul => switch (rhs_res) {
+                .matrix => try section.emit(.OpFMul, .{
+                    .id_result = id,
+                    .id_result_type = type_id,
+                    .operand_1 = lhs,
+                    .operand_2 = rhs,
+                }),
                 .vector => try section.emit(.OpMatrixTimesVector, .{
                     .id_result = id,
                     .id_result_type = type_id,
                     .matrix = lhs,
                     .vector = rhs,
                 }),
+                .float => {
+                    const constructed_float_id = spv.allocId();
+                    const size = @as(u8, @intCast(@intFromEnum(lhs_res.matrix.cols))) * @intFromEnum(lhs_res.matrix.rows);
+                    var constituents = std.BoundedArray(IdRef, 16).init(size) catch unreachable;
+                    @memset(constituents.slice(), rhs);
+
+                    try section.emit(.OpCompositeConstruct, .{
+                        .id_result = constructed_float_id,
+                        .id_result_type = type_id,
+                        .constituents = constituents.slice(),
+                    });
+
+                    try section.emit(.OpFMul, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = constructed_float_id,
+                    });
+                },
                 else => unreachable,
             },
             .add => try section.emit(.OpFAdd, .{
@@ -1695,7 +1728,7 @@ fn emitUnaryIntrinsic(spv: *SpirV, section: *Section, unary: Inst.UnaryIntrinsic
 
             return id;
         },
-        else => unreachable,
+        else => std.debug.panic("TODO: implement Unary Intrinsic {s}", .{@tagName(unary.op)}),
     }
 }
 
@@ -1903,7 +1936,7 @@ fn emitMatrix(spv: *SpirV, section: *Section, inst: Inst.Matrix) !IdRef {
 
     const value = spv.air.getValue(Inst.Matrix.Value, inst.value.?);
     for (value[0..@intFromEnum(inst.cols)]) |elem_inst| {
-        const elem_id = try spv.emitVector(section, spv.air.getInst(elem_inst).vector);
+        const elem_id = try spv.emitExpr(section, elem_inst);
         elem_value.appendAssumeCapacity(elem_id);
     }
 
