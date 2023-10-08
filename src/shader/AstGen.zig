@@ -409,7 +409,9 @@ fn genStructMembers(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
 }
 
 fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
-    astgen.global_var_refs.clearRetainingCapacity();
+    const scratch_top = astgen.global_var_refs.count();
+    defer astgen.global_var_refs.shrinkRetainingCapacity(scratch_top);
+
     astgen.has_array_length = false;
 
     const fn_proto = astgen.tree.extraData(Node.FnProto, astgen.tree.nodeLHS(node));
@@ -586,7 +588,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    const global_var_refs = try astgen.addRefList(astgen.global_var_refs.keys());
+    const global_var_refs = try astgen.addRefList(astgen.global_var_refs.keys()[scratch_top..]);
 
     const inst = try astgen.addInst(.{
         .@"fn" = .{
