@@ -1918,9 +1918,9 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .distance => return astgen.genGenericBinaryBuiltin(scope, node, .distance, .any_in_scalar_out, false),
             .dot => return astgen.genGenericBinaryBuiltin(scope, node, .dot, .vector_in_scalar_out, false),
             .pow => return astgen.genGenericBinaryBuiltin(scope, node, .pow, .any_in_any_out, false),
-            .smoothstep => return astgen.genGenericFloatTripleBuiltin(scope, node, .smoothstep),
-            .clamp => return astgen.genGenericFloatTripleBuiltin(scope, node, .clamp),
-            .mix => return astgen.genGenericFloatTripleBuiltin(scope, node, .mix),
+            .smoothstep => return astgen.genGenericFloatTripleBuiltin(scope, node, .smoothstep, false),
+            .clamp => return astgen.genGenericFloatTripleBuiltin(scope, node, .clamp, false),
+            .mix => return astgen.genGenericFloatTripleBuiltin(scope, node, .mix, true),
             .dpdx => return astgen.genDerivativeBuiltin(scope, node, .dpdx),
             .dpdxCoarse => return astgen.genDerivativeBuiltin(scope, node, .dpdx_coarse),
             .dpdxFine => return astgen.genDerivativeBuiltin(scope, node, .dpdx_fine),
@@ -2460,6 +2460,10 @@ fn genFnCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
+    for (astgen.refToList(astgen.getInst(decl).@"fn".global_var_refs)) |var_inst_idx| {
+        try astgen.global_var_refs.put(astgen.allocator, var_inst_idx, {});
+    }
+
     return astgen.addInst(.{ .call = .{ .@"fn" = decl, .args = args } });
 }
 
@@ -2914,6 +2918,7 @@ fn genGenericFloatTripleBuiltin(
     scope: *Scope,
     node: NodeIndex,
     comptime op: Inst.TripleIntrinsic.Op,
+    comptime scalar_float_arg3: bool,
 ) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
@@ -2933,9 +2938,24 @@ fn genGenericFloatTripleBuiltin(
     const a2_res = try astgen.resolve(a2);
     const a3_res = try astgen.resolve(a3);
 
-    if (!try astgen.coerce(a2_res, a1_res) or !try astgen.coerce(a3_res, a1_res)) {
+    if (!try astgen.coerce(a2_res, a1_res)) {
         try astgen.errors.add(node_loc, "type mismatch", .{}, null);
         return error.AnalysisFail;
+    }
+
+    if (scalar_float_arg3) {
+        switch (astgen.getInst(a3_res)) {
+            .float => {},
+            else => {
+                try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+                return error.AnalysisFail;
+            },
+        }
+    } else {
+        if (!try astgen.coerce(a3_res, a1_res)) {
+            try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+            return error.AnalysisFail;
+        }
     }
 
     if (astgen.getInst(a1_res) == .float or
@@ -2947,10 +2967,10 @@ fn genGenericFloatTripleBuiltin(
                 .op = op,
                 .result_type = a1_res,
                 .a1_type = a1_res,
-                .a2_type = a1_res,
+                .a2_type = a2_res,
                 .a3_type = a3_res,
                 .a1 = a1,
-                .a2 = a1,
+                .a2 = a2,
                 .a3 = a3,
             },
         });
