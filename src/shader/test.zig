@@ -447,12 +447,13 @@ test "must error" {
     }
 }
 
-test "triangle.wgsl -> triangle.spv" {
+test "triangle.wgsl" {
     const triangle = @embedFile("test/triangle.wgsl");
-    try expectCodegen(triangle, "triangle.spv");
+    try expectCodegen(triangle, "triangle.msl", .msl);
+    try expectCodegen(triangle, "triangle.spv", .spirv);
 }
 
-fn expectCodegen(source: [:0]const u8, comptime file_name: []const u8) !void {
+fn expectCodegen(source: [:0]const u8, comptime file_name: []const u8, lang: CodeGen.Language) !void {
     var errors = try ErrorList.init(allocator);
     defer errors.deinit();
 
@@ -472,11 +473,11 @@ fn expectCodegen(source: [:0]const u8, comptime file_name: []const u8) !void {
     };
     defer ir.deinit(allocator);
 
-    const out = try CodeGen.generate(allocator, &ir, .spirv, .{ .emit_source_file = file_name });
+    const out = try CodeGen.generate(allocator, &ir, lang, .{});
     defer allocator.free(out);
 
-    try std.fs.cwd().makePath("zig-out/spirv/");
-    try std.fs.cwd().writeFile("zig-out/spirv/" ++ file_name, out);
+    try std.fs.cwd().makePath("zig-out/shader/");
+    try std.fs.cwd().writeFile("zig-out/shader/" ++ file_name, out);
 }
 
 fn expectIR(source: [:0]const u8) !Air {
