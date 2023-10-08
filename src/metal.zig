@@ -575,11 +575,20 @@ pub const TextureView = struct {
         if (opt_desc) |desc| {
             // TODO - analyze desc to see if we need to create a new view
 
+            const mip_level_count = if (desc.mip_level_count == dgpu.mip_level_count_undefined)
+                mtl_texture.mipmapLevelCount() - desc.base_mip_level
+            else
+                desc.mip_level_count;
+            const array_layer_count = if (desc.array_layer_count == dgpu.array_layer_count_undefined)
+                mtl_texture.arrayLength() - desc.base_array_layer
+            else
+                desc.array_layer_count;
+
             mtl_texture = mtl_texture.newTextureViewWithPixelFormat_textureType_levels_slices(
                 conv.metalPixelFormatForView(desc.format, mtl_texture.pixelFormat(), desc.aspect),
                 conv.metalTextureTypeForView(desc.dimension),
-                ns.Range.init(desc.base_mip_level, desc.mip_level_count),
-                ns.Range.init(desc.base_array_layer, desc.array_layer_count),
+                ns.Range.init(desc.base_mip_level, mip_level_count),
+                ns.Range.init(desc.base_array_layer, array_layer_count),
             ) orelse {
                 return error.newTextureViewFailed;
             };
@@ -618,24 +627,61 @@ pub const Sampler = struct {
 
 pub const BindGroupLayout = struct {
     manager: utils.Manager(BindGroupLayout) = .{},
+    entries: []const dgpu.BindGroupLayout.Entry,
 
     pub fn init(device: *Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
-        _ = descriptor;
         _ = device;
 
-        var layout = try allocator.create(BindGroupLayout);
-        layout.* = .{};
-        return layout;
-    }
+        var entries: []const dgpu.BindGroupLayout.Entry = undefined;
+        if (descriptor.entry_count > 0) {
+            entries = try allocator.dupe(dgpu.BindGroupLayout.Entry, descriptor.entries.?[0..descriptor.entry_count]);
+        } else {
+            entries = &[_]dgpu.BindGroupLayout.Entry{};
+        }
 
-    pub fn initDefault() !*BindGroupLayout {
         var layout = try allocator.create(BindGroupLayout);
-        layout.* = .{};
+        layout.* = .{
+            .entries = entries,
+        };
         return layout;
     }
 
     pub fn deinit(layout: *BindGroupLayout) void {
+        if (layout.entries.len > 0)
+            allocator.free(layout.entries);
         allocator.destroy(layout);
+    }
+
+    pub fn initDefault() !*BindGroupLayout {
+        var layout = try allocator.create(BindGroupLayout);
+        layout.* = .{
+            .entries = &[_]dgpu.BindGroupLayout.Entry{},
+        };
+        return layout;
+    }
+
+    // Internal
+    pub fn getEntry(layout: *BindGroupLayout, binding: u32) ?*const dgpu.BindGroupLayout.Entry {
+        for (layout.entries) |*entry| {
+            if (entry.binding == binding)
+                return entry;
+        }
+
+        return null;
+    }
+
+    pub fn getDynamicIndex(layout: *BindGroupLayout, binding: u32) ?u32 {
+        var index: u32 = 0;
+        for (layout.entries) |entry| {
+            if (entry.buffer.has_dynamic_offset == .false)
+                continue;
+
+            if (entry.binding == binding)
+                return index;
+            index += 1;
+        }
+
+        return null;
     }
 };
 
@@ -649,11 +695,13 @@ pub const BindGroup = struct {
     const Entry = struct {
         kind: Kind,
         binding: u32,
+        visibility: dgpu.ShaderStageFlags,
         buffer: ?*Buffer = null,
         offset: u32 = 0,
         size: u32,
         sampler: ?*mtl.SamplerState = null,
         texture: ?*mtl.Texture = null,
+        dynamic_index: ?u32 = null,
     };
 
     manager: utils.Manager(BindGroup) = .{},
@@ -662,13 +710,19 @@ pub const BindGroup = struct {
     pub fn init(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
         _ = device;
 
+        const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.layout));
+
         var mtl_entries = try allocator.alloc(Entry, desc.entry_count);
         errdefer allocator.free(mtl_entries);
 
         for (desc.entries.?[0..desc.entry_count], 0..) |entry, i| {
             var mtl_entry = &mtl_entries[i];
+            const bind_group_entry = layout.getEntry(entry.binding) orelse return error.UnknownBinding;
+
             // TODO - need to remap user binding space [0, 1000) to API binding space
             mtl_entry.binding = entry.binding;
+            mtl_entry.visibility = bind_group_entry.visibility;
+            mtl_entry.dynamic_index = layout.getDynamicIndex(entry.binding);
             if (entry.buffer) |buffer_raw| {
                 const buffer: *Buffer = @ptrCast(@alignCast(buffer_raw));
                 mtl_entry.kind = .buffer;
@@ -1273,7 +1327,6 @@ pub const ComputePassEncoder = struct {
 
     pub fn setBindGroup(encoder: *ComputePassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
         _ = group_index;
-        _ = dynamic_offsets;
         _ = dynamic_offset_count;
 
         const mtl_encoder = encoder.mtl_encoder;
@@ -1282,8 +1335,9 @@ pub const ComputePassEncoder = struct {
             switch (entry.kind) {
                 .buffer => {
                     try encoder.referenced_buffers.append(allocator, entry.buffer.?);
+                    const offset = entry.offset + if (entry.dynamic_index) |i| dynamic_offsets.?[i] else 0;
                     encoder.lengths_buffer.set(entry.binding, entry.size);
-                    mtl_encoder.setBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
+                    mtl_encoder.setBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, entry.binding);
                 },
                 .sampler => mtl_encoder.setSamplerState_atIndex(entry.sampler, entry.binding),
                 .texture => mtl_encoder.setTexture_atIndex(entry.texture, entry.binding),
@@ -1440,21 +1494,38 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn setBindGroup(encoder: *RenderPassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
-        _ = dynamic_offsets;
         _ = dynamic_offset_count;
         _ = group_index;
         const mtl_encoder = encoder.mtl_encoder;
 
-        // TODO - need stage info
         for (group.entries) |entry| {
             switch (entry.kind) {
                 .buffer => {
                     try encoder.referenced_buffers.append(allocator, entry.buffer.?);
-                    encoder.vertex_lengths_buffer.set(entry.binding, entry.size);
-                    mtl_encoder.setVertexBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, entry.offset, entry.binding);
+                    const offset = entry.offset + if (entry.dynamic_index) |i| dynamic_offsets.?[i] else 0;
+                    if (entry.visibility.vertex) {
+                        encoder.vertex_lengths_buffer.set(entry.binding, entry.size);
+                        mtl_encoder.setVertexBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, entry.binding);
+                    }
+                    if (entry.visibility.fragment) {
+                        encoder.fragment_lengths_buffer.set(entry.binding, entry.size);
+                        mtl_encoder.setFragmentBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, entry.binding);
+                    }
                 },
-                .sampler => mtl_encoder.setFragmentSamplerState_atIndex(entry.sampler, entry.binding),
-                .texture => mtl_encoder.setFragmentTexture_atIndex(entry.texture, entry.binding),
+                .sampler => {
+                    if (entry.visibility.vertex) {
+                        mtl_encoder.setVertexSamplerState_atIndex(entry.sampler, entry.binding);
+                    } else {
+                        mtl_encoder.setFragmentSamplerState_atIndex(entry.sampler, entry.binding);
+                    }
+                },
+                .texture => {
+                    if (entry.visibility.vertex) {
+                        mtl_encoder.setVertexTexture_atIndex(entry.texture, entry.binding);
+                    } else {
+                        mtl_encoder.setFragmentTexture_atIndex(entry.texture, entry.binding);
+                    }
+                },
             }
         }
         encoder.vertex_lengths_buffer.apply_vertex(mtl_encoder);
@@ -1485,11 +1556,23 @@ pub const RenderPassEncoder = struct {
         encoder.primitive_type = pipeline.primitive_type;
     }
 
+    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
+        const mtl_encoder = encoder.mtl_encoder;
+        const scissor_rect = mtl.ScissorRect.init(x, y, width, height);
+        mtl_encoder.setScissorRect(scissor_rect);
+    }
+
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
         _ = size;
         const mtl_encoder = encoder.mtl_encoder;
         try encoder.referenced_buffers.append(allocator, buffer);
         mtl_encoder.setVertexBuffer_offset_atIndex(buffer.mtl_buffer, offset, slot_vertex_buffers + slot);
+    }
+
+    pub fn setViewport(encoder: *RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
+        const mtl_encoder = encoder.mtl_encoder;
+        const viewport = mtl.Viewport.init(x, y, width, height, min_depth, max_depth);
+        mtl_encoder.setViewport(viewport);
     }
 };
 

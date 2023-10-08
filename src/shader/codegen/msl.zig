@@ -14,8 +14,9 @@ air: *const Air,
 allocator: std.mem.Allocator,
 storage: std.ArrayListUnmanaged(u8),
 writer: std.ArrayListUnmanaged(u8).Writer,
-indent: u32,
-stage: Inst.Fn.Stage,
+indent: u32 = 0,
+stage: Inst.Fn.Stage = .none,
+has_stage_in: bool = false,
 
 pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo) ![]const u8 {
     _ = debug_info;
@@ -26,8 +27,6 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         .allocator = allocator,
         .storage = storage,
         .writer = storage.writer(allocator),
-        .indent = 0,
-        .stage = .none,
     };
     defer {
         msl.storage.deinit(allocator);
@@ -40,6 +39,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         switch (air.getInst(inst_idx)) {
             .@"fn" => |inst| try msl.emitFn(inst),
             .@"struct" => |inst| try msl.emitStruct(inst),
+            .@"const" => |inst| try msl.emitConst(inst),
             .@"var" => {},
             else => |inst| try msl.print("TopLevel: {}\n", .{inst}), // TODO
         }
@@ -163,7 +163,7 @@ fn emitStruct(msl: *Msl, inst: Inst.Struct) !void {
         if (member.builtin) |builtin| {
             try msl.emitBuiltin(builtin);
         } else if (member.location) |location| {
-            try msl.print(" [[attribute({})]]", .{location});
+            try msl.print(" [[user(_{})]]", .{location});
         }
         try msl.writeAll(";\n");
     }
@@ -190,12 +190,26 @@ fn emitBuiltin(msl: *Msl, builtin: Builtin) !void {
     try msl.writeAll("]]");
 }
 
+fn emitConst(msl: *Msl, inst: Inst.Const) !void {
+    try msl.writeAll("constant ");
+    try msl.emitType(inst.type);
+    try msl.writeAll(" ");
+    try msl.writeAll(msl.air.getStr(inst.name));
+    try msl.emitTypeSuffix(inst.type);
+    try msl.writeAll(" = ");
+    try msl.emitExpr(inst.expr);
+    try msl.writeAll(";\n");
+}
+
 fn isStageInParameter(msl: *Msl, inst_idx: InstIndex) bool {
     const inst = msl.air.getInst(inst_idx).fn_param;
     return inst.builtin == null;
 }
 
 fn hasStageInType(msl: *Msl, inst: Inst.Fn) bool {
+    if (inst.stage == .none)
+        return false;
+
     if (inst.params != .none) {
         const param_list = msl.air.refToList(inst.params);
         for (param_list) |param_inst_idx| {
@@ -208,11 +222,9 @@ fn hasStageInType(msl: *Msl, inst: Inst.Fn) bool {
 
 fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
     msl.stage = inst.stage;
+    msl.has_stage_in = msl.hasStageInType(inst);
 
-    const has_stage_in = msl.hasStageInType(inst);
-    if (has_stage_in) {
-        try msl.emitStageInType(inst);
-    }
+    try msl.emitStageInType(inst);
 
     if (inst.stage != .none) {
         try msl.print("{s} ", .{stringFromStage(inst.stage)});
@@ -229,8 +241,7 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
 
         var add_comma = false;
 
-        const global_var_ref_list = msl.air.refToList(inst.global_var_refs);
-        for (global_var_ref_list) |var_inst_idx| {
+        for (msl.air.refToList(inst.global_var_refs)) |var_inst_idx| {
             try msl.writeAll(if (add_comma) ",\n" else "\n");
             add_comma = true;
             try msl.writeIndent();
@@ -247,7 +258,7 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
         if (inst.params != .none) {
             const param_list = msl.air.refToList(inst.params);
             for (param_list) |param_inst_idx| {
-                if (msl.isStageInParameter(param_inst_idx))
+                if (msl.has_stage_in and msl.isStageInParameter(param_inst_idx))
                     continue;
                 try msl.writeAll(if (add_comma) ",\n" else "\n");
                 add_comma = true;
@@ -256,7 +267,7 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
             }
         }
 
-        if (has_stage_in) {
+        if (msl.has_stage_in) {
             // TODO - name collisions
             try msl.writeAll(if (add_comma) ",\n" else "\n");
             add_comma = true;
@@ -270,6 +281,9 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
 }
 
 fn emitStageInType(msl: *Msl, inst: Inst.Fn) !void {
+    if (!msl.has_stage_in)
+        return;
+
     try msl.print("struct {s}In {{\n", .{stringFromStageCapitalized(inst.stage)});
     {
         msl.enterScope();
@@ -312,6 +326,8 @@ fn emitFnParam(msl: *Msl, inst_idx: InstIndex) !void {
     } else if (inst.location) |location| {
         if (msl.stage == .vertex) {
             try msl.print(" [[attribute({})]]", .{location});
+        } else {
+            try msl.print(" [[user(_{})]]", .{location});
         }
     }
 }
@@ -424,7 +440,7 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .int => |inst| try msl.emitInt(inst),
         .float => |inst| try msl.emitFloat(inst),
         .vector => |inst| try msl.emitVector(inst),
-        //.matrix => |inst| msl.emitMatrix(inst),
+        .matrix => |inst| try msl.emitMatrix(inst),
         .array => |inst| try msl.emitArray(inst),
         .unary => |inst| try msl.emitUnary(inst),
         .unary_intrinsic => |inst| try msl.emitUnaryIntrinsic(inst),
@@ -432,10 +448,12 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .binary_intrinsic => |inst| try msl.emitBinaryIntrinsic(inst),
         .triple_intrinsic => |inst| try msl.emitTripleIntrinsic(inst),
         .assign => |inst| try msl.emitAssign(inst),
+        .increase => |inst| try msl.emitIncrease(inst),
+        .decrease => |inst| try msl.emitDecrease(inst),
         .field_access => |inst| try msl.emitFieldAccess(inst),
         .swizzle_access => |inst| try msl.emitSwizzleAccess(inst),
         .index_access => |inst| try msl.emitIndexAccess(inst),
-        //.call => |inst| msl.emitCall(inst),
+        .call => |inst| try msl.emitCall(inst),
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
@@ -446,8 +464,9 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
 fn emitVarRef(msl: *Msl, inst_idx: InstIndex) !void {
     switch (msl.air.getInst(inst_idx)) {
         .@"var" => |v| try msl.writeAll(msl.air.getStr(v.name)),
+        .@"const" => |c| try msl.writeAll(msl.air.getStr(c.name)),
         .fn_param => |p| {
-            if (msl.isStageInParameter(inst_idx)) {
+            if (msl.has_stage_in and msl.isStageInParameter(inst_idx)) {
                 try msl.writeAll("in.");
             }
             try msl.writeAll(msl.air.getStr(p.name));
@@ -485,17 +504,24 @@ fn emitFloatCast(msl: *Msl, dest_type: Inst.Float, cast: Inst.Cast) !void {
 }
 
 fn emitVector(msl: *Msl, inst: Inst.Vector) !void {
-    try msl.emitType(inst.elem_type);
-    switch (inst.size) {
-        .two => try msl.writeAll("2"),
-        .three => try msl.writeAll("3"),
-        .four => try msl.writeAll("4"),
-    }
-
+    try msl.emitVectorType(inst);
     try msl.writeAll("(");
 
     const value = msl.air.getValue(Inst.Vector.Value, inst.value.?);
     for (value[0..@intFromEnum(inst.size)], 0..) |elem_inst, i| {
+        try msl.writeAll(if (i == 0) "" else ", ");
+        try msl.emitExpr(elem_inst);
+    }
+
+    try msl.writeAll(")");
+}
+
+fn emitMatrix(msl: *Msl, inst: Inst.Matrix) !void {
+    try msl.emitMatrixType(inst);
+    try msl.writeAll("(");
+
+    const value = msl.air.getValue(Inst.Matrix.Value, inst.value.?);
+    for (value[0..@intFromEnum(inst.cols)], 0..) |elem_inst, i| {
         try msl.writeAll(if (i == 0) "" else ", ");
         try msl.emitExpr(elem_inst);
     }
@@ -675,8 +701,9 @@ fn emitBinaryIntrinsic(msl: *Msl, inst: Inst.BinaryIntrinsic) !void {
 
 fn emitTripleIntrinsic(msl: *Msl, inst: Inst.TripleIntrinsic) !void {
     try msl.writeAll(switch (inst.op) {
+        .smoothstep => "smoothstep",
         .clamp => "clamp",
-        else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst.op)}),
+        .mix => "mix",
     });
     try msl.writeAll("(");
     try msl.emitExpr(inst.a1);
@@ -705,6 +732,16 @@ fn emitAssign(msl: *Msl, inst: Inst.Assign) !void {
     try msl.emitExpr(inst.rhs);
 }
 
+fn emitIncrease(msl: *Msl, inst_index: InstIndex) !void {
+    try msl.emitExpr(inst_index);
+    try msl.writeAll("++");
+}
+
+fn emitDecrease(msl: *Msl, inst_index: InstIndex) !void {
+    try msl.emitExpr(inst_index);
+    try msl.writeAll("--");
+}
+
 fn emitFieldAccess(msl: *Msl, inst: Inst.FieldAccess) !void {
     try msl.emitExpr(inst.base);
     try msl.print(".{s}", .{msl.air.getStr(inst.name)});
@@ -728,6 +765,29 @@ fn emitIndexAccess(msl: *Msl, inst: Inst.IndexAccess) !void {
     try msl.writeAll("[");
     try msl.emitExpr(inst.index);
     try msl.writeAll("]");
+}
+
+fn emitCall(msl: *Msl, inst: Inst.FnCall) !void {
+    const fn_inst = msl.air.getInst(inst.@"fn").@"fn";
+
+    try msl.writeAll(msl.air.getStr(fn_inst.name));
+    try msl.writeAll("(");
+    var add_comma = false;
+
+    for (msl.air.refToList(fn_inst.global_var_refs)) |var_inst_idx| {
+        try msl.writeAll(if (add_comma) ", " else "");
+        add_comma = true;
+        const var_inst = msl.air.getInst(var_inst_idx).@"var";
+        try msl.writeAll(msl.air.getStr(var_inst.name));
+    }
+    if (inst.args != .none) {
+        for (msl.air.refToList(inst.args)) |arg_inst_idx| {
+            try msl.writeAll(if (add_comma) ", " else "");
+            add_comma = true;
+            try msl.emitExpr(arg_inst_idx);
+        }
+    }
+    try msl.writeAll(")");
 }
 
 fn enterScope(msl: *Msl) void {

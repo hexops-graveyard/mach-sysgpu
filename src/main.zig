@@ -1060,13 +1060,9 @@ pub const Impl = struct {
         render_pass_encoder.setPipeline(pipeline) catch unreachable;
     }
 
-    pub inline fn renderPassEncoderSetScissorRect(render_pass_encoder: *dgpu.RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
-        _ = render_pass_encoder;
-        _ = x;
-        _ = y;
-        _ = width;
-        _ = height;
-        unreachable;
+    pub inline fn renderPassEncoderSetScissorRect(render_pass_encoder_raw: *dgpu.RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
+        const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
+        render_pass_encoder.setScissorRect(x, y, width, height);
     }
 
     pub inline fn renderPassEncoderSetStencilReference(render_pass_encoder: *dgpu.RenderPassEncoder, reference: u32) void {
@@ -1081,15 +1077,9 @@ pub const Impl = struct {
         render_pass_encoder.setVertexBuffer(slot, buffer, offset, size) catch unreachable;
     }
 
-    pub inline fn renderPassEncoderSetViewport(render_pass_encoder: *dgpu.RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
-        _ = render_pass_encoder;
-        _ = x;
-        _ = y;
-        _ = width;
-        _ = height;
-        _ = min_depth;
-        _ = max_depth;
-        unreachable;
+    pub inline fn renderPassEncoderSetViewport(render_pass_encoder_raw: *dgpu.RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
+        const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
+        render_pass_encoder.setViewport(x, y, width, height, min_depth, max_depth);
     }
 
     pub inline fn renderPassEncoderWriteTimestamp(render_pass_encoder: *dgpu.RenderPassEncoder, query_set: *dgpu.QuerySet, query_index: u32) void {

@@ -1280,12 +1280,32 @@ pub const RenderPassEncoder = struct {
         );
     }
 
+    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
+        _ = height;
+        _ = width;
+        _ = y;
+        _ = x;
+        _ = encoder;
+        unreachable;
+    }
+
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
         _ = encoder;
         _ = slot;
         _ = buffer;
         _ = offset;
         _ = size;
+        unreachable;
+    }
+
+    pub fn setViewport(encoder: *RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
+        _ = max_depth;
+        _ = min_depth;
+        _ = height;
+        _ = width;
+        _ = y;
+        _ = x;
+        _ = encoder;
         unreachable;
     }
 
