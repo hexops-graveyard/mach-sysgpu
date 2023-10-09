@@ -421,6 +421,7 @@ pub const Inst = union(enum) {
     struct_construct: StructConstruct,
     bitcast: Bitcast,
     select: BuiltinSelect,
+    texture_sample: TextureSample,
 
     pub const Var = struct {
         name: StringIndex,
@@ -611,6 +612,7 @@ pub const Inst = union(enum) {
         access_mode: AccessMode,
 
         pub const AddressSpace = enum {
+            uniform_constant,
             function,
             private,
             workgroup,
@@ -895,6 +897,16 @@ pub const Inst = union(enum) {
         true: InstIndex,
         false: InstIndex,
         cond: InstIndex,
+    };
+
+    pub const TextureSample = struct {
+        kind: SampledTextureType.Kind,
+        texture: InstIndex,
+        sampler: InstIndex,
+        coords: InstIndex,
+        offset: InstIndex,
+        array_index: InstIndex,
+        result_type: InstIndex,
     };
 
     pub const If = struct {
