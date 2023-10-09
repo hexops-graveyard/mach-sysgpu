@@ -2194,6 +2194,7 @@ fn spirvBuiltin(builtin: Air.Inst.Builtin) spec.BuiltIn {
 
 fn storageClassFromAddrSpace(addr_space: Air.Inst.PointerType.AddressSpace) spec.StorageClass {
     return switch (addr_space) {
+        .uniform_constant => .UniformConstant,
         .function => .Function,
         .private => .Private,
         .workgroup => .Workgroup,
