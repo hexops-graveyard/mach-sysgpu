@@ -151,11 +151,8 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         switch (astgen.getInst(var_type)) {
             .sampler_type,
             .comparison_sampler_type,
-            .sampled_texture_type,
             .external_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
+            .texture_type,
             => {
                 is_resource = true;
             },
@@ -1282,11 +1279,8 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         switch (astgen.getInst(var_type)) {
             .sampler_type,
             .comparison_sampler_type,
-            .sampled_texture_type,
+            .texture_type,
             .external_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
             => {
                 is_resource = true;
             },
@@ -1925,6 +1919,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .fwidthFine => return astgen.genDerivativeBuiltin(scope, node, .fwidth_fine),
             .arrayLength => return astgen.genArrayLengthBuiltin(scope, node),
             .textureSample => return astgen.genTextureSampleBuiltin(scope, node),
+            .textureDimensions => return astgen.genTextureDimensionsBuiltin(scope, node),
             else => {
                 try astgen.errors.add(
                     node_loc,
@@ -3010,9 +3005,83 @@ fn genArrayLengthBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstI
     return error.AnalysisFail;
 }
 
-fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+fn genTextureDimensionsBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     astgen.has_array_length = true;
 
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == .none) {
+        return astgen.failArgCountMismatch(node_loc, 1, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len < 1) {
+        return astgen.failArgCountMismatch(node_loc, 1, arg_nodes.len);
+    }
+
+    const a1_node = arg_nodes[0];
+    const a1_node_loc = astgen.tree.nodeLoc(a1_node);
+    const a1 = try astgen.genExpr(scope, a1_node);
+    const a1_res = try astgen.resolve(a1);
+    const a1_inst = astgen.getInst(a1_res);
+
+    if (a1_inst != .texture_type) {
+        // TODO: depth textures
+        try astgen.errors.add(a1_node_loc, "expected a texture type", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    var level = InstIndex.none;
+
+    switch (a1_inst.texture_type.kind) {
+        .sampled_2d,
+        .sampled_2d_array,
+        .sampled_cube,
+        .sampled_cube_array,
+        .multisampled_2d,
+        .multisampled_depth_2d,
+        .storage_2d,
+        .storage_2d_array,
+        .depth_2d,
+        .depth_2d_array,
+        .depth_cube,
+        .depth_cube_array,
+        => {
+            if (arg_nodes.len > 1) {
+                const a2_node = arg_nodes[1];
+                const a2_node_loc = astgen.tree.nodeLoc(a2_node);
+                const a2 = try astgen.genExpr(scope, a2_node);
+                const a2_res = try astgen.resolve(a2);
+                const a2_inst = astgen.getInst(a2_res);
+
+                if (a2_inst != .int) {
+                    try astgen.errors.add(a2_node_loc, "expected i32 or u32", .{}, null);
+                    return error.AnalysisFail;
+                }
+
+                level = a2;
+            }
+        },
+        else => {
+            try astgen.errors.add(a1_node_loc, "invalid texture", .{}, null);
+            return error.AnalysisFail;
+        },
+    }
+
+    const result_type = try astgen.addInst(.{ .vector = .{
+        .elem_type = try astgen.addInst(.{ .int = .{ .type = .u32, .value = null } }),
+        .size = .two,
+        .value = null,
+    } });
+    return astgen.addInst(.{ .texture_dimension = .{
+        .kind = a1_inst.texture_type.kind,
+        .texture = a1,
+        .level = level,
+        .result_type = result_type,
+    } });
+}
+
+fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
     if (node_lhs == .none) {
@@ -3042,7 +3111,7 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
     const a3_res = try astgen.resolve(a3);
     const a3_inst = astgen.getInst(a3_res);
 
-    if (a1_inst != .sampled_texture_type) {
+    if (a1_inst != .texture_type) {
         // TODO: depth textures
         try astgen.errors.add(a1_node_loc, "expected a texture type", .{}, null);
         return error.AnalysisFail;
@@ -3053,20 +3122,20 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
         return error.AnalysisFail;
     }
 
-    switch (a1_inst.sampled_texture_type.kind) {
-        .@"1d" => {
+    switch (a1_inst.texture_type.kind) {
+        .sampled_1d => {
             if (a3_inst != .float) {
                 try astgen.errors.add(a3_node_loc, "expected a f32", .{}, null);
                 return error.AnalysisFail;
             }
         },
-        .@"2d", .@"2d_array" => {
+        .sampled_2d, .sampled_2d_array => {
             if (a3_inst != .vector or a3_inst.vector.size != .two) {
                 try astgen.errors.add(a3_node_loc, "expected a vec2<f32>", .{}, null);
                 return error.AnalysisFail;
             }
         },
-        .@"3d", .cube, .cube_array => {
+        .sampled_3d, .sampled_cube, .sampled_cube_array => {
             if (a3_inst != .vector or a3_inst.vector.size != .three) {
                 try astgen.errors.add(a3_node_loc, "expected a vec3<f32>", .{}, null);
                 return error.AnalysisFail;
@@ -3081,8 +3150,8 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
     var offset = InstIndex.none;
     var array_index = InstIndex.none;
 
-    switch (a1_inst.sampled_texture_type.kind) {
-        .@"2d", .@"3d", .cube => {
+    switch (a1_inst.texture_type.kind) {
+        .sampled_2d, .sampled_3d, .sampled_cube => {
             if (arg_nodes.len == 4) {
                 const a4_node = arg_nodes[3];
                 const a4_node_loc = astgen.tree.nodeLoc(a4_node);
@@ -3091,14 +3160,14 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
                 const a4_inst = astgen.getInst(a4_res);
                 offset = a4;
 
-                switch (a1_inst.sampled_texture_type.kind) {
-                    .@"3d", .cube => {
+                switch (a1_inst.texture_type.kind) {
+                    .sampled_3d, .sampled_cube => {
                         if (a4_inst != .vector or a4_inst.vector.size != .three) {
                             try astgen.errors.add(a4_node_loc, "expected a vec3<i32>", .{}, null);
                             return error.AnalysisFail;
                         }
                     },
-                    .@"2d" => if (a4_inst != .vector or a4_inst.vector.size != .two) {
+                    .sampled_2d => if (a4_inst != .vector or a4_inst.vector.size != .two) {
                         try astgen.errors.add(a4_node_loc, "expected a vec2<i32>", .{}, null);
                         return error.AnalysisFail;
                     },
@@ -3106,7 +3175,7 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
                 }
             }
         },
-        .@"2d_array", .cube_array => {
+        .sampled_2d_array, .sampled_cube_array => {
             if (arg_nodes.len < 4) {
                 return astgen.failArgCountMismatch(node_loc, 4, arg_nodes.len);
             }
@@ -3131,7 +3200,7 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
                 const a5_inst = astgen.getInst(a5_res);
                 offset = a5;
 
-                if (a1_inst.sampled_texture_type.kind == .cube_array) {
+                if (a1_inst.texture_type.kind == .sampled_cube_array) {
                     if (a5_inst != .vector or a5_inst.vector.size != .three) {
                         try astgen.errors.add(a5_node_loc, "expected a vec3<i32>", .{}, null);
                         return error.AnalysisFail;
@@ -3153,7 +3222,7 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
         .value = null,
     } });
     return astgen.addInst(.{ .texture_sample = .{
-        .kind = a1_inst.sampled_texture_type.kind,
+        .kind = a1_inst.texture_type.kind,
         .texture = a1,
         .sampler = a2,
         .coords = a3,
@@ -3342,10 +3411,7 @@ fn genType(astgen: *AstGen, scope: *Scope, node: NodeIndex) error{ AnalysisFail,
                 .sampler_type,
                 .comparison_sampler_type,
                 .external_texture_type,
-                .sampled_texture_type,
-                .multisampled_texture_type,
-                .storage_texture_type,
-                .depth_texture_type,
+                .texture_type,
                 .@"struct",
                 => return decl,
                 else => {
@@ -3632,14 +3698,14 @@ fn genSampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstI
     if (elem_type_inst == .int or (elem_type_inst == .float and elem_type_inst.float.type == .f32)) {
         const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
         return astgen.addInst(.{
-            .sampled_texture_type = .{
+            .texture_type = .{
                 .kind = switch (token_tag) {
-                    .k_texture_1d => .@"1d",
-                    .k_texture_2d => .@"2d",
-                    .k_texture_2d_array => .@"2d_array",
-                    .k_texture_3d => .@"3d",
-                    .k_texture_cube => .cube,
-                    .k_texture_cube_array => .cube_array,
+                    .k_texture_1d => .sampled_1d,
+                    .k_texture_2d => .sampled_2d,
+                    .k_texture_2d_array => .sampled_2d_array,
+                    .k_texture_3d => .sampled_3d,
+                    .k_texture_cube => .sampled_cube,
+                    .k_texture_cube_array => .sampled_cube_array,
                     else => unreachable,
                 },
                 .elem_type = elem_type,
@@ -3685,10 +3751,10 @@ fn genMultisampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !
 
     const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
     return astgen.addInst(.{
-        .multisampled_texture_type = .{
+        .texture_type = .{
             .kind = switch (token_tag) {
-                .k_texture_multisampled_2d => .@"2d",
-                .k_texture_depth_multisampled_2d => .depth_2d,
+                .k_texture_multisampled_2d => .multisampled_2d,
+                .k_texture_depth_multisampled_2d => .multisampled_depth_2d,
                 else => unreachable,
             },
             .elem_type = elem_type,
@@ -3698,9 +3764,9 @@ fn genMultisampledTextureType(astgen: *AstGen, scope: *Scope, node: NodeIndex) !
 
 fn genStorageTextureType(astgen: *AstGen, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
-    const texel_format_loc = astgen.tree.nodeLoc(node_lhs);
+    const texel_format_loc = astgen.tree.tokenLoc(node_lhs.asTokenIndex());
     const ast_texel_format = stringToEnum(Ast.TexelFormat, texel_format_loc.slice(astgen.tree.source)).?;
-    const texel_format: Inst.StorageTextureType.TexelFormat = switch (ast_texel_format) {
+    const texel_format: Inst.TextureType.TexelFormat = switch (ast_texel_format) {
         .rgba8unorm => .rgba8unorm,
         .rgba8snorm => .rgba8snorm,
         .rgba8uint => .rgba8uint,
@@ -3721,10 +3787,10 @@ fn genStorageTextureType(astgen: *AstGen, node: NodeIndex) !InstIndex {
     };
 
     const node_rhs = astgen.tree.nodeRHS(node);
-    const access_mode_loc = astgen.tree.nodeLoc(node_rhs);
+    const access_mode_loc = astgen.tree.tokenLoc(node_rhs.asTokenIndex());
     const access_mode_full = stringToEnum(Ast.AccessMode, access_mode_loc.slice(astgen.tree.source)).?;
     const access_mode = switch (access_mode_full) {
-        .write => Inst.StorageTextureType.AccessMode.write,
+        .write => Inst.TextureType.AccessMode.write,
         else => {
             try astgen.errors.add(
                 access_mode_loc,
@@ -3742,12 +3808,12 @@ fn genStorageTextureType(astgen: *AstGen, node: NodeIndex) !InstIndex {
 
     const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
     const inst = try astgen.addInst(.{
-        .storage_texture_type = .{
+        .texture_type = .{
             .kind = switch (token_tag) {
-                .k_texture_storage_1d => .@"1d",
-                .k_texture_storage_2d => .@"2d",
-                .k_texture_storage_2d_array => .@"2d_array",
-                .k_texture_storage_3d => .@"3d",
+                .k_texture_storage_1d => .storage_1d,
+                .k_texture_storage_2d => .storage_2d,
+                .k_texture_storage_2d_array => .storage_2d_array,
+                .k_texture_storage_3d => .storage_3d,
                 else => unreachable,
             },
             .texel_format = texel_format,
@@ -3761,13 +3827,13 @@ fn genStorageTextureType(astgen: *AstGen, node: NodeIndex) !InstIndex {
 fn genDepthTextureType(astgen: *AstGen, node: NodeIndex) !InstIndex {
     const token_tag = astgen.tree.tokenTag(astgen.tree.nodeToken(node));
     const inst = try astgen.addInst(.{
-        .depth_texture_type = switch (token_tag) {
-            .k_texture_depth_2d => .@"2d",
-            .k_texture_depth_2d_array => .@"2d_array",
-            .k_texture_depth_cube => .cube,
-            .k_texture_depth_cube_array => .cube_array,
+        .texture_type = .{ .kind = switch (token_tag) {
+            .k_texture_depth_2d => .depth_2d,
+            .k_texture_depth_2d_array => .depth_2d_array,
+            .k_texture_depth_cube => .depth_cube,
+            .k_texture_depth_cube_array => .depth_cube_array,
             else => unreachable,
-        },
+        } },
     });
     return inst;
 }
@@ -3838,7 +3904,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .binary_intrinsic => |bin| return bin.result_type,
             .triple_intrinsic => |triple| return triple.result_type,
             .select => |select| return select.type,
-            .texture_sample => |ts| return ts.result_type,
+            inline .texture_sample, .texture_dimension => |ts| return ts.result_type,
 
             .call => |call| return astgen.getInst(call.@"fn").@"fn".return_type,
             .var_ref => |var_ref| idx = var_ref,
@@ -3874,10 +3940,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .sampler_type,
             .comparison_sampler_type,
             .external_texture_type,
-            .sampled_texture_type,
-            .multisampled_texture_type,
-            .storage_texture_type,
-            .depth_texture_type,
+            .texture_type,
             .@"fn",
             .@"struct",
             .struct_member,
@@ -4085,7 +4148,7 @@ const BuiltinFn = enum {
     textureNumLayers, // unimplemented
     textureNumLevels, // unimplemented
     textureNumSamples, // unimplemented
-    textureSample, // unimplemented
+    textureSample,
     textureSampleBias, // unimplemented
     textureSampleCompare, // unimplemented
     textureSampleCompareLevel, // unimplemented

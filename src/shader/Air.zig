@@ -398,10 +398,7 @@ pub const Inst = union(enum) {
     array: Array,
     atomic_type: AtomicType,
     ptr_type: PointerType,
-    sampled_texture_type: SampledTextureType,
-    multisampled_texture_type: MultisampledTextureType,
-    storage_texture_type: StorageTextureType,
-    depth_texture_type: DepthTextureType,
+    texture_type: TextureType,
     sampler_type,
     comparison_sampler_type,
     external_texture_type,
@@ -437,6 +434,7 @@ pub const Inst = union(enum) {
     bitcast: Bitcast,
     select: BuiltinSelect,
     texture_sample: TextureSample,
+    texture_dimension: TextureDimension,
 
     pub const Var = struct {
         name: StringIndex,
@@ -642,41 +640,33 @@ pub const Inst = union(enum) {
         };
     };
 
-    pub const SampledTextureType = struct {
+    pub const TextureType = struct {
         kind: Kind,
-        elem_type: InstIndex,
+        elem_type: InstIndex = .none,
+        texel_format: TexelFormat = .none,
+        access_mode: AccessMode = .write,
 
         pub const Kind = enum {
-            @"1d",
-            @"2d",
-            @"2d_array",
-            @"3d",
-            cube,
-            cube_array,
+            sampled_1d,
+            sampled_2d,
+            sampled_2d_array,
+            sampled_3d,
+            sampled_cube,
+            sampled_cube_array,
             multisampled_2d,
-        };
-    };
-
-    pub const MultisampledTextureType = struct {
-        kind: Kind,
-        elem_type: InstIndex,
-
-        pub const Kind = enum { @"2d", depth_2d };
-    };
-
-    pub const StorageTextureType = struct {
-        kind: Kind,
-        texel_format: TexelFormat,
-        access_mode: AccessMode,
-
-        pub const Kind = enum {
-            @"1d",
-            @"2d",
-            @"2d_array",
-            @"3d",
+            multisampled_depth_2d,
+            storage_1d,
+            storage_2d,
+            storage_2d_array,
+            storage_3d,
+            depth_2d,
+            depth_2d_array,
+            depth_cube,
+            depth_cube_array,
         };
 
         pub const TexelFormat = enum {
+            none,
             rgba8unorm,
             rgba8snorm,
             rgba8uint,
@@ -697,14 +687,6 @@ pub const Inst = union(enum) {
         };
 
         pub const AccessMode = enum { write };
-    };
-
-    pub const DepthTextureType = enum {
-        @"2d",
-        @"2d_array",
-        cube,
-        cube_array,
-        multisampled_2d,
     };
 
     pub const Unary = struct {
@@ -915,12 +897,19 @@ pub const Inst = union(enum) {
     };
 
     pub const TextureSample = struct {
-        kind: SampledTextureType.Kind,
+        kind: TextureType.Kind,
         texture: InstIndex,
         sampler: InstIndex,
         coords: InstIndex,
         offset: InstIndex,
         array_index: InstIndex,
+        result_type: InstIndex,
+    };
+
+    pub const TextureDimension = struct {
+        kind: TextureType.Kind,
+        texture: InstIndex,
+        level: InstIndex,
         result_type: InstIndex,
     };
 
