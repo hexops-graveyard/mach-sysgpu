@@ -18,16 +18,18 @@ pub const BindGroup = opaque {
         buffer: ?*Buffer = null,
         offset: u64 = 0,
         size: u64,
+        elem_size: u32 = 0, // TEMP - using StructuredBuffer until we switch to DXC for templatized raw buffers
         sampler: ?*Sampler = null,
         texture_view: ?*TextureView = null,
 
         /// Helper to create a buffer BindGroup.Entry.
-        pub fn buffer(binding: u32, buf: *Buffer, offset: u64, size: u64) Entry {
+        pub fn buffer(binding: u32, buf: *Buffer, offset: u64, size: u64, elem_size: u32) Entry {
             return .{
                 .binding = binding,
                 .buffer = buf,
                 .offset = offset,
                 .size = size,
+                .elem_size = elem_size,
             };
         }
 

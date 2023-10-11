@@ -142,12 +142,12 @@ pub const Impl = struct {
 
     pub inline fn bufferGetConstMappedRange(buffer_raw: *dgpu.Buffer, offset: usize, size: usize) ?*const anyopaque {
         const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
-        return buffer.getConstMappedRange(offset, size) catch unreachable;
+        return buffer.getMappedRange(offset, size) catch unreachable;
     }
 
     pub inline fn bufferGetMappedRange(buffer_raw: *dgpu.Buffer, offset: usize, size: usize) ?*anyopaque {
         const buffer: *impl.Buffer = @ptrCast(@alignCast(buffer_raw));
-        return buffer.getConstMappedRange(offset, size) catch unreachable;
+        return buffer.getMappedRange(offset, size) catch unreachable;
     }
 
     pub inline fn bufferGetSize(buffer: *dgpu.Buffer) u64 {
@@ -333,7 +333,7 @@ pub const Impl = struct {
 
     pub inline fn computePassEncoderDispatchWorkgroups(compute_pass_encoder_raw: *dgpu.ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
         const compute_pass_encoder: *impl.ComputePassEncoder = @ptrCast(@alignCast(compute_pass_encoder_raw));
-        compute_pass_encoder.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z);
+        compute_pass_encoder.dispatchWorkgroups(workgroup_count_x, workgroup_count_y, workgroup_count_z) catch unreachable;
     }
 
     pub inline fn computePassEncoderDispatchWorkgroupsIndirect(compute_pass_encoder: *dgpu.ComputePassEncoder, indirect_buffer: *dgpu.Buffer, indirect_offset: u64) void {
@@ -539,16 +539,16 @@ pub const Impl = struct {
             };
             defer ast.deinit(allocator);
 
-            var air = shader.Air.generate(allocator, &ast, &errors, null) catch |err| switch (err) {
+            var air = allocator.create(shader.Air) catch unreachable;
+            air.* = shader.Air.generate(allocator, &ast, &errors, null) catch |err| switch (err) {
                 error.AnalysisFail => {
                     errors.print(source, null) catch unreachable;
                     std.process.exit(1);
                 },
                 else => unreachable,
             };
-            defer air.deinit(allocator);
 
-            const shader_module = device.createShaderModuleAir(&air) catch unreachable;
+            const shader_module = device.createShaderModuleAir(air) catch unreachable;
             return @ptrCast(shader_module);
         } else if (utils.findChained(dgpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
             const output = std.mem.sliceAsBytes(spirv_descriptor.code[0..spirv_descriptor.code_size]);
@@ -992,7 +992,7 @@ pub const Impl = struct {
 
     pub inline fn renderPassEncoderEnd(render_pass_encoder_raw: *dgpu.RenderPassEncoder) void {
         const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
-        render_pass_encoder.end();
+        render_pass_encoder.end() catch unreachable;
     }
 
     pub inline fn renderPassEncoderEndOcclusionQuery(render_pass_encoder: *dgpu.RenderPassEncoder) void {

@@ -26,3 +26,5 @@ Backends should be a single file with object in the following order:
 - RenderBundleEncoder
 - Queue
 - QuerySet
+
+Utility objects (e.g. StateTracker should come after the closest object that "owns" them.

@@ -2,9 +2,18 @@
 
 Windows release version needed to use various functionality in DXGI and D3D12.
 
+DXGI
+- 1.4 - baseline
+- 1.5 - 1607
+- 1.6 - 1703/1803/1809
+
 CreateDXGIFactory
 
 - CreateDXGIFactory2 - baseline
+
+DXGIGetDebugInterface
+
+- DXGIGetDebugInterface1 - baseline
 
 IDXGIAdapter
 
