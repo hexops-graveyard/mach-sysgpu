@@ -1323,7 +1323,7 @@ pub const ComputePassEncoder = struct {
         );
     }
 
-    pub fn end(encoder: *ComputePassEncoder) !void {
+    pub fn end(encoder: *ComputePassEncoder) void {
         const mtl_encoder = encoder.mtl_encoder;
         mtl_encoder.endEncoding();
     }
@@ -1491,7 +1491,7 @@ pub const RenderPassEncoder = struct {
         );
     }
 
-    pub fn end(encoder: *RenderPassEncoder) void {
+    pub fn end(encoder: *RenderPassEncoder) !void {
         const mtl_encoder = encoder.mtl_encoder;
         mtl_encoder.endEncoding();
     }
