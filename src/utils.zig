@@ -72,23 +72,107 @@ pub const DefaultPipelineLayoutDescriptor = struct {
                 switch (var_type) {
                     .sampler_type => entry.sampler.type = .filtering,
                     .comparison_sampler_type => entry.sampler.type = .comparison,
-                    .sampled_texture_type => {
-                        entry.texture.sample_type = .float; // TODO
-                        entry.texture.view_dimension = .dimension_2d; // TODO
-                    },
-                    .multisampled_texture_type => {
-                        entry.texture.sample_type = .float; // TODO
-                        entry.texture.view_dimension = .dimension_2d; // TODO
-                        entry.texture.multisampled = .true;
-                    },
-                    .depth_texture_type => {
-                        entry.texture.sample_type = .depth;
-                        entry.texture.view_dimension = .dimension_2d;
-                    },
-                    .storage_texture_type => {
-                        entry.storage_texture.access = .undefined; // TODO
-                        entry.storage_texture.format = .r32_float; // TODO
-                        entry.storage_texture.view_dimension = .dimension_2d; // TODO
+                    .texture_type => |texture| {
+                        switch (texture.kind) {
+                            .storage_1d,
+                            .storage_2d,
+                            .storage_2d_array,
+                            .storage_3d,
+                            => {
+                                entry.storage_texture.access = .undefined; // TODO - write_only
+                                entry.storage_texture.format = switch (texture.texel_format) {
+                                    .none => unreachable,
+                                    .rgba8unorm => .rgba8_unorm,
+                                    .rgba8snorm => .rgba8_snorm,
+                                    .bgra8unorm => .bgra8_unorm,
+                                    .rgba16float => .rgba16_float,
+                                    .r32float => .r32_float,
+                                    .rg32float => .rg32_float,
+                                    .rgba32float => .rgba32_float,
+                                    .rgba8uint => .rgba8_uint,
+                                    .rgba16uint => .rgba16_uint,
+                                    .r32uint => .r32_uint,
+                                    .rg32uint => .rg32_uint,
+                                    .rgba32uint => .rgba32_uint,
+                                    .rgba8sint => .rgba8_sint,
+                                    .rgba16sint => .rgba16_sint,
+                                    .r32sint => .r32_sint,
+                                    .rg32sint => .rg32_sint,
+                                    .rgba32sint => .rgba32_sint,
+                                };
+                                entry.storage_texture.view_dimension = switch (texture.kind) {
+                                    .storage_1d => .dimension_1d,
+                                    .storage_2d => .dimension_2d,
+                                    .storage_2d_array => .dimension_2d_array,
+                                    .storage_3d => .dimension_3d,
+                                    else => unreachable,
+                                };
+                            },
+                            else => {
+                                // sample_type
+                                entry.texture.sample_type =
+                                    switch (texture.kind) {
+                                    .depth_2d,
+                                    .depth_2d_array,
+                                    .depth_cube,
+                                    .depth_cube_array,
+                                    => .depth,
+                                    else => switch (texture.texel_format) {
+                                        .none => unreachable,
+                                        .rgba8unorm,
+                                        .rgba8snorm,
+                                        .bgra8unorm,
+                                        .rgba16float,
+                                        .r32float,
+                                        .rg32float,
+                                        .rgba32float,
+                                        => .float, // TODO - unfilterable
+                                        .rgba8uint,
+                                        .rgba16uint,
+                                        .r32uint,
+                                        .rg32uint,
+                                        .rgba32uint,
+                                        => .uint,
+                                        .rgba8sint,
+                                        .rgba16sint,
+                                        .r32sint,
+                                        .rg32sint,
+                                        .rgba32sint,
+                                        => .sint,
+                                    },
+                                };
+                                entry.texture.view_dimension = switch (texture.kind) {
+                                    .sampled_1d,
+                                    .storage_1d,
+                                    => .dimension_1d,
+                                    .sampled_2d,
+                                    .multisampled_2d,
+                                    .multisampled_depth_2d,
+                                    .storage_2d,
+                                    .depth_2d,
+                                    => .dimension_2d,
+                                    .sampled_2d_array,
+                                    .storage_2d_array,
+                                    .depth_2d_array,
+                                    => .dimension_2d_array,
+                                    .sampled_3d,
+                                    .storage_3d,
+                                    => .dimension_3d,
+                                    .sampled_cube,
+                                    .depth_cube,
+                                    => .dimension_cube,
+                                    .sampled_cube_array,
+                                    .depth_cube_array,
+                                    => .dimension_cube_array,
+                                };
+                                entry.texture.multisampled = switch (texture.kind) {
+                                    .multisampled_2d,
+                                    .multisampled_depth_2d,
+                                    => .true,
+                                    else => .false,
+                                };
+                            },
+                        }
                     },
                     else => {
                         switch (var_inst.addr_space) {
