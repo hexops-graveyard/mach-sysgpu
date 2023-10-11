@@ -268,11 +268,10 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
         }
 
         if (msl.has_stage_in) {
-            // TODO - name collisions
             try msl.writeAll(if (add_comma) ",\n" else "\n");
             add_comma = true;
             try msl.writeIndent();
-            try msl.print("{s}In in [[stage_in]]", .{stringFromStageCapitalized(inst.stage)});
+            try msl.print("_{s}In in [[stage_in]]", .{stringFromStageCapitalized(inst.stage)});
         }
     }
 
@@ -284,7 +283,7 @@ fn emitStageInType(msl: *Msl, inst: Inst.Fn) !void {
     if (!msl.has_stage_in)
         return;
 
-    try msl.print("struct {s}In {{\n", .{stringFromStageCapitalized(inst.stage)});
+    try msl.print("struct _{s}In {{\n", .{stringFromStageCapitalized(inst.stage)});
     {
         msl.enterScope();
         defer msl.exitScope();

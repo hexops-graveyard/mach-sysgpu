@@ -1695,7 +1695,7 @@ pub const ComputePipeline = struct {
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
 
-        // Result
+        // PSO
         var d3d_pipeline: *c.ID3D12PipelineState = undefined;
         hr = d3d_device.lpVtbl.*.CreateComputePipelineState.?(
             d3d_device,
