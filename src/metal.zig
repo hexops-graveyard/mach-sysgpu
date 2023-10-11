@@ -5,6 +5,7 @@ const mtl = @import("objc").metal.mtl;
 const objc = @import("objc").objc;
 const ns = @import("objc").foundation.ns;
 const dgpu = @import("dgpu/main.zig");
+const limits = @import("limits.zig");
 const utils = @import("utils.zig");
 const shader = @import("shader.zig");
 const conv = @import("metal/conv.zig");
@@ -652,14 +653,6 @@ pub const BindGroupLayout = struct {
         allocator.destroy(layout);
     }
 
-    pub fn initDefault() !*BindGroupLayout {
-        var layout = try allocator.create(BindGroupLayout);
-        layout.* = .{
-            .entries = &[_]dgpu.BindGroupLayout.Entry{},
-        };
-        return layout;
-    }
-
     // Internal
     pub fn getEntry(layout: *BindGroupLayout, binding: u32) ?*const dgpu.BindGroupLayout.Entry {
         for (layout.entries) |*entry| {
@@ -753,31 +746,61 @@ pub const BindGroup = struct {
 
 pub const PipelineLayout = struct {
     manager: utils.Manager(PipelineLayout) = .{},
+    group_layouts: []*BindGroupLayout,
 
     pub fn init(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
-        _ = desc;
         _ = device;
 
+        var group_layouts = try allocator.alloc(*BindGroupLayout, desc.bind_group_layout_count);
+        errdefer allocator.free(group_layouts);
+
+        for (0..desc.bind_group_layout_count) |i| {
+            const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.bind_group_layouts.?[i]));
+            layout.manager.reference();
+            group_layouts[i] = layout;
+        }
+
         var layout = try allocator.create(PipelineLayout);
-        layout.* = .{};
+        layout.* = .{
+            .group_layouts = group_layouts,
+        };
         return layout;
     }
 
+    pub fn initDefault(device: *Device, default_pipeline_layout: utils.DefaultPipelineLayoutDescriptor) !*PipelineLayout {
+        const groups = default_pipeline_layout.groups;
+        var bind_group_layouts = std.BoundedArray(*dgpu.BindGroupLayout, limits.max_bind_groups){};
+        defer {
+            for (bind_group_layouts.slice()) |bind_group_layout| bind_group_layout.release();
+        }
+
+        for (groups.slice()) |entries| {
+            const bind_group_layout = try device.createBindGroupLayout(
+                &dgpu.BindGroupLayout.Descriptor.init(.{ .entries = entries.items }),
+            );
+            bind_group_layouts.appendAssumeCapacity(@ptrCast(bind_group_layout));
+        }
+
+        return device.createPipelineLayout(
+            &dgpu.PipelineLayout.Descriptor.init(.{ .bind_group_layouts = bind_group_layouts.slice() }),
+        );
+    }
+
     pub fn deinit(layout: *PipelineLayout) void {
+        for (layout.group_layouts) |group_layout| group_layout.manager.release();
+        allocator.free(layout.group_layouts);
         allocator.destroy(layout);
     }
 };
 
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
+    air: *shader.Air,
     library: *mtl.Library,
     threadgroup_sizes: std.StringHashMapUnmanaged(mtl.Size) = .{},
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const mtl_device = device.mtl_device;
-
-        defer allocator.destroy(air);
-        defer air.deinit(allocator);
 
         const code = shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }) catch unreachable;
         defer allocator.free(code);
@@ -799,6 +822,7 @@ pub const ShaderModule = struct {
 
         var module = try allocator.create(ShaderModule);
         module.* = .{
+            .air = air,
             .library = library,
         };
         try module.reflect(air);
@@ -806,8 +830,10 @@ pub const ShaderModule = struct {
     }
 
     pub fn deinit(shader_module: *ShaderModule) void {
+        shader_module.air.deinit(allocator);
         shader_module.library.release();
         shader_module.threadgroup_sizes.deinit(allocator);
+        allocator.destroy(shader_module.air);
         allocator.destroy(shader_module);
     }
 
@@ -840,7 +866,7 @@ pub const ShaderModule = struct {
 pub const ComputePipeline = struct {
     manager: utils.Manager(ComputePipeline) = .{},
     mtl_pipeline: *mtl.ComputePipelineState,
-    layout: *BindGroupLayout,
+    layout: *PipelineLayout,
     threadgroup_size: mtl.Size,
 
     pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
@@ -856,6 +882,7 @@ pub const ComputePipeline = struct {
             mtl_desc.setLabel(ns.String.stringWithUTF8String(label));
         }
 
+        // Shaders
         const compute_module: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
         const entrypoint = entrypointString(desc.compute.entry_point);
         const compute_fn = compute_module.library.newFunctionWithName(ns.String.stringWithUTF8String(entrypoint)) orelse {
@@ -868,7 +895,20 @@ pub const ComputePipeline = struct {
             return error.InvalidDescriptor;
         };
 
-        // create
+        // Pipeline Layout
+        var layout: *PipelineLayout = undefined;
+        if (desc.layout) |l| {
+            layout = @ptrCast(@alignCast(l));
+            layout.manager.reference();
+        } else {
+            var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
+            defer layout_desc.deinit();
+
+            try layout_desc.addFunction(compute_module.air, .{ .compute = true }, desc.compute.entry_point);
+            layout = try PipelineLayout.initDefault(device, layout_desc);
+        }
+
+        // PSO
         var err: ?*ns.Error = undefined;
         const mtl_pipeline = mtl_device.newComputePipelineStateWithDescriptor_options_reflection_error(
             mtl_desc,
@@ -882,11 +922,11 @@ pub const ComputePipeline = struct {
         };
         errdefer mtl_pipeline.release();
 
-        // result
+        // Result
         var pipeline = try allocator.create(ComputePipeline);
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
-            .layout = try BindGroupLayout.initDefault(),
+            .layout = layout,
             .threadgroup_size = threadgroup_size,
         };
         return pipeline;
@@ -899,15 +939,14 @@ pub const ComputePipeline = struct {
     }
 
     pub fn getBindGroupLayout(pipeline: *ComputePipeline, group_index: u32) *BindGroupLayout {
-        _ = group_index;
-        return pipeline.layout;
+        return @ptrCast(pipeline.layout.group_layouts[group_index]);
     }
 };
 
 pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     mtl_pipeline: *mtl.RenderPipelineState,
-    layout: *BindGroupLayout,
+    layout: *PipelineLayout,
     primitive_type: mtl.PrimitiveType,
     winding: mtl.Winding,
     cull_mode: mtl.CullMode,
@@ -928,8 +967,6 @@ pub const RenderPipeline = struct {
         if (desc.label) |label| {
             mtl_desc.setLabel(ns.String.stringWithUTF8String(label));
         }
-
-        // layout - TODO
 
         // vertex
         const vertex_module: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
@@ -1056,7 +1093,24 @@ pub const RenderPipeline = struct {
                 mtl_desc.setStencilAttachmentPixelFormat(format);
         }
 
-        // create
+        // Pipeline Layout
+        var layout: *PipelineLayout = undefined;
+        if (desc.layout) |l| {
+            layout = @ptrCast(@alignCast(l));
+            layout.manager.reference();
+        } else {
+            var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
+            defer layout_desc.deinit();
+
+            try layout_desc.addFunction(vertex_module.air, .{ .vertex = true }, desc.vertex.entry_point);
+            if (desc.fragment) |frag| {
+                const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
+                try layout_desc.addFunction(frag_module.air, .{ .fragment = true }, frag.entry_point);
+            }
+            layout = try PipelineLayout.initDefault(device, layout_desc);
+        }
+
+        // PSO
         var err: ?*ns.Error = undefined;
         const mtl_pipeline = mtl_device.newRenderPipelineStateWithDescriptor_error(mtl_desc, &err) orelse {
             // TODO
@@ -1065,10 +1119,11 @@ pub const RenderPipeline = struct {
         };
         errdefer mtl_pipeline.release();
 
+        // Result
         var pipeline = try allocator.create(RenderPipeline);
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
-            .layout = try BindGroupLayout.initDefault(),
+            .layout = layout,
             .primitive_type = primitive_type,
             .winding = winding,
             .cull_mode = cull_mode,
@@ -1088,8 +1143,7 @@ pub const RenderPipeline = struct {
     }
 
     pub fn getBindGroupLayout(pipeline: *RenderPipeline, group_index: u32) *BindGroupLayout {
-        _ = group_index;
-        return pipeline.layout;
+        return @ptrCast(pipeline.layout.group_layouts[group_index]);
     }
 };
 
