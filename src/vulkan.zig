@@ -678,7 +678,7 @@ pub const Device = struct {
         return RenderPipeline.init(device, desc);
     }
 
-    pub fn createShaderModuleAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+    pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
         return ShaderModule.initAir(device, air);
     }
 
@@ -1071,7 +1071,7 @@ pub const Buffer = struct {
         allocator.destroy(buffer);
     }
 
-    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) !?*anyopaque {
+    pub fn getMappedRange(buffer: *Buffer, offset: usize, size: usize) !?*anyopaque {
         return @ptrCast(buffer.map.?[offset .. offset + size]);
     }
 
@@ -1385,7 +1385,10 @@ pub const ShaderModule = struct {
     shader_module: vk.ShaderModule,
     device: *Device,
 
-    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+    pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
+        defer allocator.destroy(air);
+        defer air.deinit(allocator);
+
         const code = shader.CodeGen.generate(allocator, air, .spirv, .{ .emit_source_file = "" }) catch unreachable;
         defer allocator.free(code);
 
@@ -1849,7 +1852,7 @@ pub const ComputePassEncoder = struct {
         _ = encoder;
     }
 
-    pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
+    pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) !void {
         _ = workgroup_count_z;
         _ = workgroup_count_y;
         _ = workgroup_count_x;
@@ -2020,7 +2023,7 @@ pub const RenderPassEncoder = struct {
         );
     }
 
-    pub fn end(encoder: *RenderPassEncoder) void {
+    pub fn end(encoder: *RenderPassEncoder) !void {
         vkd.cmdEndRenderPass(encoder.encoder.buffer.buffer);
     }
 

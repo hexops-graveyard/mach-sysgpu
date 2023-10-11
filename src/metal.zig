@@ -218,7 +218,7 @@ pub const Device = struct {
         return RenderPipeline.init(device, desc);
     }
 
-    pub fn createShaderModuleAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+    pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
         return ShaderModule.initAir(device, air);
     }
 
@@ -488,7 +488,7 @@ pub const Buffer = struct {
         allocator.destroy(buffer);
     }
 
-    pub fn getConstMappedRange(buffer: *Buffer, offset: usize, size: usize) !*anyopaque {
+    pub fn getMappedRange(buffer: *Buffer, offset: usize, size: usize) !?*anyopaque {
         _ = size;
         const mtl_buffer = buffer.mtl_buffer;
         const base: [*]const u8 = @ptrCast(mtl_buffer.contents());
@@ -773,8 +773,11 @@ pub const ShaderModule = struct {
     library: *mtl.Library,
     threadgroup_sizes: std.StringHashMapUnmanaged(mtl.Size) = .{},
 
-    pub fn initAir(device: *Device, air: *const shader.Air) !*ShaderModule {
+    pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const mtl_device = device.mtl_device;
+
+        defer allocator.destroy(air);
+        defer air.deinit(allocator);
 
         const code = shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }) catch unreachable;
         defer allocator.free(code);
@@ -1312,7 +1315,7 @@ pub const ComputePassEncoder = struct {
         allocator.destroy(encoder);
     }
 
-    pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) void {
+    pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) !void {
         const mtl_encoder = encoder.mtl_encoder;
         mtl_encoder.dispatchThreadgroups_threadsPerThreadgroup(
             mtl.Size.init(workgroup_count_x, workgroup_count_y, workgroup_count_z),
@@ -1320,7 +1323,7 @@ pub const ComputePassEncoder = struct {
         );
     }
 
-    pub fn end(encoder: *ComputePassEncoder) void {
+    pub fn end(encoder: *ComputePassEncoder) !void {
         const mtl_encoder = encoder.mtl_encoder;
         mtl_encoder.endEncoding();
     }

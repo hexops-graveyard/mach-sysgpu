@@ -359,6 +359,21 @@ pub fn resolveInt(air: Air, inst_idx: InstIndex) ?i64 {
     return null;
 }
 
+pub fn findFunction(air: Air, name: []const u8) ?Inst.Fn {
+    for (air.refToList(air.globals_index)) |global_inst_idx| {
+        switch (air.getInst(global_inst_idx)) {
+            .@"fn" => |inst| {
+                if (std.mem.eql(u8, air.getStr(inst.name), name)) {
+                    return inst;
+                }
+            },
+            else => {},
+        }
+    }
+
+    return null;
+}
+
 pub const InstIndex = enum(u32) { none = std.math.maxInt(u32), _ };
 pub const RefIndex = enum(u32) { none = std.math.maxInt(u32), _ };
 pub const ValueIndex = enum(u32) { none = std.math.maxInt(u32), _ };
