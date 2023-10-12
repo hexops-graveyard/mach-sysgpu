@@ -3131,7 +3131,7 @@ fn genTextureLoadBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstI
     const result_type = switch (a1_inst.texture_type.kind) {
         .sampled_2d => try astgen.addInst(.{ .vector = .{
             .elem_type = a1_inst.texture_type.elem_type,
-            .size = .two,
+            .size = .four,
             .value = null,
         } }),
         .depth_2d => try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),

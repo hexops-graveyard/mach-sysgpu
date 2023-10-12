@@ -449,6 +449,7 @@ test "must error" {
 
 test "triangle.wgsl" {
     const triangle = @embedFile("test/triangle.wgsl");
+    try expectCodegen(triangle, "triangle.hlsl", .hlsl);
     try expectCodegen(triangle, "triangle.msl", .msl);
     try expectCodegen(triangle, "triangle.spv", .spirv);
 }
