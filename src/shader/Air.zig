@@ -403,6 +403,7 @@ pub const Inst = union(enum) {
     comparison_sampler_type,
     external_texture_type,
 
+    nil_intrinsic: NilIntrinsic,
     unary: Unary,
     unary_intrinsic: UnaryIntrinsic,
     binary: Binary,
@@ -435,6 +436,8 @@ pub const Inst = union(enum) {
     select: BuiltinSelect,
     texture_sample: TextureSample,
     texture_dimension: TextureDimension,
+    texture_load: TextureLoad,
+    texture_store: TextureStore,
 
     pub const Var = struct {
         name: StringIndex,
@@ -702,6 +705,11 @@ pub const Inst = union(enum) {
         };
     };
 
+    pub const NilIntrinsic = enum {
+        storage_barrier,
+        workgroup_barrier,
+    };
+
     pub const UnaryIntrinsic = struct {
         result_type: InstIndex,
         expr: InstIndex,
@@ -901,8 +909,9 @@ pub const Inst = union(enum) {
         texture: InstIndex,
         sampler: InstIndex,
         coords: InstIndex,
-        offset: InstIndex,
-        array_index: InstIndex,
+        offset: InstIndex = InstIndex.none,
+        level: InstIndex = InstIndex.none,
+        array_index: InstIndex = InstIndex.none,
         result_type: InstIndex,
     };
 
@@ -911,6 +920,21 @@ pub const Inst = union(enum) {
         texture: InstIndex,
         level: InstIndex,
         result_type: InstIndex,
+    };
+
+    pub const TextureLoad = struct {
+        kind: TextureType.Kind,
+        texture: InstIndex,
+        coords: InstIndex,
+        level: InstIndex,
+        result_type: InstIndex,
+    };
+
+    pub const TextureStore = struct {
+        kind: TextureType.Kind,
+        texture: InstIndex,
+        coords: InstIndex,
+        value: InstIndex,
     };
 
     pub const If = struct {
