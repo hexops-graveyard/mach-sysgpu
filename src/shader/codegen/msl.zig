@@ -302,14 +302,110 @@ fn emitStageInType(msl: *Msl, inst: Inst.Fn) !void {
 
 fn emitFnGlobalVar(msl: *Msl, inst_idx: InstIndex) !void {
     const inst = msl.air.getInst(inst_idx).@"var";
+    const type_inst = msl.air.getInst(inst.type);
 
+    switch (type_inst) {
+        .texture_type => |texture| try msl.emitFnTexture(inst, texture),
+        .sampler_type, .comparison_sampler_type => try msl.emitFnSampler(inst),
+        else => try msl.emitFnBuffer(inst),
+    }
+}
+
+fn emitFnTexture(msl: *Msl, inst: Inst.Var, texture: Inst.TextureType) !void {
+    try msl.writeAll(switch (texture.kind) {
+        .sampled_1d => "texture1d",
+        .sampled_2d => "texture2d",
+        .sampled_2d_array => "texture2d_array",
+        .sampled_3d => "texture3d",
+        .sampled_cube => "texturecube",
+        .sampled_cube_array => "texturecube_array",
+        .multisampled_2d => "texture2d_ms",
+        .multisampled_depth_2d => "depth2d_ms",
+        .storage_1d => "texture1d",
+        .storage_2d => "texture2d",
+        .storage_2d_array => "texture2d_array",
+        .storage_3d => "texture3d",
+        .depth_2d => "depth2d",
+        .depth_2d_array => "depth2d_array",
+        .depth_cube => "depthcube",
+        .depth_cube_array => "depthcube_array",
+    });
+    try msl.writeAll("<");
+    try msl.writeAll(switch (texture.texel_format) {
+        .none => "float", // TODO - is this right?
+
+        .rgba8unorm,
+        .rgba8snorm,
+        .bgra8unorm,
+        .rgba16float,
+        .r32float,
+        .rg32float,
+        .rgba32float,
+        => "float",
+
+        .rgba8uint,
+        .rgba16uint,
+        .r32uint,
+        .rg32uint,
+        .rgba32uint,
+        => "uint",
+
+        .rgba8sint,
+        .rgba16sint,
+        .r32sint,
+        .rg32sint,
+        .rgba32sint,
+        => "int",
+    });
+    try msl.writeAll(", access::");
+    try msl.writeAll(switch (texture.kind) {
+        .sampled_1d,
+        .sampled_2d,
+        .sampled_2d_array,
+        .sampled_3d,
+        .sampled_cube,
+        .sampled_cube_array,
+        .multisampled_2d,
+        .multisampled_depth_2d,
+        .depth_2d,
+        .depth_2d_array,
+        .depth_cube,
+        .depth_cube_array,
+        => "sample",
+        .storage_1d,
+        .storage_2d,
+        .storage_2d_array,
+        .storage_3d,
+        => "read_write", // TODO - read, write only
+    });
+    try msl.writeAll("> ");
+    try msl.writeAll(msl.air.getStr(inst.name));
+
+    // TODO - slot mapping
+    if (msl.air.resolveInt(inst.binding)) |binding| {
+        try msl.print(" [[texture({})]]", .{binding});
+    }
+}
+
+fn emitFnSampler(msl: *Msl, inst: Inst.Var) !void {
+    try msl.writeAll("sampler");
+    try msl.writeAll(" ");
+    try msl.writeAll(msl.air.getStr(inst.name));
+
+    // TODO - slot mapping
+    if (msl.air.resolveInt(inst.binding)) |binding| {
+        try msl.print(" [[sampler({})]]", .{binding});
+    }
+}
+
+fn emitFnBuffer(msl: *Msl, inst: Inst.Var) !void {
     try msl.writeAll(if (inst.addr_space == .uniform) "constant" else "device");
     try msl.writeAll(" ");
     try msl.emitType(inst.type);
     try msl.emitTypeAsPointer(inst.type);
     try msl.print(" {s}", .{msl.air.getStr(inst.name)});
 
-    // TODO - slot mapping and different object types
+    // TODO - slot mapping
     if (msl.air.resolveInt(inst.binding)) |binding| {
         try msl.print(" [[buffer({})]]", .{binding});
     }
@@ -455,6 +551,7 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .call => |inst| try msl.emitCall(inst),
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
+        .texture_sample => |inst| try msl.emitTextureSample(inst),
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| try msl.print("Expr: {}", .{inst}), // TODO
     }
@@ -786,6 +883,15 @@ fn emitCall(msl: *Msl, inst: Inst.FnCall) !void {
             try msl.emitExpr(arg_inst_idx);
         }
     }
+    try msl.writeAll(")");
+}
+
+fn emitTextureSample(msl: *Msl, inst: Inst.TextureSample) !void {
+    try msl.emitExpr(inst.texture);
+    try msl.writeAll(".sample(");
+    try msl.emitExpr(inst.sampler);
+    try msl.writeAll(", ");
+    try msl.emitExpr(inst.coords);
     try msl.writeAll(")");
 }
 

@@ -456,6 +456,12 @@ pub const Device = struct {
         return RenderPipeline.init(device, desc);
     }
 
+    pub fn createSampler(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
     pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
         return ShaderModule.initAir(device, air);
     }
@@ -1222,6 +1228,17 @@ pub const TextureView = struct {
 pub const Sampler = struct {
     manager: utils.Manager(Sampler) = .{},
     d3d_desc: c.D3D12_SAMPLER_DESC,
+
+    pub fn init(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(sampler: *Sampler) void {
+        _ = sampler;
+        unreachable;
+    }
 };
 
 pub const BindGroupLayout = struct {
@@ -2140,6 +2157,31 @@ pub const CommandEncoder = struct {
         );
     }
 
+    pub fn copyBufferToTexture(
+        encoder: *CommandEncoder,
+        source: *const dgpu.ImageCopyBuffer,
+        destination: *const dgpu.ImageCopyTexture,
+        copy_size: *const dgpu.Extent3D,
+    ) !void {
+        _ = copy_size;
+        _ = destination;
+        _ = source;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn copyTextureToTexture(
+        encoder: *CommandEncoder,
+        source: *const dgpu.ImageCopyTexture,
+        destination: *const dgpu.ImageCopyTexture,
+        copy_size: *const dgpu.Extent3D,
+    ) !void {
+        _ = copy_size;
+        _ = destination;
+        _ = source;
+        _ = encoder;
+    }
+
     pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
         // TODO
         _ = desc;
@@ -2838,6 +2880,23 @@ pub const Queue = struct {
     pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
         const encoder = try queue.getCommandEncoder();
         try encoder.writeBuffer(buffer, offset, data, size);
+    }
+
+    pub fn writeTexture(
+        queue: *Queue,
+        destination: *const dgpu.ImageCopyTexture,
+        data: [*]const u8,
+        data_size: usize,
+        data_layout: *const dgpu.Texture.DataLayout,
+        write_size: *const dgpu.Extent3D,
+    ) !void {
+        _ = write_size;
+        _ = data_layout;
+        _ = data_size;
+        _ = data;
+        _ = destination;
+        _ = queue;
+        unreachable;
     }
 
     // Internal

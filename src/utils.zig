@@ -118,7 +118,7 @@ pub const DefaultPipelineLayoutDescriptor = struct {
                                     .depth_cube_array,
                                     => .depth,
                                     else => switch (texture.texel_format) {
-                                        .none => unreachable,
+                                        .none => .float, // TODO - is this right?
                                         .rgba8unorm,
                                         .rgba8snorm,
                                         .bgra8unorm,
