@@ -219,6 +219,10 @@ pub const Device = struct {
         return RenderPipeline.init(device, desc);
     }
 
+    pub fn createSampler(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+        return Sampler.init(device, desc);
+    }
+
     pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
         return ShaderModule.initAir(device, air);
     }
@@ -573,28 +577,48 @@ pub const TextureView = struct {
         defer objc.autoreleasePoolPop(pool);
 
         var mtl_texture = texture.mtl_texture;
-        if (opt_desc) |desc| {
-            // TODO - analyze desc to see if we need to create a new view
+        const texture_format = mtl_texture.pixelFormat();
+        const texture_type = mtl_texture.textureType();
+        const texture_mip_level_count = mtl_texture.mipmapLevelCount();
+        const texture_array_layer_count = mtl_texture.arrayLength();
 
-            const mip_level_count = if (desc.mip_level_count == dgpu.mip_level_count_undefined)
-                mtl_texture.mipmapLevelCount() - desc.base_mip_level
+        var view_format = texture_format;
+        var view_type = texture_type;
+        var view_base_mip_level: u32 = 0;
+        var view_mip_level_count = texture_mip_level_count;
+        var view_base_array_layer: u32 = 0;
+        var view_array_layer_count = texture_array_layer_count;
+
+        if (opt_desc) |desc| {
+            if (desc.format != .undefined)
+                view_format = conv.metalPixelFormatForView(desc.format, texture_format, desc.aspect);
+            if (desc.dimension != .dimension_undefined)
+                view_type = conv.metalTextureTypeForView(desc.dimension);
+            view_base_mip_level = desc.base_mip_level;
+            view_mip_level_count = if (desc.mip_level_count == dgpu.mip_level_count_undefined)
+                texture_mip_level_count - desc.base_mip_level
             else
                 desc.mip_level_count;
-            const array_layer_count = if (desc.array_layer_count == dgpu.array_layer_count_undefined)
-                mtl_texture.arrayLength() - desc.base_array_layer
+            view_base_array_layer = desc.base_array_layer;
+            view_array_layer_count = if (desc.array_layer_count == dgpu.array_layer_count_undefined)
+                texture_array_layer_count - desc.base_array_layer
             else
                 desc.array_layer_count;
+        }
 
+        if (view_format != texture_format or view_type != texture_type or view_base_mip_level != 0 or view_mip_level_count != texture_mip_level_count or view_base_array_layer != 0 or view_array_layer_count != texture_array_layer_count) {
             mtl_texture = mtl_texture.newTextureViewWithPixelFormat_textureType_levels_slices(
-                conv.metalPixelFormatForView(desc.format, mtl_texture.pixelFormat(), desc.aspect),
-                conv.metalTextureTypeForView(desc.dimension),
-                ns.Range.init(desc.base_mip_level, mip_level_count),
-                ns.Range.init(desc.base_array_layer, array_layer_count),
+                view_format,
+                view_type,
+                ns.Range.init(view_base_mip_level, view_mip_level_count),
+                ns.Range.init(view_base_array_layer, view_array_layer_count),
             ) orelse {
                 return error.newTextureViewFailed;
             };
-            if (desc.label) |label| {
-                mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
+            if (opt_desc) |desc| {
+                if (desc.label) |label| {
+                    mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
+                }
             }
         } else {
             _ = mtl_texture.retain();
@@ -624,6 +648,46 @@ pub const TextureView = struct {
 pub const Sampler = struct {
     manager: utils.Manager(TextureView) = .{},
     mtl_sampler: *mtl.SamplerState,
+
+    pub fn init(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
+        const mtl_device = device.mtl_device;
+
+        var mtl_desc = mtl.SamplerDescriptor.alloc().init();
+        defer mtl_desc.release();
+
+        mtl_desc.setMinFilter(conv.metalSamplerMinMagFilter(desc.min_filter));
+        mtl_desc.setMagFilter(conv.metalSamplerMinMagFilter(desc.mag_filter));
+        mtl_desc.setMipFilter(conv.metalSamplerMipFilter(desc.mipmap_filter));
+        mtl_desc.setMaxAnisotropy(desc.max_anisotropy);
+        mtl_desc.setSAddressMode(conv.metalSamplerAddressMode(desc.address_mode_u));
+        mtl_desc.setTAddressMode(conv.metalSamplerAddressMode(desc.address_mode_v));
+        mtl_desc.setRAddressMode(conv.metalSamplerAddressMode(desc.address_mode_w));
+        mtl_desc.setLodMinClamp(desc.lod_min_clamp);
+        mtl_desc.setLodMaxClamp(desc.lod_max_clamp);
+        if (desc.compare != .undefined)
+            mtl_desc.setCompareFunction(conv.metalCompareFunction(desc.compare));
+        if (desc.label) |label|
+            mtl_desc.setLabel(ns.String.stringWithUTF8String(label));
+
+        const mtl_sampler = mtl_device.newSamplerStateWithDescriptor(mtl_desc) orelse {
+            return error.newSamplerFailed;
+        };
+        errdefer mtl_sampler.release();
+
+        var sampler = try allocator.create(Sampler);
+        sampler.* = .{
+            .mtl_sampler = mtl_sampler,
+        };
+        return sampler;
+    }
+
+    pub fn deinit(sampler: *Sampler) void {
+        sampler.mtl_sampler.release();
+        allocator.destroy(sampler);
+    }
 };
 
 pub const BindGroupLayout = struct {
@@ -686,15 +750,15 @@ pub const BindGroup = struct {
     };
 
     const Entry = struct {
-        kind: Kind,
+        kind: Kind = undefined,
         binding: u32,
         visibility: dgpu.ShaderStageFlags,
+        dynamic_index: ?u32,
         buffer: ?*Buffer = null,
         offset: u32 = 0,
-        size: u32,
+        size: u32 = 0,
         sampler: ?*mtl.SamplerState = null,
         texture: ?*mtl.Texture = null,
-        dynamic_index: ?u32 = null,
     };
 
     manager: utils.Manager(BindGroup) = .{},
@@ -710,14 +774,18 @@ pub const BindGroup = struct {
 
         for (desc.entries.?[0..desc.entry_count], 0..) |entry, i| {
             var mtl_entry = &mtl_entries[i];
+
             const bind_group_entry = layout.getEntry(entry.binding) orelse return error.UnknownBinding;
 
             // TODO - need to remap user binding space [0, 1000) to API binding space
-            mtl_entry.binding = entry.binding;
-            mtl_entry.visibility = bind_group_entry.visibility;
-            mtl_entry.dynamic_index = layout.getDynamicIndex(entry.binding);
+            mtl_entry.* = .{
+                .binding = entry.binding,
+                .visibility = bind_group_entry.visibility,
+                .dynamic_index = layout.getDynamicIndex(entry.binding),
+            };
             if (entry.buffer) |buffer_raw| {
                 const buffer: *Buffer = @ptrCast(@alignCast(buffer_raw));
+                buffer.manager.reference();
                 mtl_entry.kind = .buffer;
                 mtl_entry.buffer = buffer;
                 mtl_entry.offset = @intCast(entry.offset);
@@ -725,11 +793,11 @@ pub const BindGroup = struct {
             } else if (entry.sampler) |sampler_raw| {
                 const sampler: *Sampler = @ptrCast(@alignCast(sampler_raw));
                 mtl_entry.kind = .sampler;
-                mtl_entry.sampler = sampler.mtl_sampler;
+                mtl_entry.sampler = sampler.mtl_sampler.retain();
             } else if (entry.texture_view) |texture_view_raw| {
                 const texture_view: *TextureView = @ptrCast(@alignCast(texture_view_raw));
                 mtl_entry.kind = .texture;
-                mtl_entry.texture = texture_view.mtl_texture;
+                mtl_entry.texture = texture_view.mtl_texture.retain();
             }
         }
 
@@ -739,6 +807,11 @@ pub const BindGroup = struct {
     }
 
     pub fn deinit(group: *BindGroup) void {
+        for (group.entries) |entry| {
+            if (entry.buffer) |buffer| buffer.manager.release();
+            if (entry.sampler) |sampler| sampler.release();
+            if (entry.texture) |texture| texture.release();
+        }
         allocator.free(group.entries);
         allocator.destroy(group);
     }
@@ -771,7 +844,10 @@ pub const PipelineLayout = struct {
         const groups = default_pipeline_layout.groups;
         var bind_group_layouts = std.BoundedArray(*dgpu.BindGroupLayout, limits.max_bind_groups){};
         defer {
-            for (bind_group_layouts.slice()) |bind_group_layout| bind_group_layout.release();
+            for (bind_group_layouts.slice()) |bind_group_layout_raw| {
+                const bind_group_layout: *BindGroupLayout = @ptrCast(@alignCast(bind_group_layout_raw));
+                bind_group_layout.manager.release();
+            }
         }
 
         for (groups.slice()) |entries| {
@@ -816,7 +892,7 @@ pub const ShaderModule = struct {
         var err: ?*ns.Error = undefined;
         const library = mtl_device.newLibraryWithSource_options_error(source, null, &err) orelse {
             std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
-            return error.InvalidDescriptor;
+            return error.newLibraryFailed;
         };
         errdefer library.release();
 
@@ -886,7 +962,7 @@ pub const ComputePipeline = struct {
         const compute_module: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
         const entrypoint = entrypointString(desc.compute.entry_point);
         const compute_fn = compute_module.library.newFunctionWithName(ns.String.stringWithUTF8String(entrypoint)) orelse {
-            return error.InvalidDescriptor;
+            return error.newFunctionFailed;
         };
         defer compute_fn.release();
         mtl_desc.setComputeFunction(compute_fn);
@@ -918,7 +994,7 @@ pub const ComputePipeline = struct {
         ) orelse {
             // TODO
             std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
-            return error.InvalidDescriptor;
+            return error.newComputePipelineStateFailed;
         };
         errdefer mtl_pipeline.release();
 
@@ -970,8 +1046,9 @@ pub const RenderPipeline = struct {
 
         // vertex
         const vertex_module: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
-        const vertex_fn = vertex_module.library.newFunctionWithName(ns.String.stringWithUTF8String(desc.vertex.entry_point)) orelse {
-            return error.InvalidDescriptor;
+        const vertex_entry_point = entrypointString(desc.vertex.entry_point);
+        const vertex_fn = vertex_module.library.newFunctionWithName(ns.String.stringWithUTF8String(vertex_entry_point)) orelse {
+            return error.newFunctionFailed;
         };
         defer vertex_fn.release();
         mtl_desc.setVertexFunction(vertex_fn);
@@ -1060,8 +1137,9 @@ pub const RenderPipeline = struct {
         // fragment
         if (desc.fragment) |frag| {
             const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
-            const frag_fn = frag_module.library.newFunctionWithName(ns.String.stringWithUTF8String(frag.entry_point)) orelse {
-                return error.InvalidDescriptor;
+            const frag_entry_point = entrypointString(frag.entry_point);
+            const frag_fn = frag_module.library.newFunctionWithName(ns.String.stringWithUTF8String(frag_entry_point)) orelse {
+                return error.newFunctionFailed;
             };
             defer frag_fn.release();
             mtl_desc.setFragmentFunction(frag_fn);
@@ -1115,7 +1193,7 @@ pub const RenderPipeline = struct {
         const mtl_pipeline = mtl_device.newRenderPipelineStateWithDescriptor_error(mtl_desc, &err) orelse {
             // TODO
             std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
-            return error.InvalidDescriptor;
+            return error.newRenderPipelineStateFailed;
         };
         errdefer mtl_pipeline.release();
 
@@ -1250,8 +1328,18 @@ pub const CommandEncoder = struct {
         return RenderPassEncoder.init(encoder, desc);
     }
 
-    pub fn copyBufferToBuffer(encoder: *CommandEncoder, source: *Buffer, source_offset: u64, destination: *Buffer, destination_offset: u64, size: u64) !void {
+    pub fn copyBufferToBuffer(
+        encoder: *CommandEncoder,
+        source: *Buffer,
+        source_offset: u64,
+        destination: *Buffer,
+        destination_offset: u64,
+        size: u64,
+    ) !void {
         const mtl_encoder = try encoder.getBlitEncoder();
+
+        try encoder.referenced_buffers.append(allocator, source);
+        try encoder.referenced_buffers.append(allocator, destination);
 
         mtl_encoder.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
             source.mtl_buffer,
@@ -1260,9 +1348,56 @@ pub const CommandEncoder = struct {
             destination_offset,
             size,
         );
+    }
 
-        try encoder.referenced_buffers.append(allocator, source);
-        try encoder.referenced_buffers.append(allocator, destination);
+    pub fn copyBufferToTexture(
+        encoder: *CommandEncoder,
+        source: *const dgpu.ImageCopyBuffer,
+        destination: *const dgpu.ImageCopyTexture,
+        copy_size: *const dgpu.Extent3D,
+    ) !void {
+        const mtl_encoder = try encoder.getBlitEncoder();
+
+        const buffer: *Buffer = @ptrCast(@alignCast(source.buffer));
+        const texture: *Texture = @ptrCast(@alignCast(destination.texture));
+
+        try encoder.referenced_buffers.append(allocator, buffer);
+
+        mtl_encoder.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
+            buffer.mtl_buffer,
+            source.layout.offset,
+            source.layout.bytes_per_row,
+            source.layout.bytes_per_row * source.layout.rows_per_image,
+            mtl.Size.init(copy_size.width, copy_size.height, copy_size.depth_or_array_layers),
+            texture.mtl_texture,
+            destination.origin.z,
+            destination.mip_level,
+            mtl.Origin.init(destination.origin.x, destination.origin.y, destination.origin.z),
+        );
+    }
+
+    pub fn copyTextureToTexture(
+        encoder: *CommandEncoder,
+        source: *const dgpu.ImageCopyTexture,
+        destination: *const dgpu.ImageCopyTexture,
+        copy_size: *const dgpu.Extent3D,
+    ) !void {
+        const mtl_encoder = try encoder.getBlitEncoder();
+
+        const source_texture: *Texture = @ptrCast(@alignCast(source.texture));
+        const destination_texture: *Texture = @ptrCast(@alignCast(destination.texture));
+
+        mtl_encoder.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
+            source_texture.mtl_texture,
+            source.origin.z,
+            source.mip_level,
+            mtl.Origin.init(source.origin.x, source.origin.y, source.origin.z),
+            mtl.Size.init(copy_size.width, copy_size.height, copy_size.depth_or_array_layers),
+            destination_texture.mtl_texture,
+            destination.origin.z,
+            destination.mip_level,
+            mtl.Origin.init(destination.origin.x, destination.origin.y, destination.origin.z),
+        );
     }
 
     pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
@@ -1282,10 +1417,11 @@ pub const CommandEncoder = struct {
     }
 
     pub fn writeBuffer(encoder: *CommandEncoder, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
+        const mtl_encoder = try encoder.getBlitEncoder();
+
         const stream = try encoder.command_buffer.upload(size);
         @memcpy(stream.map[0..size], data[0..size]);
 
-        const mtl_encoder = try encoder.getBlitEncoder();
         mtl_encoder.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
             stream.buffer,
             stream.offset,
@@ -1297,6 +1433,36 @@ pub const CommandEncoder = struct {
         try encoder.referenced_buffers.append(allocator, buffer);
     }
 
+    // Internal
+    pub fn writeTexture(
+        encoder: *CommandEncoder,
+        destination: *const dgpu.ImageCopyTexture,
+        data: [*]const u8,
+        data_size: usize,
+        data_layout: *const dgpu.Texture.DataLayout,
+        write_size: *const dgpu.Extent3D,
+    ) !void {
+        const mtl_encoder = try encoder.getBlitEncoder();
+
+        const texture: *Texture = @ptrCast(@alignCast(destination.texture));
+
+        const stream = try encoder.command_buffer.upload(data_size);
+        @memcpy(stream.map[0..data_size], data[0..data_size]);
+
+        mtl_encoder.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
+            stream.buffer,
+            stream.offset + data_layout.offset,
+            data_layout.bytes_per_row,
+            data_layout.bytes_per_row * data_layout.rows_per_image,
+            mtl.Size.init(write_size.width, write_size.height, write_size.depth_or_array_layers),
+            texture.mtl_texture,
+            destination.origin.z,
+            destination.mip_level,
+            mtl.Origin.init(destination.origin.x, destination.origin.y, destination.origin.z),
+        );
+    }
+
+    // Internal
     fn getBlitEncoder(encoder: *CommandEncoder) !*mtl.BlitCommandEncoder {
         if (encoder.mtl_encoder) |mtl_encoder| return mtl_encoder;
 
@@ -1309,7 +1475,7 @@ pub const CommandEncoder = struct {
         defer mtl_desc.release();
 
         const mtl_encoder = mtl_command_buffer.blitCommandEncoderWithDescriptor(mtl_desc) orelse {
-            return error.InvalidDescriptor;
+            return error.blitCommandEncoderFailed;
         };
 
         encoder.mtl_encoder = mtl_encoder.retain();
@@ -1342,7 +1508,7 @@ pub const ComputePassEncoder = struct {
         defer mtl_desc.release();
 
         const mtl_encoder = mtl_command_buffer.computeCommandEncoderWithDescriptor(mtl_desc) orelse {
-            return error.InvalidDescriptor;
+            return error.computeCommandEncoderFailed;
         };
         errdefer mtl_encoder.release();
 
@@ -1371,6 +1537,7 @@ pub const ComputePassEncoder = struct {
 
     pub fn dispatchWorkgroups(encoder: *ComputePassEncoder, workgroup_count_x: u32, workgroup_count_y: u32, workgroup_count_z: u32) !void {
         const mtl_encoder = encoder.mtl_encoder;
+
         mtl_encoder.dispatchThreadgroups_threadsPerThreadgroup(
             mtl.Size.init(workgroup_count_x, workgroup_count_y, workgroup_count_z),
             encoder.threadgroup_size,
@@ -1379,6 +1546,7 @@ pub const ComputePassEncoder = struct {
 
     pub fn end(encoder: *ComputePassEncoder) void {
         const mtl_encoder = encoder.mtl_encoder;
+
         mtl_encoder.endEncoding();
     }
 
@@ -1405,6 +1573,7 @@ pub const ComputePassEncoder = struct {
 
     pub fn setPipeline(encoder: *ComputePassEncoder, pipeline: *ComputePipeline) !void {
         const mtl_encoder = encoder.mtl_encoder;
+
         mtl_encoder.setComputePipelineState(pipeline.mtl_pipeline);
         encoder.threadgroup_size = pipeline.threadgroup_size;
     }
@@ -1489,7 +1658,7 @@ pub const RenderPassEncoder = struct {
         // timestamps - TODO
 
         const mtl_encoder = mtl_command_buffer.renderCommandEncoderWithDescriptor(mtl_desc) orelse {
-            return error.InvalidDescriptor;
+            return error.renderCommandEncoderFailed;
         };
         errdefer mtl_encoder.release();
 
@@ -1522,6 +1691,7 @@ pub const RenderPassEncoder = struct {
 
     pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
         const mtl_encoder = encoder.mtl_encoder;
+
         mtl_encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
             encoder.primitive_type,
             first_vertex,
@@ -1533,6 +1703,7 @@ pub const RenderPassEncoder = struct {
 
     pub fn drawIndexed(encoder: *RenderPassEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) void {
         const mtl_encoder = encoder.mtl_encoder;
+
         mtl_encoder.drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset_instanceCount_baseVertex_baseInstance(
             encoder.primitive_type,
             index_count,
@@ -1547,6 +1718,7 @@ pub const RenderPassEncoder = struct {
 
     pub fn end(encoder: *RenderPassEncoder) !void {
         const mtl_encoder = encoder.mtl_encoder;
+
         mtl_encoder.endEncoding();
     }
 
@@ -1599,6 +1771,7 @@ pub const RenderPassEncoder = struct {
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
         const mtl_encoder = encoder.mtl_encoder;
+
         mtl_encoder.setRenderPipelineState(pipeline.mtl_pipeline);
         mtl_encoder.setFrontFacingWinding(pipeline.winding);
         mtl_encoder.setCullMode(pipeline.cull_mode);
@@ -1615,6 +1788,7 @@ pub const RenderPassEncoder = struct {
 
     pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
         const mtl_encoder = encoder.mtl_encoder;
+
         const scissor_rect = mtl.ScissorRect.init(x, y, width, height);
         mtl_encoder.setScissorRect(scissor_rect);
     }
@@ -1622,12 +1796,14 @@ pub const RenderPassEncoder = struct {
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
         _ = size;
         const mtl_encoder = encoder.mtl_encoder;
+
         try encoder.referenced_buffers.append(allocator, buffer);
         mtl_encoder.setVertexBuffer_offset_atIndex(buffer.mtl_buffer, offset, slot_vertex_buffers + slot);
     }
 
     pub fn setViewport(encoder: *RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
         const mtl_encoder = encoder.mtl_encoder;
+
         const viewport = mtl.Viewport.init(x, y, width, height, min_depth, max_depth);
         mtl_encoder.setViewport(viewport);
     }
@@ -1650,7 +1826,7 @@ pub const Queue = struct {
         const mtl_device = device.mtl_device;
 
         const command_queue = mtl_device.newCommandQueue() orelse {
-            return error.NoCommandQueue;
+            return error.newCommandQueueFailed;
         };
         errdefer command_queue.release();
 
@@ -1692,6 +1868,19 @@ pub const Queue = struct {
         try encoder.writeBuffer(buffer, offset, data, size);
     }
 
+    pub fn writeTexture(
+        queue: *Queue,
+        destination: *const dgpu.ImageCopyTexture,
+        data: [*]const u8,
+        data_size: usize,
+        data_layout: *const dgpu.Texture.DataLayout,
+        write_size: *const dgpu.Extent3D,
+    ) !void {
+        const encoder = try queue.getCommandEncoder();
+        try encoder.writeTexture(destination, data, data_size, data_layout, write_size);
+    }
+
+    // Private
     fn getCommandEncoder(queue: *Queue) !*CommandEncoder {
         if (queue.command_encoder) |command_encoder| return command_encoder;
 

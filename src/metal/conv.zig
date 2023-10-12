@@ -238,7 +238,7 @@ pub fn metalResourceOptionsForBuffer(usage: dgpu.Buffer.UsageFlags) mtl.Resource
     return cpu_cache_mode | storage_mode | hazard_tracking_mode;
 }
 
-pub fn metalSamplerAddressMode(mode: dgpu.AddressMode) mtl.SamplerAddressMode {
+pub fn metalSamplerAddressMode(mode: dgpu.Sampler.AddressMode) mtl.SamplerAddressMode {
     return switch (mode) {
         .repeat => mtl.SamplerAddressModeRepeat,
         .mirror_repeat => mtl.SamplerAddressModeMirrorRepeat,

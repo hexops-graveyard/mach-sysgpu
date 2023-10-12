@@ -230,12 +230,9 @@ pub const Impl = struct {
         command_encoder.copyBufferToBuffer(source, source_offset, destination, destination_offset, size) catch unreachable;
     }
 
-    pub inline fn commandEncoderCopyBufferToTexture(command_encoder: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyBuffer, destination: *const dgpu.ImageCopyTexture, copy_size: *const dgpu.Extent3D) void {
-        _ = command_encoder;
-        _ = source;
-        _ = destination;
-        _ = copy_size;
-        unreachable;
+    pub inline fn commandEncoderCopyBufferToTexture(command_encoder_raw: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyBuffer, destination: *const dgpu.ImageCopyTexture, copy_size: *const dgpu.Extent3D) void {
+        const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
+        command_encoder.copyBufferToTexture(source, destination, copy_size) catch unreachable;
     }
 
     pub inline fn commandEncoderCopyTextureToBuffer(command_encoder: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyTexture, destination: *const dgpu.ImageCopyBuffer, copy_size: *const dgpu.Extent3D) void {
@@ -246,12 +243,9 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn commandEncoderCopyTextureToTexture(command_encoder: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyTexture, destination: *const dgpu.ImageCopyTexture, copy_size: *const dgpu.Extent3D) void {
-        _ = command_encoder;
-        _ = source;
-        _ = destination;
-        _ = copy_size;
-        unreachable;
+    pub inline fn commandEncoderCopyTextureToTexture(command_encoder_raw: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyTexture, destination: *const dgpu.ImageCopyTexture, copy_size: *const dgpu.Extent3D) void {
+        const command_encoder: *impl.CommandEncoder = @ptrCast(@alignCast(command_encoder_raw));
+        command_encoder.copyTextureToTexture(source, destination, copy_size) catch unreachable;
     }
 
     pub inline fn commandEncoderCopyTextureToTextureInternal(command_encoder: *dgpu.CommandEncoder, source: *const dgpu.ImageCopyTexture, destination: *const dgpu.ImageCopyTexture, copy_size: *const dgpu.Extent3D) void {
@@ -516,10 +510,10 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub fn deviceCreateSampler(device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler {
-        _ = device;
-        _ = descriptor;
-        unreachable;
+    pub inline fn deviceCreateSampler(device_raw: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler {
+        const device: *impl.Device = @ptrCast(@alignCast(device_raw));
+        const sampler = device.createSampler(descriptor orelse &dgpu.Sampler.Descriptor{}) catch unreachable;
+        return @ptrCast(sampler);
     }
 
     pub inline fn deviceCreateShaderModule(device_raw: *dgpu.Device, descriptor: *const dgpu.ShaderModule.Descriptor) *dgpu.ShaderModule {
@@ -819,14 +813,9 @@ pub const Impl = struct {
         queue.writeBuffer(buffer, buffer_offset, @ptrCast(data), size) catch unreachable;
     }
 
-    pub inline fn queueWriteTexture(queue: *dgpu.Queue, destination: *const dgpu.ImageCopyTexture, data: *const anyopaque, data_size: usize, data_layout: *const dgpu.Texture.DataLayout, write_size: *const dgpu.Extent3D) void {
-        _ = queue;
-        _ = destination;
-        _ = data;
-        _ = data_size;
-        _ = data_layout;
-        _ = write_size;
-        unreachable;
+    pub inline fn queueWriteTexture(queue_raw: *dgpu.Queue, destination: *const dgpu.ImageCopyTexture, data: *const anyopaque, data_size: usize, data_layout: *const dgpu.Texture.DataLayout, write_size: *const dgpu.Extent3D) void {
+        const queue: *impl.Queue = @ptrCast(@alignCast(queue_raw));
+        queue.writeTexture(destination, @ptrCast(data), data_size, data_layout, write_size) catch unreachable;
     }
 
     pub inline fn queueReference(queue_raw: *dgpu.Queue) void {
@@ -1128,14 +1117,14 @@ pub const Impl = struct {
         unreachable;
     }
 
-    pub inline fn samplerReference(sampler: *dgpu.Sampler) void {
-        _ = sampler;
-        unreachable;
+    pub inline fn samplerReference(sampler_raw: *dgpu.Sampler) void {
+        const sampler: *impl.Sampler = @ptrCast(@alignCast(sampler_raw));
+        sampler.manager.reference();
     }
 
-    pub inline fn samplerRelease(sampler: *dgpu.Sampler) void {
-        _ = sampler;
-        unreachable;
+    pub inline fn samplerRelease(sampler_raw: *dgpu.Sampler) void {
+        const sampler: *impl.Sampler = @ptrCast(@alignCast(sampler_raw));
+        sampler.manager.release();
     }
 
     pub inline fn shaderModuleGetCompilationInfo(shader_module: *dgpu.ShaderModule, callback: dgpu.CompilationInfoCallback, userdata: ?*anyopaque) void {

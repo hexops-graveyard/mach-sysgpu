@@ -678,6 +678,12 @@ pub const Device = struct {
         return RenderPipeline.init(device, desc);
     }
 
+    pub fn createSampler(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
     pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
         return ShaderModule.initAir(device, air);
     }
@@ -1208,6 +1214,21 @@ pub const TextureView = struct {
     pub fn deinit(view: *TextureView) void {
         vkd.destroyImageView(view.device.device, view.view, null);
         allocator.destroy(view);
+    }
+};
+
+pub const Sampler = struct {
+    manager: utils.Manager(Sampler) = .{},
+
+    pub fn init(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+        _ = desc;
+        _ = device;
+        unreachable;
+    }
+
+    pub fn deinit(sampler: *Sampler) void {
+        _ = sampler;
+        unreachable;
     }
 };
 
@@ -1823,6 +1844,31 @@ pub const CommandEncoder = struct {
         vkd.cmdCopyBuffer(encoder.buffer.buffer, source.buffer, destination.buffer, 1, @ptrCast(&region));
     }
 
+    pub fn copyBufferToTexture(
+        encoder: *CommandEncoder,
+        source: *const dgpu.ImageCopyBuffer,
+        destination: *const dgpu.ImageCopyTexture,
+        copy_size: *const dgpu.Extent3D,
+    ) !void {
+        _ = copy_size;
+        _ = destination;
+        _ = source;
+        _ = encoder;
+        unreachable;
+    }
+
+    pub fn copyTextureToTexture(
+        encoder: *CommandEncoder,
+        source: *const dgpu.ImageCopyTexture,
+        destination: *const dgpu.ImageCopyTexture,
+        copy_size: *const dgpu.Extent3D,
+    ) !void {
+        _ = copy_size;
+        _ = destination;
+        _ = source;
+        _ = encoder;
+    }
+
     pub fn finish(cmd_encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
         _ = desc;
         try vkd.endCommandBuffer(cmd_encoder.buffer.buffer);
@@ -2176,6 +2222,23 @@ pub const Queue = struct {
             .null_handle,
         );
         try vkd.queueWaitIdle(queue.queue);
+    }
+
+    pub fn writeTexture(
+        queue: *Queue,
+        destination: *const dgpu.ImageCopyTexture,
+        data: [*]const u8,
+        data_size: usize,
+        data_layout: *const dgpu.Texture.DataLayout,
+        write_size: *const dgpu.Extent3D,
+    ) !void {
+        _ = write_size;
+        _ = data_layout;
+        _ = data_size;
+        _ = data;
+        _ = destination;
+        _ = queue;
+        unreachable;
     }
 };
 
