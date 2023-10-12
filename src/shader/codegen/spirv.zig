@@ -590,7 +590,7 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
             .decoration = .Block,
         });
 
-        if (spv.air.getInst(inst.type) == .@"struct") {
+        if (!faked_struct) {
             var offset: u32 = 0;
             for (spv.air.refToList(spv.air.getInst(inst.type).@"struct".members)) |member| {
                 const member_inst = spv.air.getInst(member).struct_member;
@@ -659,22 +659,38 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
 }
 
 fn emitStride(spv: *SpirV, inst: InstIndex, id: IdRef) !void {
-    const @"struct" = spv.air.getInst(inst).@"struct";
-    for (spv.air.refToList(@"struct".members)) |member| {
-        const member_inst = spv.air.getInst(member).struct_member;
-        switch (spv.air.getInst(member_inst.type)) {
+    switch (spv.air.getInst(inst)) {
+        .@"struct" => |@"struct"| {
+            for (spv.air.refToList(@"struct".members)) |member| {
+                const member_inst = spv.air.getInst(member).struct_member;
+                switch (spv.air.getInst(member_inst.type)) {
+                    .array => try spv.annotations_section.emit(.OpMemberDecorate, .{
+                        .structure_type = id,
+                        .member = 0,
+                        .decoration = .{ .ArrayStride = .{ .array_stride = spv.getStride(member_inst.type) } },
+                    }),
+                    .matrix => try spv.annotations_section.emit(.OpMemberDecorate, .{
+                        .structure_type = id,
+                        .member = 0,
+                        .decoration = .{ .MatrixStride = .{ .matrix_stride = spv.getStride(member_inst.type) } },
+                    }),
+                    else => {},
+                }
+            }
+        },
+        else => |inst_type| switch (inst_type) {
             .array => try spv.annotations_section.emit(.OpMemberDecorate, .{
                 .structure_type = id,
                 .member = 0,
-                .decoration = .{ .ArrayStride = .{ .array_stride = spv.getStride(member_inst.type) } },
+                .decoration = .{ .ArrayStride = .{ .array_stride = spv.getStride(inst) } },
             }),
             .matrix => try spv.annotations_section.emit(.OpMemberDecorate, .{
                 .structure_type = id,
                 .member = 0,
-                .decoration = .{ .MatrixStride = .{ .matrix_stride = spv.getStride(member_inst.type) } },
+                .decoration = .{ .MatrixStride = .{ .matrix_stride = spv.getStride(inst) } },
             }),
             else => {},
-        }
+        },
     }
 }
 
