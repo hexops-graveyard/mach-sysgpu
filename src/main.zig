@@ -20,7 +20,7 @@ const impl = switch (backend_type) {
 var inited = false;
 var allocator: std.mem.Allocator = undefined;
 
-pub const Impl = struct {
+pub const Impl = dgpu.Interface(struct {
     pub fn init(alloc: std.mem.Allocator, options: impl.InitOptions) !void {
         inited = true;
         allocator = alloc;
@@ -1340,10 +1340,20 @@ pub const Impl = struct {
         const texture_view: *impl.TextureView = @ptrCast(@alignCast(texture_view_raw));
         texture_view.manager.release();
     }
-};
+});
 
 test "refAllDeclsRecursive" {
     std.testing.refAllDeclsRecursive(@This());
+
+    // // Force inline functions to be analyzed for semantic errors
+    // // see e.g. https://github.com/ziglang/zig/issues/17390
+    // _ = &struct {
+    //     fn f() void {
+    //         foo1();
+    //         foo2();
+    //         foo3();
+    //     }
+    // }.f;
 }
 
 test "export" {
