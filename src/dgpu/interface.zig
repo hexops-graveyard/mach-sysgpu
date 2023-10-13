@@ -139,7 +139,7 @@ pub fn Interface(comptime T: type) type {
     assertDecl(T, "deviceCreateRenderBundleEncoder", fn (device: *dgpu.Device, descriptor: *const dgpu.RenderBundleEncoder.Descriptor) callconv(.Inline) *dgpu.RenderBundleEncoder);
     // TODO(self-hosted): this cannot be marked as inline for some reason:
     // https://github.com/ziglang/zig/issues/12545
-    assertDecl(T, "deviceCreateSampler", fn (device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler);
+    assertDecl(T, "deviceCreateSampler", fn (device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) callconv(.Inline) *dgpu.Sampler);
     assertDecl(T, "deviceCreateShaderModule", fn (device: *dgpu.Device, descriptor: *const dgpu.ShaderModule.Descriptor) callconv(.Inline) *dgpu.ShaderModule);
     assertDecl(T, "deviceCreateSwapChain", fn (device: *dgpu.Device, surface: ?*dgpu.Surface, descriptor: *const dgpu.SwapChain.Descriptor) callconv(.Inline) *dgpu.SwapChain);
     assertDecl(T, "deviceCreateTexture", fn (device: *dgpu.Device, descriptor: *const dgpu.Texture.Descriptor) callconv(.Inline) *dgpu.Texture);
@@ -1874,9 +1874,7 @@ pub const StubInterface = Interface(struct {
         unreachable;
     }
 
-    // TODO(self-hosted): this cannot be marked as inline for some reason.
-    // https://github.com/ziglang/zig/issues/12545
-    pub fn deviceCreateSampler(device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler {
+    pub inline fn deviceCreateSampler(device: *dgpu.Device, descriptor: ?*const dgpu.Sampler.Descriptor) *dgpu.Sampler {
         _ = device;
         _ = descriptor;
         unreachable;
