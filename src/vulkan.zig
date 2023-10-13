@@ -162,7 +162,7 @@ pub const Instance = struct {
     ) !*Adapter {
         return Adapter.init(instance, options orelse &dgpu.RequestAdapterOptions{}) catch |err| {
             callback(.err, undefined, @errorName(err), userdata);
-            unreachable; // TODO - return dummy adapter
+            @panic("unimplemented"); // TODO - return dummy adapter
         };
     }
 
@@ -398,7 +398,7 @@ pub const Surface = struct {
                     );
                 } else if (utils.findChained(dgpu.Surface.DescriptorFromWaylandSurface, desc.next_in_chain.generic)) |wayland_desc| {
                     _ = wayland_desc;
-                    unreachable;
+                    @panic("unimplemented");
                     // TODO: renderdoc will not work with wayland
                     // break :blk try vki.createWaylandSurfaceKHR(
                     //     instance.instance,
@@ -426,7 +426,7 @@ pub const Surface = struct {
 
                 return error.InvalidDescriptor;
             },
-            else => unreachable,
+            else => @compileError("unsupported platform"),
         };
 
         var surface = try allocator.create(Surface);
@@ -681,7 +681,7 @@ pub const Device = struct {
     pub fn createSampler(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
         _ = desc;
         _ = device;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
@@ -699,7 +699,7 @@ pub const Device = struct {
     pub fn createTexture(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
         _ = desc;
         _ = device;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn getQueue(device: *Device) !*Queue {
@@ -1030,7 +1030,7 @@ pub const Buffer = struct {
             if (desc.usage.map_write) break :blk .linear_write_mappable;
             break :blk .linear;
         };
-        const mem_type_index = device.memory_allocator.findBestAllocator(requirements, mem_type) orelse unreachable; // TODO
+        const mem_type_index = device.memory_allocator.findBestAllocator(requirements, mem_type) orelse @panic("unimplemented"); // TODO
 
         const memory = try vkd.allocateMemory(device.device, &.{
             .allocation_size = size,
@@ -1081,6 +1081,16 @@ pub const Buffer = struct {
         return @ptrCast(buffer.map.?[offset .. offset + size]);
     }
 
+    pub fn getSize(buffer: *Buffer) u64 {
+        _ = buffer;
+        @panic("unimplemented");
+    }
+
+    pub fn getUsage(buffer: *Buffer) dgpu.Buffer.UsageFlags {
+        _ = buffer;
+        @panic("unimplemented");
+    }
+
     pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
         _ = userdata;
         _ = callback;
@@ -1088,7 +1098,13 @@ pub const Buffer = struct {
         _ = offset;
         _ = mode;
         _ = buffer;
-        unreachable;
+        @panic("unimplemented");
+    }
+
+    pub fn setLabel(buffer: *Buffer, label: [*:0]const u8) void {
+        _ = label;
+        _ = buffer;
+        @panic("unimplemented");
     }
 
     pub fn unmap(buffer: *Buffer) !void {
@@ -1223,12 +1239,12 @@ pub const Sampler = struct {
     pub fn init(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
         _ = desc;
         _ = device;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn deinit(sampler: *Sampler) void {
         _ = sampler;
-        unreachable;
+        @panic("unimplemented");
     }
 };
 
@@ -1349,7 +1365,7 @@ pub const BindGroup = struct {
                     };
                     writes[i].p_buffer_info = @ptrCast(&write_buffer_info[i]);
                 },
-                else => unreachable, // TODO
+                else => @panic("unimplemented"), // TODO
             }
         }
 
@@ -1410,7 +1426,7 @@ pub const ShaderModule = struct {
         defer allocator.destroy(air);
         defer air.deinit(allocator);
 
-        const code = shader.CodeGen.generate(allocator, air, .spirv, .{ .emit_source_file = "" }) catch unreachable;
+        const code = try shader.CodeGen.generate(allocator, air, .spirv, .{ .emit_source_file = "" });
         defer allocator.free(code);
 
         return ShaderModule.initSpirv(device, code);
@@ -1491,7 +1507,7 @@ pub const ComputePipeline = struct {
     pub fn getBindGroupLayout(pipeline: *ComputePipeline, group_index: u32) *BindGroupLayout {
         _ = group_index;
         _ = pipeline;
-        unreachable;
+        @panic("unimplemented");
     }
 };
 
@@ -1765,7 +1781,7 @@ pub const RenderPipeline = struct {
     pub fn getBindGroupLayout(pipeline: *RenderPipeline, group_index: u32) *BindGroupLayout {
         _ = group_index;
         _ = pipeline;
-        unreachable;
+        @panic("unimplemented");
     }
 
     fn isDepthBiasEnabled(ds: ?*const dgpu.DepthStencilState) vk.Bool32 {
@@ -1828,7 +1844,7 @@ pub const CommandEncoder = struct {
     pub fn beginComputePass(encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn beginRenderPass(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
@@ -1854,7 +1870,7 @@ pub const CommandEncoder = struct {
         _ = destination;
         _ = source;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn copyTextureToTexture(
@@ -1881,7 +1897,7 @@ pub const CommandEncoder = struct {
         _ = offset;
         _ = buffer;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 };
 
@@ -1891,7 +1907,7 @@ pub const ComputePassEncoder = struct {
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
         _ = command_encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn deinit(encoder: *ComputePassEncoder) void {
@@ -1903,7 +1919,7 @@ pub const ComputePassEncoder = struct {
         _ = workgroup_count_y;
         _ = workgroup_count_x;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn setBindGroup(encoder: *ComputePassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
@@ -1912,18 +1928,18 @@ pub const ComputePassEncoder = struct {
         _ = group;
         _ = group_index;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn setPipeline(encoder: *ComputePassEncoder, pipeline: *ComputePipeline) !void {
         _ = pipeline;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn end(encoder: *ComputePassEncoder) void {
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 };
 
@@ -2079,7 +2095,7 @@ pub const RenderPassEncoder = struct {
         _ = format;
         _ = buffer;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
@@ -2124,7 +2140,7 @@ pub const RenderPassEncoder = struct {
         _ = y;
         _ = x;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
@@ -2140,7 +2156,7 @@ pub const RenderPassEncoder = struct {
         _ = y;
         _ = x;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 };
 
@@ -2238,7 +2254,7 @@ pub const Queue = struct {
         _ = data;
         _ = destination;
         _ = queue;
-        unreachable;
+        @panic("unimplemented");
     }
 };
 

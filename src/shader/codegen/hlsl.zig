@@ -796,6 +796,7 @@ fn emitBinaryIntrinsic(hlsl: *Hlsl, inst: Inst.BinaryIntrinsic) !void {
         .distance => "distance",
         .dot => "dot",
         .pow => "pow",
+        .step => "step",
     });
     try hlsl.writeAll("(");
     try hlsl.emitExpr(inst.lhs);

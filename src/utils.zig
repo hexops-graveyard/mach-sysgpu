@@ -63,6 +63,8 @@ pub const DefaultPipelineLayoutDescriptor = struct {
             const global_var_ref_list = air.refToList(fn_inst.global_var_refs);
             for (global_var_ref_list) |global_var_inst_idx| {
                 const var_inst = air.getInst(global_var_inst_idx).@"var";
+                if (var_inst.addr_space == .workgroup)
+                    continue;
 
                 const var_type = air.getInst(var_inst.type);
                 const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.constExpr);

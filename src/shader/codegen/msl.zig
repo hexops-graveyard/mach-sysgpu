@@ -60,7 +60,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         switch (air.getInst(inst_idx)) {
             .@"fn" => |inst| try msl.emitFn(inst),
             .@"struct" => |inst| try msl.emitStruct(inst_idx, inst),
-            .@"const" => |inst| try msl.emitConst(inst),
+            .@"const" => |inst| try msl.emitGlobalConst(inst),
             .@"var" => {},
             else => |inst| try msl.print("TopLevel: {}\n", .{inst}), // TODO
         }
@@ -92,19 +92,19 @@ fn emitType(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         try msl.writeAll("void");
     } else {
         switch (msl.air.getInst(inst_idx)) {
-            //.bool
+            .bool => |inst| try msl.emitBoolType(inst),
             .int => |inst| try msl.emitIntType(inst),
             .float => |inst| try msl.emitFloatType(inst),
             .vector => |inst| try msl.emitVectorType(inst),
             .matrix => |inst| try msl.emitMatrixType(inst),
             .array => |inst| try msl.emitType(inst.elem_type),
-            .@"struct" => |inst| try msl.writeAll(msl.air.getStr(inst.name)),
+            .@"struct" => |inst| try msl.writeName(inst.name),
             else => |inst| try msl.print("Type: {}", .{inst}), // TODO
         }
     }
 }
 
-fn emitTypeSuffix(msl: *Msl, inst_idx: InstIndex) !void {
+fn emitTypeSuffix(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
     if (inst_idx != .none) {
         switch (msl.air.getInst(inst_idx)) {
             .array => |inst| try msl.emitArrayTypeSuffix(inst),
@@ -122,6 +122,7 @@ fn emitArrayTypeSuffix(msl: *Msl, inst: Inst.Array) !void {
         // Flexible array members are a C99 feature, but Metal validation checks actual resource size not what is in the shader.
         try msl.writeAll("[1]");
     }
+    try msl.emitTypeSuffix(inst.elem_type);
 }
 
 fn emitTypeAsPointer(msl: *Msl, inst_idx: InstIndex) !void {
@@ -133,16 +134,23 @@ fn emitTypeAsPointer(msl: *Msl, inst_idx: InstIndex) !void {
     }
 }
 
+fn emitBoolType(msl: *Msl, inst: Inst.Bool) !void {
+    _ = inst;
+    try msl.writeAll("bool");
+}
+
 fn emitIntType(msl: *Msl, inst: Inst.Int) !void {
-    switch (inst.type) {
-        .u32 => try msl.writeAll("uint"),
-        .i32 => try msl.writeAll("int"),
-    }
+    try msl.writeAll(switch (inst.type) {
+        .u32 => "uint",
+        .i32 => "int",
+    });
 }
 
 fn emitFloatType(msl: *Msl, inst: Inst.Float) !void {
-    _ = inst;
-    try msl.writeAll("float");
+    try msl.writeAll(switch (inst.type) {
+        .f32 => "float",
+        .f16 => "half",
+    });
 }
 
 fn emitVectorSize(msl: *Msl, size: Inst.Vector.Size) !void {
@@ -167,7 +175,9 @@ fn emitMatrixType(msl: *Msl, inst: Inst.Matrix) !void {
 }
 
 fn emitStruct(msl: *Msl, inst_idx: InstIndex, inst: Inst.Struct) !void {
-    try msl.print("struct {s} {{\n", .{msl.air.getStr(inst.name)});
+    try msl.writeAll("struct ");
+    try msl.writeName(inst.name);
+    try msl.writeAll(" {\n");
 
     msl.enterScope();
     defer msl.exitScope();
@@ -179,7 +189,7 @@ fn emitStruct(msl: *Msl, inst_idx: InstIndex, inst: Inst.Struct) !void {
         try msl.writeIndent();
         try msl.emitType(member.type);
         try msl.writeAll(" ");
-        try msl.writeAll(msl.air.getStr(member.name));
+        try msl.writeName(member.name);
         try msl.emitTypeSuffix(member.type);
         if (member.builtin) |builtin| {
             try msl.emitBuiltin(builtin);
@@ -215,11 +225,12 @@ fn emitBuiltin(msl: *Msl, builtin: Builtin) !void {
     try msl.writeAll("]]");
 }
 
-fn emitConst(msl: *Msl, inst: Inst.Const) !void {
+fn emitGlobalConst(msl: *Msl, inst: Inst.Const) !void {
+    const t = if (inst.type != .none) inst.type else inst.expr;
     try msl.writeAll("constant ");
-    try msl.emitType(inst.type);
+    try msl.emitType(t);
     try msl.writeAll(" ");
-    try msl.writeAll(msl.air.getStr(inst.name));
+    try msl.writeName(inst.name);
     try msl.emitTypeSuffix(inst.type);
     try msl.writeAll(" = ");
     try msl.emitExpr(inst.expr);
@@ -260,10 +271,13 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
         try msl.print("{s} ", .{stringFromStage(inst.stage)});
     }
     try msl.emitType(inst.return_type);
-
-    const fn_name = msl.air.getStr(inst.name);
-    const mtl_fn_name = if (std.mem.eql(u8, fn_name, "main")) "main_" else fn_name;
-    try msl.print(" {s}(", .{mtl_fn_name});
+    try msl.writeAll(" ");
+    if (inst.stage != .none) {
+        try msl.writeEntrypoint(inst.name);
+    } else {
+        try msl.writeName(inst.name);
+    }
+    try msl.writeAll("(");
 
     {
         msl.enterScope();
@@ -272,6 +286,10 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
         var add_comma = false;
 
         for (msl.air.refToList(inst.global_var_refs)) |var_inst_idx| {
+            const var_inst = msl.air.getInst(var_inst_idx).@"var";
+            if (var_inst.addr_space == .workgroup)
+                continue;
+
             try msl.writeAll(if (add_comma) ",\n" else "\n");
             add_comma = true;
             try msl.writeIndent();
@@ -306,7 +324,32 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
     }
 
     try msl.writeAll(")\n");
-    try msl.emitStatement(inst.block);
+
+    const block = msl.air.getInst(inst.block).block;
+    try msl.writeAll("{\n");
+    {
+        msl.enterScope();
+        defer msl.exitScope();
+
+        for (msl.air.refToList(inst.global_var_refs)) |var_inst_idx| {
+            const var_inst = msl.air.getInst(var_inst_idx).@"var";
+            if (var_inst.addr_space == .workgroup) {
+                try msl.writeIndent();
+                try msl.writeAll("threadgroup ");
+                try msl.emitType(var_inst.type);
+                try msl.writeAll(" ");
+                try msl.writeName(var_inst.name);
+                try msl.emitTypeSuffix(var_inst.type);
+                try msl.writeAll(";\n");
+            }
+        }
+
+        for (msl.air.refToList(block)) |statement| {
+            try msl.emitStatement(statement);
+        }
+    }
+    try msl.writeIndent();
+    try msl.writeAll("}\n");
 }
 
 fn emitStageInType(msl: *Msl, inst: Inst.Fn) !void {
@@ -409,7 +452,7 @@ fn emitFnTexture(msl: *Msl, inst: Inst.Var, texture: Inst.TextureType) !void {
         => "read_write", // TODO - read, write only
     });
     try msl.writeAll("> ");
-    try msl.writeAll(msl.air.getStr(inst.name));
+    try msl.writeName(inst.name);
 
     try msl.print(" [[texture({})]]", .{msl.texture_index});
     msl.texture_index += 1;
@@ -418,18 +461,23 @@ fn emitFnTexture(msl: *Msl, inst: Inst.Var, texture: Inst.TextureType) !void {
 fn emitFnSampler(msl: *Msl, inst: Inst.Var) !void {
     try msl.writeAll("sampler");
     try msl.writeAll(" ");
-    try msl.writeAll(msl.air.getStr(inst.name));
+    try msl.writeName(inst.name);
 
     try msl.print(" [[sampler({})]]", .{msl.sampler_index});
     msl.sampler_index += 1;
 }
 
 fn emitFnBuffer(msl: *Msl, inst: Inst.Var) !void {
-    try msl.writeAll(if (inst.addr_space == .uniform) "constant" else "device");
+    try msl.writeAll(switch (inst.addr_space) {
+        .uniform => "constant",
+        else => "device",
+    });
     try msl.writeAll(" ");
     try msl.emitType(inst.type);
     try msl.emitTypeAsPointer(inst.type);
-    try msl.print(" {s}", .{msl.air.getStr(inst.name)});
+    try msl.writeAll(" ");
+    try msl.writeName(inst.name);
+    try msl.emitTypeSuffix(inst.type);
 
     try msl.print(" [[buffer({})]]", .{msl.buffer_index});
     msl.buffer_index += 1;
@@ -439,7 +487,8 @@ fn emitFnParam(msl: *Msl, inst_idx: InstIndex) !void {
     const inst = msl.air.getInst(inst_idx).fn_param;
 
     try msl.emitType(inst.type);
-    try msl.print(" {s}", .{msl.air.getStr(inst.name)});
+    try msl.writeAll(" ");
+    try msl.writeName(inst.name);
     if (inst.builtin) |builtin| {
         try msl.emitBuiltin(builtin);
     } else if (inst.location) |location| {
@@ -465,13 +514,19 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         // .@"while" => |inst| try msl.emitWhile(inst),
         .@"for" => |inst| try msl.emitFor(inst),
         // .switch
-        .assign => |inst| try msl.emitAssignStmt(inst),
         // .increase
         // .decrease
         .discard => try msl.emitDiscard(),
         // .@"break" => try msl.emitBreak(),
         .@"continue" => try msl.writeAll("continue;\n"),
         // .call => |inst| try msl.emitCall(inst),
+        .assign,
+        .nil_intrinsic,
+        .texture_store,
+        => {
+            try msl.emitExpr(inst_idx);
+            try msl.writeAll(";\n");
+        },
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| try msl.print("Statement: {}\n", .{inst}), // TODO
     }
@@ -480,12 +535,25 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
 fn emitVar(msl: *Msl, inst: Inst.Var) !void {
     const t = if (inst.type != .none) inst.type else inst.expr;
     try msl.emitType(t);
-    try msl.print(" {s}", .{msl.air.getStr(inst.name)});
+    try msl.writeAll(" ");
+    try msl.writeName(inst.name);
     try msl.emitTypeSuffix(t);
     if (inst.expr != .none) {
         try msl.writeAll(" = ");
         try msl.emitExpr(inst.expr);
     }
+    try msl.writeAll(";\n");
+}
+
+fn emitConst(msl: *Msl, inst: Inst.Const) !void {
+    const t = if (inst.type != .none) inst.type else inst.expr;
+    try msl.writeAll("const ");
+    try msl.emitType(t);
+    try msl.writeAll(" ");
+    try msl.writeName(inst.name);
+    try msl.emitTypeSuffix(inst.type);
+    try msl.writeAll(" = ");
+    try msl.emitExpr(inst.expr);
     try msl.writeAll(";\n");
 }
 
@@ -534,11 +602,6 @@ fn emitFor(msl: *Msl, inst: Inst.For) !void {
     try msl.emitStatement(inst.body);
 }
 
-fn emitAssignStmt(msl: *Msl, inst: Inst.Assign) !void {
-    try msl.emitAssign(inst);
-    try msl.writeAll(";\n");
-}
-
 fn emitDiscard(msl: *Msl) !void {
     try msl.writeAll("discard_fragment();\n");
 }
@@ -566,6 +629,7 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .vector => |inst| try msl.emitVector(inst),
         .matrix => |inst| try msl.emitMatrix(inst),
         .array => |inst| try msl.emitArray(inst),
+        .nil_intrinsic => |inst| try msl.emitNilIntrinsic(inst),
         .unary => |inst| try msl.emitUnary(inst),
         .unary_intrinsic => |inst| try msl.emitUnaryIntrinsic(inst),
         .binary => |inst| try msl.emitBinary(inst),
@@ -583,6 +647,7 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .texture_sample => |inst| try msl.emitTextureSample(inst),
         .texture_dimension => |inst| try msl.emitTextureDimension(inst),
         .texture_load => |inst| try msl.emitTextureLoad(inst),
+        .texture_store => |inst| try msl.emitTextureStore(inst),
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| try msl.print("Expr: {}", .{inst}), // TODO
     }
@@ -590,13 +655,13 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
 
 fn emitVarRef(msl: *Msl, inst_idx: InstIndex) !void {
     switch (msl.air.getInst(inst_idx)) {
-        .@"var" => |v| try msl.writeAll(msl.air.getStr(v.name)),
-        .@"const" => |c| try msl.writeAll(msl.air.getStr(c.name)),
+        .@"var" => |v| try msl.writeName(v.name),
+        .@"const" => |c| try msl.writeName(c.name),
         .fn_param => |p| {
             if (msl.has_stage_in and msl.isStageInParameter(inst_idx)) {
                 try msl.writeAll("in.");
             }
-            try msl.writeAll(msl.air.getStr(p.name));
+            try msl.writeName(p.name);
         },
         else => |x| try msl.print("VarRef: {}", .{x}), // TODO
     }
@@ -672,6 +737,13 @@ fn emitArray(msl: *Msl, inst: Inst.Array) !void {
     try msl.writeAll("}");
 }
 
+fn emitNilIntrinsic(msl: *Msl, op: Inst.NilIntrinsic) !void {
+    try msl.writeAll(switch (op) {
+        .storage_barrier => "threadgroup_barrier(mem_flags::mem_device)",
+        .workgroup_barrier => "threadgroup_barrier(mem_flags::mem_threadgroup)",
+    });
+}
+
 fn emitUnary(msl: *Msl, inst: Inst.Unary) !void {
     try msl.writeAll(switch (inst.op) {
         .not => "!",
@@ -686,8 +758,23 @@ fn emitUnaryIntrinsic(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
     const result_type = msl.air.getInst(inst.result_type);
     switch (inst.op) {
         .array_length => try msl.emitArrayLength(inst),
+        .degrees => {
+            try msl.writeAll("(");
+            try msl.emitExpr(inst.expr);
+            try msl.print(" * {}", .{180.0 / std.math.pi});
+            try msl.writeAll(")");
+        },
+        .radians => {
+            try msl.writeAll("(");
+            try msl.emitExpr(inst.expr);
+            try msl.print(" * {}", .{std.math.pi / 180.0});
+            try msl.writeAll(")");
+        },
         else => {
             try msl.writeAll(switch (inst.op) {
+                .array_length => unreachable,
+                .degrees => unreachable,
+                .radians => unreachable,
                 .all => "all",
                 .any => "any",
                 .abs => if (result_type == .float) "fabs" else "abs",
@@ -703,7 +790,6 @@ fn emitUnaryIntrinsic(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
                 .count_leading_zeros => "clz",
                 .count_one_bits => "popcount",
                 .count_trailing_zeros => "ctz",
-                //.degrees => "degrees",
                 .exp => "exp",
                 .exp2 => "exp2",
                 //.first_leading_bit => "first_leading_bit",
@@ -715,7 +801,6 @@ fn emitUnaryIntrinsic(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
                 .log => "log",
                 .log2 => "log2",
                 //.quantize_to_F16 => "quantize_to_F16",
-                //.radians => "radians",
                 .reverseBits => "reverse_bits",
                 .round => "rint",
                 //.saturate => "saturate",
@@ -818,6 +903,7 @@ fn emitBinaryIntrinsic(msl: *Msl, inst: Inst.BinaryIntrinsic) !void {
         .distance => "distance",
         .dot => "dot",
         .pow => "pow",
+        .step => "step",
     });
     try msl.writeAll("(");
     try msl.emitExpr(inst.lhs);
@@ -871,7 +957,8 @@ fn emitDecrease(msl: *Msl, inst_index: InstIndex) !void {
 
 fn emitFieldAccess(msl: *Msl, inst: Inst.FieldAccess) !void {
     try msl.emitExpr(inst.base);
-    try msl.print(".{s}", .{msl.air.getStr(inst.name)});
+    try msl.writeAll(".");
+    try msl.writeName(inst.name);
 }
 
 fn emitSwizzleAccess(msl: *Msl, inst: Inst.SwizzleAccess) !void {
@@ -897,7 +984,7 @@ fn emitIndexAccess(msl: *Msl, inst: Inst.IndexAccess) !void {
 fn emitCall(msl: *Msl, inst: Inst.FnCall) !void {
     const fn_inst = msl.air.getInst(inst.@"fn").@"fn";
 
-    try msl.writeAll(msl.air.getStr(fn_inst.name));
+    try msl.writeName(fn_inst.name);
     try msl.writeAll("(");
     var add_comma = false;
 
@@ -905,7 +992,7 @@ fn emitCall(msl: *Msl, inst: Inst.FnCall) !void {
         try msl.writeAll(if (add_comma) ", " else "");
         add_comma = true;
         const var_inst = msl.air.getInst(var_inst_idx).@"var";
-        try msl.writeAll(msl.air.getStr(var_inst.name));
+        try msl.writeName(var_inst.name);
     }
     if (inst.args != .none) {
         for (msl.air.refToList(inst.args)) |arg_inst_idx| {
@@ -947,6 +1034,17 @@ fn emitTextureLoad(msl: *Msl, inst: Inst.TextureLoad) !void {
     try msl.writeAll(")");
 }
 
+fn emitTextureStore(msl: *Msl, inst: Inst.TextureStore) !void {
+    try msl.emitExpr(inst.texture);
+    try msl.writeAll(".write(");
+    try msl.emitExpr(inst.value);
+    try msl.writeAll(", ");
+    try msl.writeAll("uint2("); // TODO
+    try msl.emitExpr(inst.coords);
+    try msl.writeAll(")");
+    try msl.writeAll(")");
+}
+
 fn enterScope(msl: *Msl) void {
     msl.indent += 4;
 }
@@ -957,6 +1055,21 @@ fn exitScope(msl: *Msl) void {
 
 fn writeIndent(msl: *Msl) !void {
     try msl.writer.writeByteNTimes(' ', msl.indent);
+}
+
+fn writeEntrypoint(msl: *Msl, name: Air.StringIndex) !void {
+    const str = msl.air.getStr(name);
+    if (std.mem.eql(u8, str, "main")) {
+        try msl.writeAll("main_");
+    } else {
+        try msl.writeAll(str);
+    }
+}
+
+fn writeName(msl: *Msl, name: Air.StringIndex) !void {
+    // Suffix with index as WGSL has different scoping rules and to avoid conflicts with keywords
+    const str = msl.air.getStr(name);
+    try msl.print("{s}_{}", .{ str, @intFromEnum(name) });
 }
 
 fn writeAll(msl: *Msl, bytes: []const u8) !void {
