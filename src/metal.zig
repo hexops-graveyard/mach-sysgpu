@@ -55,6 +55,9 @@ fn entrypointSlice(name: []const u8) []const u8 {
     return if (std.mem.eql(u8, name, "main")) "main_" else name;
 }
 
+const BindingPoint = struct { group: u32, binding: u32 };
+const BindingTable = std.AutoHashMapUnmanaged(BindingPoint, u32);
+
 pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
 
@@ -873,7 +876,6 @@ pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     air: *shader.Air,
     library: *mtl.Library,
-    threadgroup_sizes: std.StringHashMapUnmanaged(mtl.Size) = .{},
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const mtl_device = device.mtl_device;
@@ -901,41 +903,71 @@ pub const ShaderModule = struct {
             .air = air,
             .library = library,
         };
-        try module.reflect(air);
         return module;
     }
 
     pub fn deinit(shader_module: *ShaderModule) void {
         shader_module.air.deinit(allocator);
         shader_module.library.release();
-        shader_module.threadgroup_sizes.deinit(allocator);
         allocator.destroy(shader_module.air);
         allocator.destroy(shader_module);
     }
 
-    fn reflect(shader_module: *ShaderModule, air: *const shader.Air) !void {
-        for (air.refToList(air.globals_index)) |inst_idx| {
-            switch (air.getInst(inst_idx)) {
-                .@"fn" => _ = try shader_module.reflectFn(air, inst_idx),
+    // Internal
+    pub fn buildBindingTable(
+        shader_module: *ShaderModule,
+        entry_point: [*:0]const u8,
+    ) !BindingTable {
+        var bindings = BindingTable{};
+        const air = shader_module.air;
+        if (air.findFunction(std.mem.span(entry_point))) |fn_inst| {
+            var buffer_index: u32 = 0;
+            var texture_index: u32 = 0;
+            var sampler_index: u32 = 0;
+
+            for (air.refToList(fn_inst.global_var_refs)) |global_var_inst_idx| {
+                const var_inst = air.getInst(global_var_inst_idx).@"var";
+
+                const var_type = air.getInst(var_inst.type);
+                const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.constExpr);
+                const binding: u32 = @intCast(air.resolveInt(var_inst.binding) orelse return error.constExpr);
+                const key = .{ .group = group, .binding = binding };
+
+                switch (var_type) {
+                    .sampler_type, .comparison_sampler_type => {
+                        try bindings.put(allocator, key, sampler_index);
+                        sampler_index += 1;
+                    },
+                    .texture_type => {
+                        try bindings.put(allocator, key, texture_index);
+                        texture_index += 1;
+                    },
+                    else => {
+                        try bindings.put(allocator, key, buffer_index);
+                        buffer_index += 1;
+                    },
+                }
+            }
+        }
+        return bindings;
+    }
+
+    pub fn getThreadgroupSize(shader_module: *ShaderModule, entry_point: [*:0]const u8) !mtl.Size {
+        const air = shader_module.air;
+        if (air.findFunction(std.mem.span(entry_point))) |fn_inst| {
+            switch (fn_inst.stage) {
+                .compute => |workgroup_size| {
+                    return mtl.Size.init(
+                        @intCast(air.resolveInt(workgroup_size.x) orelse 1),
+                        @intCast(air.resolveInt(workgroup_size.y) orelse 1),
+                        @intCast(air.resolveInt(workgroup_size.z) orelse 1),
+                    );
+                },
                 else => {},
             }
         }
-    }
 
-    fn reflectFn(shader_module: *ShaderModule, air: *const shader.Air, inst_idx: shader.Air.InstIndex) !void {
-        const inst = air.getInst(inst_idx).@"fn";
-        const name = entrypointSlice(air.getStr(inst.name));
-
-        switch (inst.stage) {
-            .compute => |stage| {
-                try shader_module.threadgroup_sizes.put(allocator, name, mtl.Size.init(
-                    @intCast(air.resolveInt(stage.x) orelse 1),
-                    @intCast(air.resolveInt(stage.y) orelse 1),
-                    @intCast(air.resolveInt(stage.z) orelse 1),
-                ));
-            },
-            else => {},
-        }
+        return error.unknownThreadgroupSize;
     }
 };
 
@@ -943,6 +975,7 @@ pub const ComputePipeline = struct {
     manager: utils.Manager(ComputePipeline) = .{},
     mtl_pipeline: *mtl.ComputePipelineState,
     layout: *PipelineLayout,
+    bindings: BindingTable,
     threadgroup_size: mtl.Size,
 
     pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
@@ -967,9 +1000,8 @@ pub const ComputePipeline = struct {
         defer compute_fn.release();
         mtl_desc.setComputeFunction(compute_fn);
 
-        const threadgroup_size = compute_module.threadgroup_sizes.get(std.mem.span(entrypoint)) orelse {
-            return error.InvalidDescriptor;
-        };
+        const bindings = try compute_module.buildBindingTable(desc.compute.entry_point);
+        const threadgroup_size = try compute_module.getThreadgroupSize(desc.compute.entry_point);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
@@ -1003,12 +1035,14 @@ pub const ComputePipeline = struct {
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
             .layout = layout,
+            .bindings = bindings,
             .threadgroup_size = threadgroup_size,
         };
         return pipeline;
     }
 
     pub fn deinit(pipeline: *ComputePipeline) void {
+        pipeline.bindings.deinit(allocator);
         pipeline.mtl_pipeline.release();
         pipeline.layout.manager.release();
         allocator.destroy(pipeline);
@@ -1023,6 +1057,8 @@ pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     mtl_pipeline: *mtl.RenderPipelineState,
     layout: *PipelineLayout,
+    vertex_bindings: BindingTable,
+    fragment_bindings: BindingTable,
     primitive_type: mtl.PrimitiveType,
     winding: mtl.Winding,
     cull_mode: mtl.CullMode,
@@ -1052,6 +1088,8 @@ pub const RenderPipeline = struct {
         };
         defer vertex_fn.release();
         mtl_desc.setVertexFunction(vertex_fn);
+
+        const vertex_bindings = try vertex_module.buildBindingTable(desc.vertex.entry_point);
 
         // vertex constants - TODO
         if (desc.vertex.buffer_count > 0) {
@@ -1135,6 +1173,7 @@ pub const RenderPipeline = struct {
         mtl_desc.setAlphaToCoverageEnabled(desc.multisample.alpha_to_coverage_enabled == .true);
 
         // fragment
+        var fragment_bindings: BindingTable = undefined;
         if (desc.fragment) |frag| {
             const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
             const frag_entry_point = entrypointString(frag.entry_point);
@@ -1143,6 +1182,10 @@ pub const RenderPipeline = struct {
             };
             defer frag_fn.release();
             mtl_desc.setFragmentFunction(frag_fn);
+
+            fragment_bindings = try frag_module.buildBindingTable(frag.entry_point);
+        } else {
+            fragment_bindings = .{};
         }
 
         // attachments
@@ -1202,6 +1245,8 @@ pub const RenderPipeline = struct {
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
             .layout = layout,
+            .vertex_bindings = vertex_bindings,
+            .fragment_bindings = fragment_bindings,
             .primitive_type = primitive_type,
             .winding = winding,
             .cull_mode = cull_mode,
@@ -1214,6 +1259,8 @@ pub const RenderPipeline = struct {
     }
 
     pub fn deinit(pipeline: *RenderPipeline) void {
+        pipeline.vertex_bindings.deinit(allocator);
+        pipeline.fragment_bindings.deinit(allocator);
         pipeline.mtl_pipeline.release();
         if (pipeline.depth_stencil_state) |ds| ds.release();
         pipeline.layout.manager.release();
@@ -1496,7 +1543,10 @@ pub const ComputePassEncoder = struct {
     mtl_encoder: *mtl.ComputeCommandEncoder,
     lengths_buffer: LengthsBuffer,
     referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
-    threadgroup_size: mtl.Size,
+
+    pipeline: ?*ComputePipeline = null,
+    threadgroup_size: mtl.Size = undefined,
+    bindings: *BindingTable = undefined,
 
     pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         const pool = objc.autoreleasePoolPush();
@@ -1524,12 +1574,12 @@ pub const ComputePassEncoder = struct {
             .mtl_encoder = mtl_encoder.retain(),
             .lengths_buffer = lengths_buffer,
             .referenced_buffers = command_encoder.referenced_buffers,
-            .threadgroup_size = mtl.Size.init(0, 0, 0),
         };
         return encoder;
     }
 
     pub fn deinit(encoder: *ComputePassEncoder) void {
+        if (encoder.pipeline) |pipeline| pipeline.manager.release();
         encoder.lengths_buffer.deinit();
         encoder.mtl_encoder.release();
         allocator.destroy(encoder);
@@ -1551,21 +1601,27 @@ pub const ComputePassEncoder = struct {
     }
 
     pub fn setBindGroup(encoder: *ComputePassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
-        _ = group_index;
         _ = dynamic_offset_count;
 
         const mtl_encoder = encoder.mtl_encoder;
 
         for (group.entries) |entry| {
-            switch (entry.kind) {
-                .buffer => {
-                    try encoder.referenced_buffers.append(allocator, entry.buffer.?);
-                    const offset = entry.offset + if (entry.dynamic_index) |i| dynamic_offsets.?[i] else 0;
-                    encoder.lengths_buffer.set(entry.binding, entry.size);
-                    mtl_encoder.setBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, entry.binding);
-                },
-                .sampler => mtl_encoder.setSamplerState_atIndex(entry.sampler, entry.binding),
-                .texture => mtl_encoder.setTexture_atIndex(entry.texture, entry.binding),
+            // NOTE - this does not work yet for applications that expect bind groups to stay valid after pipeline
+            // changes.  For that we will need to defer MSL compilation until layout is known.
+            const key = BindingPoint{ .group = group_index, .binding = entry.binding };
+
+            if (encoder.bindings.get(key)) |slot| {
+                switch (entry.kind) {
+                    .buffer => {
+                        try encoder.referenced_buffers.append(allocator, entry.buffer.?);
+                        encoder.lengths_buffer.set(entry.binding, entry.size);
+
+                        const offset = entry.offset + if (entry.dynamic_index) |i| dynamic_offsets.?[i] else 0;
+                        mtl_encoder.setBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, slot);
+                    },
+                    .sampler => mtl_encoder.setSamplerState_atIndex(entry.sampler, slot),
+                    .texture => mtl_encoder.setTexture_atIndex(entry.texture, slot),
+                }
             }
         }
         encoder.lengths_buffer.apply_compute(mtl_encoder);
@@ -1575,7 +1631,12 @@ pub const ComputePassEncoder = struct {
         const mtl_encoder = encoder.mtl_encoder;
 
         mtl_encoder.setComputePipelineState(pipeline.mtl_pipeline);
+
+        if (encoder.pipeline) |old_pipeline| old_pipeline.manager.release();
+        encoder.pipeline = pipeline;
+        encoder.bindings = &pipeline.bindings;
         encoder.threadgroup_size = pipeline.threadgroup_size;
+        pipeline.manager.reference();
     }
 };
 
@@ -1585,7 +1646,12 @@ pub const RenderPassEncoder = struct {
     vertex_lengths_buffer: LengthsBuffer,
     fragment_lengths_buffer: LengthsBuffer,
     referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
+
+    pipeline: ?*RenderPipeline = null,
+    vertex_bindings: *BindingTable = undefined,
+    fragment_bindings: *BindingTable = undefined,
     primitive_type: mtl.PrimitiveType = undefined,
+
     index_type: mtl.IndexType = undefined,
     index_element_size: usize = undefined,
     index_buffer: *mtl.Buffer = undefined,
@@ -1683,6 +1749,7 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn deinit(encoder: *RenderPassEncoder) void {
+        if (encoder.pipeline) |pipeline| pipeline.manager.release();
         encoder.vertex_lengths_buffer.deinit();
         encoder.fragment_lengths_buffer.deinit();
         encoder.mtl_encoder.release();
@@ -1724,35 +1791,49 @@ pub const RenderPassEncoder = struct {
 
     pub fn setBindGroup(encoder: *RenderPassEncoder, group_index: u32, group: *BindGroup, dynamic_offset_count: usize, dynamic_offsets: ?[*]const u32) !void {
         _ = dynamic_offset_count;
-        _ = group_index;
         const mtl_encoder = encoder.mtl_encoder;
 
         for (group.entries) |entry| {
+            // NOTE - this does not work yet for applications that expect bind groups to stay valid after pipeline
+            // changes.  For that we will need to defer MSL compilation until layout is known.
+            const key = BindingPoint{ .group = group_index, .binding = entry.binding };
             switch (entry.kind) {
                 .buffer => {
                     try encoder.referenced_buffers.append(allocator, entry.buffer.?);
                     const offset = entry.offset + if (entry.dynamic_index) |i| dynamic_offsets.?[i] else 0;
                     if (entry.visibility.vertex) {
-                        encoder.vertex_lengths_buffer.set(entry.binding, entry.size);
-                        mtl_encoder.setVertexBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, entry.binding);
+                        if (encoder.vertex_bindings.get(key)) |slot| {
+                            encoder.vertex_lengths_buffer.set(entry.binding, entry.size);
+                            mtl_encoder.setVertexBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, slot);
+                        }
                     }
                     if (entry.visibility.fragment) {
                         encoder.fragment_lengths_buffer.set(entry.binding, entry.size);
-                        mtl_encoder.setFragmentBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, entry.binding);
+                        if (encoder.fragment_bindings.get(key)) |slot| {
+                            mtl_encoder.setFragmentBuffer_offset_atIndex(entry.buffer.?.mtl_buffer, offset, slot);
+                        }
                     }
                 },
                 .sampler => {
                     if (entry.visibility.vertex) {
-                        mtl_encoder.setVertexSamplerState_atIndex(entry.sampler, entry.binding);
+                        if (encoder.vertex_bindings.get(key)) |slot| {
+                            mtl_encoder.setVertexSamplerState_atIndex(entry.sampler, slot);
+                        }
                     } else {
-                        mtl_encoder.setFragmentSamplerState_atIndex(entry.sampler, entry.binding);
+                        if (encoder.fragment_bindings.get(key)) |slot| {
+                            mtl_encoder.setFragmentSamplerState_atIndex(entry.sampler, slot);
+                        }
                     }
                 },
                 .texture => {
                     if (entry.visibility.vertex) {
-                        mtl_encoder.setVertexTexture_atIndex(entry.texture, entry.binding);
+                        if (encoder.vertex_bindings.get(key)) |slot| {
+                            mtl_encoder.setVertexTexture_atIndex(entry.texture, slot);
+                        }
                     } else {
-                        mtl_encoder.setFragmentTexture_atIndex(entry.texture, entry.binding);
+                        if (encoder.fragment_bindings.get(key)) |slot| {
+                            mtl_encoder.setFragmentTexture_atIndex(entry.texture, slot);
+                        }
                     }
                 },
             }
@@ -1783,7 +1864,13 @@ pub const RenderPassEncoder = struct {
                 pipeline.depth_bias_clamp,
             );
         }
+
+        if (encoder.pipeline) |old_pipeline| old_pipeline.manager.release();
+        encoder.pipeline = pipeline;
+        encoder.vertex_bindings = &pipeline.vertex_bindings;
+        encoder.fragment_bindings = &pipeline.fragment_bindings;
         encoder.primitive_type = pipeline.primitive_type;
+        pipeline.manager.reference();
     }
 
     pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {

@@ -17,6 +17,10 @@ writer: std.ArrayListUnmanaged(u8).Writer,
 indent: u32 = 0,
 stage: Inst.Fn.Stage = .none,
 has_stage_in: bool = false,
+buffer_index: u32 = 0,
+texture_index: u32 = 0,
+sampler_index: u32 = 0,
+frag_result_inst_idx: InstIndex = .none,
 
 pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo) ![]const u8 {
     _ = debug_info;
@@ -35,10 +39,27 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
     try msl.writeAll("#include <metal_stdlib>\n");
     try msl.writeAll("using namespace metal;\n\n");
 
+    // TODO - track fragment return usage on Inst.Struct so HLSL can use it as well
+    for (air.refToList(air.globals_index)) |inst_idx| {
+        switch (air.getInst(inst_idx)) {
+            .@"fn" => |fn_inst| {
+                if (fn_inst.stage == .fragment) {
+                    switch (air.getInst(fn_inst.return_type)) {
+                        .@"struct" => |_| {
+                            msl.frag_result_inst_idx = fn_inst.return_type;
+                        },
+                        else => {},
+                    }
+                }
+            },
+            else => {},
+        }
+    }
+
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
             .@"fn" => |inst| try msl.emitFn(inst),
-            .@"struct" => |inst| try msl.emitStruct(inst),
+            .@"struct" => |inst| try msl.emitStruct(inst_idx, inst),
             .@"const" => |inst| try msl.emitConst(inst),
             .@"var" => {},
             else => |inst| try msl.print("TopLevel: {}\n", .{inst}), // TODO
@@ -145,7 +166,7 @@ fn emitMatrixType(msl: *Msl, inst: Inst.Matrix) !void {
     try msl.emitVectorSize(inst.rows);
 }
 
-fn emitStruct(msl: *Msl, inst: Inst.Struct) !void {
+fn emitStruct(msl: *Msl, inst_idx: InstIndex, inst: Inst.Struct) !void {
     try msl.print("struct {s} {{\n", .{msl.air.getStr(inst.name)});
 
     msl.enterScope();
@@ -163,7 +184,11 @@ fn emitStruct(msl: *Msl, inst: Inst.Struct) !void {
         if (member.builtin) |builtin| {
             try msl.emitBuiltin(builtin);
         } else if (member.location) |location| {
-            try msl.print(" [[user(_{})]]", .{location});
+            if (inst_idx == msl.frag_result_inst_idx) {
+                try msl.print(" [[color({})]]", .{location});
+            } else {
+                try msl.print(" [[user(_{})]]", .{location});
+            }
         }
         try msl.writeAll(";\n");
     }
@@ -223,6 +248,11 @@ fn hasStageInType(msl: *Msl, inst: Inst.Fn) bool {
 fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
     msl.stage = inst.stage;
     msl.has_stage_in = msl.hasStageInType(inst);
+    // TODO - caller should provide a remapping table based on the pipeline layout, currently mach examples
+    // rebind all groups on pipeline changes so this isn't needed yet.
+    msl.buffer_index = 0;
+    msl.texture_index = 0;
+    msl.sampler_index = 0;
 
     try msl.emitStageInType(inst);
 
@@ -381,10 +411,8 @@ fn emitFnTexture(msl: *Msl, inst: Inst.Var, texture: Inst.TextureType) !void {
     try msl.writeAll("> ");
     try msl.writeAll(msl.air.getStr(inst.name));
 
-    // TODO - slot mapping
-    if (msl.air.resolveInt(inst.binding)) |binding| {
-        try msl.print(" [[texture({})]]", .{binding});
-    }
+    try msl.print(" [[texture({})]]", .{msl.texture_index});
+    msl.texture_index += 1;
 }
 
 fn emitFnSampler(msl: *Msl, inst: Inst.Var) !void {
@@ -392,10 +420,8 @@ fn emitFnSampler(msl: *Msl, inst: Inst.Var) !void {
     try msl.writeAll(" ");
     try msl.writeAll(msl.air.getStr(inst.name));
 
-    // TODO - slot mapping
-    if (msl.air.resolveInt(inst.binding)) |binding| {
-        try msl.print(" [[sampler({})]]", .{binding});
-    }
+    try msl.print(" [[sampler({})]]", .{msl.sampler_index});
+    msl.sampler_index += 1;
 }
 
 fn emitFnBuffer(msl: *Msl, inst: Inst.Var) !void {
@@ -405,10 +431,8 @@ fn emitFnBuffer(msl: *Msl, inst: Inst.Var) !void {
     try msl.emitTypeAsPointer(inst.type);
     try msl.print(" {s}", .{msl.air.getStr(inst.name)});
 
-    // TODO - slot mapping
-    if (msl.air.resolveInt(inst.binding)) |binding| {
-        try msl.print(" [[buffer({})]]", .{binding});
-    }
+    try msl.print(" [[buffer({})]]", .{msl.buffer_index});
+    msl.buffer_index += 1;
 }
 
 fn emitFnParam(msl: *Msl, inst_idx: InstIndex) !void {
@@ -431,6 +455,7 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
     try msl.writeIndent();
     switch (msl.air.getInst(inst_idx)) {
         .@"var" => |inst| try msl.emitVar(inst),
+        .@"const" => |inst| try msl.emitConst(inst),
         .block => |block| try msl.emitBlock(block),
         // .loop => |inst| try msl.emitLoop(inst),
         // .continuing
@@ -443,7 +468,7 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .assign => |inst| try msl.emitAssignStmt(inst),
         // .increase
         // .decrease
-        // .discard
+        .discard => try msl.emitDiscard(),
         // .@"break" => try msl.emitBreak(),
         .@"continue" => try msl.writeAll("continue;\n"),
         // .call => |inst| try msl.emitCall(inst),
@@ -514,6 +539,10 @@ fn emitAssignStmt(msl: *Msl, inst: Inst.Assign) !void {
     try msl.writeAll(";\n");
 }
 
+fn emitDiscard(msl: *Msl) !void {
+    try msl.writeAll("discard_fragment();\n");
+}
+
 fn emitBlock(msl: *Msl, block: Air.RefIndex) !void {
     try msl.writeAll("{\n");
     {
@@ -552,6 +581,8 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
         .texture_sample => |inst| try msl.emitTextureSample(inst),
+        .texture_dimension => |inst| try msl.emitTextureDimension(inst),
+        .texture_load => |inst| try msl.emitTextureLoad(inst),
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| try msl.print("Expr: {}", .{inst}), // TODO
     }
@@ -892,6 +923,27 @@ fn emitTextureSample(msl: *Msl, inst: Inst.TextureSample) !void {
     try msl.emitExpr(inst.sampler);
     try msl.writeAll(", ");
     try msl.emitExpr(inst.coords);
+    try msl.writeAll(")");
+}
+
+fn emitTextureDimension(msl: *Msl, inst: Inst.TextureDimension) !void {
+    try msl.writeAll("uint2("); // TODO
+    try msl.emitExpr(inst.texture);
+    try msl.writeAll(".get_width()");
+    try msl.writeAll(", ");
+    try msl.emitExpr(inst.texture);
+    try msl.writeAll(".get_height()");
+    try msl.writeAll(")");
+}
+
+fn emitTextureLoad(msl: *Msl, inst: Inst.TextureLoad) !void {
+    try msl.emitExpr(inst.texture);
+    try msl.writeAll(".read(");
+    try msl.writeAll("uint2("); // TODO
+    try msl.emitExpr(inst.coords);
+    try msl.writeAll(")");
+    try msl.writeAll(", ");
+    try msl.emitExpr(inst.level);
     try msl.writeAll(")");
 }
 
