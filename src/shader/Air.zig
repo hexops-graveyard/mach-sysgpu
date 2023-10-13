@@ -813,6 +813,7 @@ pub const Inst = union(enum) {
             distance,
             dot,
             pow,
+            step,
         };
     };
 

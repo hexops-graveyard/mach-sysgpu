@@ -459,7 +459,7 @@ pub const Device = struct {
     pub fn createSampler(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
         _ = desc;
         _ = device;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
@@ -1066,6 +1066,16 @@ pub const Buffer = struct {
         return @ptrCast(buffer.map.?[offset .. offset + size]);
     }
 
+    pub fn getSize(buffer: *Buffer) u64 {
+        _ = buffer;
+        @panic("unimplemented");
+    }
+
+    pub fn getUsage(buffer: *Buffer) dgpu.Buffer.UsageFlags {
+        _ = buffer;
+        @panic("unimplemented");
+    }
+
     pub fn mapAsync(
         buffer: *Buffer,
         mode: dgpu.MapModeFlags,
@@ -1082,6 +1092,12 @@ pub const Buffer = struct {
             buffer.last_used_fence_value,
             .{ .map_callback = .{ .buffer = buffer, .callback = callback, .userdata = userdata } },
         );
+    }
+
+    pub fn setLabel(buffer: *Buffer, label: [*:0]const u8) void {
+        _ = label;
+        _ = buffer;
+        @panic("unimplemented");
     }
 
     pub fn unmap(buffer: *Buffer) !void {
@@ -1232,12 +1248,12 @@ pub const Sampler = struct {
     pub fn init(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
         _ = desc;
         _ = device;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn deinit(sampler: *Sampler) void {
         _ = sampler;
-        unreachable;
+        @panic("unimplemented");
     }
 };
 
@@ -1630,7 +1646,7 @@ pub const ShaderModule = struct {
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         _ = device;
 
-        const code = shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" }) catch unreachable;
+        const code = try shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" });
 
         var module = try allocator.create(ShaderModule);
         module.* = .{
@@ -2167,7 +2183,7 @@ pub const CommandEncoder = struct {
         _ = destination;
         _ = source;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn copyTextureToTexture(
@@ -2712,7 +2728,7 @@ pub const RenderPassEncoder = struct {
         _ = y;
         _ = x;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
@@ -2735,7 +2751,7 @@ pub const RenderPassEncoder = struct {
         _ = y;
         _ = x;
         _ = encoder;
-        unreachable;
+        @panic("unimplemented");
     }
 
     // Private
@@ -2896,7 +2912,7 @@ pub const Queue = struct {
         _ = data;
         _ = destination;
         _ = queue;
-        unreachable;
+        @panic("unimplemented");
     }
 
     // Internal

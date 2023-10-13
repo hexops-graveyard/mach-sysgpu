@@ -464,6 +464,9 @@ pub const Buffer = struct {
     device: *Device,
     mtl_buffer: *mtl.Buffer,
     last_used_fence_value: u64 = 0,
+    // TODO - packed buffer descriptor struct
+    size: u64,
+    usage: dgpu.Buffer.UsageFlags,
 
     pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
         const pool = objc.autoreleasePoolPush();
@@ -487,6 +490,8 @@ pub const Buffer = struct {
         buffer.* = .{
             .device = device,
             .mtl_buffer = mtl_buffer,
+            .size = desc.size,
+            .usage = desc.usage,
         };
         return buffer;
     }
@@ -503,6 +508,14 @@ pub const Buffer = struct {
         return @constCast(base + offset);
     }
 
+    pub fn getSize(buffer: *Buffer) u64 {
+        return buffer.size;
+    }
+
+    pub fn getUsage(buffer: *Buffer) dgpu.Buffer.UsageFlags {
+        return buffer.usage;
+    }
+
     pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
         _ = size;
         _ = offset;
@@ -514,6 +527,15 @@ pub const Buffer = struct {
             .userdata = userdata,
             .fence_value = buffer.last_used_fence_value,
         });
+    }
+
+    pub fn setLabel(buffer: *Buffer, label: [*:0]const u8) void {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
+        const mtl_buffer = buffer.mtl_buffer;
+
+        mtl_buffer.setLabel(ns.String.stringWithUTF8String(label));
     }
 
     pub fn unmap(buffer: *Buffer) !void {
@@ -880,7 +902,7 @@ pub const ShaderModule = struct {
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const mtl_device = device.mtl_device;
 
-        const code = shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }) catch unreachable;
+        const code = try shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" });
         defer allocator.free(code);
 
         const source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
@@ -927,6 +949,8 @@ pub const ShaderModule = struct {
 
             for (air.refToList(fn_inst.global_var_refs)) |global_var_inst_idx| {
                 const var_inst = air.getInst(global_var_inst_idx).@"var";
+                if (var_inst.addr_space == .workgroup)
+                    continue;
 
                 const var_type = air.getInst(var_inst.type);
                 const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.constExpr);

@@ -1638,6 +1638,7 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const rhs_res_inst = astgen.getInst(rhs_res);
 
     var is_valid = false;
+    var vector_size: ?Inst.Vector.Size = null;
     var arithmetic_res_type = InstIndex.none;
 
     switch (node_tag) {
@@ -1665,14 +1666,19 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     arithmetic_res_type = lhs_res;
                 }
 
-                if (rhs_res_inst == .vector) {
-                    if (try astgen.coerce(lhs_res, rhs_res_inst.vector.elem_type)) {
-                        is_valid = true;
-                        arithmetic_res_type = rhs_res;
-                    }
+                switch (rhs_res_inst) {
+                    .vector => |v| {
+                        if (try astgen.coerce(lhs_res, rhs_res_inst.vector.elem_type)) {
+                            is_valid = true;
+                            vector_size = v.size;
+                            arithmetic_res_type = rhs_res;
+                        }
+                    },
+                    else => {},
                 }
             },
-            .vector => {
+            .vector => |v| {
+                vector_size = v.size;
                 if (astgen.eql(rhs_res, lhs_res)) {
                     is_valid = true;
                     arithmetic_res_type = lhs_res;
@@ -1817,7 +1823,14 @@ fn genBinary(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .less_than_equal,
         .greater_than,
         .greater_than_equal,
-        => try astgen.addInst(.{ .bool = .{ .value = null } }),
+        => if (vector_size) |size|
+            try astgen.addInst(.{ .vector = .{
+                .elem_type = try astgen.addInst(.{ .bool = .{ .value = null } }),
+                .size = size,
+                .value = null,
+            } })
+        else
+            try astgen.addInst(.{ .bool = .{ .value = null } }),
         else => lhs_res,
     };
 
@@ -1905,6 +1918,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .distance => return astgen.genGenericBinaryBuiltin(scope, node, .distance, .any_in_scalar_out, false),
             .dot => return astgen.genGenericBinaryBuiltin(scope, node, .dot, .vector_in_scalar_out, false),
             .pow => return astgen.genGenericBinaryBuiltin(scope, node, .pow, .any_in_any_out, false),
+            .step => return astgen.genGenericBinaryBuiltin(scope, node, .step, .any_in_any_out, false),
             .smoothstep => return astgen.genGenericFloatTripleBuiltin(scope, node, .smoothstep, false),
             .clamp => return astgen.genGenericFloatTripleBuiltin(scope, node, .clamp, false),
             .mix => return astgen.genGenericFloatTripleBuiltin(scope, node, .mix, true),
@@ -3263,13 +3277,13 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
                 return error.AnalysisFail;
             }
         },
-        .sampled_2d, .sampled_2d_array => {
+        .sampled_2d, .sampled_2d_array, .depth_2d, .depth_2d_array => {
             if (a3_inst != .vector or a3_inst.vector.size != .two) {
                 try astgen.errors.add(a3_node_loc, "expected a vec2<f32>", .{}, null);
                 return error.AnalysisFail;
             }
         },
-        .sampled_3d, .sampled_cube, .sampled_cube_array => {
+        .sampled_3d, .sampled_cube, .sampled_cube_array, .depth_cube, .depth_cube_array => {
             if (a3_inst != .vector or a3_inst.vector.size != .three) {
                 try astgen.errors.add(a3_node_loc, "expected a vec3<f32>", .{}, null);
                 return error.AnalysisFail;
@@ -3285,7 +3299,7 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
     var array_index = InstIndex.none;
 
     switch (a1_inst.texture_type.kind) {
-        .sampled_2d, .sampled_3d, .sampled_cube => {
+        .sampled_2d, .sampled_3d, .sampled_cube, .depth_2d, .depth_cube => {
             if (arg_nodes.len == 4) {
                 const a4_node = arg_nodes[3];
                 const a4_node_loc = astgen.tree.nodeLoc(a4_node);
@@ -3295,13 +3309,13 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
                 offset = a4;
 
                 switch (a1_inst.texture_type.kind) {
-                    .sampled_3d, .sampled_cube => {
+                    .sampled_3d, .sampled_cube, .depth_cube => {
                         if (a4_inst != .vector or a4_inst.vector.size != .three) {
                             try astgen.errors.add(a4_node_loc, "expected a vec3<i32>", .{}, null);
                             return error.AnalysisFail;
                         }
                     },
-                    .sampled_2d => if (a4_inst != .vector or a4_inst.vector.size != .two) {
+                    .sampled_2d, .depth_2d => if (a4_inst != .vector or a4_inst.vector.size != .two) {
                         try astgen.errors.add(a4_node_loc, "expected a vec2<i32>", .{}, null);
                         return error.AnalysisFail;
                     },
@@ -3309,7 +3323,7 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
                 }
             }
         },
-        .sampled_2d_array, .sampled_cube_array => {
+        .sampled_2d_array, .sampled_cube_array, .depth_2d_array, .depth_cube_array => {
             if (arg_nodes.len < 4) {
                 return astgen.failArgCountMismatch(node_loc, 4, arg_nodes.len);
             }
@@ -3334,27 +3348,30 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
                 const a5_inst = astgen.getInst(a5_res);
                 offset = a5;
 
-                if (a1_inst.texture_type.kind == .sampled_cube_array) {
-                    if (a5_inst != .vector or a5_inst.vector.size != .three) {
+                switch (a1_inst.texture_type.kind) {
+                    .sampled_cube_array, .depth_cube_array => if (a5_inst != .vector or a5_inst.vector.size != .three) {
                         try astgen.errors.add(a5_node_loc, "expected a vec3<i32>", .{}, null);
                         return error.AnalysisFail;
-                    }
-                } else {
-                    if (a5_inst != .vector or a5_inst.vector.size != .two) {
+                    },
+                    .sampled_2d_array, .depth_2d_array => if (a5_inst != .vector or a5_inst.vector.size != .two) {
                         try astgen.errors.add(a5_node_loc, "expected a vec2<i32>", .{}, null);
                         return error.AnalysisFail;
-                    }
+                    },
+                    else => unreachable,
                 }
             }
         },
         else => unreachable,
     }
 
-    const result_type = try astgen.addInst(.{ .vector = .{
-        .elem_type = try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),
-        .size = .four,
-        .value = null,
-    } });
+    const result_type = switch (a1_inst.texture_type.kind) {
+        .depth_2d, .depth_2d_array, .depth_cube, .depth_cube_array => try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),
+        else => try astgen.addInst(.{ .vector = .{
+            .elem_type = try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),
+            .size = .four,
+            .value = null,
+        } }),
+    };
     return astgen.addInst(.{ .texture_sample = .{
         .kind = a1_inst.texture_type.kind,
         .texture = a1,
@@ -3516,7 +3533,7 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     switch (astgen.getInst(base_type)) {
         .vector => |base_vec| {
-            if (field_name.len > 4 or field_name.len > @intFromEnum(base_vec.size)) {
+            if (field_name.len > 4) {
                 try astgen.errors.add(
                     astgen.tree.tokenLoc(field_node),
                     "invalid swizzle name",
@@ -4345,7 +4362,7 @@ const BuiltinFn = enum {
     sinh,
     smoothstep,
     sqrt,
-    step, // unimplemented
+    step,
     tan,
     tanh,
     transpose, // unimplemented
