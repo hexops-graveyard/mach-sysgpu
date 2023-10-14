@@ -572,7 +572,7 @@ fn emitInt(hlsl: *Hlsl, inst: Inst.Int) !void {
     }
 }
 
-fn emitIntCast(hlsl: *Hlsl, dest_type: Inst.Int, cast: Inst.Cast) !void {
+fn emitIntCast(hlsl: *Hlsl, dest_type: Inst.Int, cast: Inst.ScalarCast) !void {
     try hlsl.emitIntType(dest_type);
     try hlsl.writeAll("(");
     try hlsl.emitExpr(cast.value);
@@ -586,7 +586,7 @@ fn emitFloat(hlsl: *Hlsl, inst: Inst.Float) !void {
     }
 }
 
-fn emitFloatCast(hlsl: *Hlsl, dest_type: Inst.Float, cast: Inst.Cast) !void {
+fn emitFloatCast(hlsl: *Hlsl, dest_type: Inst.Float, cast: Inst.ScalarCast) !void {
     try hlsl.emitFloatType(dest_type);
     try hlsl.writeAll("(");
     try hlsl.emitExpr(cast.value);
@@ -604,9 +604,12 @@ fn emitVector(hlsl: *Hlsl, inst: Inst.Vector) !void {
     try hlsl.writeAll("(");
 
     const value = hlsl.air.getValue(Inst.Vector.Value, inst.value.?);
-    for (value[0..@intFromEnum(inst.size)], 0..) |elem_inst, i| {
-        try hlsl.writeAll(if (i == 0) "" else ", ");
-        try hlsl.emitExpr(elem_inst);
+    switch (value) {
+        .literal => |literal| for (literal[0..@intFromEnum(inst.size)], 0..) |elem_inst, i| {
+            try hlsl.writeAll(if (i == 0) "" else ", ");
+            try hlsl.emitExpr(elem_inst);
+        },
+        .cast => unreachable, // TODO
     }
 
     try hlsl.writeAll(")");
