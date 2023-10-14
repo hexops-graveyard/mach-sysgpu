@@ -273,11 +273,15 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
         },
         .vector => |vec| {
             if (vec.value.? == .none) return .guaranteed;
-            for (air.getValue(Inst.Vector.Value, vec.value.?)[0..@intFromEnum(vec.size)]) |elem_val| {
-                if (air.resolveConstExpr(elem_val) == null) {
-                    return null;
-                }
+            switch (air.getValue(Inst.Vector.Value, vec.value.?)) {
+                .literal => |literal| for (literal[0..@intFromEnum(vec.size)]) |elem_val| {
+                    if (air.resolveConstExpr(elem_val) == null) {
+                        return null;
+                    }
+                },
+                .cast => return null,
             }
+
             return .guaranteed;
         },
         .matrix => |mat| {
@@ -538,7 +542,7 @@ pub const Inst = union(enum) {
 
         pub const Value = union(enum) {
             literal: bool,
-            cast: Cast,
+            cast: ScalarCast,
         };
     };
 
@@ -565,7 +569,7 @@ pub const Inst = union(enum) {
 
         pub const Value = union(enum) {
             literal: i64, // TODO: make this i33 once https://github.com/ziglang/zig/issues/16390 is fixed
-            cast: Cast,
+            cast: ScalarCast,
         };
     };
 
@@ -587,11 +591,11 @@ pub const Inst = union(enum) {
 
         pub const Value = union(enum) {
             literal: f32,
-            cast: Cast,
+            cast: ScalarCast,
         };
     };
 
-    pub const Cast = struct {
+    pub const ScalarCast = struct {
         type: InstIndex,
         value: InstIndex,
     };
@@ -602,7 +606,16 @@ pub const Inst = union(enum) {
         value: ?ValueIndex,
 
         pub const Size = enum(u3) { two = 2, three = 3, four = 4 };
-        pub const Value = [4]InstIndex;
+
+        pub const Value = union(enum) {
+            literal: [4]InstIndex,
+            cast: Cast,
+        };
+
+        pub const Cast = struct {
+            type: InstIndex,
+            value: [4]InstIndex,
+        };
     };
 
     pub const Matrix = struct {

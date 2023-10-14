@@ -1800,7 +1800,7 @@ fn emitFloat(spv: *SpirV, section: *Section, float: Inst.Float) !IdRef {
     };
 }
 
-fn emitBoolCast(spv: *SpirV, section: *Section, cast: Inst.Cast) !IdRef {
+fn emitBoolCast(spv: *SpirV, section: *Section, cast: Inst.ScalarCast) !IdRef {
     const id = spv.allocId();
     const dest_type_id = try spv.resolve(.bool_type);
     const source_type = spv.air.getInst(cast.type);
@@ -1823,7 +1823,7 @@ fn emitBoolCast(spv: *SpirV, section: *Section, cast: Inst.Cast) !IdRef {
     return id;
 }
 
-fn emitIntCast(spv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast: Inst.Cast) !IdRef {
+fn emitIntCast(spv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast: Inst.ScalarCast) !IdRef {
     const id = spv.allocId();
     const source_type = spv.air.getInst(cast.type);
     const dest_type_id = try spv.resolve(.{ .int_type = dest_type });
@@ -1859,7 +1859,7 @@ fn emitIntCast(spv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast: I
     return id;
 }
 
-fn emitFloatCast(spv: *SpirV, section: *Section, dest_type: Inst.Float.Type, cast: Inst.Cast) !IdRef {
+fn emitFloatCast(spv: *SpirV, section: *Section, dest_type: Inst.Float.Type, cast: Inst.ScalarCast) !IdRef {
     const id = spv.allocId();
     const source_type = spv.air.getInst(cast.type);
     const dest_type_id = try spv.resolve(.{ .float_type = dest_type });
@@ -1908,21 +1908,32 @@ fn emitVector(spv: *SpirV, section: *Section, inst: Inst.Vector) !IdRef {
         return spv.resolve(.{ .null = type_id });
     }
 
-    var elem_value = std.ArrayList(IdRef).init(spv.allocator);
-    defer elem_value.deinit();
-    try elem_value.ensureTotalCapacityPrecise(@intFromEnum(inst.size));
+    var constituents = std.ArrayList(IdRef).init(spv.allocator);
+    defer constituents.deinit();
+
+    try constituents.ensureTotalCapacityPrecise(@intFromEnum(inst.size));
 
     const value = spv.air.getValue(Inst.Vector.Value, inst.value.?);
-    for (value[0..@intFromEnum(inst.size)]) |elem_inst| {
-        const elem_id = try spv.emitExpr(section, elem_inst);
-        elem_value.appendAssumeCapacity(elem_id);
+    switch (value) {
+        .literal => for (value.literal[0..@intFromEnum(inst.size)]) |elem_inst| {
+            const elem_id = try spv.emitExpr(section, elem_inst);
+            constituents.appendAssumeCapacity(elem_id);
+        },
+        .cast => |cast| for (cast.value[0..@intFromEnum(inst.size)]) |elem_inst| {
+            const elem_id = switch (elem_type_key) {
+                .float_type => |float| try spv.emitFloatCast(section, float, .{ .type = cast.type, .value = elem_inst }),
+                .int_type => |int| try spv.emitIntCast(section, int, .{ .type = cast.type, .value = elem_inst }),
+                else => unreachable,
+            };
+            constituents.appendAssumeCapacity(elem_id);
+        },
     }
 
     const id = spv.allocId();
     try section.emit(.OpCompositeConstruct, .{
         .id_result_type = type_id,
         .id_result = id,
-        .constituents = elem_value.items,
+        .constituents = constituents.items,
     });
     return id;
 }
@@ -1946,21 +1957,21 @@ fn emitMatrix(spv: *SpirV, section: *Section, inst: Inst.Matrix) !IdRef {
         return spv.resolve(.{ .null = type_id });
     }
 
-    var elem_value = std.ArrayList(IdRef).init(spv.allocator);
-    defer elem_value.deinit();
-    try elem_value.ensureTotalCapacityPrecise(@intFromEnum(inst.cols));
+    var constituents = std.ArrayList(IdRef).init(spv.allocator);
+    defer constituents.deinit();
+    try constituents.ensureTotalCapacityPrecise(@intFromEnum(inst.cols));
 
     const value = spv.air.getValue(Inst.Matrix.Value, inst.value.?);
     for (value[0..@intFromEnum(inst.cols)]) |elem_inst| {
         const elem_id = try spv.emitExpr(section, elem_inst);
-        elem_value.appendAssumeCapacity(elem_id);
+        constituents.appendAssumeCapacity(elem_id);
     }
 
     const id = spv.allocId();
     try section.emit(.OpCompositeConstruct, .{
         .id_result_type = type_id,
         .id_result = id,
-        .constituents = elem_value.items,
+        .constituents = constituents.items,
     });
     return id;
 }

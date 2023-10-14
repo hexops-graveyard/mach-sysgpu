@@ -674,7 +674,7 @@ fn emitInt(msl: *Msl, inst: Inst.Int) !void {
     };
 }
 
-fn emitIntCast(msl: *Msl, dest_type: Inst.Int, cast: Inst.Cast) !void {
+fn emitIntCast(msl: *Msl, dest_type: Inst.Int, cast: Inst.ScalarCast) !void {
     try msl.emitIntType(dest_type);
     try msl.writeAll("(");
     try msl.emitExpr(cast.value);
@@ -688,7 +688,7 @@ fn emitFloat(msl: *Msl, inst: Inst.Float) !void {
     };
 }
 
-fn emitFloatCast(msl: *Msl, dest_type: Inst.Float, cast: Inst.Cast) !void {
+fn emitFloatCast(msl: *Msl, dest_type: Inst.Float, cast: Inst.ScalarCast) !void {
     try msl.emitFloatType(dest_type);
     try msl.writeAll("(");
     try msl.emitExpr(cast.value);
@@ -700,9 +700,12 @@ fn emitVector(msl: *Msl, inst: Inst.Vector) !void {
     try msl.writeAll("(");
 
     const value = msl.air.getValue(Inst.Vector.Value, inst.value.?);
-    for (value[0..@intFromEnum(inst.size)], 0..) |elem_inst, i| {
-        try msl.writeAll(if (i == 0) "" else ", ");
-        try msl.emitExpr(elem_inst);
+    switch (value) {
+        .literal => |literal| for (literal[0..@intFromEnum(inst.size)], 0..) |elem_inst, i| {
+            try msl.writeAll(if (i == 0) "" else ", ");
+            try msl.emitExpr(elem_inst);
+        },
+        .cast => unreachable, // TODO
     }
 
     try msl.writeAll(")");

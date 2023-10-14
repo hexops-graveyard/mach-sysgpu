@@ -2109,6 +2109,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
             const arg_nodes = astgen.tree.spanToList(node_lhs);
             var args: [4]InstIndex = undefined;
+            var cast = InstIndex.none;
 
             var capacity = @intFromEnum(size);
             for (arg_nodes) |arg_node| {
@@ -2126,15 +2127,8 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     .vector => |arg_vec| {
                         if (elem_type == .none) {
                             elem_type = arg_vec.elem_type;
-                        } else {
-                            if (!try astgen.coerce(arg_vec.elem_type, elem_type)) {
-                                try astgen.errors.add(arg_loc, "type mismatch", .{}, null);
-                                return error.AnalysisFail;
-                            }
-                        }
-
-                        if (arg_nodes.len == 1 and @intFromEnum(arg_vec.size) == capacity) {
-                            return arg;
+                        } else if (!astgen.eql(arg_vec.elem_type, elem_type)) {
+                            cast = arg_vec.elem_type;
                         }
 
                         if (capacity >= @intFromEnum(arg_vec.size)) {
@@ -2164,11 +2158,8 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                     .bool, .int, .float => {
                         if (elem_type == .none) {
                             elem_type = arg_res;
-                        } else {
-                            if (!try astgen.coerce(arg_res, elem_type)) {
-                                try astgen.errors.add(arg_loc, "type mismatch", .{}, null);
-                                return error.AnalysisFail;
-                            }
+                        } else if (!astgen.eql(arg_res, elem_type)) {
+                            cast = arg_res;
                         }
 
                         if (arg_nodes.len == 1) {
@@ -2191,11 +2182,16 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                 return error.AnalysisFail;
             }
 
+            const value = try astgen.addValue(
+                Inst.Vector.Value,
+                if (cast == .none) .{ .literal = args } else .{ .cast = .{ .type = cast, .value = args } },
+            );
+
             return astgen.addInst(.{
                 .vector = .{
                     .elem_type = elem_type,
                     .size = size,
-                    .value = try astgen.addValue(Inst.Vector.Value, args),
+                    .value = value,
                 },
             });
         },
@@ -2312,7 +2308,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                                 .vector = .{
                                     .elem_type = elem_type,
                                     .size = rows,
-                                    .value = try astgen.addValue(Inst.Vector.Value, arg_vec_value),
+                                    .value = try astgen.addValue(Inst.Vector.Value, .{ .literal = arg_vec_value }),
                                 },
                             });
 
@@ -2372,7 +2368,10 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
 fn resolveVectorValue(astgen: *AstGen, vector_idx: InstIndex, value_idx: u3) ?InstIndex {
     return switch (astgen.getInst(vector_idx)) {
-        .vector => |vector| astgen.getValue(Inst.Vector.Value, vector.value.?)[value_idx],
+        .vector => |vector| switch (astgen.getValue(Inst.Vector.Value, vector.value.?)) {
+            .literal => |literal| literal[value_idx],
+            .cast => |cast| cast.value[value_idx],
+        },
         inline .swizzle_access, .index_access => |access| astgen.resolveVectorValue(access.base, value_idx),
         else => null,
     };
