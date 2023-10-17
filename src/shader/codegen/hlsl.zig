@@ -29,9 +29,17 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
 
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
-            .@"var" => |inst| try hlsl.emitGlobalVar(inst),
-            .@"fn" => |inst| try hlsl.emitFn(inst),
             .@"struct" => |inst| try hlsl.emitStruct(inst_idx, inst, false),
+            else => {},
+        }
+    }
+
+    for (air.refToList(air.globals_index)) |inst_idx| {
+        switch (air.getInst(inst_idx)) {
+            .@"var" => |inst| try hlsl.emitGlobalVar(inst),
+            .@"const" => |inst| try hlsl.emitGlobalConst(inst),
+            .@"fn" => |inst| try hlsl.emitFn(inst),
+            .@"struct" => {},
             else => |inst| try hlsl.print("TopLevel: {}\n", .{inst}), // TODO
         }
     }
@@ -50,7 +58,7 @@ fn emitType(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
             .vector => |inst| try hlsl.emitVectorType(inst),
             .matrix => |inst| try hlsl.emitMatrixType(inst),
             .array => |inst| try hlsl.emitType(inst.elem_type),
-            .@"struct" => |inst| try hlsl.writeName(hlsl.air.getStr(inst.name)),
+            .@"struct" => |inst| try hlsl.writeName(inst.name),
             else => |inst| try hlsl.print("Type: {}", .{inst}), // TODO
         }
     }
@@ -146,7 +154,7 @@ fn emitStruct(hlsl: *Hlsl, inst_idx: InstIndex, inst: Inst.Struct, is_fragment_s
     if (is_fragment_stage) {
         try hlsl.print("FragOut{}", .{@intFromEnum(inst_idx)});
     } else {
-        try hlsl.writeName(hlsl.air.getStr(inst.name));
+        try hlsl.writeName(inst.name);
     }
     try hlsl.writeAll(" {\n");
 
@@ -169,7 +177,7 @@ fn emitStruct(hlsl: *Hlsl, inst_idx: InstIndex, inst: Inst.Struct, is_fragment_s
         try hlsl.writeIndent();
         try hlsl.emitType(member.type);
         try hlsl.writeAll(" ");
-        try hlsl.writeName(hlsl.air.getStr(member.name));
+        try hlsl.writeName(member.name);
         try hlsl.emitTypeSuffix(member.type);
         if (member.builtin) |builtin| {
             try hlsl.emitBuiltin(builtin);
@@ -262,8 +270,20 @@ fn emitGlobalVar(hlsl: *Hlsl, inst: Inst.Var) !void {
     }
 
     try hlsl.writeAll(" ");
-    try hlsl.writeName(hlsl.air.getStr(inst.name));
+    try hlsl.writeName(inst.name);
     try hlsl.print(" : register({s}{});\n", .{ binding_space, binding });
+}
+
+fn emitGlobalConst(hlsl: *Hlsl, inst: Inst.Const) !void {
+    const t = if (inst.type != .none) inst.type else inst.expr;
+    try hlsl.writeAll("static const ");
+    try hlsl.emitType(t);
+    try hlsl.writeAll(" ");
+    try hlsl.writeName(inst.name);
+    try hlsl.emitTypeSuffix(inst.type);
+    try hlsl.writeAll(" = ");
+    try hlsl.emitExpr(inst.expr);
+    try hlsl.writeAll(";\n");
 }
 
 fn emitFragmentReturnStruct(hlsl: *Hlsl, inst_idx: InstIndex) !void {
@@ -301,7 +321,11 @@ fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
         try hlsl.emitType(inst.return_type);
     }
     try hlsl.writeAll(" ");
-    try hlsl.writeName(hlsl.air.getStr(inst.name));
+    if (inst.stage != .none) {
+        try hlsl.writeEntrypoint(inst.name);
+    } else {
+        try hlsl.writeName(inst.name);
+    }
     try hlsl.writeAll("(");
 
     {
@@ -355,7 +379,7 @@ fn emitFnGlobalVar(hlsl: *Hlsl, inst_idx: InstIndex) !void {
     try hlsl.emitType(inst.type);
     try hlsl.emitTypeAsPointer(inst.type);
     try hlsl.writeAll(" ");
-    try hlsl.writeName(hlsl.air.getStr(inst.name));
+    try hlsl.writeName(inst.name);
 
     // TODO - slot mapping and different object types
     if (hlsl.air.resolveInt(inst.binding)) |binding| {
@@ -368,7 +392,7 @@ fn emitFnParam(hlsl: *Hlsl, inst_idx: InstIndex) !void {
 
     try hlsl.emitType(inst.type);
     try hlsl.writeAll(" ");
-    try hlsl.writeName(hlsl.air.getStr(inst.name));
+    try hlsl.writeName(inst.name);
     if (inst.builtin) |builtin| {
         try hlsl.emitBuiltin(builtin);
     } else if (inst.location) |location| {
@@ -405,7 +429,7 @@ fn emitFnVar(hlsl: *Hlsl, inst: Inst.Var) !void {
     const t = if (inst.type != .none) inst.type else inst.expr;
     try hlsl.emitType(t);
     try hlsl.writeAll(" ");
-    try hlsl.writeName(hlsl.air.getStr(inst.name));
+    try hlsl.writeName(inst.name);
     try hlsl.emitTypeSuffix(t);
     if (inst.expr != .none) {
         try hlsl.writeAll(" = ");
@@ -483,14 +507,15 @@ fn exprType(hlsl: *Hlsl, inst_idx: InstIndex) InstIndex {
     return switch (hlsl.air.getInst(inst_idx)) {
         .var_ref => |var_ref_idx| switch (hlsl.air.getInst(var_ref_idx)) {
             .@"var" => |v| v.type,
+            .@"const" => |c| c.type,
             .fn_param => |p| p.type,
-            else => |x| std.debug.panic("VarRef: {}", .{x}), // TODO
+            else => |x| std.debug.panic("VarRefType: {}", .{x}), // TODO
         },
         .bool => inst_idx,
         .int => inst_idx,
         .float => inst_idx,
         .vector => inst_idx,
-        //.matrix => inst_idx,
+        .matrix => inst_idx,
         .array => inst_idx,
         .unary => |inst| inst.result_type,
         .unary_intrinsic => |inst| inst.result_type,
@@ -498,6 +523,8 @@ fn exprType(hlsl: *Hlsl, inst_idx: InstIndex) InstIndex {
         .binary_intrinsic => |inst| inst.result_type,
         .triple_intrinsic => |inst| inst.result_type,
         .assign => |inst| inst.type,
+        .increase => |e| hlsl.exprType(e),
+        .decrease => |e| hlsl.exprType(e),
         .field_access => |inst| {
             const name = hlsl.air.getStr(inst.name);
             const base_type = hlsl.exprType(inst.base);
@@ -516,11 +543,14 @@ fn exprType(hlsl: *Hlsl, inst_idx: InstIndex) InstIndex {
         },
         .swizzle_access => |inst| inst.type,
         .index_access => |inst| inst.type,
-        //.call => |inst| hlsl.emitCall(inst),
+        .call => |inst| {
+            const fn_inst = hlsl.air.getInst(inst.@"fn").@"fn";
+            return fn_inst.return_type;
+        },
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
-        else => |inst| std.debug.panic("Expr: {}", .{inst}), // TODO
+        else => |inst| std.debug.panic("ExprType: {}", .{inst}), // TODO
     };
 }
 
@@ -531,7 +561,7 @@ fn emitExpr(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .int => |inst| try hlsl.emitInt(inst),
         .float => |inst| try hlsl.emitFloat(inst),
         .vector => |inst| try hlsl.emitVector(inst),
-        //.matrix => |inst| hlsl.emitMatrix(inst),
+        .matrix => |inst| try hlsl.emitMatrix(inst),
         .array => |inst| try hlsl.emitArray(inst),
         .unary => |inst| try hlsl.emitUnary(inst),
         .unary_intrinsic => |inst| try hlsl.emitUnaryIntrinsic(inst),
@@ -539,9 +569,12 @@ fn emitExpr(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .binary_intrinsic => |inst| try hlsl.emitBinaryIntrinsic(inst),
         .triple_intrinsic => |inst| try hlsl.emitTripleIntrinsic(inst),
         .assign => |inst| try hlsl.emitAssign(inst),
+        .increase => |inst| try hlsl.emitIncrease(inst),
+        .decrease => |inst| try hlsl.emitDecrease(inst),
         .field_access => |inst| try hlsl.emitFieldAccess(inst),
         .swizzle_access => |inst| try hlsl.emitSwizzleAccess(inst),
         .index_access => |inst| try hlsl.emitIndexAccess(inst),
+        .call => |inst| try hlsl.emitCall(inst),
         //.call => |inst| hlsl.emitCall(inst),
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
@@ -553,13 +586,14 @@ fn emitExpr(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
 fn emitVarRef(hlsl: *Hlsl, inst_idx: InstIndex) !void {
     switch (hlsl.air.getInst(inst_idx)) {
         .@"var" => |v| {
-            try hlsl.writeName(hlsl.air.getStr(v.name));
+            try hlsl.writeName(v.name);
             const v_type_inst = hlsl.air.getInst(v.type);
             if (v.addr_space == .uniform and v_type_inst != .@"struct")
                 try hlsl.writeAll(".data");
         },
+        .@"const" => |c| try hlsl.writeName(c.name),
         .fn_param => |p| {
-            try hlsl.writeName(hlsl.air.getStr(p.name));
+            try hlsl.writeName(p.name);
         },
         else => |x| std.debug.panic("VarRef: {}", .{x}), // TODO
     }
@@ -594,13 +628,7 @@ fn emitFloatCast(hlsl: *Hlsl, dest_type: Inst.Float, cast: Inst.ScalarCast) !voi
 }
 
 fn emitVector(hlsl: *Hlsl, inst: Inst.Vector) !void {
-    try hlsl.emitType(inst.elem_type);
-    switch (inst.size) {
-        .two => try hlsl.writeAll("2"),
-        .three => try hlsl.writeAll("3"),
-        .four => try hlsl.writeAll("4"),
-    }
-
+    try hlsl.emitVectorType(inst);
     try hlsl.writeAll("(");
 
     const value = hlsl.air.getValue(Inst.Vector.Value, inst.value.?);
@@ -610,6 +638,19 @@ fn emitVector(hlsl: *Hlsl, inst: Inst.Vector) !void {
             try hlsl.emitExpr(elem_inst);
         },
         .cast => unreachable, // TODO
+    }
+
+    try hlsl.writeAll(")");
+}
+
+fn emitMatrix(hlsl: *Hlsl, inst: Inst.Matrix) !void {
+    try hlsl.emitMatrixType(inst);
+    try hlsl.writeAll("(");
+
+    const value = hlsl.air.getValue(Inst.Matrix.Value, inst.value.?);
+    for (value[0..@intFromEnum(inst.cols)], 0..) |elem_inst, i| {
+        try hlsl.writeAll(if (i == 0) "" else ", ");
+        try hlsl.emitExpr(elem_inst);
     }
 
     try hlsl.writeAll(")");
@@ -725,7 +766,7 @@ fn emitArrayLengthVarRef(hlsl: *Hlsl, inst_idx: InstIndex, offset: usize) !void 
     switch (hlsl.air.getInst(inst_idx)) {
         .@"var" => |var_inst| {
             try hlsl.writeAll("(");
-            try hlsl.writeName(hlsl.air.getStr(var_inst.name));
+            try hlsl.writeName(var_inst.name);
             try hlsl.print(
                 ".GetDimensions(_array_length, _array_stride), _array_length - {})",
                 .{offset},
@@ -748,7 +789,7 @@ fn emitBinary(hlsl: *Hlsl, inst: Inst.Binary) !void {
             const lhs_type = hlsl.air.getInst(lhs_type_idx);
             const rhs_type = hlsl.air.getInst(rhs_type_idx);
 
-            if ((lhs_type == .vector and rhs_type == .matrix) or (lhs_type == .matrix and rhs_type == .vector)) {
+            if (lhs_type == .matrix or rhs_type == .matrix) {
                 try hlsl.writeAll("mul");
                 try hlsl.writeAll("(");
                 try hlsl.emitExpr(inst.lhs);
@@ -791,10 +832,9 @@ fn emitBinaryOp(hlsl: *Hlsl, inst: Inst.Binary) !void {
 }
 
 fn emitBinaryIntrinsic(hlsl: *Hlsl, inst: Inst.BinaryIntrinsic) !void {
-    const result_type = hlsl.air.getInst(inst.result_type);
     try hlsl.writeAll(switch (inst.op) {
-        .min => if (result_type == .float) "fmin" else "min",
-        .max => if (result_type == .float) "fmax" else "max",
+        .min => "min",
+        .max => "max",
         .atan2 => "atan2",
         .distance => "distance",
         .dot => "dot",
@@ -810,8 +850,9 @@ fn emitBinaryIntrinsic(hlsl: *Hlsl, inst: Inst.BinaryIntrinsic) !void {
 
 fn emitTripleIntrinsic(hlsl: *Hlsl, inst: Inst.TripleIntrinsic) !void {
     try hlsl.writeAll(switch (inst.op) {
+        .smoothstep => "smoothstep",
         .clamp => "clamp",
-        else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst.op)}),
+        .mix => "lerp",
     });
     try hlsl.writeAll("(");
     try hlsl.emitExpr(inst.a1);
@@ -840,6 +881,16 @@ fn emitAssign(hlsl: *Hlsl, inst: Inst.Assign) !void {
     try hlsl.emitExpr(inst.rhs);
 }
 
+fn emitIncrease(hlsl: *Hlsl, inst_index: InstIndex) !void {
+    try hlsl.emitExpr(inst_index);
+    try hlsl.writeAll("++");
+}
+
+fn emitDecrease(hlsl: *Hlsl, inst_index: InstIndex) !void {
+    try hlsl.emitExpr(inst_index);
+    try hlsl.writeAll("--");
+}
+
 fn emitFieldAccess(hlsl: *Hlsl, inst: Inst.FieldAccess) !void {
     const base_inst = hlsl.air.getInst(inst.base);
     switch (base_inst) {
@@ -864,7 +915,7 @@ fn emitFieldAccess(hlsl: *Hlsl, inst: Inst.FieldAccess) !void {
 fn emitFieldAccessRegular(hlsl: *Hlsl, inst: Inst.FieldAccess) !void {
     try hlsl.emitExpr(inst.base);
     try hlsl.writeAll(".");
-    try hlsl.writeName(hlsl.air.getStr(inst.name));
+    try hlsl.writeName(inst.name);
 }
 
 fn emitSwizzleAccess(hlsl: *Hlsl, inst: Inst.SwizzleAccess) !void {
@@ -887,6 +938,21 @@ fn emitIndexAccess(hlsl: *Hlsl, inst: Inst.IndexAccess) !void {
     try hlsl.writeAll("]");
 }
 
+fn emitCall(hlsl: *Hlsl, inst: Inst.FnCall) !void {
+    const fn_inst = hlsl.air.getInst(inst.@"fn").@"fn";
+
+    try hlsl.writeName(fn_inst.name);
+    try hlsl.writeAll("(");
+
+    if (inst.args != .none) {
+        for (hlsl.air.refToList(inst.args), 0..) |arg_inst_idx, i| {
+            try hlsl.writeAll(if (i == 0) "" else ", ");
+            try hlsl.emitExpr(arg_inst_idx);
+        }
+    }
+    try hlsl.writeAll(")");
+}
+
 fn enterScope(hlsl: *Hlsl) void {
     hlsl.indent += 4;
 }
@@ -899,10 +965,15 @@ fn writeIndent(hlsl: *Hlsl) !void {
     try hlsl.writer.writeByteNTimes(' ', hlsl.indent);
 }
 
-fn writeName(hlsl: *Hlsl, name: []const u8) !void {
-    try hlsl.writeAll(
-        if (std.mem.eql(u8, name, "in")) "in_" else if (std.mem.eql(u8, name, "out")) "out_" else name,
-    );
+fn writeEntrypoint(hlsl: *Hlsl, name: Air.StringIndex) !void {
+    const str = hlsl.air.getStr(name);
+    try hlsl.writeAll(str);
+}
+
+fn writeName(hlsl: *Hlsl, name: Air.StringIndex) !void {
+    // Suffix with index as WGSL has different scoping rules and to avoid conflicts with keywords
+    const str = hlsl.air.getStr(name);
+    try hlsl.print("{s}_{}", .{ str, @intFromEnum(name) });
 }
 
 fn writeAll(hlsl: *Hlsl, bytes: []const u8) !void {

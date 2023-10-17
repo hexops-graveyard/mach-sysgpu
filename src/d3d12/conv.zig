@@ -351,6 +351,15 @@ pub fn d3d12ResourceDimension(dimension: dgpu.Texture.Dimension) c.D3D12_RESOURC
     };
 }
 
+pub fn d3d12RootParameterType(entry: dgpu.BindGroupLayout.Entry) c.D3D12_ROOT_PARAMETER_TYPE {
+    return switch (entry.buffer.type) {
+        .undefined => unreachable,
+        .uniform => c.D3D12_ROOT_PARAMETER_TYPE_CBV,
+        .storage => c.D3D12_ROOT_PARAMETER_TYPE_UAV,
+        .read_only_storage => c.D3D12_ROOT_PARAMETER_TYPE_SRV,
+    };
+}
+
 pub fn d3d12ShaderBytecode(opt_blob: ?*c.ID3DBlob) c.D3D12_SHADER_BYTECODE {
     return if (opt_blob) |blob| .{
         .pShaderBytecode = blob.lpVtbl.*.GetBufferPointer.?(blob),
