@@ -1266,11 +1266,18 @@ pub const BindGroupLayout = struct {
         texture: dgpu.Texture.BindingLayout = .{},
         storage_texture: dgpu.StorageTextureBindingLayout = .{},
         range_type: c.D3D12_DESCRIPTOR_RANGE_TYPE,
-        table_index: u32,
+        table_index: ?u32,
+        dynamic_index: ?u32,
+    };
+
+    const DynamicEntry = struct {
+        parameter_type: c.D3D12_ROOT_PARAMETER_TYPE,
     };
 
     manager: utils.Manager(BindGroupLayout) = .{},
     entries: std.ArrayListUnmanaged(Entry),
+    dynamic_entries: std.ArrayListUnmanaged(DynamicEntry),
+    table_size: u32,
 
     pub fn init(device: *Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         _ = device;
@@ -1278,8 +1285,24 @@ pub const BindGroupLayout = struct {
         var entries = std.ArrayListUnmanaged(Entry){};
         errdefer entries.deinit(allocator);
 
+        var dynamic_entries = std.ArrayListUnmanaged(DynamicEntry){};
+        errdefer dynamic_entries.deinit(allocator);
+
+        var table_size: u32 = 0;
         for (0..descriptor.entry_count) |entry_index| {
             const entry = descriptor.entries.?[entry_index];
+
+            var table_index: ?u32 = null;
+            var dynamic_index: ?u32 = null;
+            if (entry.buffer.has_dynamic_offset == .true) {
+                dynamic_index = @intCast(dynamic_entries.items.len);
+                try dynamic_entries.append(allocator, .{
+                    .parameter_type = conv.d3d12RootParameterType(entry),
+                });
+            } else {
+                table_index = table_size;
+                table_size += 1;
+            }
 
             try entries.append(allocator, .{
                 .binding = entry.binding,
@@ -1289,19 +1312,23 @@ pub const BindGroupLayout = struct {
                 .texture = entry.texture,
                 .storage_texture = entry.storage_texture,
                 .range_type = conv.d3d12DescriptorRangeType(entry),
-                .table_index = @intCast(entry_index),
+                .table_index = table_index,
+                .dynamic_index = dynamic_index,
             });
         }
 
         var layout = try allocator.create(BindGroupLayout);
         layout.* = .{
             .entries = entries,
+            .dynamic_entries = dynamic_entries,
+            .table_size = table_size,
         };
         return layout;
     }
 
     pub fn deinit(layout: *BindGroupLayout) void {
         layout.entries.deinit(allocator);
+        layout.dynamic_entries.deinit(allocator);
         allocator.destroy(layout);
     }
 
@@ -1321,24 +1348,148 @@ pub const BindGroup = struct {
         resource: *Resource,
         uav: bool,
     };
+    const DynamicResource = struct {
+        address: c.D3D12_GPU_VIRTUAL_ADDRESS,
+        parameter_type: c.D3D12_ROOT_PARAMETER_TYPE,
+    };
 
     manager: utils.Manager(BindGroup) = .{},
     last_used_fence_value: u64 = 0,
     device: *Device,
-    allocation: DescriptorAllocation,
-    table: c.D3D12_GPU_DESCRIPTOR_HANDLE,
+    allocation: ?DescriptorAllocation,
+    table: ?c.D3D12_GPU_DESCRIPTOR_HANDLE,
     buffers: std.ArrayListUnmanaged(*Buffer),
     textures: std.ArrayListUnmanaged(*Texture),
     accesses: std.ArrayListUnmanaged(ResourceAccess),
+    dynamic_resources: []DynamicResource,
 
     pub fn init(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
         const d3d_device = device.d3d_device;
 
         const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.layout));
 
-        const allocation = try device.general_heap.alloc();
-        const table = device.general_heap.gpuDescriptor(allocation.index);
+        // Descriptor Table
+        var allocation: ?DescriptorAllocation = null;
+        var table: ?c.D3D12_GPU_DESCRIPTOR_HANDLE = null;
+        if (layout.table_size > 0) {
+            allocation = try device.general_heap.alloc();
+            table = device.general_heap.gpuDescriptor(allocation.?.index);
 
+            for (0..desc.entry_count) |i| {
+                const entry = desc.entries.?[i];
+                const layout_entry = layout.getEntry(entry.binding) orelse return error.UnknownBinding;
+                if (layout_entry.table_index) |table_index| {
+                    var dest_descriptor = device.general_heap.cpuDescriptor(allocation.?.index + table_index);
+
+                    if (layout_entry.buffer.type != .undefined) {
+                        const buffer: *Buffer = @ptrCast(@alignCast(entry.buffer.?));
+                        const d3d_resource = buffer.resource.d3d_resource;
+
+                        const buffer_location = d3d_resource.lpVtbl.*.GetGPUVirtualAddress.?(d3d_resource) + entry.offset;
+
+                        switch (layout_entry.buffer.type) {
+                            .undefined => unreachable,
+                            .uniform => {
+                                const cbv_desc: c.D3D12_CONSTANT_BUFFER_VIEW_DESC = .{
+                                    .BufferLocation = buffer_location,
+                                    .SizeInBytes = @intCast(utils.alignUp(entry.size, limits.min_uniform_buffer_offset_alignment)),
+                                };
+
+                                d3d_device.lpVtbl.*.CreateConstantBufferView.?(
+                                    d3d_device,
+                                    &cbv_desc,
+                                    dest_descriptor,
+                                );
+                            },
+                            .storage => {
+                                // TODO - switch to RWByteAddressBuffer after using DXC
+                                const stride = entry.elem_size;
+                                const uav_desc: c.D3D12_UNORDERED_ACCESS_VIEW_DESC = .{
+                                    .Format = c.DXGI_FORMAT_UNKNOWN,
+                                    .ViewDimension = c.D3D12_UAV_DIMENSION_BUFFER,
+                                    .unnamed_0 = .{
+                                        .Buffer = .{
+                                            .FirstElement = @intCast(entry.offset / stride),
+                                            .NumElements = @intCast(entry.size / stride),
+                                            .StructureByteStride = stride,
+                                            .CounterOffsetInBytes = 0,
+                                            .Flags = 0,
+                                        },
+                                    },
+                                };
+
+                                d3d_device.lpVtbl.*.CreateUnorderedAccessView.?(
+                                    d3d_device,
+                                    d3d_resource,
+                                    null,
+                                    &uav_desc,
+                                    dest_descriptor,
+                                );
+                            },
+                            .read_only_storage => {
+                                // TODO - switch to ByteAddressBuffer after using DXC
+                                const stride = entry.elem_size;
+                                const srv_desc: c.D3D12_SHADER_RESOURCE_VIEW_DESC = .{
+                                    .Format = c.DXGI_FORMAT_UNKNOWN,
+                                    .ViewDimension = c.D3D12_SRV_DIMENSION_BUFFER,
+                                    .Shader4ComponentMapping = c.D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                                    .unnamed_0 = .{
+                                        .Buffer = .{
+                                            .FirstElement = @intCast(entry.offset / stride),
+                                            .NumElements = @intCast(entry.size / stride),
+                                            .StructureByteStride = stride,
+                                            .Flags = 0,
+                                        },
+                                    },
+                                };
+
+                                d3d_device.lpVtbl.*.CreateShaderResourceView.?(
+                                    d3d_device,
+                                    d3d_resource,
+                                    &srv_desc,
+                                    dest_descriptor,
+                                );
+                            },
+                        }
+                    } else if (layout_entry.sampler.type != .undefined) {
+                        const sampler: *Sampler = @ptrCast(@alignCast(entry.sampler.?));
+
+                        d3d_device.lpVtbl.*.CreateSampler.?(
+                            d3d_device,
+                            &sampler.d3d_desc,
+                            dest_descriptor,
+                        );
+                    } else if (layout_entry.texture.sample_type != .undefined) {
+                        const texture_view: *TextureView = @ptrCast(@alignCast(entry.texture_view.?));
+                        const d3d_resource = texture_view.texture.resource.d3d_resource;
+
+                        const srv_desc: c.D3D12_SHADER_RESOURCE_VIEW_DESC = .{}; // TODO
+
+                        d3d_device.lpVtbl.*.CreateShaderResourceView.?(
+                            d3d_device,
+                            d3d_resource,
+                            &srv_desc,
+                            dest_descriptor,
+                        );
+                    } else if (layout_entry.storage_texture.access != .undefined) {
+                        const texture_view: *TextureView = @ptrCast(@alignCast(entry.texture_view.?));
+                        const d3d_resource = texture_view.texture.resource.d3d_resource;
+
+                        const uav_desc: c.D3D12_UNORDERED_ACCESS_VIEW_DESC = .{}; // TODO
+
+                        d3d_device.lpVtbl.*.CreateUnorderedAccessView.?(
+                            d3d_device,
+                            d3d_resource,
+                            null,
+                            &uav_desc,
+                            dest_descriptor,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Resource tracking and dynamic resources
         var buffers = std.ArrayListUnmanaged(*Buffer){};
         errdefer buffers.deinit(allocator);
 
@@ -1348,126 +1499,38 @@ pub const BindGroup = struct {
         var accesses = std.ArrayListUnmanaged(ResourceAccess){};
         errdefer accesses.deinit(allocator);
 
+        var dynamic_resources = try allocator.alloc(DynamicResource, layout.dynamic_entries.items.len);
+        errdefer allocator.free(dynamic_resources);
+
         for (0..desc.entry_count) |i| {
             const entry = desc.entries.?[i];
             const layout_entry = layout.getEntry(entry.binding) orelse return error.UnknownBinding;
-            var dest_descriptor = device.general_heap.cpuDescriptor(allocation.index + layout_entry.table_index);
-
             if (layout_entry.buffer.type != .undefined) {
                 const buffer: *Buffer = @ptrCast(@alignCast(entry.buffer.?));
                 const d3d_resource = buffer.resource.d3d_resource;
 
                 try buffers.append(allocator, buffer);
 
-                switch (layout_entry.buffer.type) {
-                    .undefined => unreachable,
-                    .uniform => {
-                        try accesses.append(allocator, .{ .resource = &buffer.resource, .uav = false });
-
-                        const cbv_desc: c.D3D12_CONSTANT_BUFFER_VIEW_DESC = .{
-                            .BufferLocation = d3d_resource.lpVtbl.*.GetGPUVirtualAddress.?(d3d_resource) + entry.offset,
-                            .SizeInBytes = @intCast(utils.alignUp(entry.size, 256)),
-                        };
-
-                        d3d_device.lpVtbl.*.CreateConstantBufferView.?(
-                            d3d_device,
-                            &cbv_desc,
-                            dest_descriptor,
-                        );
-                    },
-                    .storage => {
-                        try accesses.append(allocator, .{ .resource = &buffer.resource, .uav = true });
-
-                        // TODO - switch to RWByteAddressBuffer after using DXC
-                        const stride = entry.elem_size;
-                        const uav_desc: c.D3D12_UNORDERED_ACCESS_VIEW_DESC = .{
-                            .Format = c.DXGI_FORMAT_UNKNOWN,
-                            .ViewDimension = c.D3D12_UAV_DIMENSION_BUFFER,
-                            .unnamed_0 = .{
-                                .Buffer = .{
-                                    .FirstElement = @intCast(entry.offset / stride),
-                                    .NumElements = @intCast(entry.size / stride),
-                                    .StructureByteStride = stride,
-                                    .CounterOffsetInBytes = 0,
-                                    .Flags = 0,
-                                },
-                            },
-                        };
-
-                        d3d_device.lpVtbl.*.CreateUnorderedAccessView.?(
-                            d3d_device,
-                            d3d_resource,
-                            null,
-                            &uav_desc,
-                            dest_descriptor,
-                        );
-                    },
-                    .read_only_storage => {
-                        try accesses.append(allocator, .{ .resource = &buffer.resource, .uav = false });
-
-                        // TODO - switch to ByteAddressBuffer after using DXC
-                        const stride = entry.elem_size;
-                        const srv_desc: c.D3D12_SHADER_RESOURCE_VIEW_DESC = .{
-                            .Format = c.DXGI_FORMAT_UNKNOWN,
-                            .ViewDimension = c.D3D12_SRV_DIMENSION_BUFFER,
-                            .Shader4ComponentMapping = c.D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                            .unnamed_0 = .{
-                                .Buffer = .{
-                                    .FirstElement = @intCast(entry.offset / stride),
-                                    .NumElements = @intCast(entry.size / stride),
-                                    .StructureByteStride = stride,
-                                    .Flags = 0,
-                                },
-                            },
-                        };
-
-                        d3d_device.lpVtbl.*.CreateShaderResourceView.?(
-                            d3d_device,
-                            d3d_resource,
-                            &srv_desc,
-                            dest_descriptor,
-                        );
-                    },
+                const buffer_location = d3d_resource.lpVtbl.*.GetGPUVirtualAddress.?(d3d_resource) + entry.offset;
+                if (layout_entry.dynamic_index) |dynamic_index| {
+                    const layout_dynamic_entry = layout.dynamic_entries.items[dynamic_index];
+                    dynamic_resources[dynamic_index] = .{
+                        .address = buffer_location,
+                        .parameter_type = layout_dynamic_entry.parameter_type,
+                    };
                 }
-            } else if (layout_entry.sampler.type != .undefined) {
-                const sampler: *Sampler = @ptrCast(@alignCast(entry.sampler.?));
 
-                d3d_device.lpVtbl.*.CreateSampler.?(
-                    d3d_device,
-                    &sampler.d3d_desc,
-                    dest_descriptor,
-                );
-            } else if (layout_entry.texture.sample_type != .undefined) {
+                try accesses.append(allocator, .{ .resource = &buffer.resource, .uav = layout_entry.buffer.type == .storage });
+            } else if (layout_entry.sampler.type != .undefined) {} else if (layout_entry.texture.sample_type != .undefined) {
                 const texture_view: *TextureView = @ptrCast(@alignCast(entry.texture_view.?));
-                const d3d_resource = texture_view.texture.resource.d3d_resource;
 
                 try textures.append(allocator, texture_view.texture);
                 try accesses.append(allocator, .{ .resource = &texture_view.texture.resource, .uav = false });
-
-                const srv_desc: c.D3D12_SHADER_RESOURCE_VIEW_DESC = .{}; // TODO
-
-                d3d_device.lpVtbl.*.CreateShaderResourceView.?(
-                    d3d_device,
-                    d3d_resource,
-                    &srv_desc,
-                    dest_descriptor,
-                );
             } else if (layout_entry.storage_texture.access != .undefined) {
                 const texture_view: *TextureView = @ptrCast(@alignCast(entry.texture_view.?));
-                const d3d_resource = texture_view.texture.resource.d3d_resource;
 
                 try textures.append(allocator, texture_view.texture);
                 try accesses.append(allocator, .{ .resource = &texture_view.texture.resource, .uav = true });
-
-                const uav_desc: c.D3D12_UNORDERED_ACCESS_VIEW_DESC = .{}; // TODO
-
-                d3d_device.lpVtbl.*.CreateUnorderedAccessView.?(
-                    d3d_device,
-                    d3d_resource,
-                    null,
-                    &uav_desc,
-                    dest_descriptor,
-                );
             }
         }
 
@@ -1479,18 +1542,22 @@ pub const BindGroup = struct {
             .buffers = buffers,
             .textures = textures,
             .accesses = accesses,
+            .dynamic_resources = dynamic_resources,
         };
         return group;
     }
 
     pub fn deinit(group: *BindGroup) void {
-        group.device.general_heap.free(group.allocation, group.last_used_fence_value);
+        if (group.allocation) |allocation|
+            group.device.general_heap.free(allocation, group.last_used_fence_value);
+
         for (group.buffers.items) |buffer| buffer.manager.release();
         for (group.textures.items) |texture| texture.manager.release();
 
         group.buffers.deinit(allocator);
         group.textures.deinit(allocator);
         group.accesses.deinit(allocator);
+        allocator.free(group.dynamic_resources);
         allocator.destroy(group);
     }
 };
@@ -1512,8 +1579,8 @@ pub const PipelineLayout = struct {
         var hr: c.HRESULT = undefined;
 
         // Strategy:
-        // - dynamic offsets are not supported yet (will move resources to root descriptors)
-        // - bind group is 1 descriptor table
+        // - 1 descriptor table for bind group with static resources
+        // - 1 root descriptor per dynamic resource
         // - root signature 1.1 hints not supported yet
 
         var group_layouts = try allocator.alloc(*BindGroupLayout, desc.bind_group_layout_count);
@@ -1529,10 +1596,18 @@ pub const PipelineLayout = struct {
             group_layouts[i] = layout;
             group_parameter_indices.appendAssumeCapacity(parameter_count);
 
-            var layout_range_count = layout.entries.items.len;
-            if (layout_range_count > 0) {
+            var entry_range_count: u32 = 0;
+            for (layout.entries.items) |entry| {
+                if (entry.dynamic_index) |_| {
+                    parameter_count += 1;
+                } else {
+                    entry_range_count += 1;
+                }
+            }
+
+            if (entry_range_count > 0) {
                 parameter_count += 1;
-                range_count += @intCast(layout_range_count);
+                range_count += entry_range_count;
             }
         }
 
@@ -1544,28 +1619,45 @@ pub const PipelineLayout = struct {
 
         for (0..desc.bind_group_layout_count) |i| {
             const layout: *BindGroupLayout = group_layouts[i];
-            const layout_range_base = ranges.items.len;
+            const entry_range_base = ranges.items.len;
             for (layout.entries.items) |entry| {
-                ranges.appendAssumeCapacity(.{
-                    .RangeType = entry.range_type,
-                    .NumDescriptors = 1,
-                    .BaseShaderRegister = entry.binding,
-                    .RegisterSpace = 0,
-                    .OffsetInDescriptorsFromTableStart = c.D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
-                });
+                if (entry.dynamic_index == null) {
+                    ranges.appendAssumeCapacity(.{
+                        .RangeType = entry.range_type,
+                        .NumDescriptors = 1,
+                        .BaseShaderRegister = entry.binding,
+                        .RegisterSpace = 0,
+                        .OffsetInDescriptorsFromTableStart = c.D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND,
+                    });
+                }
             }
-            const layout_range_count = ranges.items.len - layout_range_base;
-            if (layout_range_count > 0) {
+            const entry_range_count = ranges.items.len - entry_range_base;
+            if (entry_range_count > 0) {
                 parameters.appendAssumeCapacity(.{
                     .ParameterType = c.D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                     .unnamed_0 = .{
                         .DescriptorTable = .{
-                            .NumDescriptorRanges = @intCast(layout_range_count),
-                            .pDescriptorRanges = &ranges.items[layout_range_base],
+                            .NumDescriptorRanges = @intCast(entry_range_count),
+                            .pDescriptorRanges = &ranges.items[entry_range_base],
                         },
                     },
                     .ShaderVisibility = c.D3D12_SHADER_VISIBILITY_ALL,
                 });
+            }
+            for (layout.entries.items) |entry| {
+                if (entry.dynamic_index) |dynamic_index| {
+                    const layout_dynamic_entry = layout.dynamic_entries.items[dynamic_index];
+                    parameters.appendAssumeCapacity(.{
+                        .ParameterType = layout_dynamic_entry.parameter_type,
+                        .unnamed_0 = .{
+                            .Descriptor = .{
+                                .ShaderRegister = entry.binding,
+                                .RegisterSpace = 0,
+                            },
+                        },
+                        .ShaderVisibility = c.D3D12_SHADER_VISIBILITY_ALL,
+                    });
+                }
             }
         }
 
@@ -1647,6 +1739,7 @@ pub const ShaderModule = struct {
         _ = device;
 
         const code = try shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" });
+        std.debug.print("{s}\n", .{code});
 
         var module = try allocator.create(ShaderModule);
         module.* = .{
@@ -1970,7 +2063,7 @@ pub const CommandBuffer = struct {
         }
 
         const offset = command_buffer.upload_next_offset;
-        command_buffer.upload_next_offset = @intCast(utils.alignUp(offset + size, 256));
+        command_buffer.upload_next_offset = @intCast(utils.alignUp(offset + size, limits.min_uniform_buffer_offset_alignment));
         return StreamingResult{
             .d3d_resource = command_buffer.upload_buffer.?,
             .map = command_buffer.upload_map.? + offset,
@@ -2368,20 +2461,46 @@ pub const ComputePassEncoder = struct {
         dynamic_offset_count: usize,
         dynamic_offsets: ?[*]const u32,
     ) !void {
-        _ = dynamic_offsets;
-        _ = dynamic_offset_count;
-
         const command_list = encoder.command_list;
 
         try encoder.reference_tracker.referenceBindGroup(group);
         encoder.bind_groups[group_index] = group;
 
-        const group_parameter_index = encoder.group_parameter_indices[group_index];
-        command_list.lpVtbl.*.SetComputeRootDescriptorTable.?(
-            command_list,
-            @intCast(group_parameter_index),
-            group.table,
-        );
+        var parameter_index = encoder.group_parameter_indices[group_index];
+        if (group.table) |table| {
+            command_list.lpVtbl.*.SetComputeRootDescriptorTable.?(
+                command_list,
+                parameter_index,
+                table,
+            );
+            parameter_index += 1;
+        }
+
+        for (0..dynamic_offset_count) |i| {
+            const dynamic_resource = group.dynamic_resources[i];
+            const dynamic_offset = dynamic_offsets.?[i];
+
+            switch (dynamic_resource.parameter_type) {
+                c.D3D12_ROOT_PARAMETER_TYPE_CBV => command_list.lpVtbl.*.SetComputeRootConstantBufferView.?(
+                    command_list,
+                    parameter_index,
+                    dynamic_resource.address + dynamic_offset,
+                ),
+                c.D3D12_ROOT_PARAMETER_TYPE_SRV => command_list.lpVtbl.*.SetComputeRootShaderResourceView.?(
+                    command_list,
+                    parameter_index,
+                    dynamic_resource.address + dynamic_offset,
+                ),
+                c.D3D12_ROOT_PARAMETER_TYPE_UAV => command_list.lpVtbl.*.SetComputeRootUnorderedAccessView.?(
+                    command_list,
+                    parameter_index,
+                    dynamic_resource.address + dynamic_offset,
+                ),
+                else => {},
+            }
+
+            parameter_index += 1;
+        }
     }
 
     pub fn setPipeline(encoder: *ComputePassEncoder, pipeline: *ComputePipeline) !void {
@@ -2661,19 +2780,45 @@ pub const RenderPassEncoder = struct {
         dynamic_offset_count: usize,
         dynamic_offsets: ?[*]const u32,
     ) !void {
-        _ = dynamic_offsets;
-        _ = dynamic_offset_count;
-
         const command_list = encoder.command_list;
 
         try encoder.reference_tracker.referenceBindGroup(group);
 
-        const group_parameter_index = encoder.group_parameter_indices[group_index];
-        command_list.lpVtbl.*.SetGraphicsRootDescriptorTable.?(
-            command_list,
-            group_parameter_index,
-            group.table,
-        );
+        var parameter_index = encoder.group_parameter_indices[group_index];
+        if (group.table) |table| {
+            command_list.lpVtbl.*.SetGraphicsRootDescriptorTable.?(
+                command_list,
+                parameter_index,
+                table,
+            );
+            parameter_index += 1;
+        }
+
+        for (0..dynamic_offset_count) |i| {
+            const dynamic_resource = group.dynamic_resources[i];
+            const dynamic_offset = dynamic_offsets.?[i];
+
+            switch (dynamic_resource.parameter_type) {
+                c.D3D12_ROOT_PARAMETER_TYPE_CBV => command_list.lpVtbl.*.SetGraphicsRootConstantBufferView.?(
+                    command_list,
+                    parameter_index,
+                    dynamic_resource.address + dynamic_offset,
+                ),
+                c.D3D12_ROOT_PARAMETER_TYPE_SRV => command_list.lpVtbl.*.SetGraphicsRootShaderResourceView.?(
+                    command_list,
+                    parameter_index,
+                    dynamic_resource.address + dynamic_offset,
+                ),
+                c.D3D12_ROOT_PARAMETER_TYPE_UAV => command_list.lpVtbl.*.SetGraphicsRootUnorderedAccessView.?(
+                    command_list,
+                    parameter_index,
+                    dynamic_resource.address + dynamic_offset,
+                ),
+                else => {},
+            }
+
+            parameter_index += 1;
+        }
     }
 
     pub fn setIndexBuffer(
@@ -2688,11 +2833,13 @@ pub const RenderPassEncoder = struct {
 
         try encoder.reference_tracker.referenceBuffer(buffer);
 
+        const d3d_size: u32 = @intCast(if (size == dgpu.whole_size) buffer.size - offset else size);
+
         command_list.lpVtbl.*.IASetIndexBuffer.?(
             command_list,
             &c.D3D12_INDEX_BUFFER_VIEW{
                 .BufferLocation = d3d_resource.lpVtbl.*.GetGPUVirtualAddress.?(d3d_resource) + offset,
-                .SizeInBytes = @intCast(size),
+                .SizeInBytes = d3d_size,
                 .Format = conv.dxgiFormatForIndex(format),
             },
         );
@@ -2723,12 +2870,16 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
-        _ = height;
-        _ = width;
-        _ = y;
-        _ = x;
-        _ = encoder;
-        @panic("unimplemented");
+        const command_list = encoder.command_list;
+
+        const scissor_rect = c.D3D12_RECT{
+            .left = @intCast(x),
+            .top = @intCast(y),
+            .right = @intCast(x + width),
+            .bottom = @intCast(y + height),
+        };
+
+        command_list.lpVtbl.*.RSSetScissorRects.?(command_list, 1, &scissor_rect);
     }
 
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
@@ -2744,14 +2895,18 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn setViewport(encoder: *RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
-        _ = max_depth;
-        _ = min_depth;
-        _ = height;
-        _ = width;
-        _ = y;
-        _ = x;
-        _ = encoder;
-        @panic("unimplemented");
+        const command_list = encoder.command_list;
+
+        const viewport = c.D3D12_VIEWPORT{
+            .TopLeftX = x,
+            .TopLeftY = y,
+            .Width = width,
+            .Height = height,
+            .MinDepth = min_depth,
+            .MaxDepth = max_depth,
+        };
+
+        command_list.lpVtbl.*.RSSetViewports.?(command_list, 1, &viewport);
     }
 
     // Private
