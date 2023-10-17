@@ -56,7 +56,7 @@ pub fn build(b: *std.Build) !void {
 
 pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
     if (step.target.isDarwin()) {
-        @import("xcode_frameworks").addPaths(b, step);
+        @import("xcode_frameworks").addPaths(step);
         step.linkFramework("AppKit");
         step.linkFramework("CoreGraphics");
         step.linkFramework("Foundation");

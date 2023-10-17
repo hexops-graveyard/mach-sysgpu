@@ -1,26 +1,37 @@
 .{
     .name = "mach-dusk",
     .version = "0.1.0",
+    .paths = .{
+        "src",
+        "tools",
+        "build.zig",
+        "build.zig.zon",
+        "LICENSE",
+        "LICENSE-APACHE",
+        "LICENSE-MIT",
+        "LICENSE-ZIG",
+        "README.md",
+    },
     .dependencies = .{
         .vulkan_zig_generated = .{
-            .url = "https://pkg.machengine.org/vulkan-zig-generated/558a69681706cc69c5300f3152ed80bd55398e3c.tar.gz",
-            .hash = "1220789870c34138932c186f50662909b0a3522fb9ea04f7b1c1a1253c5cd5fedc05",
+            .url = "https://pkg.machengine.org/vulkan-zig-generated/b2cb02b98b5359d714006ea07502ee02b7d9a353.tar.gz",
+            .hash = "122080249197eef2dc5290874ead429285741bcd509b57badc22b716f2630d78149e",
         },
         .mach_gpu = .{
-            .url = "https://pkg.machengine.org/mach-gpu/26c9273ab19ebd0368c0a598907943f2c5ed1f73.tar.gz",
-            .hash = "1220f784698f085674f8c083e9a58728772e35b563c88c43eaecae94bba15cbf2655",
+            .url = "https://pkg.machengine.org/mach-gpu/1189b55b5a1bd1a4a03eb0c3a9b358e6bdfa7e52.tar.gz",
+            .hash = "122073087d37d48491245a6da40f6b2be8c255e8607fa5ff37f7b172f3c2d8fa5a79",
         },
         .mach_objc = .{
             .url = "https://pkg.machengine.org/mach-objc/aa5eb3220a294fefbf768315150827eecd434379.tar.gz",
             .hash = "1220d0b67b994c7e0d3c4a91d9541c50b294746602e163ce0728c62b1dbeed450a02",
         },
         .direct3d_headers = .{
-            .url = "https://pkg.machengine.org/direct3d-headers/563ee4b888784df0614c1bb9c8fc9fc48fa18f2a.tar.gz",
-            .hash = "1220c7fc160384063b9584c6dc766cfcc9a06a392f7549c40cb2ec94e50d9d5110ae",
+            .url = "https://pkg.machengine.org/direct3d-headers/9617cfd497fae598610a7b0a4be0b035e7308e93.tar.gz",
+            .hash = "122098cc0b0a39d24aaffcd6d5556e8f31f5dd1a754559ffa468918f2ed6c1ad0a03",
         },
         .xcode_frameworks = .{
-            .url = "https://github.com/hexops/xcode-frameworks-pkg/archive/f8b854f9a1f4b4602b4f998ee42588d524d44e52.tar.gz",
-            .hash = "1220ab440d1b8484038d619f743ef6a71e3683d13152eae941aa2d6bcb12fcea3135",
+            .url = "https://pkg.machengine.org/xcode-frameworks/e77a5c6809a0d3f62ec549ee56e9d2dc6807cd5b.tar.gz",
+            .hash = "12202044ed9fd69af156b0afde619ffd1d111554c557f57ab670ca9960e76d60d0b8",
         },
     },
 }
