@@ -27,6 +27,9 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         hlsl.storage.deinit(allocator);
     }
 
+    // matrices are transposed
+    try hlsl.writeAll("#pragma pack_matrix( row_major )\n");
+
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
             .@"struct" => |inst| try hlsl.emitStruct(inst_idx, inst, false),
@@ -52,7 +55,7 @@ fn emitType(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         try hlsl.writeAll("void");
     } else {
         switch (hlsl.air.getInst(inst_idx)) {
-            //.bool
+            .bool => |inst| try hlsl.emitBoolType(inst),
             .int => |inst| try hlsl.emitIntType(inst),
             .float => |inst| try hlsl.emitFloatType(inst),
             .vector => |inst| try hlsl.emitVectorType(inst),
@@ -64,7 +67,7 @@ fn emitType(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
     }
 }
 
-fn emitTypeSuffix(hlsl: *Hlsl, inst_idx: InstIndex) !void {
+fn emitTypeSuffix(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
     if (inst_idx != .none) {
         switch (hlsl.air.getInst(inst_idx)) {
             .array => |inst| try hlsl.emitArrayTypeSuffix(inst),
@@ -81,6 +84,7 @@ fn emitArrayTypeSuffix(hlsl: *Hlsl, inst: Inst.Array) !void {
     } else {
         try hlsl.writeAll("[1]");
     }
+    try hlsl.emitTypeSuffix(inst.elem_type);
 }
 
 fn emitTypeAsPointer(hlsl: *Hlsl, inst_idx: InstIndex) !void {
@@ -92,16 +96,23 @@ fn emitTypeAsPointer(hlsl: *Hlsl, inst_idx: InstIndex) !void {
     }
 }
 
+fn emitBoolType(hlsl: *Hlsl, inst: Inst.Bool) !void {
+    _ = inst;
+    try hlsl.writeAll("bool");
+}
+
 fn emitIntType(hlsl: *Hlsl, inst: Inst.Int) !void {
-    switch (inst.type) {
-        .u32 => try hlsl.writeAll("uint"),
-        .i32 => try hlsl.writeAll("int"),
-    }
+    try hlsl.writeAll(switch (inst.type) {
+        .u32 => "uint",
+        .i32 => "int",
+    });
 }
 
 fn emitFloatType(hlsl: *Hlsl, inst: Inst.Float) !void {
-    _ = inst;
-    try hlsl.writeAll("float");
+    try hlsl.writeAll(switch (inst.type) {
+        .f32 => "float",
+        .f16 => "half",
+    });
 }
 
 fn emitVectorSize(hlsl: *Hlsl, size: Inst.Vector.Size) !void {
@@ -241,37 +252,129 @@ fn emitWrapperStruct(hlsl: *Hlsl, inst: Inst.Var) !void {
 }
 
 fn emitGlobalVar(hlsl: *Hlsl, inst: Inst.Var) !void {
+    if (inst.addr_space == .workgroup) {
+        try hlsl.writeAll("groupshared ");
+        try hlsl.emitType(inst.type);
+        try hlsl.writeAll(" ");
+        try hlsl.writeName(inst.name);
+        try hlsl.emitTypeSuffix(inst.type);
+        try hlsl.writeAll(";\n");
+        return;
+    }
+
     const type_inst = hlsl.air.getInst(inst.type);
     const binding = hlsl.air.resolveInt(inst.binding) orelse return error.constExpr;
+    const group = hlsl.air.resolveInt(inst.group) orelse return error.constExpr;
     var binding_space: []const u8 = undefined;
 
-    if (inst.addr_space == .uniform) {
-        try hlsl.emitWrapperStruct(inst);
-        try hlsl.writeAll("ConstantBuffer<");
-        if (type_inst != .@"struct") {
-            try hlsl.print("Wrapper{}", .{@intFromEnum(inst.type)});
-        } else {
-            try hlsl.emitType(inst.type);
-        }
-        try hlsl.writeAll(">");
-        binding_space = "b";
-    } else if (inst.addr_space == .storage) {
-        if (inst.access_mode == .write or inst.access_mode == .read_write) {
-            try hlsl.writeAll("RWStructuredBuffer<");
-            binding_space = "u";
-        } else {
-            try hlsl.writeAll("StructuredBuffer<");
-            binding_space = "t";
-        }
-        try hlsl.emitBufferElemType(inst.type);
-        try hlsl.writeAll(">");
-    } else {
-        std.debug.panic("TODO: implement workgroup variable\n", .{});
+    switch (type_inst) {
+        .texture_type => |texture| {
+            try hlsl.writeAll(switch (texture.kind) {
+                .sampled_1d => "Texture1D",
+                .sampled_2d => "Texture2D",
+                .sampled_2d_array => "Texture2dArray",
+                .sampled_3d => "Texture3D",
+                .sampled_cube => "TextureCube",
+                .sampled_cube_array => "TextureCubeArray",
+                .multisampled_2d => "Texture2DMS",
+                .multisampled_depth_2d => "Texture2DMS",
+                .storage_1d => "RWTexture1D",
+                .storage_2d => "RWTexture2D",
+                .storage_2d_array => "RWTexture2DArray",
+                .storage_3d => "RWTexture3D",
+                .depth_2d => "Texture2D",
+                .depth_2d_array => "Texture2DArray",
+                .depth_cube => "TextureCube",
+                .depth_cube_array => "TextureCubeArray",
+            });
+
+            switch (texture.kind) {
+                .storage_1d,
+                .storage_2d,
+                .storage_2d_array,
+                .storage_3d,
+                => {
+                    try hlsl.writeAll("<");
+                    try hlsl.writeAll(switch (texture.texel_format) {
+                        .none => unreachable,
+                        .rgba8unorm,
+                        .bgra8unorm,
+                        .rgba8snorm,
+                        .rgba16float,
+                        .r32float,
+                        .rg32float,
+                        .rgba32float,
+                        => "float4",
+
+                        .rgba8uint,
+                        .rgba16uint,
+                        .r32uint,
+                        .rg32uint,
+                        .rgba32uint,
+                        => "uint4",
+
+                        .rgba8sint,
+                        .rgba16sint,
+                        .r32sint,
+                        .rg32sint,
+                        .rgba32sint,
+                        => "int4",
+                    });
+
+                    try hlsl.writeAll(">");
+                },
+                else => {},
+            }
+
+            // TODO - I think access_mode may be wrong
+
+            binding_space = switch (texture.kind) {
+                .storage_1d, .storage_2d, .storage_2d_array, .storage_3d => "u",
+                else => "t",
+            };
+        },
+        .sampler_type => {
+            try hlsl.writeAll("SamplerState");
+            binding_space = "s";
+        },
+        .comparison_sampler_type => {
+            try hlsl.writeAll("SamplerComparisonState");
+            binding_space = "s";
+        },
+        else => {
+            switch (inst.addr_space) {
+                .uniform => {
+                    try hlsl.emitWrapperStruct(inst);
+                    try hlsl.writeAll("ConstantBuffer<");
+                    if (type_inst != .@"struct") {
+                        try hlsl.print("Wrapper{}", .{@intFromEnum(inst.type)});
+                    } else {
+                        try hlsl.emitType(inst.type);
+                    }
+                    try hlsl.writeAll(">");
+                    binding_space = "b";
+                },
+                .storage => {
+                    if (inst.access_mode == .write or inst.access_mode == .read_write) {
+                        try hlsl.writeAll("RWStructuredBuffer<");
+                        binding_space = "u";
+                    } else {
+                        try hlsl.writeAll("StructuredBuffer<");
+                        binding_space = "t";
+                    }
+                    try hlsl.emitBufferElemType(inst.type);
+                    try hlsl.writeAll(">");
+                },
+                else => {
+                    std.debug.panic("TODO: implement workgroup variable {s}\n", .{hlsl.air.getStr(inst.name)});
+                },
+            }
+        },
     }
 
     try hlsl.writeAll(" ");
     try hlsl.writeName(inst.name);
-    try hlsl.print(" : register({s}{});\n", .{ binding_space, binding });
+    try hlsl.print(" : register({s}{}, space{});\n", .{ binding_space, binding, group });
 }
 
 fn emitGlobalConst(hlsl: *Hlsl, inst: Inst.Const) !void {
@@ -363,6 +466,9 @@ fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
             try hlsl.writeAll("uint _array_length, _array_stride;\n");
         }
 
+        try hlsl.writeIndent();
+        try hlsl.writeAll("uint _width, _height, _number_of_levels;\n");
+
         for (hlsl.air.refToList(block)) |statement| {
             try hlsl.emitStatement(statement);
         }
@@ -403,7 +509,8 @@ fn emitFnParam(hlsl: *Hlsl, inst_idx: InstIndex) !void {
 fn emitStatement(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
     try hlsl.writeIndent();
     switch (hlsl.air.getInst(inst_idx)) {
-        .@"var" => |inst| try hlsl.emitFnVar(inst),
+        .@"var" => |inst| try hlsl.emitVar(inst),
+        .@"const" => |inst| try hlsl.emitConst(inst),
         .block => |block| try hlsl.emitBlock(block),
         // .loop => |inst| try hlsl.emitLoop(inst),
         // .continuing
@@ -413,19 +520,25 @@ fn emitStatement(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         // .@"while" => |inst| try hlsl.emitWhile(inst),
         .@"for" => |inst| try hlsl.emitFor(inst),
         // .switch
-        .assign => |inst| try hlsl.emitAssignStmt(inst),
         // .increase
         // .decrease
-        // .discard
+        .discard => try hlsl.emitDiscard(),
         // .@"break" => try hlsl.emitBreak(),
         .@"continue" => try hlsl.writeAll("continue;\n"),
         // .call => |inst| try hlsl.emitCall(inst),
+        .assign,
+        .nil_intrinsic,
+        .texture_store,
+        => {
+            try hlsl.emitExpr(inst_idx);
+            try hlsl.writeAll(";\n");
+        },
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| try hlsl.print("Statement: {}\n", .{inst}), // TODO
     }
 }
 
-fn emitFnVar(hlsl: *Hlsl, inst: Inst.Var) !void {
+fn emitVar(hlsl: *Hlsl, inst: Inst.Var) !void {
     const t = if (inst.type != .none) inst.type else inst.expr;
     try hlsl.emitType(t);
     try hlsl.writeAll(" ");
@@ -436,6 +549,32 @@ fn emitFnVar(hlsl: *Hlsl, inst: Inst.Var) !void {
         try hlsl.emitExpr(inst.expr);
     }
     try hlsl.writeAll(";\n");
+}
+
+fn emitConst(hlsl: *Hlsl, inst: Inst.Const) !void {
+    const t = if (inst.type != .none) inst.type else inst.expr;
+    try hlsl.writeAll("const ");
+    try hlsl.emitType(t);
+    try hlsl.writeAll(" ");
+    try hlsl.writeName(inst.name);
+    try hlsl.emitTypeSuffix(inst.type);
+    try hlsl.writeAll(" = ");
+    try hlsl.emitExpr(inst.expr);
+    try hlsl.writeAll(";\n");
+}
+
+fn emitBlock(hlsl: *Hlsl, block: Air.RefIndex) !void {
+    try hlsl.writeAll("{\n");
+    {
+        hlsl.enterScope();
+        defer hlsl.exitScope();
+
+        for (hlsl.air.refToList(block)) |statement| {
+            try hlsl.emitStatement(statement);
+        }
+    }
+    try hlsl.writeIndent();
+    try hlsl.writeAll("}\n");
 }
 
 fn emitReturn(hlsl: *Hlsl, inst_idx: InstIndex) !void {
@@ -460,7 +599,8 @@ fn emitIf(hlsl: *Hlsl, inst: Inst.If) !void {
             hlsl.exitScope();
     }
     if (inst.@"else" != .none) {
-        try hlsl.writeAll(" else\n");
+        try hlsl.writeIndent();
+        try hlsl.writeAll("else\n");
         try hlsl.emitStatement(inst.@"else");
     }
     try hlsl.writeAll("\n");
@@ -488,18 +628,8 @@ fn emitAssignStmt(hlsl: *Hlsl, inst: Inst.Assign) !void {
     try hlsl.writeAll(";\n");
 }
 
-fn emitBlock(hlsl: *Hlsl, block: Air.RefIndex) !void {
-    try hlsl.writeAll("{\n");
-    {
-        hlsl.enterScope();
-        defer hlsl.exitScope();
-
-        for (hlsl.air.refToList(block)) |statement| {
-            try hlsl.emitStatement(statement);
-        }
-    }
-    try hlsl.writeIndent();
-    try hlsl.writeAll("}\n");
+fn emitDiscard(hlsl: *Hlsl) !void {
+    try hlsl.writeAll("discard;\n");
 }
 
 // TODO - move this to Air?
@@ -517,6 +647,7 @@ fn exprType(hlsl: *Hlsl, inst_idx: InstIndex) InstIndex {
         .vector => inst_idx,
         .matrix => inst_idx,
         .array => inst_idx,
+        .nil_intrinsic => .none,
         .unary => |inst| inst.result_type,
         .unary_intrinsic => |inst| inst.result_type,
         .binary => |inst| inst.result_type,
@@ -549,6 +680,9 @@ fn exprType(hlsl: *Hlsl, inst_idx: InstIndex) InstIndex {
         },
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
+        .texture_sample => |inst| inst.result_type,
+        .texture_dimension => |inst| inst.result_type,
+        .texture_load => |inst| inst.result_type,
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| std.debug.panic("ExprType: {}", .{inst}), // TODO
     };
@@ -563,6 +697,7 @@ fn emitExpr(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .vector => |inst| try hlsl.emitVector(inst),
         .matrix => |inst| try hlsl.emitMatrix(inst),
         .array => |inst| try hlsl.emitArray(inst),
+        .nil_intrinsic => |inst| try hlsl.emitNilIntrinsic(inst),
         .unary => |inst| try hlsl.emitUnary(inst),
         .unary_intrinsic => |inst| try hlsl.emitUnaryIntrinsic(inst),
         .binary => |inst| try hlsl.emitBinary(inst),
@@ -578,6 +713,10 @@ fn emitExpr(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         //.call => |inst| hlsl.emitCall(inst),
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
+        .texture_sample => |inst| try hlsl.emitTextureSample(inst),
+        .texture_dimension => |inst| try hlsl.emitTextureDimension(inst),
+        .texture_load => |inst| try hlsl.emitTextureLoad(inst),
+        .texture_store => |inst| try hlsl.emitTextureStore(inst),
         //else => |inst| std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst)}),
         else => |inst| std.debug.panic("Expr: {}", .{inst}), // TODO
     }
@@ -633,14 +772,18 @@ fn emitVector(hlsl: *Hlsl, inst: Inst.Vector) !void {
 
     const value = hlsl.air.getValue(Inst.Vector.Value, inst.value.?);
     switch (value) {
-        .literal => |literal| for (literal[0..@intFromEnum(inst.size)], 0..) |elem_inst, i| {
-            try hlsl.writeAll(if (i == 0) "" else ", ");
-            try hlsl.emitExpr(elem_inst);
-        },
-        .cast => unreachable, // TODO
+        .literal => |literal| try hlsl.emitVectorElems(inst.size, literal),
+        .cast => |cast| try hlsl.emitVectorElems(inst.size, cast.value),
     }
 
     try hlsl.writeAll(")");
+}
+
+fn emitVectorElems(hlsl: *Hlsl, size: Inst.Vector.Size, value: [4]InstIndex) !void {
+    for (value[0..@intFromEnum(size)], 0..) |elem_inst, i| {
+        try hlsl.writeAll(if (i == 0) "" else ", ");
+        try hlsl.emitExpr(elem_inst);
+    }
 }
 
 fn emitMatrix(hlsl: *Hlsl, inst: Inst.Matrix) !void {
@@ -670,6 +813,13 @@ fn emitArray(hlsl: *Hlsl, inst: Inst.Array) !void {
         }
     }
     try hlsl.writeAll("}");
+}
+
+fn emitNilIntrinsic(hlsl: *Hlsl, op: Inst.NilIntrinsic) !void {
+    try hlsl.writeAll(switch (op) {
+        .storage_barrier => "DeviceMemoryBarrierWithGroupSync()",
+        .workgroup_barrier => "GroupMemoryBarrierWithGroupSync()",
+    });
 }
 
 fn emitUnary(hlsl: *Hlsl, inst: Inst.Unary) !void {
@@ -790,11 +940,12 @@ fn emitBinary(hlsl: *Hlsl, inst: Inst.Binary) !void {
             const rhs_type = hlsl.air.getInst(rhs_type_idx);
 
             if (lhs_type == .matrix or rhs_type == .matrix) {
+                // matrices are transposed
                 try hlsl.writeAll("mul");
                 try hlsl.writeAll("(");
-                try hlsl.emitExpr(inst.lhs);
-                try hlsl.writeAll(", ");
                 try hlsl.emitExpr(inst.rhs);
+                try hlsl.writeAll(", ");
+                try hlsl.emitExpr(inst.lhs);
                 try hlsl.writeAll(")");
             } else {
                 try hlsl.emitBinaryOp(inst);
@@ -951,6 +1102,60 @@ fn emitCall(hlsl: *Hlsl, inst: Inst.FnCall) !void {
         }
     }
     try hlsl.writeAll(")");
+}
+
+fn emitTextureSample(hlsl: *Hlsl, inst: Inst.TextureSample) !void {
+    try hlsl.emitExpr(inst.texture);
+    if (inst.level != .none) {
+        try hlsl.writeAll(".SampleLevel(");
+    } else {
+        try hlsl.writeAll(".Sample("); // TODO
+    }
+    try hlsl.emitExpr(inst.sampler);
+    try hlsl.writeAll(", ");
+    try hlsl.emitExpr(inst.coords);
+    if (inst.level != .none) {
+        try hlsl.writeAll(", ");
+        try hlsl.emitExpr(inst.level);
+    }
+    try hlsl.writeAll(")");
+
+    switch (hlsl.air.getInst(inst.result_type)) {
+        .float => try hlsl.writeAll(".x"),
+        else => {},
+    }
+}
+
+fn emitTextureDimension(hlsl: *Hlsl, inst: Inst.TextureDimension) !void {
+    try hlsl.writeAll("(");
+    try hlsl.emitExpr(inst.texture);
+    try hlsl.writeAll(".GetDimensions(0, _width, _height, _number_of_levels), uint2(_width, _height)"); // TODO
+    try hlsl.writeAll(")");
+}
+
+fn emitTextureLoad(hlsl: *Hlsl, inst: Inst.TextureLoad) !void {
+    try hlsl.emitExpr(inst.texture);
+    try hlsl.writeAll(".Load(");
+    try hlsl.writeAll("int3("); // TODO
+    try hlsl.emitExpr(inst.coords);
+    try hlsl.writeAll(", ");
+    try hlsl.emitExpr(inst.level);
+    try hlsl.writeAll(")");
+    try hlsl.writeAll(")");
+
+    switch (hlsl.air.getInst(inst.result_type)) {
+        .float => try hlsl.writeAll(".x"),
+        else => {},
+    }
+}
+
+fn emitTextureStore(hlsl: *Hlsl, inst: Inst.TextureStore) !void {
+    try hlsl.emitExpr(inst.texture);
+    try hlsl.writeAll("[");
+    try hlsl.emitExpr(inst.coords);
+    try hlsl.writeAll("]");
+    try hlsl.writeAll(" = ");
+    try hlsl.emitExpr(inst.value);
 }
 
 fn enterScope(hlsl: *Hlsl) void {

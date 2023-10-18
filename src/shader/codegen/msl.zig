@@ -557,6 +557,20 @@ fn emitConst(msl: *Msl, inst: Inst.Const) !void {
     try msl.writeAll(";\n");
 }
 
+fn emitBlock(msl: *Msl, block: Air.RefIndex) !void {
+    try msl.writeAll("{\n");
+    {
+        msl.enterScope();
+        defer msl.exitScope();
+
+        for (msl.air.refToList(block)) |statement| {
+            try msl.emitStatement(statement);
+        }
+    }
+    try msl.writeIndent();
+    try msl.writeAll("}\n");
+}
+
 fn emitReturn(msl: *Msl, inst_idx: InstIndex) !void {
     try msl.writeAll("return");
     if (inst_idx != .none) {
@@ -579,7 +593,8 @@ fn emitIf(msl: *Msl, inst: Inst.If) !void {
             msl.exitScope();
     }
     if (inst.@"else" != .none) {
-        try msl.writeAll(" else\n");
+        try msl.writeIndent();
+        try msl.writeAll("else\n");
         try msl.emitStatement(inst.@"else");
     }
     try msl.writeAll("\n");
@@ -604,20 +619,6 @@ fn emitFor(msl: *Msl, inst: Inst.For) !void {
 
 fn emitDiscard(msl: *Msl) !void {
     try msl.writeAll("discard_fragment();\n");
-}
-
-fn emitBlock(msl: *Msl, block: Air.RefIndex) !void {
-    try msl.writeAll("{\n");
-    {
-        msl.enterScope();
-        defer msl.exitScope();
-
-        for (msl.air.refToList(block)) |statement| {
-            try msl.emitStatement(statement);
-        }
-    }
-    try msl.writeIndent();
-    try msl.writeAll("}\n");
 }
 
 fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
@@ -1009,7 +1010,7 @@ fn emitCall(msl: *Msl, inst: Inst.FnCall) !void {
 
 fn emitTextureSample(msl: *Msl, inst: Inst.TextureSample) !void {
     try msl.emitExpr(inst.texture);
-    try msl.writeAll(".sample(");
+    try msl.writeAll(".sample("); // TODO
     try msl.emitExpr(inst.sampler);
     try msl.writeAll(", ");
     try msl.emitExpr(inst.coords);

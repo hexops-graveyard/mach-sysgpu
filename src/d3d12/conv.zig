@@ -149,6 +149,36 @@ pub fn d3d12DescriptorRangeType(entry: dgpu.BindGroupLayout.Entry) c.D3D12_DESCR
     unreachable;
 }
 
+pub fn d3d12FilterType(filter: dgpu.FilterMode) c.D3D12_FILTER_TYPE {
+    return switch (filter) {
+        .nearest => c.D3D12_FILTER_TYPE_POINT,
+        .linear => c.D3D12_FILTER_TYPE_LINEAR,
+    };
+}
+
+pub fn d3d12FilterTypeForMipmap(filter: dgpu.MipmapFilterMode) c.D3D12_FILTER_TYPE {
+    return switch (filter) {
+        .nearest => c.D3D12_FILTER_TYPE_POINT,
+        .linear => c.D3D12_FILTER_TYPE_LINEAR,
+    };
+}
+
+pub fn d3d12Filter(
+    mag_filter: dgpu.FilterMode,
+    min_filter: dgpu.FilterMode,
+    mipmap_filter: dgpu.MipmapFilterMode,
+    max_anisotropy: u16,
+) c.D3D12_FILTER {
+    var filter: c.D3D12_FILTER = 0;
+    filter |= d3d12FilterType(min_filter) << c.D3D12_MIN_FILTER_SHIFT;
+    filter |= d3d12FilterType(mag_filter) << c.D3D12_MAG_FILTER_SHIFT;
+    filter |= d3d12FilterTypeForMipmap(mipmap_filter) << c.D3D12_MIP_FILTER_SHIFT;
+    filter |= c.D3D12_FILTER_REDUCTION_TYPE_STANDARD << c.D3D12_FILTER_REDUCTION_TYPE_SHIFT;
+    if (max_anisotropy > 1)
+        filter |= c.D3D12_ANISOTROPIC_FILTERING_BIT;
+    return filter;
+}
+
 pub fn d3d12FrontCounterClockwise(face: dgpu.FrontFace) c.BOOL {
     return switch (face) {
         .ccw => c.TRUE,
@@ -285,11 +315,11 @@ pub fn d3d12ResourceSizeForBuffer(size: u64, usage: dgpu.Buffer.UsageFlags) c.UI
     return resource_size;
 }
 
-pub fn d3d12ResourceStatesInitial(heap_type: c.D3D12_HEAP_TYPE) c.D3D12_RESOURCE_STATES {
+pub fn d3d12ResourceStatesInitial(heap_type: c.D3D12_HEAP_TYPE, read_state: c.D3D12_RESOURCE_STATES) c.D3D12_RESOURCE_STATES {
     return switch (heap_type) {
         c.D3D12_HEAP_TYPE_UPLOAD => c.D3D12_RESOURCE_STATE_GENERIC_READ,
         c.D3D12_HEAP_TYPE_READBACK => c.D3D12_RESOURCE_STATE_COPY_DEST,
-        else => c.D3D12_RESOURCE_STATE_COMMON,
+        else => read_state,
     };
 }
 
@@ -367,6 +397,18 @@ pub fn d3d12ShaderBytecode(opt_blob: ?*c.ID3DBlob) c.D3D12_SHADER_BYTECODE {
     } else .{ .pShaderBytecode = null, .BytecodeLength = 0 };
 }
 
+pub fn d3d12SrvDimension(dimension: dgpu.TextureView.Dimension, sample_count: u32) c.D3D12_SRV_DIMENSION {
+    return switch (dimension) {
+        .dimension_undefined => unreachable,
+        .dimension_1d => c.D3D12_SRV_DIMENSION_TEXTURE1D,
+        .dimension_2d => if (sample_count == 1) c.D3D12_SRV_DIMENSION_TEXTURE2D else c.D3D12_SRV_DIMENSION_TEXTURE2DMS,
+        .dimension_2d_array => if (sample_count == 1) c.D3D12_SRV_DIMENSION_TEXTURE2DARRAY else c.D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY,
+        .dimension_cube => c.D3D12_SRV_DIMENSION_TEXTURECUBE,
+        .dimension_cube_array => c.D3D12_SRV_DIMENSION_TEXTURECUBEARRAY,
+        .dimension_3d => c.D3D12_SRV_DIMENSION_TEXTURE3D,
+    };
+}
+
 pub fn d3d12StencilOp(op: dgpu.StencilOperation) c.D3D12_STENCIL_OP {
     return switch (op) {
         .keep => c.D3D12_STENCIL_OP_KEEP,
@@ -387,6 +429,25 @@ pub fn d3d12StreamOutputDesc() c.D3D12_STREAM_OUTPUT_DESC {
         .pBufferStrides = null,
         .NumStrides = 0,
         .RasterizedStream = 0,
+    };
+}
+
+pub fn d3d12TextureAddressMode(address_mode: dgpu.Sampler.AddressMode) c.D3D12_TEXTURE_ADDRESS_MODE {
+    return switch (address_mode) {
+        .repeat => c.D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        .mirror_repeat => c.D3D12_TEXTURE_ADDRESS_MODE_MIRROR,
+        .clamp_to_edge => c.D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+    };
+}
+
+pub fn d3d12UavDimension(dimension: dgpu.TextureView.Dimension) c.D3D12_UAV_DIMENSION {
+    return switch (dimension) {
+        .dimension_undefined => unreachable,
+        .dimension_1d => c.D3D12_UAV_DIMENSION_TEXTURE1D,
+        .dimension_2d => c.D3D12_UAV_DIMENSION_TEXTURE2D,
+        .dimension_2d_array => c.D3D12_UAV_DIMENSION_TEXTURE2DARRAY,
+        .dimension_3d => c.D3D12_UAV_DIMENSION_TEXTURE3D,
+        else => unreachable, // TODO - UAV cube maps?
     };
 }
 
@@ -505,10 +566,39 @@ pub fn dxgiFormatForTextureResource(
     usage: dgpu.Texture.UsageFlags,
     view_format_count: usize,
 ) c.DXGI_FORMAT {
-    return if (view_format_count > 0 or (hasDepthStencil(format) and usage.texture_binding))
+    _ = usage;
+    return if (view_format_count > 0)
         dxgiFormatTypeless(format)
     else
         dxgiFormatForTexture(format);
+}
+
+pub fn dxgiFormatForTextureView(format: dgpu.Texture.Format, aspect: dgpu.Texture.Aspect) c.DXGI_FORMAT {
+    return switch (aspect) {
+        .all => switch (format) {
+            .stencil8 => c.DXGI_FORMAT_X24_TYPELESS_G8_UINT,
+            .depth16_unorm => c.DXGI_FORMAT_R16_UNORM,
+            .depth24_plus => c.DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
+            .depth32_float => c.DXGI_FORMAT_R32_FLOAT,
+            else => dxgiFormatForTexture(format),
+        },
+        .stencil_only => switch (format) {
+            .stencil8 => c.DXGI_FORMAT_X24_TYPELESS_G8_UINT,
+            .depth24_plus_stencil8 => c.DXGI_FORMAT_X24_TYPELESS_G8_UINT,
+            .depth32_float_stencil8 => c.DXGI_FORMAT_X32_TYPELESS_G8X24_UINT,
+            else => unreachable,
+        },
+        .depth_only => switch (format) {
+            .depth16_unorm => c.DXGI_FORMAT_R16_UNORM,
+            .depth24_plus => c.DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
+            .depth24_plus_stencil8 => c.DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
+            .depth32_float => c.DXGI_FORMAT_R32_FLOAT,
+            .depth32_float_stencil8 => c.DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS,
+            else => unreachable,
+        },
+        .plane0_only => unreachable,
+        .plane1_only => unreachable,
+    };
 }
 
 pub fn dxgiFormatForVertex(format: dgpu.VertexFormat) c.DXGI_FORMAT {

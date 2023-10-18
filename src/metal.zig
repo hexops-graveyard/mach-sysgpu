@@ -588,7 +588,7 @@ pub const Texture = struct {
         allocator.destroy(texture);
     }
 
-    pub fn createView(texture: *Texture, desc: ?*const dgpu.TextureView.Descriptor) !*TextureView {
+    pub fn createView(texture: *Texture, desc: *const dgpu.TextureView.Descriptor) !*TextureView {
         return TextureView.init(texture, desc);
     }
 };
@@ -597,7 +597,7 @@ pub const TextureView = struct {
     manager: utils.Manager(TextureView) = .{},
     mtl_texture: *mtl.Texture,
 
-    pub fn init(texture: *Texture, opt_desc: ?*const dgpu.TextureView.Descriptor) !*TextureView {
+    pub fn init(texture: *Texture, desc: *const dgpu.TextureView.Descriptor) !*TextureView {
         const pool = objc.autoreleasePoolPush();
         defer objc.autoreleasePoolPop(pool);
 
@@ -607,29 +607,12 @@ pub const TextureView = struct {
         const texture_mip_level_count = mtl_texture.mipmapLevelCount();
         const texture_array_layer_count = mtl_texture.arrayLength();
 
-        var view_format = texture_format;
-        var view_type = texture_type;
-        var view_base_mip_level: u32 = 0;
-        var view_mip_level_count = texture_mip_level_count;
-        var view_base_array_layer: u32 = 0;
-        var view_array_layer_count = texture_array_layer_count;
-
-        if (opt_desc) |desc| {
-            if (desc.format != .undefined)
-                view_format = conv.metalPixelFormatForView(desc.format, texture_format, desc.aspect);
-            if (desc.dimension != .dimension_undefined)
-                view_type = conv.metalTextureTypeForView(desc.dimension);
-            view_base_mip_level = desc.base_mip_level;
-            view_mip_level_count = if (desc.mip_level_count == dgpu.mip_level_count_undefined)
-                texture_mip_level_count - desc.base_mip_level
-            else
-                desc.mip_level_count;
-            view_base_array_layer = desc.base_array_layer;
-            view_array_layer_count = if (desc.array_layer_count == dgpu.array_layer_count_undefined)
-                texture_array_layer_count - desc.base_array_layer
-            else
-                desc.array_layer_count;
-        }
+        const view_format = if (desc.format != .undefined) conv.metalPixelFormatForView(desc.format, texture_format, desc.aspect) else texture_format;
+        const view_type = if (desc.dimension != .dimension_undefined) conv.metalTextureTypeForView(desc.dimension) else texture_type;
+        const view_base_mip_level = desc.base_mip_level;
+        const view_mip_level_count = if (desc.mip_level_count == dgpu.mip_level_count_undefined) texture_mip_level_count - desc.base_mip_level else desc.mip_level_count;
+        const view_base_array_layer = desc.base_array_layer;
+        const view_array_layer_count = if (desc.array_layer_count == dgpu.array_layer_count_undefined) texture_array_layer_count - desc.base_array_layer else desc.array_layer_count;
 
         if (view_format != texture_format or view_type != texture_type or view_base_mip_level != 0 or view_mip_level_count != texture_mip_level_count or view_base_array_layer != 0 or view_array_layer_count != texture_array_layer_count) {
             mtl_texture = mtl_texture.newTextureViewWithPixelFormat_textureType_levels_slices(
@@ -640,10 +623,8 @@ pub const TextureView = struct {
             ) orelse {
                 return error.newTextureViewFailed;
             };
-            if (opt_desc) |desc| {
-                if (desc.label) |label| {
-                    mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
-                }
+            if (desc.label) |label| {
+                mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
             }
         } else {
             _ = mtl_texture.retain();
@@ -1434,6 +1415,8 @@ pub const CommandEncoder = struct {
 
         try encoder.referenced_buffers.append(allocator, buffer);
 
+        // TODO - test 3D/array issues
+
         mtl_encoder.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
             buffer.mtl_buffer,
             source.layout.offset,
@@ -1457,6 +1440,8 @@ pub const CommandEncoder = struct {
 
         const source_texture: *Texture = @ptrCast(@alignCast(source.texture));
         const destination_texture: *Texture = @ptrCast(@alignCast(destination.texture));
+
+        // TODO - test 3D/array issues
 
         mtl_encoder.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
             source_texture.mtl_texture,
