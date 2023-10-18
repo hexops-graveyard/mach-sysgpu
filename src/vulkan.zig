@@ -1157,8 +1157,8 @@ pub const Texture = struct {
         allocator.destroy(texture);
     }
 
-    pub fn createView(texture: *Texture, desc: ?*const dgpu.TextureView.Descriptor) !*TextureView {
-        return TextureView.init(texture, desc orelse &dgpu.TextureView.Descriptor{}, texture.extent);
+    pub fn createView(texture: *Texture, desc: *const dgpu.TextureView.Descriptor) !*TextureView {
+        return TextureView.init(texture, desc, texture.extent);
     }
 };
 

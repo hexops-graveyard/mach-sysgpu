@@ -1259,7 +1259,7 @@ pub const Impl = dgpu.Interface(struct {
 
     pub inline fn textureCreateView(texture_raw: *dgpu.Texture, descriptor: ?*const dgpu.TextureView.Descriptor) *dgpu.TextureView {
         const texture: *impl.Texture = @ptrCast(@alignCast(texture_raw));
-        const texture_view = texture.createView(descriptor) catch @panic("api error");
+        const texture_view = texture.createView(descriptor orelse &dgpu.TextureView.Descriptor{}) catch @panic("api error");
         return @ptrCast(texture_view);
     }
 
