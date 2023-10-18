@@ -477,7 +477,7 @@ fn emitFnBuffer(msl: *Msl, inst: Inst.Var) !void {
     try msl.emitTypeAsPointer(inst.type);
     try msl.writeAll(" ");
     try msl.writeName(inst.name);
-    try msl.emitTypeSuffix(inst.type);
+    //try msl.emitTypeSuffix(inst.type);    handled by emitTypeAsPointer
 
     try msl.print(" [[buffer({})]]", .{msl.buffer_index});
     msl.buffer_index += 1;
@@ -702,14 +702,18 @@ fn emitVector(msl: *Msl, inst: Inst.Vector) !void {
 
     const value = msl.air.getValue(Inst.Vector.Value, inst.value.?);
     switch (value) {
-        .literal => |literal| for (literal[0..@intFromEnum(inst.size)], 0..) |elem_inst, i| {
-            try msl.writeAll(if (i == 0) "" else ", ");
-            try msl.emitExpr(elem_inst);
-        },
-        .cast => unreachable, // TODO
+        .literal => |literal| try msl.emitVectorElems(inst.size, literal),
+        .cast => |cast| try msl.emitVectorElems(inst.size, cast.value),
     }
 
     try msl.writeAll(")");
+}
+
+fn emitVectorElems(msl: *Msl, size: Inst.Vector.Size, value: [4]InstIndex) !void {
+    for (value[0..@intFromEnum(size)], 0..) |elem_inst, i| {
+        try msl.writeAll(if (i == 0) "" else ", ");
+        try msl.emitExpr(elem_inst);
+    }
 }
 
 fn emitMatrix(msl: *Msl, inst: Inst.Matrix) !void {
