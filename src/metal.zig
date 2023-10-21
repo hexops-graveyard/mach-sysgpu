@@ -55,6 +55,12 @@ fn entrypointSlice(name: []const u8) []const u8 {
     return if (std.mem.eql(u8, name, "main")) "main_" else name;
 }
 
+const MapCallback = struct {
+    buffer: *Buffer,
+    callback: dgpu.Buffer.MapCallback,
+    userdata: ?*anyopaque,
+};
+
 const BindingPoint = struct { group: u32, binding: u32 };
 const BindingTable = std.AutoHashMapUnmanaged(BindingPoint, u32);
 
@@ -149,12 +155,6 @@ pub const Surface = struct {
 };
 
 pub const Device = struct {
-    const MapAsyncCallback = struct {
-        callback: dgpu.Buffer.MapCallback,
-        userdata: ?*anyopaque,
-        fence_value: u64,
-    };
-
     manager: utils.Manager(Device) = .{},
     mtl_device: *mtl.Device,
     queue: ?*Queue = null,
@@ -165,7 +165,8 @@ pub const Device = struct {
     err_cb: ?dgpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
     streaming_manager: StreamingManager = undefined,
-    map_async_callbacks: std.ArrayListUnmanaged(MapAsyncCallback) = .{},
+    reference_trackers: std.ArrayListUnmanaged(*ReferenceTracker) = .{},
+    map_callbacks: std.ArrayListUnmanaged(MapCallback) = .{},
     free_lengths_buffers: std.ArrayListUnmanaged(*mtl.Buffer) = .{},
 
     pub fn init(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
@@ -186,9 +187,14 @@ pub const Device = struct {
         if (device.lost_cb) |lost_cb| {
             lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
         }
+
+        if (device.queue) |queue| queue.waitUntil(queue.fence_value);
+        device.processQueuedOperations();
+
         for (device.free_lengths_buffers.items) |mtl_buffer| mtl_buffer.release();
         device.free_lengths_buffers.deinit(allocator);
-        device.map_async_callbacks.deinit(allocator);
+        device.map_callbacks.deinit(allocator);
+        device.reference_trackers.deinit(allocator);
         device.streaming_manager.deinit();
         if (device.queue) |queue| queue.manager.release();
         allocator.destroy(device);
@@ -252,32 +258,48 @@ pub const Device = struct {
     }
 
     pub fn tick(device: *Device) !void {
-        const queue = try device.getQueue();
+        device.processQueuedOperations();
+    }
 
-        var i: usize = 0;
-        while (i < device.map_async_callbacks.items.len) {
-            const map_async_callback = device.map_async_callbacks.items[i];
+    // Internal
+    pub fn processQueuedOperations(device: *Device) void {
+        // Reference trackers
+        if (device.queue) |queue| {
             const completed_value = queue.completed_value.load(.Acquire);
 
-            if (map_async_callback.fence_value <= completed_value) {
-                map_async_callback.callback(.success, map_async_callback.userdata);
-                _ = device.map_async_callbacks.swapRemove(i);
-            } else {
-                i += 1;
+            var i: usize = 0;
+            while (i < device.reference_trackers.items.len) {
+                const reference_tracker = device.reference_trackers.items[i];
+
+                if (reference_tracker.fence_value <= completed_value) {
+                    reference_tracker.deinit();
+                    _ = device.reference_trackers.swapRemove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+
+        // MapAsync
+        {
+            var i: usize = 0;
+            while (i < device.map_callbacks.items.len) {
+                const map_callback = device.map_callbacks.items[i];
+
+                if (map_callback.buffer.gpu_count == 0) {
+                    map_callback.buffer.executeMapAsync(map_callback);
+
+                    _ = device.map_callbacks.swapRemove(i);
+                } else {
+                    i += 1;
+                }
             }
         }
     }
 };
 
 pub const StreamingManager = struct {
-    const InflightBuffer = struct {
-        mtl_buffer: *mtl.Buffer,
-        queue: *Queue,
-        fence_value: u64,
-    };
-
     device: *Device,
-    inflight_buffers: std.ArrayListUnmanaged(InflightBuffer) = .{},
     free_buffers: std.ArrayListUnmanaged(*mtl.Buffer) = .{},
 
     pub fn init(device: *Device) !StreamingManager {
@@ -287,27 +309,16 @@ pub const StreamingManager = struct {
     }
 
     pub fn deinit(manager: *StreamingManager) void {
-        for (manager.inflight_buffers.items) |inflight_buffer| inflight_buffer.mtl_buffer.release();
         for (manager.free_buffers.items) |mtl_buffer| mtl_buffer.release();
-        manager.inflight_buffers.deinit(allocator);
         manager.free_buffers.deinit(allocator);
     }
 
     pub fn acquire(manager: *StreamingManager) !*mtl.Buffer {
+        const device = manager.device;
+
         // Recycle finished buffers
         if (manager.free_buffers.items.len == 0) {
-            var i: u32 = 0;
-            while (i < manager.inflight_buffers.items.len) {
-                const inflight_buffer = manager.inflight_buffers.items[i];
-                const completed_value = inflight_buffer.queue.completed_value.load(.Acquire);
-
-                if (inflight_buffer.fence_value <= completed_value) {
-                    try manager.free_buffers.append(allocator, inflight_buffer.mtl_buffer);
-                    _ = manager.inflight_buffers.swapRemove(i);
-                } else {
-                    i += 1;
-                }
-            }
+            device.processQueuedOperations();
         }
 
         // Create new buffer
@@ -329,12 +340,10 @@ pub const StreamingManager = struct {
         return manager.free_buffers.pop();
     }
 
-    pub fn enqueue(manager: *StreamingManager, mtl_buffer: *mtl.Buffer, queue: *Queue, fence_value: u64) !void {
-        try manager.inflight_buffers.append(allocator, .{
-            .mtl_buffer = mtl_buffer,
-            .queue = queue,
-            .fence_value = fence_value,
-        });
+    pub fn release(manager: *StreamingManager, mtl_buffer: *mtl.Buffer) void {
+        manager.free_buffers.append(allocator, mtl_buffer) catch {
+            std.debug.panic("OutOfMemory", .{});
+        };
     }
 };
 
@@ -436,6 +445,8 @@ pub const SwapChain = struct {
 
         swapchain.current_drawable = swapchain.surface.layer.nextDrawable();
 
+        swapchain.device.processQueuedOperations();
+
         if (swapchain.current_drawable) |drawable| {
             _ = drawable.retain();
             return TextureView.initFromMtlTexture(drawable.texture());
@@ -463,7 +474,7 @@ pub const Buffer = struct {
     manager: utils.Manager(Buffer) = .{},
     device: *Device,
     mtl_buffer: *mtl.Buffer,
-    last_used_fence_value: u64 = 0,
+    gpu_count: u32 = 0,
     // TODO - packed buffer descriptor struct
     size: u64,
     usage: dgpu.Buffer.UsageFlags,
@@ -521,12 +532,12 @@ pub const Buffer = struct {
         _ = offset;
         _ = mode;
 
-        const device = buffer.device;
-        try device.map_async_callbacks.append(allocator, .{
-            .callback = callback,
-            .userdata = userdata,
-            .fence_value = buffer.last_used_fence_value,
-        });
+        const map_callback = MapCallback{ .buffer = buffer, .callback = callback, .userdata = userdata };
+        if (buffer.gpu_count == 0) {
+            buffer.executeMapAsync(map_callback);
+        } else {
+            try buffer.device.map_callbacks.append(allocator, map_callback);
+        }
     }
 
     pub fn setLabel(buffer: *Buffer, label: [*:0]const u8) void {
@@ -540,6 +551,13 @@ pub const Buffer = struct {
 
     pub fn unmap(buffer: *Buffer) !void {
         _ = buffer;
+    }
+
+    // Internal
+    pub fn executeMapAsync(buffer: *Buffer, map_callback: MapCallback) void {
+        _ = buffer;
+
+        map_callback.callback(.success, map_callback.userdata);
     }
 };
 
@@ -1287,8 +1305,7 @@ pub const CommandBuffer = struct {
     manager: utils.Manager(CommandBuffer) = .{},
     device: *Device,
     mtl_command_buffer: *mtl.CommandBuffer,
-    referenced_buffers: std.ArrayListUnmanaged(*Buffer) = .{},
-    referenced_upload_pages: std.ArrayListUnmanaged(*mtl.Buffer) = .{},
+    reference_tracker: *ReferenceTracker,
     upload_buffer: ?*mtl.Buffer = null,
     upload_map: ?[*]u8 = null,
     next_offset: u32 = upload_page_size,
@@ -1304,17 +1321,20 @@ pub const CommandBuffer = struct {
         };
         errdefer mtl_command_buffer.release();
 
-        var cmd_buffer = try allocator.create(CommandBuffer);
-        cmd_buffer.* = .{
+        const reference_tracker = try ReferenceTracker.init(device);
+        errdefer reference_tracker.deinit();
+
+        var command_buffer = try allocator.create(CommandBuffer);
+        command_buffer.* = .{
             .device = device,
             .mtl_command_buffer = mtl_command_buffer.retain(),
+            .reference_tracker = reference_tracker,
         };
-        return cmd_buffer;
+        return command_buffer;
     }
 
     pub fn deinit(command_buffer: *CommandBuffer) void {
-        command_buffer.referenced_buffers.deinit(allocator);
-        command_buffer.referenced_upload_pages.deinit(allocator);
+        // reference_tracker lifetime is managed externally
         command_buffer.mtl_command_buffer.release();
         allocator.destroy(command_buffer);
     }
@@ -1326,7 +1346,7 @@ pub const CommandBuffer = struct {
             std.debug.assert(size <= upload_page_size); // TODO - support large uploads
             const mtl_buffer = try streaming_manager.acquire();
 
-            try command_buffer.referenced_upload_pages.append(allocator, mtl_buffer);
+            try command_buffer.reference_tracker.referenceUploadPage(mtl_buffer);
             command_buffer.upload_buffer = mtl_buffer;
             command_buffer.upload_map = @ptrCast(mtl_buffer.contents());
             command_buffer.next_offset = 0;
@@ -1342,11 +1362,89 @@ pub const CommandBuffer = struct {
     }
 };
 
+pub const ReferenceTracker = struct {
+    device: *Device,
+    fence_value: u64 = 0,
+    buffers: std.ArrayListUnmanaged(*Buffer) = .{},
+    bind_groups: std.ArrayListUnmanaged(*BindGroup) = .{},
+    upload_pages: std.ArrayListUnmanaged(*mtl.Buffer) = .{},
+
+    pub fn init(device: *Device) !*ReferenceTracker {
+        var tracker = try allocator.create(ReferenceTracker);
+        tracker.* = .{
+            .device = device,
+        };
+        return tracker;
+    }
+
+    pub fn deinit(tracker: *ReferenceTracker) void {
+        const device = tracker.device;
+
+        for (tracker.buffers.items) |buffer| {
+            buffer.gpu_count -= 1;
+            buffer.manager.release();
+        }
+
+        for (tracker.bind_groups.items) |group| {
+            for (group.entries) |entry| {
+                switch (entry.kind) {
+                    .buffer => entry.buffer.?.gpu_count -= 1,
+                    else => {},
+                }
+            }
+
+            group.manager.release();
+        }
+
+        for (tracker.upload_pages.items) |d3d_resource| {
+            device.streaming_manager.release(d3d_resource);
+        }
+
+        tracker.buffers.deinit(allocator);
+        tracker.bind_groups.deinit(allocator);
+        tracker.upload_pages.deinit(allocator);
+        allocator.destroy(tracker);
+    }
+
+    pub fn referenceBuffer(tracker: *ReferenceTracker, buffer: *Buffer) !void {
+        buffer.manager.reference();
+        try tracker.buffers.append(allocator, buffer);
+    }
+
+    pub fn referenceBindGroup(tracker: *ReferenceTracker, group: *BindGroup) !void {
+        group.manager.reference();
+        try tracker.bind_groups.append(allocator, group);
+    }
+
+    pub fn referenceUploadPage(tracker: *ReferenceTracker, upload_page: *mtl.Buffer) !void {
+        try tracker.upload_pages.append(allocator, upload_page);
+    }
+
+    pub fn submit(tracker: *ReferenceTracker, queue: *Queue) !void {
+        tracker.fence_value = queue.fence_value;
+
+        for (tracker.buffers.items) |buffer| {
+            buffer.gpu_count += 1;
+        }
+
+        for (tracker.bind_groups.items) |group| {
+            for (group.entries) |entry| {
+                switch (entry.kind) {
+                    .buffer => entry.buffer.?.gpu_count += 1,
+                    else => {},
+                }
+            }
+        }
+
+        try tracker.device.reference_trackers.append(allocator, tracker);
+    }
+};
+
 pub const CommandEncoder = struct {
     manager: utils.Manager(CommandEncoder) = .{},
     device: *Device,
     command_buffer: *CommandBuffer,
-    referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
+    reference_tracker: *ReferenceTracker,
     mtl_encoder: ?*mtl.BlitCommandEncoder = null,
 
     pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
@@ -1359,7 +1457,7 @@ pub const CommandEncoder = struct {
         encoder.* = .{
             .device = device,
             .command_buffer = command_buffer,
-            .referenced_buffers = &command_buffer.referenced_buffers,
+            .reference_tracker = command_buffer.reference_tracker,
         };
         return encoder;
     }
@@ -1390,8 +1488,8 @@ pub const CommandEncoder = struct {
     ) !void {
         const mtl_encoder = try encoder.getBlitEncoder();
 
-        try encoder.referenced_buffers.append(allocator, source);
-        try encoder.referenced_buffers.append(allocator, destination);
+        try encoder.reference_tracker.referenceBuffer(source);
+        try encoder.reference_tracker.referenceBuffer(destination);
 
         mtl_encoder.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
             source.mtl_buffer,
@@ -1409,21 +1507,20 @@ pub const CommandEncoder = struct {
         copy_size: *const dgpu.Extent3D,
     ) !void {
         const mtl_encoder = try encoder.getBlitEncoder();
+        const source_buffer: *Buffer = @ptrCast(@alignCast(source.buffer));
+        const destination_texture: *Texture = @ptrCast(@alignCast(destination.texture));
 
-        const buffer: *Buffer = @ptrCast(@alignCast(source.buffer));
-        const texture: *Texture = @ptrCast(@alignCast(destination.texture));
-
-        try encoder.referenced_buffers.append(allocator, buffer);
+        try encoder.reference_tracker.referenceBuffer(source_buffer);
 
         // TODO - test 3D/array issues
 
         mtl_encoder.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
-            buffer.mtl_buffer,
+            source_buffer.mtl_buffer,
             source.layout.offset,
             source.layout.bytes_per_row,
             source.layout.bytes_per_row * source.layout.rows_per_image,
             mtl.Size.init(copy_size.width, copy_size.height, copy_size.depth_or_array_layers),
-            texture.mtl_texture,
+            destination_texture.mtl_texture,
             destination.origin.z,
             destination.mip_level,
             mtl.Origin.init(destination.origin.x, destination.origin.y, destination.origin.z),
@@ -1437,7 +1534,6 @@ pub const CommandEncoder = struct {
         copy_size: *const dgpu.Extent3D,
     ) !void {
         const mtl_encoder = try encoder.getBlitEncoder();
-
         const source_texture: *Texture = @ptrCast(@alignCast(source.texture));
         const destination_texture: *Texture = @ptrCast(@alignCast(destination.texture));
 
@@ -1478,6 +1574,8 @@ pub const CommandEncoder = struct {
         const stream = try encoder.command_buffer.upload(size);
         @memcpy(stream.map[0..size], data[0..size]);
 
+        try encoder.reference_tracker.referenceBuffer(buffer);
+
         mtl_encoder.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
             stream.buffer,
             stream.offset,
@@ -1485,8 +1583,6 @@ pub const CommandEncoder = struct {
             offset,
             size,
         );
-
-        try encoder.referenced_buffers.append(allocator, buffer);
     }
 
     // Internal
@@ -1551,17 +1647,17 @@ pub const ComputePassEncoder = struct {
     manager: utils.Manager(ComputePassEncoder) = .{},
     mtl_encoder: *mtl.ComputeCommandEncoder,
     lengths_buffer: LengthsBuffer,
-    referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
+    reference_tracker: *ReferenceTracker,
 
     pipeline: ?*ComputePipeline = null,
     threadgroup_size: mtl.Size = undefined,
     bindings: *BindingTable = undefined,
 
-    pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         const pool = objc.autoreleasePoolPush();
         defer objc.autoreleasePoolPop(pool);
 
-        const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
+        const mtl_command_buffer = cmd_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.ComputePassDescriptor.new();
         defer mtl_desc.release();
@@ -1575,14 +1671,14 @@ pub const ComputePassEncoder = struct {
             mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
         }
 
-        const lengths_buffer = try LengthsBuffer.init(command_encoder.device);
+        const lengths_buffer = try LengthsBuffer.init(cmd_encoder.device);
         mtl_encoder.setBuffer_offset_atIndex(lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
 
         var encoder = try allocator.create(ComputePassEncoder);
         encoder.* = .{
             .mtl_encoder = mtl_encoder.retain(),
             .lengths_buffer = lengths_buffer,
-            .referenced_buffers = command_encoder.referenced_buffers,
+            .reference_tracker = cmd_encoder.reference_tracker,
         };
         return encoder;
     }
@@ -1614,6 +1710,8 @@ pub const ComputePassEncoder = struct {
 
         const mtl_encoder = encoder.mtl_encoder;
 
+        try encoder.reference_tracker.referenceBindGroup(group);
+
         for (group.entries) |entry| {
             // NOTE - this does not work yet for applications that expect bind groups to stay valid after pipeline
             // changes.  For that we will need to defer MSL compilation until layout is known.
@@ -1622,7 +1720,6 @@ pub const ComputePassEncoder = struct {
             if (encoder.bindings.get(key)) |slot| {
                 switch (entry.kind) {
                     .buffer => {
-                        try encoder.referenced_buffers.append(allocator, entry.buffer.?);
                         encoder.lengths_buffer.set(entry.binding, entry.size);
 
                         const offset = entry.offset + if (entry.dynamic_index) |i| dynamic_offsets.?[i] else 0;
@@ -1654,7 +1751,7 @@ pub const RenderPassEncoder = struct {
     mtl_encoder: *mtl.RenderCommandEncoder,
     vertex_lengths_buffer: LengthsBuffer,
     fragment_lengths_buffer: LengthsBuffer,
-    referenced_buffers: *std.ArrayListUnmanaged(*Buffer),
+    reference_tracker: *ReferenceTracker,
 
     pipeline: ?*RenderPipeline = null,
     vertex_bindings: *BindingTable = undefined,
@@ -1666,11 +1763,11 @@ pub const RenderPassEncoder = struct {
     index_buffer: *mtl.Buffer = undefined,
     index_buffer_offset: ns.UInteger = undefined,
 
-    pub fn init(command_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const pool = objc.autoreleasePoolPush();
         defer objc.autoreleasePoolPop(pool);
 
-        const mtl_command_buffer = command_encoder.command_buffer.mtl_command_buffer;
+        const mtl_command_buffer = cmd_encoder.command_buffer.mtl_command_buffer;
 
         var mtl_desc = mtl.RenderPassDescriptor.new();
         defer mtl_desc.release();
@@ -1741,8 +1838,8 @@ pub const RenderPassEncoder = struct {
             mtl_encoder.setLabel(ns.String.stringWithUTF8String(label));
         }
 
-        const vertex_lengths_buffer = try LengthsBuffer.init(command_encoder.device);
-        const fragment_lengths_buffer = try LengthsBuffer.init(command_encoder.device);
+        const vertex_lengths_buffer = try LengthsBuffer.init(cmd_encoder.device);
+        const fragment_lengths_buffer = try LengthsBuffer.init(cmd_encoder.device);
 
         mtl_encoder.setVertexBuffer_offset_atIndex(vertex_lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
         mtl_encoder.setFragmentBuffer_offset_atIndex(fragment_lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
@@ -1752,7 +1849,7 @@ pub const RenderPassEncoder = struct {
             .mtl_encoder = mtl_encoder.retain(),
             .vertex_lengths_buffer = vertex_lengths_buffer,
             .fragment_lengths_buffer = fragment_lengths_buffer,
-            .referenced_buffers = command_encoder.referenced_buffers,
+            .reference_tracker = cmd_encoder.reference_tracker,
         };
         return encoder;
     }
@@ -1802,13 +1899,14 @@ pub const RenderPassEncoder = struct {
         _ = dynamic_offset_count;
         const mtl_encoder = encoder.mtl_encoder;
 
+        try encoder.reference_tracker.referenceBindGroup(group);
+
         for (group.entries) |entry| {
             // NOTE - this does not work yet for applications that expect bind groups to stay valid after pipeline
             // changes.  For that we will need to defer MSL compilation until layout is known.
             const key = BindingPoint{ .group = group_index, .binding = entry.binding };
             switch (entry.kind) {
                 .buffer => {
-                    try encoder.referenced_buffers.append(allocator, entry.buffer.?);
                     const offset = entry.offset + if (entry.dynamic_index) |i| dynamic_offsets.?[i] else 0;
                     if (entry.visibility.vertex) {
                         if (encoder.vertex_bindings.get(key)) |slot| {
@@ -1852,6 +1950,8 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn setIndexBuffer(encoder: *RenderPassEncoder, buffer: *Buffer, format: dgpu.IndexFormat, offset: u64, size: u64) !void {
+        try encoder.reference_tracker.referenceBuffer(buffer);
+
         _ = size;
         encoder.index_type = conv.metalIndexType(format);
         encoder.index_element_size = conv.metalIndexElementSize(format);
@@ -1892,8 +1992,8 @@ pub const RenderPassEncoder = struct {
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
         _ = size;
         const mtl_encoder = encoder.mtl_encoder;
+        try encoder.reference_tracker.referenceBuffer(buffer);
 
-        try encoder.referenced_buffers.append(allocator, buffer);
         mtl_encoder.setVertexBuffer_offset_atIndex(buffer.mtl_buffer, offset, slot_vertex_buffers + slot);
     }
 
@@ -1935,9 +2035,6 @@ pub const Queue = struct {
     }
 
     pub fn deinit(queue: *Queue) void {
-        // TODO - avoid spin loop
-        while (queue.completed_value.load(.Acquire) < queue.fence_value) {}
-
         if (queue.command_encoder) |command_encoder| command_encoder.manager.release();
         queue.command_queue.release();
         allocator.destroy(queue);
@@ -1976,6 +2073,12 @@ pub const Queue = struct {
         try encoder.writeTexture(destination, data, data_size, data_layout, write_size);
     }
 
+    // Internal
+    pub fn waitUntil(queue: *Queue, fence_value: u64) void {
+        // TODO - avoid spin loop
+        while (queue.completed_value.load(.Acquire) < fence_value) {}
+    }
+
     // Private
     fn getCommandEncoder(queue: *Queue) !*CommandEncoder {
         if (queue.command_encoder) |command_encoder| return command_encoder;
@@ -1986,18 +2089,11 @@ pub const Queue = struct {
     }
 
     fn submitCommandBuffer(queue: *Queue, command_buffer: *CommandBuffer) !void {
-        const streaming_manager = &queue.device.streaming_manager;
         const mtl_command_buffer = command_buffer.mtl_command_buffer;
 
         queue.fence_value += 1;
 
-        for (command_buffer.referenced_buffers.items) |buffer| {
-            buffer.last_used_fence_value = queue.fence_value;
-        }
-
-        for (command_buffer.referenced_upload_pages.items) |mtl_buffer| {
-            try streaming_manager.enqueue(mtl_buffer, queue, queue.fence_value);
-        }
+        try command_buffer.reference_tracker.submit(queue);
 
         const ctx = CompletedContext{
             .queue = queue,
