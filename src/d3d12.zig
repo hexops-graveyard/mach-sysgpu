@@ -42,54 +42,10 @@ pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
     gpu_validation_enabled = options.gpu_validation_enabled;
 }
 
-const QueuedOperation = struct {
-    fence_value: u64,
-    payload: Payload,
-
-    pub const Payload = union(enum) {
-        release: *c.IUnknown,
-        map_callback: struct {
-            buffer: *Buffer,
-            callback: dgpu.Buffer.MapCallback,
-            userdata: ?*anyopaque,
-        },
-        free_command_allocator: *c.ID3D12CommandAllocator,
-        free_descriptor_block: struct {
-            heap: *DescriptorHeap,
-            allocation: DescriptorAllocation,
-        },
-        free_upload_page: *c.ID3D12Resource,
-    };
-
-    pub fn exec(op: QueuedOperation, device: *Device) void {
-        switch (op.payload) {
-            .release => |obj| {
-                _ = obj.lpVtbl.*.Release.?(obj);
-            },
-            .map_callback => |map_callback| {
-                map_callback.buffer.mapBeforeCallback() catch {
-                    map_callback.callback(.unknown, map_callback.userdata);
-                    return;
-                };
-                map_callback.callback(.success, map_callback.userdata);
-            },
-            .free_command_allocator => |command_allocator| {
-                device.command_manager.free_allocators.append(allocator, command_allocator) catch {
-                    std.debug.panic("OutOfMemory", .{});
-                };
-            },
-            .free_descriptor_block => |block| {
-                block.heap.free_blocks.append(allocator, block.allocation) catch {
-                    std.debug.panic("OutOfMemory", .{});
-                };
-            },
-            .free_upload_page => |buffer| {
-                device.streaming_manager.free_buffers.append(allocator, buffer) catch {
-                    std.debug.panic("OutOfMemory", .{});
-                };
-            },
-        }
-    }
+const MapCallback = struct {
+    buffer: *Buffer,
+    callback: dgpu.Buffer.MapCallback,
+    userdata: ?*anyopaque,
 };
 
 fn setDebugName(object: *c.ID3D12Object, opt_label: ?[*:0]const u8) void {
@@ -327,9 +283,8 @@ pub const Device = struct {
     dsv_heap: DescriptorHeap = undefined,
     command_manager: CommandManager = undefined,
     streaming_manager: StreamingManager = undefined,
-    queued_operations: std.ArrayListUnmanaged(QueuedOperation) = .{},
-    free_state_tracker_ids: std.ArrayListUnmanaged(u32),
-    next_state_tracker_id: u32 = 0,
+    reference_trackers: std.ArrayListUnmanaged(*ReferenceTracker) = .{},
+    map_callbacks: std.ArrayListUnmanaged(MapCallback) = .{},
 
     lost_cb: ?dgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
@@ -397,14 +352,11 @@ pub const Device = struct {
         const queue = try allocator.create(Queue);
         errdefer allocator.destroy(queue);
 
-        const free_state_tracker_ids = try std.ArrayListUnmanaged(u32).initCapacity(allocator, max_state_trackers);
-
         var device = try allocator.create(Device);
         device.* = .{
             .adapter = adapter,
             .d3d_device = d3d_device,
             .queue = queue,
-            .free_state_tracker_ids = free_state_tracker_ids,
         };
         // TODO - how to deal with errors?
         device.queue.* = try Queue.init(device);
@@ -449,8 +401,8 @@ pub const Device = struct {
         device.queue.waitUntil(device.queue.fence_value);
         device.processQueuedOperations();
 
-        device.free_state_tracker_ids.deinit(allocator);
-        device.queued_operations.deinit(allocator);
+        device.map_callbacks.deinit(allocator);
+        device.reference_trackers.deinit(allocator);
         device.streaming_manager.deinit();
         device.command_manager.deinit();
         device.dsv_heap.deinit();
@@ -521,26 +473,38 @@ pub const Device = struct {
     }
 
     // Internal
-    pub fn queueOperation(device: *Device, fence_value: u64, payload: QueuedOperation.Payload) void {
-        device.queued_operations.append(
-            allocator,
-            .{ .fence_value = fence_value, .payload = payload },
-        ) catch std.debug.panic("OutOfMemory", .{});
-    }
-
     pub fn processQueuedOperations(device: *Device) void {
-        const fence = device.queue.fence;
-        const completed_value = fence.lpVtbl.*.GetCompletedValue.?(fence);
+        // Reference trackers
+        {
+            const fence = device.queue.fence;
+            const completed_value = fence.lpVtbl.*.GetCompletedValue.?(fence);
 
-        var i: usize = 0;
-        while (i < device.queued_operations.items.len) {
-            const queued_operation = device.queued_operations.items[i];
+            var i: usize = 0;
+            while (i < device.reference_trackers.items.len) {
+                const reference_tracker = device.reference_trackers.items[i];
 
-            if (queued_operation.fence_value <= completed_value) {
-                queued_operation.exec(device);
-                _ = device.queued_operations.swapRemove(i);
-            } else {
-                i += 1;
+                if (reference_tracker.fence_value <= completed_value) {
+                    reference_tracker.deinit();
+                    _ = device.reference_trackers.swapRemove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+
+        // MapAsync
+        {
+            var i: usize = 0;
+            while (i < device.map_callbacks.items.len) {
+                const map_callback = device.map_callbacks.items[i];
+
+                if (map_callback.buffer.gpu_count == 0) {
+                    map_callback.buffer.executeMapAsync(map_callback);
+
+                    _ = device.map_callbacks.swapRemove(i);
+                } else {
+                    i += 1;
+                }
             }
         }
     }
@@ -589,7 +553,7 @@ pub const Device = struct {
             return error.CreateBufferFailed;
         }
 
-        return Resource.init(d3d_resource, read_state, initial_state);
+        return Resource.init(d3d_resource, read_state);
     }
 };
 
@@ -696,11 +660,10 @@ const DescriptorHeap = struct {
         return heap.free_blocks.pop();
     }
 
-    pub fn free(heap: *DescriptorHeap, allocation: DescriptorAllocation, fence_value: u64) void {
-        heap.device.queueOperation(
-            fence_value,
-            .{ .free_descriptor_block = .{ .heap = heap, .allocation = allocation } },
-        );
+    pub fn free(heap: *DescriptorHeap, allocation: DescriptorAllocation) void {
+        heap.free_blocks.append(allocator, allocation) catch {
+            std.debug.panic("OutOfMemory", .{});
+        };
     }
 
     pub fn cpuDescriptor(heap: *DescriptorHeap, index: u32) c.D3D12_CPU_DESCRIPTOR_HANDLE {
@@ -769,15 +732,10 @@ const CommandManager = struct {
         return command_allocator;
     }
 
-    pub fn destroyCommandAllocator(
-        manager: *CommandManager,
-        command_allocator: *c.ID3D12CommandAllocator,
-        fence_value: u64,
-    ) void {
-        manager.device.queueOperation(
-            fence_value,
-            .{ .free_command_allocator = command_allocator },
-        );
+    pub fn destroyCommandAllocator(manager: *CommandManager, command_allocator: *c.ID3D12CommandAllocator) void {
+        manager.free_allocators.append(allocator, command_allocator) catch {
+            std.debug.panic("OutOfMemory", .{});
+        };
     }
 
     pub fn createCommandList(
@@ -851,7 +809,7 @@ pub const StreamingManager = struct {
         // Create new buffer
         if (manager.free_buffers.items.len == 0) {
             var resource = try device.createD3dBuffer(.{ .map_write = true }, upload_page_size);
-            errdefer _ = resource.deinit(device, null);
+            errdefer _ = resource.deinit();
 
             setDebugName(@ptrCast(resource.d3d_resource), "upload");
             try manager.free_buffers.append(allocator, resource.d3d_resource);
@@ -861,13 +819,10 @@ pub const StreamingManager = struct {
         return manager.free_buffers.pop();
     }
 
-    pub fn release(manager: *StreamingManager, d3d_resource: *c.ID3D12Resource, fence_value: u64) void {
-        const device = manager.device;
-
-        device.queueOperation(
-            fence_value,
-            .{ .free_upload_page = @ptrCast(d3d_resource) },
-        );
+    pub fn release(manager: *StreamingManager, d3d_resource: *c.ID3D12Resource) void {
+        manager.free_buffers.append(allocator, d3d_resource) catch {
+            std.debug.panic("OutOfMemory", .{});
+        };
     }
 };
 
@@ -1022,39 +977,29 @@ pub const Resource = struct {
     // NOTE - this is a naive sync solution as a placeholder until render graphs are implemented
     d3d_resource: *c.ID3D12Resource,
     read_state: c.D3D12_RESOURCE_STATES,
-    current_state: [max_state_trackers]c.D3D12_RESOURCE_STATES,
 
     pub fn init(
         d3d_resource: *c.ID3D12Resource,
         read_state: c.D3D12_RESOURCE_STATES,
-        current_state: c.D3D12_RESOURCE_STATES,
     ) Resource {
         return .{
             .d3d_resource = d3d_resource,
             .read_state = read_state,
-            .current_state = [_]c.D3D12_RESOURCE_STATES{current_state} ** max_state_trackers,
         };
     }
 
-    pub fn deinit(resource: *Resource, device: *Device, opt_last_used_fence_value: ?u64) void {
-        if (opt_last_used_fence_value) |last_used_fence_value| {
-            device.queueOperation(
-                last_used_fence_value,
-                .{ .release = @ptrCast(resource.d3d_resource) },
-            );
-        } else {
-            const d3d_resource = resource.d3d_resource;
-            _ = d3d_resource.lpVtbl.*.Release.?(d3d_resource);
-        }
+    pub fn deinit(resource: *Resource) void {
+        const d3d_resource = resource.d3d_resource;
+        _ = d3d_resource.lpVtbl.*.Release.?(d3d_resource);
     }
 };
 
 pub const Buffer = struct {
     manager: utils.Manager(Buffer) = .{},
-    last_used_fence_value: u64 = 0,
     device: *Device,
     resource: Resource,
     stage_buffer: ?*Buffer,
+    gpu_count: u32 = 0,
     map: ?[*]u8,
     // TODO - packed buffer descriptor struct
     size: u64,
@@ -1064,7 +1009,7 @@ pub const Buffer = struct {
         var hr: c.HRESULT = undefined;
 
         var resource = try device.createD3dBuffer(desc.usage, desc.size);
-        errdefer resource.deinit(device, null);
+        errdefer resource.deinit();
 
         if (desc.label) |label|
             setDebugName(@ptrCast(resource.d3d_resource), label);
@@ -1106,7 +1051,7 @@ pub const Buffer = struct {
 
     pub fn deinit(buffer: *Buffer) void {
         if (buffer.stage_buffer) |stage_buffer| stage_buffer.manager.release();
-        buffer.resource.deinit(buffer.device, buffer.last_used_fence_value);
+        buffer.resource.deinit();
         allocator.destroy(buffer);
     }
 
@@ -1134,10 +1079,12 @@ pub const Buffer = struct {
         _ = offset;
         _ = mode;
 
-        buffer.device.queueOperation(
-            buffer.last_used_fence_value,
-            .{ .map_callback = .{ .buffer = buffer, .callback = callback, .userdata = userdata } },
-        );
+        const map_callback = MapCallback{ .buffer = buffer, .callback = callback, .userdata = userdata };
+        if (buffer.gpu_count == 0) {
+            buffer.executeMapAsync(map_callback);
+        } else {
+            try buffer.device.map_callbacks.append(allocator, map_callback);
+        }
     }
 
     pub fn setLabel(buffer: *Buffer, label: [*:0]const u8) void {
@@ -1158,23 +1105,25 @@ pub const Buffer = struct {
         map_resource.lpVtbl.*.Unmap.?(map_resource, 0, null);
     }
 
-    pub fn mapBeforeCallback(buffer: *Buffer) !void {
+    // Internal
+    pub fn executeMapAsync(buffer: *Buffer, map_callback: MapCallback) void {
         const d3d_resource = buffer.resource.d3d_resource;
         var hr: c.HRESULT = undefined;
 
         var map: ?*anyopaque = null;
         hr = d3d_resource.lpVtbl.*.Map.?(d3d_resource, 0, null, &map);
         if (hr != c.S_OK) {
-            return error.MapBufferBeforeCallbackFailed;
+            map_callback.callback(.unknown, map_callback.userdata);
+            return;
         }
 
         buffer.map = @ptrCast(map);
+        map_callback.callback(.success, map_callback.userdata);
     }
 };
 
 pub const Texture = struct {
     manager: utils.Manager(Texture) = .{},
-    last_used_fence_value: u64 = 0,
     device: *Device,
     resource: Resource,
     // TODO - packed texture descriptor struct
@@ -1236,7 +1185,7 @@ pub const Texture = struct {
         var texture = try allocator.create(Texture);
         texture.* = .{
             .device = device,
-            .resource = Resource.init(d3d_resource, read_state, initial_state),
+            .resource = Resource.init(d3d_resource, read_state),
             .usage = desc.usage,
             .dimension = desc.dimension,
             .size = desc.size,
@@ -1249,12 +1198,11 @@ pub const Texture = struct {
 
     pub fn initForSwapChain(device: *Device, desc: *const dgpu.SwapChain.Descriptor, d3d_resource: *c.ID3D12Resource) !*Texture {
         const read_state = c.D3D12_RESOURCE_STATE_PRESENT;
-        const initial_state = c.D3D12_RESOURCE_STATE_COMMON;
 
         var texture = try allocator.create(Texture);
         texture.* = .{
             .device = device,
-            .resource = Resource.init(d3d_resource, read_state, initial_state),
+            .resource = Resource.init(d3d_resource, read_state),
             .usage = desc.usage,
             .dimension = .dimension_2d,
             .size = .{ .width = desc.width, .height = desc.height, .depth_or_array_layers = 1 },
@@ -1266,7 +1214,7 @@ pub const Texture = struct {
     }
 
     pub fn deinit(texture: *Texture) void {
-        texture.resource.deinit(texture.device, texture.last_used_fence_value);
+        texture.resource.deinit();
         allocator.destroy(texture);
     }
 
@@ -1574,7 +1522,6 @@ pub const BindGroup = struct {
     };
 
     manager: utils.Manager(BindGroup) = .{},
-    last_used_fence_value: u64 = 0,
     device: *Device,
     general_allocation: ?DescriptorAllocation,
     general_table: ?c.D3D12_GPU_DESCRIPTOR_HANDLE,
@@ -1749,6 +1696,7 @@ pub const BindGroup = struct {
         for (0..desc.entry_count) |i| {
             const entry = desc.entries.?[i];
             const layout_entry = layout.getEntry(entry.binding) orelse return error.UnknownBinding;
+
             if (layout_entry.buffer.type != .undefined) {
                 const buffer: *Buffer = @ptrCast(@alignCast(entry.buffer.?));
                 const d3d_resource = buffer.resource.d3d_resource;
@@ -1774,7 +1722,7 @@ pub const BindGroup = struct {
                 texture.manager.reference();
 
                 try accesses.append(allocator, .{ .resource = &texture.resource, .uav = false });
-            } else if (layout_entry.storage_texture.access != .undefined) {
+            } else if (layout_entry.storage_texture.format != .undefined) {
                 const texture_view: *TextureView = @ptrCast(@alignCast(entry.texture_view.?));
                 const texture = texture_view.texture;
 
@@ -1802,9 +1750,9 @@ pub const BindGroup = struct {
 
     pub fn deinit(group: *BindGroup) void {
         if (group.general_allocation) |allocation|
-            group.device.general_heap.free(allocation, group.last_used_fence_value);
+            group.device.general_heap.free(allocation);
         if (group.sampler_allocation) |allocation|
-            group.device.sampler_heap.free(allocation, group.last_used_fence_value);
+            group.device.sampler_heap.free(allocation);
 
         for (group.buffers.items) |buffer| buffer.manager.release();
         for (group.textures.items) |texture| texture.manager.release();
@@ -2095,7 +2043,6 @@ pub const ShaderModule = struct {
 
 pub const ComputePipeline = struct {
     manager: utils.Manager(ComputePipeline) = .{},
-    last_used_fence_value: u64 = 0,
     device: *Device,
     d3d_pipeline: *c.ID3D12PipelineState,
     layout: *PipelineLayout,
@@ -2158,10 +2105,7 @@ pub const ComputePipeline = struct {
         const d3d_pipeline = pipeline.d3d_pipeline;
 
         pipeline.layout.manager.release();
-        pipeline.device.queueOperation(
-            pipeline.last_used_fence_value,
-            .{ .release = @ptrCast(d3d_pipeline) },
-        );
+        _ = d3d_pipeline.lpVtbl.*.Release.?(d3d_pipeline);
         allocator.destroy(pipeline);
     }
 
@@ -2172,7 +2116,6 @@ pub const ComputePipeline = struct {
 
 pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
-    last_used_fence_value: u64 = 0,
     device: *Device,
     d3d_pipeline: *c.ID3D12PipelineState,
     layout: *PipelineLayout,
@@ -2292,10 +2235,7 @@ pub const RenderPipeline = struct {
         const d3d_pipeline = pipeline.d3d_pipeline;
 
         pipeline.layout.manager.release();
-        pipeline.device.queueOperation(
-            pipeline.last_used_fence_value,
-            .{ .release = @ptrCast(d3d_pipeline) },
-        );
+        _ = d3d_pipeline.lpVtbl.*.Release.?(d3d_pipeline);
         allocator.destroy(pipeline);
     }
 
@@ -2315,7 +2255,7 @@ pub const CommandBuffer = struct {
     device: *Device,
     command_allocator: *c.ID3D12CommandAllocator,
     command_list: *c.ID3D12GraphicsCommandList,
-    reference_tracker: ReferenceTracker = .{},
+    reference_tracker: *ReferenceTracker,
     rtv_allocation: DescriptorAllocation = .{ .index = 0 },
     rtv_next_index: u32 = rtv_block_size,
     upload_buffer: ?*c.ID3D12Resource = null,
@@ -2324,7 +2264,10 @@ pub const CommandBuffer = struct {
 
     pub fn init(device: *Device) !*CommandBuffer {
         const command_allocator = try device.command_manager.createCommandAllocator();
+        errdefer device.command_manager.destroyCommandAllocator(command_allocator);
+
         const command_list = try device.command_manager.createCommandList(command_allocator);
+        errdefer device.command_manager.destroyCommandList(command_list);
 
         const heaps = [2]*c.ID3D12DescriptorHeap{ device.general_heap.d3d_heap, device.sampler_heap.d3d_heap };
         command_list.lpVtbl.*.SetDescriptorHeaps.?(
@@ -2333,17 +2276,23 @@ pub const CommandBuffer = struct {
             &heaps,
         );
 
+        const reference_tracker = try ReferenceTracker.init(device, command_allocator);
+        errdefer reference_tracker.deinit();
+
         var command_buffer = try allocator.create(CommandBuffer);
         command_buffer.* = .{
             .device = device,
             .command_allocator = command_allocator,
             .command_list = command_list,
+            .reference_tracker = reference_tracker,
         };
         return command_buffer;
     }
 
     pub fn deinit(command_buffer: *CommandBuffer) void {
-        command_buffer.reference_tracker.deinit();
+        // reference_tracker lifetime is managed externally
+        // command_allocator lifetime is managed externally
+        // command_list lifetime is managed externally
         allocator.destroy(command_buffer);
     }
 
@@ -2406,6 +2355,9 @@ pub const CommandBuffer = struct {
 };
 
 pub const ReferenceTracker = struct {
+    device: *Device,
+    command_allocator: *c.ID3D12CommandAllocator,
+    fence_value: u64 = 0,
     buffers: std.ArrayListUnmanaged(*Buffer) = .{},
     textures: std.ArrayListUnmanaged(*Texture) = .{},
     bind_groups: std.ArrayListUnmanaged(*BindGroup) = .{},
@@ -2415,7 +2367,54 @@ pub const ReferenceTracker = struct {
     dsv_descriptor_blocks: std.ArrayListUnmanaged(DescriptorAllocation) = .{},
     upload_pages: std.ArrayListUnmanaged(*c.ID3D12Resource) = .{},
 
+    pub fn init(device: *Device, command_allocator: *c.ID3D12CommandAllocator) !*ReferenceTracker {
+        var tracker = try allocator.create(ReferenceTracker);
+        tracker.* = .{
+            .device = device,
+            .command_allocator = command_allocator,
+        };
+        return tracker;
+    }
+
     pub fn deinit(tracker: *ReferenceTracker) void {
+        const device = tracker.device;
+
+        device.command_manager.destroyCommandAllocator(tracker.command_allocator);
+
+        for (tracker.buffers.items) |buffer| {
+            buffer.gpu_count -= 1;
+            buffer.manager.release();
+        }
+
+        for (tracker.textures.items) |texture| {
+            texture.manager.release();
+        }
+
+        for (tracker.bind_groups.items) |group| {
+            for (group.buffers.items) |buffer| buffer.gpu_count -= 1;
+            group.manager.release();
+        }
+
+        for (tracker.compute_pipelines.items) |pipeline| {
+            pipeline.manager.release();
+        }
+
+        for (tracker.render_pipelines.items) |pipeline| {
+            pipeline.manager.release();
+        }
+
+        for (tracker.rtv_descriptor_blocks.items) |block| {
+            device.rtv_heap.free(block);
+        }
+
+        for (tracker.dsv_descriptor_blocks.items) |block| {
+            device.dsv_heap.free(block);
+        }
+
+        for (tracker.upload_pages.items) |d3d_resource| {
+            device.streaming_manager.release(d3d_resource);
+        }
+
         tracker.buffers.deinit(allocator);
         tracker.textures.deinit(allocator);
         tracker.bind_groups.deinit(allocator);
@@ -2424,6 +2423,7 @@ pub const ReferenceTracker = struct {
         tracker.rtv_descriptor_blocks.deinit(allocator);
         tracker.dsv_descriptor_blocks.deinit(allocator);
         tracker.upload_pages.deinit(allocator);
+        allocator.destroy(tracker);
     }
 
     pub fn referenceBuffer(tracker: *ReferenceTracker, buffer: *Buffer) !void {
@@ -2463,47 +2463,18 @@ pub const ReferenceTracker = struct {
         try tracker.upload_pages.append(allocator, upload_page);
     }
 
-    pub fn submit(tracker: *ReferenceTracker, queue: *Queue) void {
-        const fence_value = queue.fence_value;
+    pub fn submit(tracker: *ReferenceTracker, queue: *Queue) !void {
+        tracker.fence_value = queue.fence_value;
 
         for (tracker.buffers.items) |buffer| {
-            buffer.last_used_fence_value = fence_value;
-            buffer.manager.release();
-        }
-
-        for (tracker.textures.items) |texture| {
-            texture.last_used_fence_value = fence_value;
-            texture.manager.release();
+            buffer.gpu_count += 1;
         }
 
         for (tracker.bind_groups.items) |group| {
-            group.last_used_fence_value = fence_value;
-            for (group.buffers.items) |buffer| buffer.last_used_fence_value = fence_value;
-            for (group.textures.items) |texture| texture.last_used_fence_value = fence_value;
-            group.manager.release();
+            for (group.buffers.items) |buffer| buffer.gpu_count += 1;
         }
 
-        for (tracker.compute_pipelines.items) |pipeline| {
-            pipeline.last_used_fence_value = fence_value;
-            pipeline.manager.release();
-        }
-
-        for (tracker.render_pipelines.items) |pipeline| {
-            pipeline.last_used_fence_value = fence_value;
-            pipeline.manager.release();
-        }
-
-        for (tracker.rtv_descriptor_blocks.items) |block| {
-            queue.device.rtv_heap.free(block, fence_value);
-        }
-
-        for (tracker.dsv_descriptor_blocks.items) |block| {
-            queue.device.dsv_heap.free(block, fence_value);
-        }
-
-        for (tracker.upload_pages.items) |d3d_resource| {
-            queue.device.streaming_manager.release(d3d_resource, fence_value);
-        }
+        try tracker.device.reference_trackers.append(allocator, tracker);
     }
 };
 
@@ -2524,7 +2495,7 @@ pub const CommandEncoder = struct {
         encoder.* = .{
             .device = device,
             .command_buffer = command_buffer,
-            .reference_tracker = &command_buffer.reference_tracker,
+            .reference_tracker = command_buffer.reference_tracker,
         };
         encoder.state_tracker.init(device);
         return encoder;
@@ -2777,65 +2748,29 @@ pub const CommandEncoder = struct {
 
 pub const StateTracker = struct {
     device: *Device = undefined,
-    written_set: std.AutoArrayHashMapUnmanaged(*Resource, void) = .{},
+    written_set: std.AutoArrayHashMapUnmanaged(*Resource, c.D3D12_RESOURCE_STATES) = .{},
     barriers: std.ArrayListUnmanaged(c.D3D12_RESOURCE_BARRIER) = .{},
-    id: u32 = undefined,
 
     pub fn init(tracker: *StateTracker, device: *Device) void {
-        if (device.free_state_tracker_ids.items.len == 0) {
-            if (device.next_state_tracker_id == max_state_trackers) {
-                std.debug.panic("Out of State Tracker IDs", .{});
-            }
-            device.free_state_tracker_ids.appendAssumeCapacity(device.next_state_tracker_id);
-            device.next_state_tracker_id += 1;
-        }
-
         tracker.device = device;
-        tracker.id = device.free_state_tracker_ids.pop();
     }
 
     pub fn deinit(tracker: *StateTracker) void {
-        tracker.device.free_state_tracker_ids.appendAssumeCapacity(tracker.id);
         tracker.written_set.deinit(allocator);
         tracker.barriers.deinit(allocator);
     }
 
     pub fn transition(tracker: *StateTracker, resource: *Resource, new_state: c.D3D12_RESOURCE_STATES) !void {
-        if (resource.current_state[tracker.id] == c.D3D12_RESOURCE_STATE_UNORDERED_ACCESS and
+        const current_state = tracker.written_set.get(resource) orelse resource.read_state;
+
+        if (current_state == c.D3D12_RESOURCE_STATE_UNORDERED_ACCESS and
             new_state == c.D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
         {
-            try tracker.barriers.append(allocator, .{
-                .Type = c.D3D12_RESOURCE_BARRIER_TYPE_UAV,
-                .Flags = c.D3D12_RESOURCE_BARRIER_FLAG_NONE,
-                .unnamed_0 = .{
-                    .UAV = .{
-                        .pResource = resource.d3d_resource,
-                    },
-                },
-            });
-            return;
+            try tracker.addUavBarrier(resource);
+        } else if (current_state != new_state) {
+            try tracker.written_set.put(allocator, resource, new_state);
+            try tracker.addTransitionBarrier(resource, current_state, new_state);
         }
-
-        if (resource.current_state[tracker.id] == new_state)
-            return;
-
-        if (new_state != resource.read_state) {
-            try tracker.written_set.put(allocator, resource, {});
-        }
-
-        try tracker.barriers.append(allocator, .{
-            .Type = c.D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
-            .Flags = c.D3D12_RESOURCE_BARRIER_FLAG_NONE,
-            .unnamed_0 = .{
-                .Transition = .{
-                    .pResource = resource.d3d_resource,
-                    .Subresource = c.D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
-                    .StateBefore = resource.current_state[tracker.id],
-                    .StateAfter = new_state,
-                },
-            },
-        });
-        resource.current_state[tracker.id] = new_state;
     }
 
     pub fn flush(tracker: *StateTracker, command_list: *c.ID3D12GraphicsCommandList) void {
@@ -2851,10 +2786,48 @@ pub const StateTracker = struct {
     }
 
     pub fn endPass(tracker: *StateTracker) !void {
-        for (tracker.written_set.keys()) |resource| {
-            try tracker.transition(resource, resource.read_state);
+        var it = tracker.written_set.iterator();
+        while (it.next()) |entry| {
+            const resource = entry.key_ptr.*;
+            const current_state = entry.value_ptr.*;
+
+            if (current_state != resource.read_state)
+                try tracker.addTransitionBarrier(resource, current_state, resource.read_state);
         }
+
         tracker.written_set.clearRetainingCapacity();
+    }
+
+    fn addUavBarrier(tracker: *StateTracker, resource: *Resource) !void {
+        try tracker.barriers.append(allocator, .{
+            .Type = c.D3D12_RESOURCE_BARRIER_TYPE_UAV,
+            .Flags = c.D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .unnamed_0 = .{
+                .UAV = .{
+                    .pResource = resource.d3d_resource,
+                },
+            },
+        });
+    }
+
+    fn addTransitionBarrier(
+        tracker: *StateTracker,
+        resource: *Resource,
+        state_before: c.D3D12_RESOURCE_STATES,
+        state_after: c.D3D12_RESOURCE_STATES,
+    ) !void {
+        try tracker.barriers.append(allocator, .{
+            .Type = c.D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            .Flags = c.D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            .unnamed_0 = .{
+                .Transition = .{
+                    .pResource = resource.d3d_resource,
+                    .Subresource = c.D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                    .StateBefore = state_before,
+                    .StateAfter = state_after,
+                },
+            },
+        });
     }
 };
 
@@ -3502,8 +3475,7 @@ pub const Queue = struct {
             defer command_buffer.manager.release();
 
             command_lists.appendAssumeCapacity(command_buffer.command_list);
-            command_buffer.reference_tracker.submit(queue);
-            command_manager.destroyCommandAllocator(command_buffer.command_allocator, queue.fence_value);
+            try command_buffer.reference_tracker.submit(queue);
 
             command_encoder.manager.release();
             queue.command_encoder = null;
@@ -3511,8 +3483,7 @@ pub const Queue = struct {
 
         for (command_buffers) |command_buffer| {
             command_lists.appendAssumeCapacity(command_buffer.command_list);
-            command_buffer.reference_tracker.submit(queue);
-            command_manager.destroyCommandAllocator(command_buffer.command_allocator, queue.fence_value);
+            try command_buffer.reference_tracker.submit(queue);
         }
 
         d3d_command_queue.lpVtbl.*.ExecuteCommandLists.?(
