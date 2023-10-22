@@ -2204,28 +2204,37 @@ fn emitFloatCast(spv: *SpirV, section: *Section, dest_type: Inst.Float.Type, cas
     const source_type = spv.air.getInst(cast.type);
     const dest_type_id = try spv.resolve(.{ .float_type = dest_type });
     const value_id = try spv.emitExpr(section, cast.value);
-    switch (dest_type) {
-        .f32, .f16 => switch (source_type) {
-            .float => try section.emit(.OpFConvert, .{
+
+    switch (source_type) {
+        .float => try section.emit(.OpFConvert, .{
+            .id_result_type = dest_type_id,
+            .id_result = id,
+            .float_value = value_id,
+        }),
+        .int => |int| switch (int.type) {
+            .u32 => try section.emit(.OpConvertUToF, .{
                 .id_result_type = dest_type_id,
                 .id_result = id,
-                .float_value = value_id,
+                .unsigned_value = value_id,
             }),
-            .int => |int| switch (int.type) {
-                .u32 => try section.emit(.OpConvertUToF, .{
-                    .id_result_type = dest_type_id,
-                    .id_result = id,
-                    .unsigned_value = value_id,
-                }),
-                .i32 => try section.emit(.OpConvertSToF, .{
-                    .id_result_type = dest_type_id,
-                    .id_result = id,
-                    .signed_value = value_id,
-                }),
-            },
-            else => unreachable,
+            .i32 => try section.emit(.OpConvertSToF, .{
+                .id_result_type = dest_type_id,
+                .id_result = id,
+                .signed_value = value_id,
+            }),
         },
+        .bool => {
+            try section.emit(.OpSelect, .{
+                .id_result_type = dest_type_id,
+                .id_result = id,
+                .condition = value_id,
+                .object_1 = try spv.resolve(.{ .float = .{ .type = dest_type, .value = 1 } }),
+                .object_2 = try spv.resolve(.{ .float = .{ .type = dest_type, .value = 0 } }),
+            });
+        },
+        else => unreachable,
     }
+
     return id;
 }
 

@@ -31,8 +31,7 @@ fn Printer(comptime Writer: type) type {
                     }
                 },
                 .@"struct" => {
-                    std.debug.assert(indent == 0);
-                    try self.printStruct(indent, index);
+                    try self.printStruct(0, index);
                     try self.printFieldEnd();
                 },
                 .@"fn" => {
@@ -57,6 +56,13 @@ fn Printer(comptime Writer: type) type {
                     try self.instBlockStart(index);
                     try self.printFieldInst(indent + 1, "lhs", bin.lhs);
                     try self.printFieldInst(indent + 1, "rhs", bin.rhs);
+                    try self.instBlockEnd(indent);
+                },
+                .unary_intrinsic => |un| {
+                    try self.instBlockStart(index);
+                    try self.printFieldInst(indent + 1, "expr", un.expr);
+                    try self.printFieldInst(indent + 1, "res_ty", un.result_type);
+                    try self.printFieldEnum(indent + 1, "op", un.op);
                     try self.instBlockEnd(indent);
                 },
                 .increase,
@@ -286,6 +292,9 @@ fn Printer(comptime Writer: type) type {
                         try self.instBlockEnd(indent);
                     },
                 }
+            } else {
+                try self.instStart(index);
+                try self.instEnd();
             }
         }
 
@@ -339,16 +348,30 @@ fn Printer(comptime Writer: type) type {
                     try self.printFieldAny(indent + 1, "value", "null");
                 } else {
                     const value = self.ir.getValue(Air.Inst.Vector.Value, value_idx);
-                    try self.printFieldName(indent + 1, "value");
-                    try self.listStart();
-                    for (0..@intFromEnum(vec.size)) |i| {
-                        if (value[i] == .none) continue;
-                        try self.printIndent(indent + 2);
-                        try self.printInst(indent + 2, value[i]);
-                        try self.printFieldEnd();
+                    switch (value) {
+                        .literal => |lit| {
+                            try self.printFieldName(indent + 1, "literal");
+                            try self.listStart();
+                            for (0..@intFromEnum(vec.size)) |i| {
+                                try self.printIndent(indent + 2);
+                                try self.printInst(indent + 2, lit[i]);
+                                try self.printFieldEnd();
+                            }
+                            try self.listEnd(indent + 1);
+                            try self.printFieldEnd();
+                        },
+                        .cast => |cast| {
+                            try self.printFieldName(indent + 1, "cast");
+                            try self.listStart();
+                            for (0..@intFromEnum(vec.size)) |i| {
+                                try self.printIndent(indent + 2);
+                                try self.printInst(indent + 2, cast.value[i]);
+                                try self.printFieldEnd();
+                            }
+                            try self.listEnd(indent + 1);
+                            try self.printFieldEnd();
+                        },
                     }
-                    try self.listEnd(indent + 1);
-                    try self.printFieldEnd();
                 }
             }
             try self.instBlockEnd(indent);
@@ -359,11 +382,10 @@ fn Printer(comptime Writer: type) type {
             try self.instBlockStart(index);
             try self.printFieldInst(indent + 1, "type", mat.elem_type);
             if (mat.value) |value_idx| {
-                const value = self.ir.getValue(Air.Inst.Vector.Value, value_idx);
+                const value = self.ir.getValue(Air.Inst.Matrix.Value, value_idx);
                 try self.printFieldName(indent + 1, "value");
                 try self.listStart();
                 for (0..@intFromEnum(mat.cols) * @intFromEnum(mat.rows)) |i| {
-                    if (value[i] == .none) continue;
                     try self.printIndent(indent + 2);
                     try self.printInst(indent + 2, value[i]);
                     try self.printFieldEnd();
