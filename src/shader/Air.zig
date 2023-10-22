@@ -920,6 +920,7 @@ pub const Inst = union(enum) {
 
     pub const TextureSample = struct {
         kind: TextureType.Kind,
+        texture_type: InstIndex,
         texture: InstIndex,
         sampler: InstIndex,
         coords: InstIndex,
