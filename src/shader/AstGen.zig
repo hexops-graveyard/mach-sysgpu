@@ -3373,6 +3373,7 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
     };
     return astgen.addInst(.{ .texture_sample = .{
         .kind = a1_inst.texture_type.kind,
+        .texture_type = a1_res,
         .texture = a1,
         .sampler = a2,
         .coords = a3,
@@ -3453,6 +3454,7 @@ fn genTextureSampleLevelBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex)
     } });
     return astgen.addInst(.{ .texture_sample = .{
         .kind = a1_inst.texture_type.kind,
+        .texture_type = a1_res,
         .texture = a1,
         .sampler = a2,
         .coords = a3,

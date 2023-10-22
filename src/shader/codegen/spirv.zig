@@ -639,6 +639,7 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     const initializer = blk: {
         if (inst.addr_space == .uniform or inst.addr_space == .storage) break :blk null;
         if (type_inst == .array and type_inst.array.len == .none) break :blk null;
+        if (type_inst == .sampler_type or type_inst == .texture_type) break :blk null;
         break :blk try spv.resolve(.{ .null = type_id });
     };
 
@@ -794,6 +795,19 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
                 .elem_type = try spv.emitType(ptr.elem_type),
             },
         }),
+        .sampler_type => try spv.resolve(.sampler_type),
+        .texture_type => |texture| {
+            const sampled_type = try spv.emitType(texture.elem_type);
+            return spv.resolve(.{ .texture_type = .{
+                .sampled_type = sampled_type,
+                .dim = spirvDim(texture.kind),
+                .depth = spirvDepth(texture.kind),
+                .arrayed = spirvArrayed(texture.kind),
+                .multisampled = spirvMultisampled(texture.kind),
+                .sampled = spirvSampled(texture.kind),
+                .image_format = spirvImageFormat(texture.texel_format),
+            } });
+        },
         .atomic_type => |atomic| try spv.emitType(atomic.elem_type),
         .@"struct" => spv.struct_map.get(inst) orelse try spv.emitStruct(inst),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
@@ -1202,6 +1216,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
         .unary_intrinsic => |un| spv.emitUnaryIntrinsic(section, un),
         .binary_intrinsic => |bin| spv.emitBinaryIntrinsic(section, bin),
         .triple_intrinsic => |bin| spv.emitTripleIntrinsic(section, bin),
+        .texture_sample => |ts| spv.emitTextureSample(section, ts),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
 }
@@ -2015,6 +2030,33 @@ fn emitTripleIntrinsic(spv: *SpirV, section: *Section, bin: Inst.TripleIntrinsic
     return id;
 }
 
+fn emitTextureSample(spv: *SpirV, section: *Section, ts: Inst.TextureSample) !IdRef {
+    const image_id = spv.allocId();
+    const loaded_image_id = spv.allocId();
+    const texture = try spv.emitExpr(section, ts.texture);
+    const sampler = try spv.emitExpr(section, ts.sampler);
+    const coords = try spv.emitExpr(section, ts.coords);
+    const result_type = try spv.emitType(ts.result_type);
+    const texture_type = try spv.emitType(ts.texture_type);
+    const sampled_image_ty = try spv.resolve(.{ .sampled_image_type = texture_type });
+
+    try section.emit(.OpSampledImage, .{
+        .id_result_type = sampled_image_ty,
+        .id_result = image_id,
+        .image = texture,
+        .sampler = sampler,
+    });
+
+    try section.emit(.OpImageSampleImplicitLod, .{
+        .id_result_type = result_type,
+        .id_result = loaded_image_id,
+        .sampled_image = image_id,
+        .coordinate = coords,
+    });
+
+    return loaded_image_id;
+}
+
 fn importExtInst(spv: *SpirV) IdRef {
     if (spv.extended_instructions) |id| return id;
     spv.extended_instructions = spv.allocId();
@@ -2310,6 +2352,7 @@ fn emitArray(spv: *SpirV, section: *Section, inst: Inst.Array) !IdRef {
 const Key = union(enum) {
     void_type,
     bool_type,
+    sampler_type,
     int_type: Inst.Int.Type,
     float_type: Inst.Float.Type,
     vector_type: VectorType,
@@ -2317,6 +2360,8 @@ const Key = union(enum) {
     array_type: ArrayType,
     ptr_type: PointerType,
     fn_type: FunctionType,
+    texture_type: TextureType,
+    sampled_image_type: IdRef,
     null: IdRef,
     bool: bool,
     int: Int,
@@ -2346,6 +2391,16 @@ const Key = union(enum) {
     const FunctionType = struct {
         return_type: IdRef,
         params_type: []const IdRef,
+    };
+
+    const TextureType = struct {
+        sampled_type: IdRef,
+        dim: spec.Dim,
+        depth: u2,
+        arrayed: u1,
+        multisampled: u1,
+        sampled: u2,
+        image_format: spec.ImageFormat,
     };
 
     const Int = struct {
@@ -2473,6 +2528,21 @@ pub fn resolve(spv: *SpirV, key: Key) !IdRef {
                 .constituents = vector.value,
             });
         },
+        .sampler_type => try spv.global_section.emit(.OpTypeSampler, .{ .id_result = id }),
+        .texture_type => |texture_type| try spv.global_section.emit(.OpTypeImage, .{
+            .id_result = id,
+            .sampled_type = texture_type.sampled_type,
+            .dim = texture_type.dim,
+            .depth = texture_type.depth,
+            .arrayed = texture_type.arrayed,
+            .ms = texture_type.multisampled,
+            .sampled = texture_type.sampled,
+            .image_format = texture_type.image_format,
+        }),
+        .sampled_image_type => |si| try spv.global_section.emit(.OpTypeSampledImage, .{
+            .id_result = id,
+            .image_type = si,
+        }),
     }
 
     try spv.type_value_map.put(spv.allocator, key, id);
@@ -2525,5 +2595,99 @@ fn storageClassFromAddrSpace(addr_space: Air.Inst.PointerType.AddressSpace) spec
         .workgroup => .Workgroup,
         .uniform => .Uniform,
         .storage => .StorageBuffer,
+    };
+}
+
+fn spirvDim(kind: Inst.TextureType.Kind) spec.Dim {
+    return switch (kind) {
+        .sampled_1d, .storage_1d => .@"1D",
+        .sampled_3d, .storage_3d => .@"3D",
+        .sampled_2d,
+        .sampled_2d_array,
+        .multisampled_2d,
+        .multisampled_depth_2d,
+        .storage_2d,
+        .storage_2d_array,
+        .depth_2d,
+        .depth_2d_array,
+        => .@"2D",
+        .sampled_cube,
+        .sampled_cube_array,
+        .depth_cube,
+        .depth_cube_array,
+        => .Cube,
+    };
+}
+
+fn spirvDepth(kind: Inst.TextureType.Kind) u1 {
+    return switch (kind) {
+        .depth_2d,
+        .depth_2d_array,
+        .depth_cube,
+        .depth_cube_array,
+        => 1,
+        else => 0,
+    };
+}
+
+fn spirvArrayed(kind: Inst.TextureType.Kind) u1 {
+    return switch (kind) {
+        .sampled_2d_array,
+        .sampled_cube_array,
+        .storage_2d_array,
+        .depth_2d_array,
+        .depth_cube_array,
+        => 1,
+        else => 0,
+    };
+}
+
+fn spirvMultisampled(kind: Inst.TextureType.Kind) u1 {
+    return switch (kind) {
+        .multisampled_2d, .multisampled_depth_2d => 1,
+        else => 0,
+    };
+}
+
+fn spirvSampled(kind: Inst.TextureType.Kind) u2 {
+    return switch (kind) {
+        .sampled_1d,
+        .sampled_2d,
+        .sampled_2d_array,
+        .sampled_3d,
+        .sampled_cube,
+        .sampled_cube_array,
+        .multisampled_2d,
+        .multisampled_depth_2d,
+        => 1,
+        .storage_1d,
+        .storage_2d,
+        .storage_2d_array,
+        .storage_3d,
+        => 2,
+        else => 0,
+    };
+}
+
+fn spirvImageFormat(texel_format: Inst.TextureType.TexelFormat) spec.ImageFormat {
+    return switch (texel_format) {
+        .none => .Unknown,
+        .rgba8unorm => .Rgba8,
+        .rgba8snorm => .Rgba8Snorm,
+        .rgba8uint => .Rgba8ui,
+        .rgba8sint => .Rgba8i,
+        .rgba16uint => .Rgba16ui,
+        .rgba16sint => .Rgba16i,
+        .rgba16float => .Rgba16f,
+        .r32uint => .R32ui,
+        .r32sint => .R32i,
+        .r32float => .R32f,
+        .rg32uint => .Rg32ui,
+        .rg32sint => .Rg32i,
+        .rg32float => .Rg32f,
+        .rgba32uint => .Rgba32ui,
+        .rgba32sint => .Rgba32i,
+        .rgba32float => .Rgba32f,
+        .bgra8unorm => .Unknown,
     };
 }
