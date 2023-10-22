@@ -1896,7 +1896,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .floor => return astgen.genGenericUnaryBuiltin(scope, node, .floor, &.{}, &.{ .f32, .f16 }, false, false),
             .fract => return astgen.genGenericUnaryBuiltin(scope, node, .fract, &.{}, &.{ .f32, .f16 }, false, false),
             .inverseSqrt => return astgen.genGenericUnaryBuiltin(scope, node, .inverse_sqrt, &.{}, &.{ .f32, .f16 }, false, false),
-            .length => return astgen.genGenericUnaryBuiltin(scope, node, .length, &.{}, &.{ .f32, .f16 }, true, true),
+            .length => return astgen.genGenericUnaryBuiltin(scope, node, .length, &.{}, &.{ .f32, .f16 }, false, true),
             .log => return astgen.genGenericUnaryBuiltin(scope, node, .log, &.{}, &.{ .f32, .f16 }, false, false),
             .log2 => return astgen.genGenericUnaryBuiltin(scope, node, .log2, &.{}, &.{ .f32, .f16 }, false, false),
             .quantizeToF16 => return astgen.genGenericUnaryBuiltin(scope, node, .quantize_to_F16, &.{}, &.{.f32}, false, false),
@@ -1997,25 +1997,22 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             const arg_node = arg_nodes[0];
             const expr = try astgen.genExpr(scope, arg_node);
             const expr_res = try astgen.resolve(expr);
+
+            switch (astgen.getInst(expr_res)) {
+                .bool, .float => {},
+                .int => |int| if (int.type == ty) return expr,
+                else => {
+                    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+                    return error.AnalysisFail;
+                },
+            }
+
             const value = try astgen.addValue(Inst.Int.Value, .{
                 .cast = .{
                     .value = expr,
                     .type = expr_res,
                 },
             });
-
-            switch (astgen.getInst(expr_res)) {
-                .bool, .float => {},
-                .int => |int| {
-                    if (int.type == ty) {
-                        return expr;
-                    }
-                },
-                else => {
-                    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
-                    return error.AnalysisFail;
-                },
-            }
 
             return astgen.addInst(.{ .int = .{ .value = value, .type = ty } });
         },
@@ -2040,25 +2037,22 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             const arg_node = arg_nodes[0];
             const expr = try astgen.genExpr(scope, arg_node);
             const expr_res = try astgen.resolve(expr);
+
+            switch (astgen.getInst(expr_res)) {
+                .bool, .int => {},
+                .float => |float| if (float.type == ty) return expr,
+                else => {
+                    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
+                    return error.AnalysisFail;
+                },
+            }
+
             const value = try astgen.addValue(Inst.Float.Value, .{
                 .cast = .{
                     .value = expr,
                     .type = expr_res,
                 },
             });
-
-            switch (astgen.getInst(expr_res)) {
-                .bool, .int => {},
-                .float => |float| {
-                    if (float.type == ty) {
-                        return expr;
-                    }
-                },
-                else => {
-                    try astgen.errors.add(node_loc, "type mismatch", .{}, null);
-                    return error.AnalysisFail;
-                },
-            }
 
             return astgen.addInst(.{ .float = .{ .value = value, .type = ty } });
         },
@@ -4411,7 +4405,7 @@ const BuiltinFn = enum {
     unpack2x16snorm, // unimplemented
     unpack2x16unorm, // unimplemented
     unpack2x16float, // unimplemented
-    storageBarrier, // unimplemented
+    storageBarrier,
     workgroupBarrier,
     workgroupUniformLoad, // unimplemented
 };
