@@ -148,6 +148,48 @@ test "triangle" {
     try expectCodegen(triangle, "triangle.msl", .msl);
 }
 
+test "fragmentDeferredRendering" {
+    const fragmentDeferredRendering = @embedFile("test/fragmentDeferredRendering.wgsl");
+    try expectCodegen(fragmentDeferredRendering, "fragmentDeferredRendering.spv", .spirv);
+    try expectCodegen(fragmentDeferredRendering, "fragmentDeferredRendering.hlsl", .hlsl);
+    try expectCodegen(fragmentDeferredRendering, "triangle.msl", .msl);
+}
+
+test "fragmentGBuffersDebugView" {
+    const fragmentGBuffersDebugView = @embedFile("test/fragmentGBuffersDebugView.wgsl");
+    try expectCodegen(fragmentGBuffersDebugView, "fragmentGBuffersDebugView.spv", .spirv);
+    try expectCodegen(fragmentGBuffersDebugView, "fragmentGBuffersDebugView.hlsl", .hlsl);
+    try expectCodegen(fragmentGBuffersDebugView, "triangle.msl", .msl);
+}
+
+test "fragmentWriteGBuffers" {
+    const fragmentWriteGBuffers = @embedFile("test/fragmentWriteGBuffers.wgsl");
+    try expectCodegen(fragmentWriteGBuffers, "fragmentWriteGBuffers.spv", .spirv);
+    try expectCodegen(fragmentWriteGBuffers, "fragmentWriteGBuffers.hlsl", .hlsl);
+    try expectCodegen(fragmentWriteGBuffers, "triangle.msl", .msl);
+}
+
+test "lightUpdate" {
+    const lightUpdate = @embedFile("test/lightUpdate.wgsl");
+    try expectCodegen(lightUpdate, "lightUpdate.spv", .spirv);
+    try expectCodegen(lightUpdate, "lightUpdate.hlsl", .hlsl);
+    try expectCodegen(lightUpdate, "triangle.msl", .msl);
+}
+
+test "vertexTextureQuad" {
+    const vertexTextureQuad = @embedFile("test/vertexTextureQuad.wgsl");
+    try expectCodegen(vertexTextureQuad, "vertexTextureQuad.spv", .spirv);
+    try expectCodegen(vertexTextureQuad, "vertexTextureQuad.hlsl", .hlsl);
+    try expectCodegen(vertexTextureQuad, "triangle.msl", .msl);
+}
+
+test "vertexWriteGBuffers" {
+    const vertexWriteGBuffers = @embedFile("test/vertexWriteGBuffers.wgsl");
+    try expectCodegen(vertexWriteGBuffers, "vertexWriteGBuffers.spv", .spirv);
+    try expectCodegen(vertexWriteGBuffers, "vertexWriteGBuffers.hlsl", .hlsl);
+    try expectCodegen(vertexWriteGBuffers, "triangle.msl", .msl);
+}
+
 fn expectCodegen(source: [:0]const u8, comptime file_name: []const u8, lang: CodeGen.Language) !void {
     var errors = try ErrorList.init(allocator);
     defer errors.deinit();

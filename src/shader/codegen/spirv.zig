@@ -41,6 +41,7 @@ fragment_stage: ?FragmentStage = null,
 store_return: StoreReturn = .none,
 loop_merge_label: ?IdRef = null,
 loop_continue_label: ?IdRef = null,
+discard_branch: ?IdRef = null,
 branched: std.AutoHashMapUnmanaged(RefIndex, void) = .{},
 current_block: RefIndex,
 
@@ -120,7 +121,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (spv.air.getInst(inst_idx)) {
             .@"fn" => _ = try spv.emitFn(inst_idx),
-            .@"const" => _ = try spv.emitConst(inst_idx),
+            .@"const" => _ = try spv.emitConst(&spv.global_section, inst_idx),
             .@"var" => _ = try spv.emitVarProto(&spv.global_section, inst_idx),
             .@"struct" => _ = try spv.emitStruct(inst_idx),
             else => unreachable,
@@ -454,6 +455,13 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
 
     if (body != .none) {
         try spv.emitBlock(&section, body);
+
+        if (spv.discard_branch) |discard_branch| {
+            try section.emit(.OpLabel, .{ .id_result = discard_branch });
+            try section.emit(.OpKill, {});
+            spv.discard_branch = null;
+        }
+
         const statements = spv.air.refToList(body);
         if (spv.air.getInst(statements[statements.len - 1]) != .@"return") {
             try spv.emitReturn(&section, .none);
@@ -521,6 +529,7 @@ fn emitFnVars(spv: *SpirV, section: *Section, statements: RefIndex) !void {
     for (list) |statement_idx| {
         switch (spv.air.getInst(statement_idx)) {
             .@"var" => _ = try spv.emitVarProto(section, statement_idx),
+            .@"const" => try spv.emitFnConstProto(section, statement_idx),
             .block => |block| try spv.emitFnVars(section, block),
             .@"if" => {
                 var if_idx = statement_idx;
@@ -721,6 +730,33 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     return id;
 }
 
+fn emitFnConstProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !void {
+    const inst = spv.air.getInst(inst_idx).@"const";
+    const id = spv.allocId();
+    try spv.debugName(id, spv.air.getStr(inst.name));
+
+    const type_id = try spv.emitType(inst.type);
+    const ptr_type_id = try spv.resolve(.{ .ptr_type = .{
+        .elem_type = type_id,
+        .storage_class = .Function,
+    } });
+
+    try section.emit(.OpVariable, .{
+        .id_result_type = ptr_type_id,
+        .id_result = id,
+        .storage_class = .Function,
+        .initializer = null,
+    });
+
+    try spv.decl_map.put(spv.allocator, inst_idx, .{
+        .id = id,
+        .type_id = type_id,
+        .is_ptr = true,
+        .storage_class = .Function,
+        .faked_struct = false,
+    });
+}
+
 fn decorateStruct(spv: *SpirV, inst: InstIndex) !void {
     const id = try spv.emitType(inst);
     var offset: u32 = 0;
@@ -804,11 +840,11 @@ fn getSize(spv: *SpirV, inst: InstIndex) u8 {
     };
 }
 
-fn emitConst(spv: *SpirV, inst_idx: InstIndex) !IdRef {
+fn emitConst(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     if (spv.decl_map.get(inst_idx)) |decl| return decl.id;
 
     const inst = spv.air.getInst(inst_idx).@"const";
-    const id = try spv.emitExpr(&spv.global_section, inst.expr);
+    const id = try spv.emitExpr(section, inst.expr);
     const type_id = try spv.emitType(inst.type);
     try spv.debugName(id, spv.air.getStr(inst.name));
 
@@ -816,7 +852,7 @@ fn emitConst(spv: *SpirV, inst_idx: InstIndex) !IdRef {
         .id = id,
         .type_id = type_id,
         .is_ptr = false,
-        .storage_class = .Generic,
+        .storage_class = .Function,
         .faked_struct = false,
     });
     return id;
@@ -908,7 +944,7 @@ fn emitStruct(spv: *SpirV, inst_idx: InstIndex) !IdRef {
 
 fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutOfMemory}!void {
     switch (spv.air.getInst(inst_idx)) {
-        .@"var" => |@"var"| {
+        inline .@"var", .@"const" => |@"var"| {
             const var_id = spv.decl_map.get(inst_idx).?.id;
             if (@"var".expr != .none) {
                 try section.emit(.OpStore, .{
@@ -961,6 +997,7 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutO
         .block => |block| if (block != .none) try spv.emitBlock(section, block),
         .nil_intrinsic => |ni| try spv.emitNilIntrinsic(section, ni),
         .texture_store => |ts| try spv.emitTextureStore(section, ts),
+        .discard => try spv.emitDiscard(section),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst_idx))}),
     }
 }
@@ -1248,19 +1285,6 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
             }
         },
         .index_access => |index_access| {
-            // if (spv.air.resolveConstExpr(index_access.index)) |const_expr| {
-            //     const composite = try spv.accessPtr(section, index_access.base);
-            //     const type_id = try spv.emitType(index_access.type);
-            //     const id = spv.allocId();
-            //     try section.emit(.OpCompositeExtract, .{
-            //         .id_result_type = type_id,
-            //         .id_result = id,
-            //         .composite = composite.id,
-            //         .indexes = &[_]u32{@intCast(const_expr.int)},
-            //     });
-            //     return id;
-            // }
-
             const ia = try spv.emitIndexAccess(section, index_access);
             const load_id = spv.allocId();
             try section.emit(.OpLoad, .{
@@ -1288,6 +1312,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
         .triple_intrinsic => |bin| spv.emitTripleIntrinsic(section, bin),
         .texture_sample => |ts| spv.emitTextureSample(section, ts),
         .texture_dimension => |td| spv.emitTextureDimension(section, td),
+        .texture_load => |tl| spv.emitTextureLoad(section, tl),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
 }
@@ -1337,7 +1362,7 @@ fn emitVarAccess(spv: *SpirV, section: *Section, inst: InstIndex) !PtrAccess {
 
 fn emitSwizzleAccess(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) !IdRef {
     if (spv.air.resolveConstExpr(inst.base)) |_| {
-        const swizzles = try spv.extractSwizzle(&spv.global_section, inst);
+        const swizzles = try spv.extractSwizzle(section, inst);
         defer spv.allocator.free(swizzles);
 
         if (inst.size == .one) {
@@ -1403,11 +1428,16 @@ fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess) !PtrA
         const index = try spv.emitExpr(section, inst.index);
 
         if (spv.air.getInst(inst.base) == .var_ref) {
-            if (spv.air.getInst(spv.air.getInst(spv.air.getInst(inst.base).var_ref).@"var".type) == .@"struct" and
-                base_ptr.type.storage_class == .StorageBuffer)
-            {
-                const uint0 = try spv.resolve(.{ .int = .{ .type = .u32, .value = 0 } });
-                break :blk &.{ uint0, index };
+            switch (spv.air.getInst(spv.air.getInst(inst.base).var_ref)) {
+                .@"var" => |vc| {
+                    if (spv.air.getInst(vc.type) == .@"struct" and
+                        base_ptr.type.storage_class == .StorageBuffer)
+                    {
+                        const uint0 = try spv.resolve(.{ .int = .{ .type = .u32, .value = 0 } });
+                        break :blk &.{ uint0, index };
+                    }
+                },
+                else => {},
             }
         }
 
@@ -2184,7 +2214,7 @@ fn emitTextureSample(spv: *SpirV, section: *Section, ts: Inst.TextureSample) !Id
     const result_type = try spv.emitType(ts.result_type);
     const texture_type = try spv.emitType(ts.texture_type);
     const sampled_image_ty = try spv.resolve(.{ .sampled_image_type = texture_type });
-    const extract_result = spv.air.getInst(ts.result_type) == .float;
+    const extract_result = spv.air.getInst(ts.result_type) != .vector;
     var final_result_type = result_type;
 
     try section.emit(.OpSampledImage, .{
@@ -2239,7 +2269,10 @@ fn emitTextureDimension(spv: *SpirV, section: *Section, ts: Inst.TextureDimensio
     try spv.capabilities.append(spv.allocator, .ImageQuery);
     const id = spv.allocId();
     const texture = try spv.emitExpr(section, ts.texture);
-    const level = try spv.emitExpr(section, ts.level);
+    const level = if (ts.level != .none)
+        try spv.emitExpr(section, ts.level)
+    else
+        try spv.resolve(.{ .int = .{ .type = .i32, .value = 0 } });
     const result_type = try spv.emitType(ts.result_type);
     try section.emit(.OpImageQuerySizeLod, .{
         .id_result_type = result_type,
@@ -2247,6 +2280,47 @@ fn emitTextureDimension(spv: *SpirV, section: *Section, ts: Inst.TextureDimensio
         .image = texture,
         .level_of_detail = level,
     });
+    return id;
+}
+
+fn emitTextureLoad(spv: *SpirV, section: *Section, ts: Inst.TextureLoad) !IdRef {
+    const id = spv.allocId();
+    const texture = try spv.emitExpr(section, ts.texture);
+    const level = try spv.emitExpr(section, ts.level);
+    const coords = try spv.emitExpr(section, ts.coords);
+    const result_type = try spv.emitType(ts.result_type);
+
+    const extract_result = spv.air.getInst(ts.result_type) != .vector;
+    var final_result_type = result_type;
+
+    if (extract_result) {
+        final_result_type = try spv.resolve(.{
+            .vector_type = .{
+                .elem_type = result_type,
+                .size = .four,
+            },
+        });
+    }
+
+    try section.emit(.OpImageFetch, .{
+        .id_result_type = final_result_type,
+        .id_result = id,
+        .image = texture,
+        .coordinate = coords,
+        .image_operands = .{ .Lod = .{ .id_ref = level } },
+    });
+
+    if (extract_result) {
+        const extract_id = spv.allocId();
+        try section.emit(.OpCompositeExtract, .{
+            .id_result_type = result_type,
+            .id_result = extract_id,
+            .composite = id,
+            .indexes = &.{0},
+        });
+        return extract_id;
+    }
+
     return id;
 }
 
@@ -2259,6 +2333,12 @@ fn emitTextureStore(spv: *SpirV, section: *Section, ts: Inst.TextureStore) !void
         .coordinate = coords,
         .texel = value,
     });
+}
+
+fn emitDiscard(spv: *SpirV, section: *Section) !void {
+    spv.discard_branch = spv.allocId();
+    try section.emit(.OpBranch, .{ .target_label = spv.discard_branch.? });
+    try section.emit(.OpLabel, .{ .id_result = spv.allocId() });
 }
 
 fn importExtInst(spv: *SpirV) IdRef {
