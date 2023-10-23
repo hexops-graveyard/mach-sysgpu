@@ -610,11 +610,16 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
 
             switch (inst.addr_space) {
                 .uniform => {
-                    try spv.annotations_section.emit(.OpMemberDecorate, .{
-                        .structure_type = struct_type_id,
-                        .member = 0,
-                        .decoration = .ColMajor,
-                    });
+                    const members = spv.air.refToList(spv.air.getInst(inst.type).@"struct".members);
+                    for (members, 0..) |member, i| {
+                        if (spv.air.getInst(spv.air.getInst(member).struct_member.type) == .matrix) {
+                            try spv.annotations_section.emit(.OpMemberDecorate, .{
+                                .structure_type = struct_type_id,
+                                .member = @intCast(i),
+                                .decoration = .ColMajor,
+                            });
+                        }
+                    }
 
                     try spv.emitStride(inst.type, struct_type_id);
                 },
@@ -665,7 +670,6 @@ fn decorateStruct(spv: *SpirV, inst: InstIndex) !void {
     const id = try spv.emitType(inst);
     var offset: u32 = 0;
     const members = spv.air.refToList(spv.air.getInst(inst).@"struct".members);
-    std.debug.print("\n\n", .{});
     for (members, 0..) |member, i| {
         const member_inst = spv.air.getInst(member).struct_member;
         switch (spv.air.getInst(member_inst.type)) {
@@ -797,7 +801,10 @@ fn emitType(spv: *SpirV, inst: InstIndex) error{OutOfMemory}!IdRef {
         }),
         .sampler_type => try spv.resolve(.sampler_type),
         .texture_type => |texture| {
-            const sampled_type = try spv.emitType(texture.elem_type);
+            const sampled_type = if (texture.elem_type != .none)
+                try spv.emitType(texture.elem_type)
+            else
+                try spv.resolve(.{ .float_type = .f32 });
             return spv.resolve(.{ .texture_type = .{
                 .sampled_type = sampled_type,
                 .dim = spirvDim(texture.kind),
@@ -1640,6 +1647,21 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
                     .vector = lhs,
                     .matrix = rhs,
                 }),
+                .vector => switch (spv.air.getInst(lhs_res.vector.elem_type)) {
+                    .int => try section.emit(.OpIMul, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .float => try section.emit(.OpFMul, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    else => unreachable,
+                },
                 else => unreachable,
             },
             .div => switch (rhs_res) {
@@ -1977,6 +1999,16 @@ fn emitBinaryIntrinsic(spv: *SpirV, section: *Section, bin: Inst.BinaryIntrinsic
         },
         .atan2 => 25,
         .distance => 67,
+        .dot => {
+            try section.emit(.OpDot, .{
+                .id_result = id,
+                .id_result_type = result_type,
+                .vector_1 = lhs,
+                .vector_2 = rhs,
+            });
+            return id;
+        },
+        .pow => 26,
         else => std.debug.panic("TODO: implement Binary Intrinsic {s}", .{@tagName(bin.op)}),
     };
 
