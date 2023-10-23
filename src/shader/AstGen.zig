@@ -1236,15 +1236,14 @@ fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_rhs = astgen.tree.nodeRHS(node);
     const name_loc = astgen.tree.declNameLoc(node).?;
-
+    const expr = try astgen.genExpr(scope, node_rhs);
     var var_type = InstIndex.none;
     if (node_lhs != .none) {
         var_type = try astgen.genType(scope, node_lhs);
+    } else {
+        var_type = try astgen.resolve(expr);
     }
-
-    const expr = try astgen.genExpr(scope, node_rhs);
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
-
     return astgen.addInst(.{
         .@"const" = .{
             .name = name,
@@ -3870,6 +3869,11 @@ fn genArray(astgen: *AstGen, scope: *Scope, node: NodeIndex, args: ?RefIndex) !I
     var len = InstIndex.none;
     if (len_node != .none) {
         len = try astgen.genExpr(scope, len_node);
+    } else if (args != null) {
+        len = try astgen.addInst(.{ .int = .{
+            .type = .u32,
+            .value = try astgen.addValue(Inst.Int.Value, .{ .literal = @intCast(astgen.refToList(args.?).len) }),
+        } });
     }
 
     return astgen.addInst(.{
