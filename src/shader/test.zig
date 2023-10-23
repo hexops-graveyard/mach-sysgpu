@@ -59,8 +59,7 @@ test "sprite2d" {
 
 test "two-cubes" {
     const two_cubes = @embedFile("test/two-cubes.wgsl");
-    // TODO
-    // try expectCodegen(two_cubes, "two-cubes.spv", .spirv);
+    try expectCodegen(two_cubes, "two-cubes.spv", .spirv);
     try expectCodegen(two_cubes, "two-cubes.hlsl", .hlsl);
     try expectCodegen(two_cubes, "two-cubes.msl", .msl);
 }
@@ -82,16 +81,14 @@ test "image-blur" {
 
 test "instanced-cube" {
     const instanced_cube = @embedFile("test/instanced-cube.wgsl");
-    // TODO
-    // try expectCodegen(instanced_cube, "instanced-cube.spv", .spirv);
+    try expectCodegen(instanced_cube, "instanced-cube.spv", .spirv);
     try expectCodegen(instanced_cube, "instanced-cube.hlsl", .hlsl);
     try expectCodegen(instanced_cube, "instanced-cube.msl", .msl);
 }
 
 test "map-async" {
     const map_async = @embedFile("test/map-async.wgsl");
-    // TODO
-    // try expectCodegen(map_async, "map-async.spv", .spirv);
+    try expectCodegen(map_async, "map-async.spv", .spirv);
     try expectCodegen(map_async, "map-async.hlsl", .hlsl);
     try expectCodegen(map_async, "map-async.msl", .msl);
 }
@@ -120,16 +117,14 @@ test "pixel-post-process-pixel-vert" {
 
 test "pixel-post-process-pixel-frag" {
     const pixel_post_process_pixel_frag = @embedFile("test/pixel-post-process-pixel-frag.wgsl");
-    // TODO
-    // try expectCodegen(pixel_post_process_pixel_frag, "pixel-post-process-pixel-frag.spv", .spirv);
+    try expectCodegen(pixel_post_process_pixel_frag, "pixel-post-process-pixel-frag.spv", .spirv);
     try expectCodegen(pixel_post_process_pixel_frag, "pixel-post-process-pixel-frag.hlsl", .hlsl);
     try expectCodegen(pixel_post_process_pixel_frag, "pixel-post-process-pixel-frag.msl", .msl);
 }
 
 test "pixel-post-process" {
     const pixel_post_process = @embedFile("test/pixel-post-process.wgsl");
-    // TODO
-    // try expectCodegen(pixel_post_process, "pixel-post-process.spv", .spirv);
+    try expectCodegen(pixel_post_process, "pixel-post-process.spv", .spirv);
     try expectCodegen(pixel_post_process, "pixel-post-process.hlsl", .hlsl);
     try expectCodegen(pixel_post_process, "pixel-post-process.msl", .msl);
 }
@@ -143,8 +138,7 @@ test "procedural-primitives" {
 
 test "rotating-cube" {
     const rotating_cube = @embedFile("test/rotating-cube.wgsl");
-    // TODO
-    // try expectCodegen(rotating_cube, "rotating-cube.spv", .spirv);
+    try expectCodegen(rotating_cube, "rotating-cube.spv", .spirv);
     try expectCodegen(rotating_cube, "rotating-cube.hlsl", .hlsl);
     try expectCodegen(rotating_cube, "rotating-cube.msl", .msl);
 }
