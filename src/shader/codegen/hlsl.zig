@@ -520,8 +520,6 @@ fn emitStatement(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         // .@"while" => |inst| try hlsl.emitWhile(inst),
         .@"for" => |inst| try hlsl.emitFor(inst),
         // .switch
-        // .increase
-        // .decrease
         .discard => try hlsl.emitDiscard(),
         // .@"break" => try hlsl.emitBreak(),
         .@"continue" => try hlsl.writeAll("continue;\n"),
@@ -654,8 +652,6 @@ fn exprType(hlsl: *Hlsl, inst_idx: InstIndex) InstIndex {
         .binary_intrinsic => |inst| inst.result_type,
         .triple_intrinsic => |inst| inst.result_type,
         .assign => |inst| inst.type,
-        .increase => |e| hlsl.exprType(e),
-        .decrease => |e| hlsl.exprType(e),
         .field_access => |inst| {
             const name = hlsl.air.getStr(inst.name);
             const base_type = hlsl.exprType(inst.base);
@@ -704,8 +700,6 @@ fn emitExpr(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .binary_intrinsic => |inst| try hlsl.emitBinaryIntrinsic(inst),
         .triple_intrinsic => |inst| try hlsl.emitTripleIntrinsic(inst),
         .assign => |inst| try hlsl.emitAssign(inst),
-        .increase => |inst| try hlsl.emitIncrease(inst),
-        .decrease => |inst| try hlsl.emitDecrease(inst),
         .field_access => |inst| try hlsl.emitFieldAccess(inst),
         .swizzle_access => |inst| try hlsl.emitSwizzleAccess(inst),
         .index_access => |inst| try hlsl.emitIndexAccess(inst),
@@ -1030,16 +1024,6 @@ fn emitAssign(hlsl: *Hlsl, inst: Inst.Assign) !void {
         .shr => ">>",
     }});
     try hlsl.emitExpr(inst.rhs);
-}
-
-fn emitIncrease(hlsl: *Hlsl, inst_index: InstIndex) !void {
-    try hlsl.emitExpr(inst_index);
-    try hlsl.writeAll("++");
-}
-
-fn emitDecrease(hlsl: *Hlsl, inst_index: InstIndex) !void {
-    try hlsl.emitExpr(inst_index);
-    try hlsl.writeAll("--");
 }
 
 fn emitFieldAccess(hlsl: *Hlsl, inst: Inst.FieldAccess) !void {

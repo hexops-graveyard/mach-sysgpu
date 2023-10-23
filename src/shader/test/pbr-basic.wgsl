@@ -70,7 +70,7 @@ fn G_SchlicksmithGGX(dotNL : f32, dotNV : f32, roughness : f32) -> f32 {
 // Fresnel function ----------------------------------------------------
 fn F_Schlick(cosTheta : f32, metallic : f32) -> vec3<f32> {
     var F0 : vec3<f32> = mix(vec3<f32>(0.04), material_color(), metallic);
-    var F : vec3<f32> = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+    var F : vec3<f32> = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cosTheta, 5.0);
     return F;
 }
 

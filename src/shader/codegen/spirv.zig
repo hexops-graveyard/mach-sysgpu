@@ -31,6 +31,7 @@ decl_map: std.AutoHashMapUnmanaged(InstIndex, Decl) = .{},
 /// Map Air Struct Instruction Index to IdRefs to prevent duplicated declarations
 struct_map: std.AutoHashMapUnmanaged(InstIndex, IdRef) = .{},
 decorated: std.AutoHashMapUnmanaged(IdRef, void) = .{},
+capabilities: std.ArrayListUnmanaged(spec.Capability) = .{},
 extended_instructions: ?IdRef = null,
 emit_debug_names: bool,
 next_result_id: Word = 1,
@@ -103,6 +104,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         spv.struct_map.deinit(allocator);
         spv.decorated.deinit(allocator);
         spv.branched.deinit(allocator);
+        spv.capabilities.deinit(allocator);
         if (spv.compute_stage) |stage| allocator.free(stage.interface);
         if (spv.vertex_stage) |stage| allocator.free(stage.interface);
         if (spv.fragment_stage) |stage| allocator.free(stage.interface);
@@ -167,6 +169,9 @@ fn emitModule(spv: *SpirV, section: *Section) !void {
     section.writeWords(header);
 
     try section.emit(.OpCapability, .{ .capability = .Shader });
+    for (spv.capabilities.items) |cap| {
+        try section.emit(.OpCapability, .{ .capability = cap });
+    }
     if (spv.air.extensions.f16) try section.emit(.OpCapability, .{ .capability = .Float16 });
     if (spv.extended_instructions) |id| try section.emit(
         .OpExtInstImport,
@@ -336,6 +341,8 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
             spv.store_return = .{ .single = return_var_id };
             try interface.append(return_var_id);
         }
+    } else {
+        spv.store_return = .none;
     }
 
     var params_type = std.ArrayList(IdRef).init(spv.allocator);
@@ -377,6 +384,15 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                             .built_in = spirvBuiltin(builtin),
                         } },
                     });
+
+                    if (builtin == .local_invocation_id) {
+                        try spv.annotations_section.emit(.OpDecorate, .{
+                            .target = param_id,
+                            .decoration = .{ .BuiltIn = .{
+                                .built_in = .LocalInvocationIndex,
+                            } },
+                        });
+                    }
                 }
 
                 if (param_inst.location) |location| {
@@ -647,6 +663,18 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
                             else => {},
                         }
                     } else {
+                        for (spv.air.refToList(spv.air.getInst(inst.type).@"struct".members)) |member| {
+                            const member_type = spv.air.getInst(member).struct_member.type;
+                            if (spv.air.getInst(member_type) == .array) {
+                                try spv.annotations_section.emit(.OpDecorate, .{
+                                    .target = try spv.emitType(member_type),
+                                    .decoration = .{ .ArrayStride = .{
+                                        .array_stride = spv.getStride(member_type, true),
+                                    } },
+                                });
+                            }
+                        }
+
                         try spv.emitStride(inst.type, type_id);
                     }
                 },
@@ -781,7 +809,16 @@ fn emitConst(spv: *SpirV, inst_idx: InstIndex) !IdRef {
 
     const inst = spv.air.getInst(inst_idx).@"const";
     const id = try spv.emitExpr(&spv.global_section, inst.expr);
+    const type_id = try spv.emitType(inst.type);
     try spv.debugName(id, spv.air.getStr(inst.name));
+
+    try spv.decl_map.put(spv.allocator, inst_idx, .{
+        .id = id,
+        .type_id = type_id,
+        .is_ptr = false,
+        .storage_class = .Generic,
+        .faked_struct = false,
+    });
     return id;
 }
 
@@ -922,6 +959,8 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutO
         .@"continue" => try spv.emitContinue(section),
         .assign => |assign| try spv.emitAssign(section, assign),
         .block => |block| if (block != .none) try spv.emitBlock(section, block),
+        .nil_intrinsic => |ni| try spv.emitNilIntrinsic(section, ni),
+        .texture_store => |ts| try spv.emitTextureStore(section, ts),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst_idx))}),
     }
 }
@@ -1248,6 +1287,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
         .binary_intrinsic => |bin| spv.emitBinaryIntrinsic(section, bin),
         .triple_intrinsic => |bin| spv.emitTripleIntrinsic(section, bin),
         .texture_sample => |ts| spv.emitTextureSample(section, ts),
+        .texture_dimension => |td| spv.emitTextureDimension(section, td),
         else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(spv.air.getInst(inst))}),
     };
 }
@@ -1341,13 +1381,14 @@ fn emitSwizzleAccess(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) !
 }
 
 fn extractSwizzle(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) ![]const IdRef {
+    const base = try spv.emitExpr(section, inst.base);
     var swizzles = try spv.allocator.alloc(IdRef, @intFromEnum(inst.size));
     for (swizzles, 0..) |*id, i| {
         id.* = spv.allocId();
         try section.emit(.OpCompositeExtract, .{
             .id_result_type = try spv.emitType(inst.type),
             .id_result = id.*,
-            .composite = try spv.emitExpr(section, inst.base),
+            .composite = base,
             .indexes = &.{@intFromEnum(inst.pattern[i])},
         });
     }
@@ -1856,23 +1897,58 @@ fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
                         .operand_2 = constructed_float_id,
                     });
                 },
-                .vector => try section.emit(.OpFSub, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                }),
+                .vector => |vec| switch (spv.air.getInst(vec.elem_type)) {
+                    .float => try section.emit(.OpFSub, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .int => try section.emit(.OpISub, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    else => unreachable,
+                },
+                else => unreachable,
+            },
+            .less_than => switch (rhs_res) {
+                .vector => |vec| switch (spv.air.getInst(vec.elem_type)) {
+                    .float => try section.emit(.OpFOrdLessThan, .{
+                        .id_result = id,
+                        .id_result_type = type_id,
+                        .operand_1 = lhs,
+                        .operand_2 = rhs,
+                    }),
+                    .int => |int| switch (int.type) {
+                        .u32 => try section.emit(.OpULessThan, .{
+                            .id_result = id,
+                            .id_result_type = type_id,
+                            .operand_1 = lhs,
+                            .operand_2 = rhs,
+                        }),
+                        .i32 => try section.emit(.OpSLessThan, .{
+                            .id_result = id,
+                            .id_result_type = type_id,
+                            .operand_1 = lhs,
+                            .operand_2 = rhs,
+                        }),
+                    },
+                    else => unreachable,
+                },
                 else => unreachable,
             },
             else => unreachable,
         },
         .matrix => switch (binary.op) {
             .mul => switch (rhs_res) {
-                .matrix => try section.emit(.OpFMul, .{
+                .matrix => try section.emit(.OpMatrixTimesMatrix, .{
                     .id_result = id,
                     .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
+                    .leftmatrix = lhs,
+                    .rightmatrix = rhs,
                 }),
                 .vector => try section.emit(.OpMatrixTimesVector, .{
                     .id_result = id,
@@ -1943,6 +2019,21 @@ fn emitUnary(spv: *SpirV, section: *Section, unary: Inst.Unary) !IdRef {
     }
 }
 
+fn emitNilIntrinsic(spv: *SpirV, section: *Section, intr: Inst.NilIntrinsic) !void {
+    switch (intr) {
+        .workgroup_barrier => {
+            const uint2 = try spv.resolve(.{ .int = .{ .type = .u32, .value = 2 } });
+            const uint264 = try spv.resolve(.{ .int = .{ .type = .u32, .value = 264 } });
+            try section.emit(.OpControlBarrier, .{
+                .execution = uint2,
+                .memory = uint2,
+                .semantics = uint264,
+            });
+        },
+        else => std.debug.panic("TODO: implement Nil Intrinsic {s}", .{@tagName(intr)}),
+    }
+}
+
 fn emitUnaryIntrinsic(spv: *SpirV, section: *Section, unary: Inst.UnaryIntrinsic) !IdRef {
     const id = spv.allocId();
     const expr = try spv.emitExpr(section, unary.expr);
@@ -1962,6 +2053,14 @@ fn emitUnaryIntrinsic(spv: *SpirV, section: *Section, unary: Inst.UnaryIntrinsic
             .float => 4,
             .int => 5,
             else => unreachable,
+        },
+        .all => {
+            try section.emit(.OpAll, .{
+                .id_result = id,
+                .id_result_type = result_type,
+                .vector = expr,
+            });
+            return id;
         },
         else => std.debug.panic("TODO: implement Unary Intrinsic {s}", .{@tagName(unary.op)}),
     };
@@ -2033,7 +2132,7 @@ fn emitTripleIntrinsic(spv: *SpirV, section: *Section, bin: Inst.TripleIntrinsic
     const id = spv.allocId();
     const a1 = try spv.emitExpr(section, bin.a1);
     const a2 = try spv.emitExpr(section, bin.a2);
-    const a3 = try spv.emitExpr(section, bin.a3);
+    var a3 = try spv.emitExpr(section, bin.a3);
     const result_type = try spv.emitType(bin.result_type);
     const result_type_inst = switch (spv.air.getInst(bin.result_type)) {
         .vector => |vec| spv.air.getInst(vec.elem_type),
@@ -2041,10 +2140,17 @@ fn emitTripleIntrinsic(spv: *SpirV, section: *Section, bin: Inst.TripleIntrinsic
     };
 
     const instruction: Word = switch (bin.op) {
-        .mix => switch (result_type_inst) {
-            .float => 46,
-            .int => unreachable, // TODO
-            else => unreachable,
+        .mix => blk: {
+            const value = try spv.allocator.alloc(IdRef, @intFromEnum(spv.air.getInst(bin.result_type).vector.size));
+            defer spv.allocator.free(value);
+            @memset(value, a3);
+            a3 = spv.allocId();
+            try section.emit(.OpCompositeConstruct, .{
+                .id_result_type = result_type,
+                .id_result = a3,
+                .constituents = value,
+            });
+            break :blk 46;
         },
         .clamp => switch (result_type_inst) {
             .float => 43,
@@ -2097,12 +2203,23 @@ fn emitTextureSample(spv: *SpirV, section: *Section, ts: Inst.TextureSample) !Id
         });
     }
 
-    try section.emit(.OpImageSampleImplicitLod, .{
-        .id_result_type = final_result_type,
-        .id_result = loaded_image_id,
-        .sampled_image = image_id,
-        .coordinate = coords,
-    });
+    if (ts.level != .none) {
+        const level = try spv.emitExpr(section, ts.level);
+        try section.emit(.OpImageSampleExplicitLod, .{
+            .id_result_type = final_result_type,
+            .id_result = loaded_image_id,
+            .sampled_image = image_id,
+            .coordinate = coords,
+            .image_operands = .{ .Lod = .{ .id_ref = level } },
+        });
+    } else {
+        try section.emit(.OpImageSampleImplicitLod, .{
+            .id_result_type = final_result_type,
+            .id_result = loaded_image_id,
+            .sampled_image = image_id,
+            .coordinate = coords,
+        });
+    }
 
     if (extract_result) {
         const extract_id = spv.allocId();
@@ -2116,6 +2233,32 @@ fn emitTextureSample(spv: *SpirV, section: *Section, ts: Inst.TextureSample) !Id
     }
 
     return loaded_image_id;
+}
+
+fn emitTextureDimension(spv: *SpirV, section: *Section, ts: Inst.TextureDimension) !IdRef {
+    try spv.capabilities.append(spv.allocator, .ImageQuery);
+    const id = spv.allocId();
+    const texture = try spv.emitExpr(section, ts.texture);
+    const level = try spv.emitExpr(section, ts.level);
+    const result_type = try spv.emitType(ts.result_type);
+    try section.emit(.OpImageQuerySizeLod, .{
+        .id_result_type = result_type,
+        .id_result = id,
+        .image = texture,
+        .level_of_detail = level,
+    });
+    return id;
+}
+
+fn emitTextureStore(spv: *SpirV, section: *Section, ts: Inst.TextureStore) !void {
+    const texture = try spv.emitExpr(section, ts.texture);
+    const coords = try spv.emitExpr(section, ts.coords);
+    const value = try spv.emitExpr(section, ts.value);
+    try section.emit(.OpImageWrite, .{
+        .image = texture,
+        .coordinate = coords,
+        .texel = value,
+    });
 }
 
 fn importExtInst(spv: *SpirV) IdRef {
@@ -2232,10 +2375,10 @@ fn emitIntCast(spv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast: I
     const value_id = try spv.emitExpr(section, cast.value);
     switch (dest_type) {
         .i32 => switch (source_type) {
-            .int => try section.emit(.OpUConvert, .{
+            .int => try section.emit(.OpBitcast, .{
                 .id_result_type = dest_type_id,
                 .id_result = id,
-                .unsigned_value = value_id,
+                .operand = value_id,
             }),
             .float => try section.emit(.OpConvertFToS, .{
                 .id_result_type = dest_type_id,
@@ -2245,10 +2388,10 @@ fn emitIntCast(spv: *SpirV, section: *Section, dest_type: Inst.Int.Type, cast: I
             else => unreachable,
         },
         .u32 => switch (source_type) {
-            .int => try section.emit(.OpSConvert, .{
+            .int => try section.emit(.OpBitcast, .{
                 .id_result_type = dest_type_id,
                 .id_result = id,
-                .signed_value = value_id,
+                .operand = value_id,
             }),
             .float => try section.emit(.OpConvertFToU, .{
                 .id_result_type = dest_type_id,

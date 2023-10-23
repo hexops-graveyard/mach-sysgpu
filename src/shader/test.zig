@@ -73,8 +73,7 @@ test "fullscreen-textured-quad" {
 
 test "image-blur" {
     const image_blur = @embedFile("test/image-blur.wgsl");
-    // TODO
-    // try expectCodegen(image_blur, "image-blur.spv", .spirv);
+    try expectCodegen(image_blur, "image-blur.spv", .spirv);
     try expectCodegen(image_blur, "image-blur.hlsl", .hlsl);
     try expectCodegen(image_blur, "image-blur.msl", .msl);
 }
@@ -95,8 +94,7 @@ test "map-async" {
 
 test "pbr-basic" {
     const pbr_basic = @embedFile("test/pbr-basic.wgsl");
-    // TODO
-    // try expectCodegen(pbr_basic, "pbr-basic.spv", .spirv);
+    try expectCodegen(pbr_basic, "pbr-basic.spv", .spirv);
     try expectCodegen(pbr_basic, "pbr-basic.hlsl", .hlsl);
     try expectCodegen(pbr_basic, "pbr-basic.msl", .msl);
 }

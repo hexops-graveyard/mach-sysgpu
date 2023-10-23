@@ -514,8 +514,6 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         // .@"while" => |inst| try msl.emitWhile(inst),
         .@"for" => |inst| try msl.emitFor(inst),
         // .switch
-        // .increase
-        // .decrease
         .discard => try msl.emitDiscard(),
         // .@"break" => try msl.emitBreak(),
         .@"continue" => try msl.writeAll("continue;\n"),
@@ -637,8 +635,6 @@ fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .binary_intrinsic => |inst| try msl.emitBinaryIntrinsic(inst),
         .triple_intrinsic => |inst| try msl.emitTripleIntrinsic(inst),
         .assign => |inst| try msl.emitAssign(inst),
-        .increase => |inst| try msl.emitIncrease(inst),
-        .decrease => |inst| try msl.emitDecrease(inst),
         .field_access => |inst| try msl.emitFieldAccess(inst),
         .swizzle_access => |inst| try msl.emitSwizzleAccess(inst),
         .index_access => |inst| try msl.emitIndexAccess(inst),
@@ -951,16 +947,6 @@ fn emitAssign(msl: *Msl, inst: Inst.Assign) !void {
         .shr => ">>",
     }});
     try msl.emitExpr(inst.rhs);
-}
-
-fn emitIncrease(msl: *Msl, inst_index: InstIndex) !void {
-    try msl.emitExpr(inst_index);
-    try msl.writeAll("++");
-}
-
-fn emitDecrease(msl: *Msl, inst_index: InstIndex) !void {
-    try msl.emitExpr(inst_index);
-    try msl.writeAll("--");
 }
 
 fn emitFieldAccess(msl: *Msl, inst: Inst.FieldAccess) !void {

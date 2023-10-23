@@ -834,8 +834,8 @@ fn genStatement(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .discard => try astgen.addInst(.discard),
         .@"break" => try astgen.addInst(.@"break"),
         .@"continue" => try astgen.addInst(.@"continue"),
-        .increase => try astgen.genIncreaseDecrease(scope, node, true),
-        .decrease => try astgen.genIncreaseDecrease(scope, node, false),
+        .increase => try astgen.genIncreaseDecrease(scope, node, .add),
+        .decrease => try astgen.genIncreaseDecrease(scope, node, .sub),
         .@"var" => blk: {
             const decl = try astgen.genVar(scope, node);
             scope.decls.putAssumeCapacity(node, decl);
@@ -985,8 +985,8 @@ fn genFor(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
     const update = switch (astgen.tree.nodeTag(extra.update)) {
         .phony_assign => try astgen.genPhonyAssign(for_scope, extra.update),
-        .increase => try astgen.genIncreaseDecrease(for_scope, extra.update, true),
-        .decrease => try astgen.genIncreaseDecrease(for_scope, extra.update, false),
+        .increase => try astgen.genIncreaseDecrease(for_scope, extra.update, .add),
+        .decrease => try astgen.genIncreaseDecrease(for_scope, extra.update, .sub),
         .compound_assign => try astgen.genCompoundAssign(for_scope, extra.update),
         .call => try astgen.genCall(for_scope, extra.update),
         else => unreachable,
@@ -1126,7 +1126,7 @@ fn genPhonyAssign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     return astgen.genExpr(scope, node_lhs);
 }
 
-fn genIncreaseDecrease(astgen: *AstGen, scope: *Scope, node: NodeIndex, increase: bool) !InstIndex {
+fn genIncreaseDecrease(astgen: *AstGen, scope: *Scope, node: NodeIndex, mod: Inst.Assign.Modifier) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
 
@@ -1142,7 +1142,17 @@ fn genIncreaseDecrease(astgen: *AstGen, scope: *Scope, node: NodeIndex, increase
         return error.AnalysisFail;
     }
 
-    return astgen.addInst(if (increase) .{ .increase = lhs } else .{ .decrease = lhs });
+    const rhs = try astgen.addInst(.{ .int = .{
+        .type = astgen.getInst(lhs_res).int.type,
+        .value = try astgen.addValue(Inst.Int.Value, .{ .literal = 1 }),
+    } });
+
+    return astgen.addInst(.{ .assign = .{
+        .mod = mod,
+        .type = lhs_res,
+        .lhs = lhs,
+        .rhs = rhs,
+    } });
 }
 
 fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
@@ -4153,8 +4163,6 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             .@"switch",
             .switch_case,
             .assign,
-            .increase,
-            .decrease,
             => unreachable,
         }
     }
@@ -4295,7 +4303,7 @@ const BuiltinFn = enum {
     log2,
     max,
     min,
-    mix, // unimplemented
+    mix,
     modf, // unimplemented
     normalize,
     pow, // unimplemented
