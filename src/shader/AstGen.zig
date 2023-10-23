@@ -1198,6 +1198,14 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             },
             else => {},
         }
+
+        if (expr != .none) {
+            const expr_res = try astgen.resolve(expr);
+            if (!try astgen.coerce(expr_res, var_type)) {
+                try astgen.errors.add(astgen.tree.nodeLoc(node_rhs), "type mismatch", .{}, null);
+                return error.AnalysisFail;
+            }
+        }
     } else {
         var_type = try astgen.resolve(expr);
     }
@@ -2081,18 +2089,51 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
                         }
                     },
                     .bool, .int, .float => {
+                        var cast_arg = false;
                         if (elem_type == .none) {
                             elem_type = arg_res;
                         } else if (!astgen.eql(arg_res, elem_type)) {
-                            cast = arg_res;
+                            cast_arg = true;
+                        }
+
+                        if (cast_arg) {
+                            switch (astgen.getInst(elem_type)) {
+                                .int => |int| {
+                                    const arg_val = try astgen.addValue(
+                                        Inst.Int.Value,
+                                        .{ .cast = .{ .type = arg_res, .value = arg } },
+                                    );
+                                    args[i] = try astgen.addInst(.{ .int = .{
+                                        .type = int.type,
+                                        .value = arg_val,
+                                    } });
+                                },
+                                .float => |float| {
+                                    const arg_val = try astgen.addValue(
+                                        Inst.Float.Value,
+                                        .{ .cast = .{ .type = arg_res, .value = arg } },
+                                    );
+                                    args[i] = try astgen.addInst(.{ .float = .{
+                                        .type = float.type,
+                                        .value = arg_val,
+                                    } });
+                                },
+                                .bool => {
+                                    args[i] = try astgen.addInst(.{ .bool = .{
+                                        .value = .{ .cast = .{ .type = arg_res, .value = arg } },
+                                    } });
+                                },
+                                else => unreachable,
+                            }
+                        } else {
+                            args[i] = arg;
                         }
 
                         if (arg_nodes.len == 1) {
-                            @memset(args[i + 1 .. @intFromEnum(size)], arg);
+                            @memset(args[i + 1 .. @intFromEnum(size)], args[i]);
                             capacity = 1;
                         }
 
-                        args[i] = arg;
                         capacity -= 1;
                     },
                     else => {
@@ -2109,7 +2150,10 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
             const value = try astgen.addValue(
                 Inst.Vector.Value,
-                if (cast == .none) .{ .literal = args } else .{ .cast = .{ .type = cast, .value = args } },
+                if (cast == .none)
+                    .{ .literal = args }
+                else
+                    .{ .cast = .{ .type = cast, .value = args } },
             );
 
             return astgen.addInst(.{

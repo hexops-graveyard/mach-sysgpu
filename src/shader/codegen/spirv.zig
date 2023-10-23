@@ -607,28 +607,48 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
                     .decoration = .{ .Offset = .{ .byte_offset = 0 } },
                 });
 
-                if (spv.air.getInst(inst.type) == .array) {
-                    const arr_ty = spv.air.getInst(inst.type).array;
-                    if (spv.air.getInst(arr_ty.elem_type) == .@"struct") {
-                        try spv.decorateStruct(arr_ty.elem_type);
-                    }
+                switch (spv.air.getInst(inst.type)) {
+                    .array => {
+                        const arr_ty = spv.air.getInst(inst.type).array;
+                        if (spv.air.getInst(arr_ty.elem_type) == .@"struct") {
+                            try spv.decorateStruct(arr_ty.elem_type);
+                        }
+                    },
+                    .matrix => {
+                        try spv.annotations_section.emit(.OpMemberDecorate, .{
+                            .structure_type = struct_type_id,
+                            .member = 0,
+                            .decoration = .ColMajor,
+                        });
+                    },
+                    else => {},
                 }
             }
 
             switch (inst.addr_space) {
                 .uniform => {
-                    const members = spv.air.refToList(spv.air.getInst(inst.type).@"struct".members);
-                    for (members, 0..) |member, i| {
-                        if (spv.air.getInst(spv.air.getInst(member).struct_member.type) == .matrix) {
-                            try spv.annotations_section.emit(.OpMemberDecorate, .{
+                    if (faked_struct) {
+                        switch (spv.air.getInst(inst.type)) {
+                            .matrix => try spv.annotations_section.emit(.OpMemberDecorate, .{
                                 .structure_type = struct_type_id,
-                                .member = @intCast(i),
-                                .decoration = .ColMajor,
-                            });
+                                .member = 0,
+                                .decoration = .{ .MatrixStride = .{
+                                    .matrix_stride = spv.getStride(inst.type, true),
+                                } },
+                            }),
+                            .array => {
+                                try spv.annotations_section.emit(.OpDecorate, .{
+                                    .target = type_id,
+                                    .decoration = .{ .ArrayStride = .{
+                                        .array_stride = spv.getStride(inst.type, true),
+                                    } },
+                                });
+                            },
+                            else => {},
                         }
+                    } else {
+                        try spv.emitStride(inst.type, type_id);
                     }
-
-                    try spv.emitStride(inst.type, struct_type_id);
                 },
                 .storage => try spv.emitStride(inst.type, type_id),
                 else => {},
@@ -692,6 +712,13 @@ fn decorateStruct(spv: *SpirV, inst: InstIndex) !void {
             .member = @intCast(i),
             .decoration = .{ .Offset = .{ .byte_offset = offset } },
         });
+
+        try spv.annotations_section.emit(.OpMemberDecorate, .{
+            .structure_type = id,
+            .member = @intCast(i),
+            .decoration = .ColMajor,
+        });
+
         if (members.len > 1) offset += spv.getSize(member_inst.type);
     }
 }
@@ -705,23 +732,15 @@ fn emitStride(spv: *SpirV, inst: InstIndex, id: IdRef) !void {
                     .matrix => try spv.annotations_section.emit(.OpMemberDecorate, .{
                         .structure_type = id,
                         .member = @intCast(i),
-                        .decoration = .{ .MatrixStride = .{ .matrix_stride = spv.getStride(member_inst.type, true) } },
+                        .decoration = .{ .MatrixStride = .{
+                            .matrix_stride = spv.getStride(member_inst.type, true),
+                        } },
                     }),
                     else => {},
                 }
             }
         },
-        else => |inst_type| switch (inst_type) {
-            .array => try spv.annotations_section.emit(.OpDecorate, .{
-                .target = id,
-                .decoration = .{ .ArrayStride = .{ .array_stride = spv.getStride(inst, true) } },
-            }),
-            .matrix => try spv.annotations_section.emit(.OpDecorate, .{
-                .target = id,
-                .decoration = .{ .MatrixStride = .{ .matrix_stride = spv.getStride(inst, true) } },
-            }),
-            else => {},
-        },
+        else => {},
     }
 }
 
@@ -1177,13 +1196,17 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
         .swizzle_access => |swizzle_access| spv.emitSwizzleAccess(section, swizzle_access),
         .var_ref => |var_ref| {
             const va = try spv.emitVarAccess(section, var_ref);
-            const load_id = spv.allocId();
-            try section.emit(.OpLoad, .{
-                .id_result_type = va.type.elem_type,
-                .id_result = load_id,
-                .pointer = va.id,
-            });
-            return load_id;
+            if (va.is_ptr) {
+                const load_id = spv.allocId();
+                try section.emit(.OpLoad, .{
+                    .id_result_type = va.type.elem_type,
+                    .id_result = load_id,
+                    .pointer = va.id,
+                });
+                return load_id;
+            } else {
+                return va.id;
+            }
         },
         .index_access => |index_access| {
             // if (spv.air.resolveConstExpr(index_access.index)) |const_expr| {
@@ -1232,6 +1255,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
 const PtrAccess = struct {
     id: IdRef,
     type: Key.PointerType,
+    is_ptr: bool,
 };
 
 fn emitVarAccess(spv: *SpirV, section: *Section, inst: InstIndex) !PtrAccess {
@@ -1257,6 +1281,7 @@ fn emitVarAccess(spv: *SpirV, section: *Section, inst: InstIndex) !PtrAccess {
                 .elem_type = decl.type_id,
                 .storage_class = decl.storage_class,
             },
+            .is_ptr = true,
         };
     }
 
@@ -1266,6 +1291,7 @@ fn emitVarAccess(spv: *SpirV, section: *Section, inst: InstIndex) !PtrAccess {
             .elem_type = decl.type_id,
             .storage_class = decl.storage_class,
         },
+        .is_ptr = decl.is_ptr,
     };
 }
 
@@ -1364,6 +1390,7 @@ fn emitIndexAccess(spv: *SpirV, section: *Section, inst: Inst.IndexAccess) !PtrA
             .elem_type = type_id,
             .storage_class = base_ptr.type.storage_class,
         },
+        .is_ptr = true,
     };
 }
 
@@ -1395,6 +1422,7 @@ fn emitFieldAccess(spv: *SpirV, section: *Section, inst: Inst.FieldAccess) !PtrA
             .elem_type = type_id,
             .storage_class = base_decl.type.storage_class,
         },
+        .is_ptr = true,
     };
 }
 
@@ -1919,47 +1947,22 @@ fn emitUnaryIntrinsic(spv: *SpirV, section: *Section, unary: Inst.UnaryIntrinsic
     const id = spv.allocId();
     const expr = try spv.emitExpr(section, unary.expr);
     const result_type = try spv.emitType(unary.result_type);
+    const result_type_inst = switch (spv.air.getInst(unary.result_type)) {
+        .vector => |vec| spv.air.getInst(vec.elem_type),
+        else => |ty| ty,
+    };
 
     const instruction: Word = switch (unary.op) {
-        .array_length => {
-            // TODO: this is hacky af
-            var struct_ty_id: IdRef = undefined;
-            var struct_map_iter = spv.struct_map.iterator();
-            while (struct_map_iter.next()) |entry| {
-                const struct_inst = spv.air.getInst(entry.key_ptr.*).@"struct";
-                const members = spv.air.refToList(struct_inst.members);
-                if (members.len == 1) {
-                    const first_member = spv.air.getInst(members[0]).struct_member;
-                    const first_member_ty = spv.air.getInst(first_member.type);
-                    if (first_member_ty == .array and first_member_ty.array.len == .none) {
-                        struct_ty_id = entry.value_ptr.*;
-                        break;
-                    }
-                }
-            } else unreachable;
-
-            const struct_ptr_type_id = try spv.resolve(.{ .ptr_type = .{
-                .storage_class = .Function,
-                .elem_type = struct_ty_id,
-            } });
-            const struct_casted_id = spv.allocId();
-            try section.emit(.OpBitcast, .{
-                .id_result_type = struct_ptr_type_id,
-                .id_result = struct_casted_id,
-                .operand = expr,
-            });
-            try section.emit(.OpArrayLength, .{
-                .id_result_type = result_type,
-                .id_result = id,
-                .structure = struct_casted_id,
-                .array_member = 0,
-            });
-            return id;
-        },
         .sin => 13,
         .cos => 14,
         .normalize => 69,
         .length => 66,
+        .floor => 8,
+        .abs => switch (result_type_inst) {
+            .float => 4,
+            .int => 5,
+            else => unreachable,
+        },
         else => std.debug.panic("TODO: implement Unary Intrinsic {s}", .{@tagName(unary.op)}),
     };
 
@@ -2012,7 +2015,7 @@ fn emitBinaryIntrinsic(spv: *SpirV, section: *Section, bin: Inst.BinaryIntrinsic
             return id;
         },
         .pow => 26,
-        else => std.debug.panic("TODO: implement Binary Intrinsic {s}", .{@tagName(bin.op)}),
+        .step => 48,
     };
 
     try section.emit(.OpExtInst, .{
@@ -2071,9 +2074,12 @@ fn emitTextureSample(spv: *SpirV, section: *Section, ts: Inst.TextureSample) !Id
     const texture = try spv.emitExpr(section, ts.texture);
     const sampler = try spv.emitExpr(section, ts.sampler);
     const coords = try spv.emitExpr(section, ts.coords);
+
     const result_type = try spv.emitType(ts.result_type);
     const texture_type = try spv.emitType(ts.texture_type);
     const sampled_image_ty = try spv.resolve(.{ .sampled_image_type = texture_type });
+    const extract_result = spv.air.getInst(ts.result_type) == .float;
+    var final_result_type = result_type;
 
     try section.emit(.OpSampledImage, .{
         .id_result_type = sampled_image_ty,
@@ -2082,12 +2088,32 @@ fn emitTextureSample(spv: *SpirV, section: *Section, ts: Inst.TextureSample) !Id
         .sampler = sampler,
     });
 
+    if (extract_result) {
+        final_result_type = try spv.resolve(.{
+            .vector_type = .{
+                .elem_type = result_type,
+                .size = .four,
+            },
+        });
+    }
+
     try section.emit(.OpImageSampleImplicitLod, .{
-        .id_result_type = result_type,
+        .id_result_type = final_result_type,
         .id_result = loaded_image_id,
         .sampled_image = image_id,
         .coordinate = coords,
     });
+
+    if (extract_result) {
+        const extract_id = spv.allocId();
+        try section.emit(.OpCompositeExtract, .{
+            .id_result_type = result_type,
+            .id_result = extract_id,
+            .composite = loaded_image_id,
+            .indexes = &.{0},
+        });
+        return extract_id;
+    }
 
     return loaded_image_id;
 }
@@ -2126,6 +2152,7 @@ fn accessPtr(spv: *SpirV, section: *Section, decl: InstIndex) error{OutOfMemory}
             return .{
                 .id = id,
                 .type = .{ .storage_class = base.type.storage_class, .elem_type = type_id },
+                .is_ptr = true,
             };
         },
         else => unreachable,
@@ -2466,14 +2493,34 @@ const Key = union(enum) {
         pub fn hash(ctx: Adapter, key: Key) u32 {
             _ = ctx;
             var hasher = std.hash.XxHash32.init(0);
-            std.hash.autoHashStrat(&hasher, key, std.hash.Strategy.Shallow);
-            return hasher.final();
+            switch (key) {
+                .fn_type => |func| {
+                    std.hash.autoHash(&hasher, func.return_type);
+                    for (func.params_type) |param_type| {
+                        std.hash.autoHash(&hasher, param_type);
+                    }
+                },
+                inline else => |k| std.hash.autoHashStrat(&hasher, k, .Deep),
+            }
+            return @as(u32, @truncate(hasher.final()));
         }
 
         pub fn eql(ctx: Adapter, a: Key, b: Key, b_index: usize) bool {
             _ = ctx;
             _ = b_index;
-            return std.meta.eql(a, b);
+            return switch (a) {
+                .fn_type => |a_func| {
+                    const b_func = b.fn_type;
+                    if (a_func.return_type.id != b_func.return_type.id) return false;
+                    if (a_func.params_type.len != b_func.params_type.len) return false;
+                    if (a_func.params_type.ptr == a_func.params_type.ptr) return true;
+                    for (a_func.params_type, b_func.params_type) |a_param, b_param| {
+                        if (a_param.id != b_param.id) return false;
+                    }
+                    return true;
+                },
+                else => std.meta.eql(a, b),
+            };
         }
     };
 };
@@ -2664,14 +2711,11 @@ fn spirvDim(kind: Inst.TextureType.Kind) spec.Dim {
 }
 
 fn spirvDepth(kind: Inst.TextureType.Kind) u1 {
-    return switch (kind) {
-        .depth_2d,
-        .depth_2d_array,
-        .depth_cube,
-        .depth_cube_array,
-        => 1,
-        else => 0,
-    };
+    _ = kind;
+    // The Vulkan spec says: The "Depth" operand of OpTypeImage is ignored.
+    // In SPIRV, 0 means not depth, 1 means depth, and 2 means unknown.
+    // Using anything other than 0 is problematic on various Vulkan drivers.
+    return 0;
 }
 
 fn spirvArrayed(kind: Inst.TextureType.Kind) u1 {
@@ -2703,13 +2747,12 @@ fn spirvSampled(kind: Inst.TextureType.Kind) u2 {
         .sampled_cube_array,
         .multisampled_2d,
         .multisampled_depth_2d,
+        .depth_2d,
+        .depth_2d_array,
+        .depth_cube,
+        .depth_cube_array,
         => 1,
-        .storage_1d,
-        .storage_2d,
-        .storage_2d_array,
-        .storage_3d,
-        => 2,
-        else => 0,
+        else => 2,
     };
 }
 

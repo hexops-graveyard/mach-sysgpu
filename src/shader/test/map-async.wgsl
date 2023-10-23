@@ -8,7 +8,8 @@ fn main(
   @builtin(local_invocation_id)
   local_id : vec3<u32>,
 ) {
-  if (global_id.x >= arrayLength(&output)) {
+  // if (global_id.x >= arrayLength(&output)) {
+  if (global_id.x >= 100000) {
     return;
   }
   output[global_id.x] =
