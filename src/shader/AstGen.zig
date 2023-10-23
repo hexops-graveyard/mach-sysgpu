@@ -499,48 +499,14 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
 
         const workgroup_size_data = astgen.tree.extraData(Ast.Node.WorkgroupSize, astgen.tree.nodeLHS(workgroup_size_attr));
         stage.compute = Inst.Fn.Stage.WorkgroupSize{
-            .x = blk: {
-                const x = try astgen.genExpr(root_scope, workgroup_size_data.x);
-                if (astgen.resolveConstExpr(x) == null) {
-                    try astgen.errors.add(
-                        astgen.tree.nodeLoc(workgroup_size_data.x),
-                        "expected const-expression",
-                        .{},
-                        null,
-                    );
-                    return error.AnalysisFail;
-                }
-                break :blk x;
-            },
+            .x = try astgen.genExpr(root_scope, workgroup_size_data.x),
             .y = blk: {
                 if (workgroup_size_data.y == .none) break :blk .none;
-
-                const y = try astgen.genExpr(root_scope, workgroup_size_data.y);
-                if (astgen.resolveConstExpr(y) == null) {
-                    try astgen.errors.add(
-                        astgen.tree.nodeLoc(workgroup_size_data.y),
-                        "expected const-expression",
-                        .{},
-                        null,
-                    );
-                    return error.AnalysisFail;
-                }
-                break :blk y;
+                break :blk try astgen.genExpr(root_scope, workgroup_size_data.y);
             },
             .z = blk: {
                 if (workgroup_size_data.z == .none) break :blk .none;
-
-                const z = try astgen.genExpr(root_scope, workgroup_size_data.z);
-                if (astgen.resolveConstExpr(z) == null) {
-                    try astgen.errors.add(
-                        astgen.tree.nodeLoc(workgroup_size_data.z),
-                        "expected const-expression",
-                        .{},
-                        null,
-                    );
-                    return error.AnalysisFail;
-                }
-                break :blk z;
+                break :blk try astgen.genExpr(root_scope, workgroup_size_data.z);
             },
         };
     } else if (workgroup_size_attr != .none) {
@@ -685,16 +651,6 @@ fn attrBinding(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
     const binding = try astgen.genExpr(scope, node_lhs);
 
-    if (astgen.resolveConstExpr(binding) == null) {
-        try astgen.errors.add(
-            node_lhs_loc,
-            "expected const-expression, found '{s}'",
-            .{node_lhs_loc.slice(astgen.tree.source)},
-            null,
-        );
-        return error.AnalysisFail;
-    }
-
     const binding_res = try astgen.resolve(binding);
     if (astgen.getInst(binding_res) != .int) {
         try astgen.errors.add(
@@ -723,16 +679,6 @@ fn attrId(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
     const id = try astgen.genExpr(scope, node_lhs);
-
-    if (astgen.resolveConstExpr(id) == null) {
-        try astgen.errors.add(
-            node_lhs_loc,
-            "expected const-expression, found '{s}'",
-            .{node_lhs_loc.slice(astgen.tree.source)},
-            null,
-        );
-        return error.AnalysisFail;
-    }
 
     const id_res = try astgen.resolve(id);
     if (astgen.getInst(id_res) != .int) {
@@ -763,16 +709,6 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
     const group = try astgen.genExpr(scope, node_lhs);
 
-    if (astgen.resolveConstExpr(group) == null) {
-        try astgen.errors.add(
-            node_lhs_loc,
-            "expected const-expression, found '{s}'",
-            .{node_lhs_loc.slice(astgen.tree.source)},
-            null,
-        );
-        return error.AnalysisFail;
-    }
-
     const group_res = try astgen.resolve(group);
     if (astgen.getInst(group_res) != .int) {
         try astgen.errors.add(
@@ -799,36 +735,12 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 
 fn attrAlign(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u29 {
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
-    if (astgen.resolveConstExpr(expr)) |expr_res| {
-        if (expr_res == .int) {
-            return @intCast(expr_res.int);
-        }
-    }
-
-    try astgen.errors.add(
-        astgen.tree.nodeLoc(astgen.tree.nodeLHS(node)),
-        "expected integer const-expression",
-        .{},
-        null,
-    );
-    return error.AnalysisFail;
+    return @intCast(astgen.getValue(Air.Inst.Int.Value, astgen.getInst(expr).int.value.?).literal);
 }
 
 fn attrSize(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u32 {
     const expr = try astgen.genExpr(scope, astgen.tree.nodeLHS(node));
-    if (astgen.resolveConstExpr(expr)) |expr_res| {
-        if (expr_res == .int) {
-            return @intCast(expr_res.int);
-        }
-    }
-
-    try astgen.errors.add(
-        astgen.tree.nodeLoc(astgen.tree.nodeLHS(node)),
-        "expected integer const-expression",
-        .{},
-        null,
-    );
-    return error.AnalysisFail;
+    return @intCast(astgen.getValue(Air.Inst.Int.Value, astgen.getInst(expr).int.value.?).literal);
 }
 
 fn attrLocation(astgen: *AstGen, scope: *Scope, node: NodeIndex) !u16 {
@@ -1313,16 +1225,6 @@ fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     }
 
     const expr = try astgen.genExpr(scope, node_rhs);
-    if (astgen.resolveConstExpr(expr) == null) {
-        try astgen.errors.add(
-            name_loc,
-            "value of '{s}' must be a const-expression",
-            .{name_loc.slice(astgen.tree.source)},
-            null,
-        );
-        return error.AnalysisFail;
-    }
-
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
 
     return astgen.addInst(.{
@@ -1512,21 +1414,50 @@ fn coerce(astgen: *AstGen, src: InstIndex, dst: InstIndex) !bool {
     const src_inst = astgen.getInst(src);
     const dst_inst = astgen.getInst(dst);
 
-    if (src_inst == .int and src_inst.int.value != null and dst_inst == .float) {
-        const int_value = astgen.getValue(Air.Inst.Int.Value, src_inst.int.value.?);
-        if (int_value == .literal) {
-            const value = try astgen.addValue(
-                Air.Inst.Float.Value,
-                Air.Inst.Float.Value{ .literal = @floatFromInt(int_value.literal) },
-            );
-            astgen.instructions.keys()[@intFromEnum(src)] = .{
-                .float = .{
-                    .type = dst_inst.float.type,
-                    .value = value,
+    switch (src_inst) {
+        .int => |src_int| if (src_int.value != null) {
+            const int_value = astgen.getValue(Air.Inst.Int.Value, src_inst.int.value.?);
+            if (int_value == .literal) switch (dst_inst) {
+                .int => |dst_int| {
+                    if (src_int.type == .i32 and dst_int.type == .u32 and int_value.literal < 0) {
+                        try astgen.errors.add(
+                            Loc{ .start = 0, .end = 0 },
+                            "TODO: undefined behavior: Op ({d}, rhs)",
+                            .{int_value.literal},
+                            null,
+                        );
+                        return error.AnalysisFail;
+                    }
+
+                    const value = try astgen.addValue(
+                        Air.Inst.Int.Value,
+                        Air.Inst.Int.Value{ .literal = @intCast(int_value.literal) },
+                    );
+                    astgen.instructions.keys()[@intFromEnum(src)] = .{
+                        .int = .{
+                            .type = dst_int.type,
+                            .value = value,
+                        },
+                    };
+                    return true;
                 },
+                .float => |dst_float| {
+                    const value = try astgen.addValue(
+                        Air.Inst.Float.Value,
+                        Air.Inst.Float.Value{ .literal = @floatFromInt(int_value.literal) },
+                    );
+                    astgen.instructions.keys()[@intFromEnum(src)] = .{
+                        .float = .{
+                            .type = dst_float.type,
+                            .value = value,
+                        },
+                    };
+                    return true;
+                },
+                else => {},
             };
-        }
-        return true;
+        },
+        else => {},
     }
 
     return false;
@@ -2485,7 +2416,7 @@ fn genStructConstruct(astgen: *AstGen, scope: *Scope, decl: InstIndex, node: Nod
         for (arg_nodes, 0..) |arg_node, i| {
             const arg = try astgen.genExpr(scope, arg_node);
             const arg_res = try astgen.resolve(arg);
-            if (try astgen.coerce(astgen.getInst(struct_members[i]).struct_member.type, arg_res)) {
+            if (try astgen.coerce(arg_res, astgen.getInst(struct_members[i]).struct_member.type)) {
                 try astgen.scratch.append(astgen.allocator, arg);
             } else {
                 try astgen.errors.add(
@@ -3885,15 +3816,6 @@ fn genArray(astgen: *AstGen, scope: *Scope, node: NodeIndex, args: ?RefIndex) !I
     var len = InstIndex.none;
     if (len_node != .none) {
         len = try astgen.genExpr(scope, len_node);
-        if (astgen.resolveConstExpr(len) == null) {
-            try astgen.errors.add(
-                astgen.tree.nodeLoc(len_node),
-                "expected const-expression",
-                .{},
-                null,
-            );
-            return error.AnalysisFail;
-        }
     }
 
     return astgen.addInst(.{
@@ -4198,27 +4120,15 @@ fn selectType(cands: []const InstIndex) InstIndex {
     return cands[0]; // TODO
 }
 
-fn resolveConstExpr(astgen: *AstGen, inst_idx: InstIndex) ?Air.ConstExpr {
-    // TODO: this is disgusting
-    return Air.resolveConstExpr(.{
-        .tree = undefined,
-        .globals_index = undefined,
-        .compute_stage = undefined,
-        .vertex_stage = undefined,
-        .fragment_stage = undefined,
-        .strings = undefined,
-        .extensions = undefined,
-        .instructions = astgen.instructions.keys(),
-        .refs = astgen.refs.items,
-        .values = astgen.values.items,
-    }, inst_idx);
-}
-
 fn eql(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
     const a = astgen.getInst(a_idx);
     const b = astgen.getInst(b_idx);
 
     return switch (a) {
+        .int => |int_a| switch (b) {
+            .int => |int_b| int_a.type == int_b.type,
+            else => false,
+        },
         .vector => |vec_a| switch (b) {
             .vector => |vec_b| astgen.eqlVector(vec_a, vec_b),
             else => false,
