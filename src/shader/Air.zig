@@ -425,8 +425,6 @@ pub const Inst = union(enum) {
     @"switch": Switch,
     switch_case: SwitchCase,
     assign: Assign,
-    increase: InstIndex,
-    decrease: InstIndex,
     discard,
     @"break",
     @"continue",
