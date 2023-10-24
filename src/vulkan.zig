@@ -11,6 +11,7 @@ const proc = @import("vulkan/proc.zig");
 const log = std.log.scoped(.vulkan);
 const api_version = vk.makeApiVersion(0, 1, 1, 0);
 const upload_page_size = 64 * 1024 * 1024; // TODO - split writes and/or support large uploads
+const use_semaphore_wait = false;
 
 var allocator: std.mem.Allocator = undefined;
 var libvulkan: ?std.DynLib = null;
@@ -901,7 +902,8 @@ pub const SwapChain = struct {
     device: *Device,
     vk_swapchain: vk.SwapchainKHR,
     fence: vk.Fence,
-    semaphores: []vk.Semaphore,
+    wait_semaphore: vk.Semaphore,
+    signal_semaphore: vk.Semaphore,
     textures: []*Texture,
     texture_views: []*TextureView,
     texture_index: u32 = 0,
@@ -909,6 +911,8 @@ pub const SwapChain = struct {
 
     pub fn init(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
         const vk_device = device.vk_device;
+
+        var sc = try allocator.create(SwapChain);
 
         const capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(
             device.adapter.physical_device,
@@ -967,22 +971,25 @@ pub const SwapChain = struct {
         const fence = try vkd.createFence(vk_device, &.{ .flags = .{ .signaled_bit = false } }, null);
         errdefer vkd.destroyFence(vk_device, fence, null);
 
+        const wait_semaphore = try vkd.createSemaphore(vk_device, &.{}, null);
+        errdefer vkd.destroySemaphore(vk_device, wait_semaphore, null);
+
+        const signal_semaphore = try vkd.createSemaphore(vk_device, &.{}, null);
+        errdefer vkd.destroySemaphore(vk_device, signal_semaphore, null);
+
         var images_len: u32 = 0;
         _ = try vkd.getSwapchainImagesKHR(vk_device, vk_swapchain, &images_len, null);
         var images = try allocator.alloc(vk.Image, images_len);
         defer allocator.free(images);
         _ = try vkd.getSwapchainImagesKHR(vk_device, vk_swapchain, &images_len, images.ptr);
 
-        const semaphores = try allocator.alloc(vk.Semaphore, images_len);
-        errdefer allocator.free(semaphores);
         const textures = try allocator.alloc(*Texture, images_len);
         errdefer allocator.free(textures);
         const texture_views = try allocator.alloc(*TextureView, images_len);
         errdefer allocator.free(texture_views);
 
         for (0..images_len) |i| {
-            semaphores[i] = try vkd.createSemaphore(vk_device, &.{}, null);
-            const texture = try Texture.initForSwapChain(device, desc, images[i]);
+            const texture = try Texture.initForSwapChain(device, desc, images[i], sc);
             textures[i] = texture;
             texture_views[i] = try texture.createView(&.{
                 .format = desc.format,
@@ -990,15 +997,15 @@ pub const SwapChain = struct {
             });
         }
 
-        var sc = try allocator.create(SwapChain);
         sc.* = .{
             .device = device,
             .vk_swapchain = vk_swapchain,
             .fence = fence,
-            .format = desc.format,
-            .semaphores = semaphores,
+            .wait_semaphore = wait_semaphore,
+            .signal_semaphore = signal_semaphore,
             .textures = textures,
             .texture_views = texture_views,
+            .format = desc.format,
         };
 
         return sc;
@@ -1011,10 +1018,10 @@ pub const SwapChain = struct {
 
         for (sc.texture_views) |view| view.manager.release();
         for (sc.textures) |texture| texture.manager.release();
-        for (sc.semaphores) |semaphore| vkd.destroySemaphore(vk_device, semaphore, null);
+        vkd.destroySemaphore(vk_device, sc.wait_semaphore, null);
+        vkd.destroySemaphore(vk_device, sc.signal_semaphore, null);
         vkd.destroyFence(vk_device, sc.fence, null);
         vkd.destroySwapchainKHR(vk_device, sc.vk_swapchain, null);
-        allocator.free(sc.semaphores);
         allocator.free(sc.textures);
         allocator.free(sc.texture_views);
         allocator.destroy(sc);
@@ -1027,17 +1034,19 @@ pub const SwapChain = struct {
             vk_device,
             sc.vk_swapchain,
             std.math.maxInt(u64),
-            .null_handle,
-            sc.fence,
+            if (use_semaphore_wait) sc.wait_semaphore else .null_handle,
+            if (!use_semaphore_wait) sc.fence else .null_handle,
         );
 
         // Wait on the CPU so that GPU does not stall later during present.
         // This should be similar to using DXGI Waitable Object.
-        _ = try vkd.waitForFences(vk_device, 1, &[_]vk.Fence{sc.fence}, vk.TRUE, std.math.maxInt(u64));
-        try vkd.resetFences(vk_device, 1, &[_]vk.Fence{sc.fence});
+        if (!use_semaphore_wait) {
+            _ = try vkd.waitForFences(vk_device, 1, &[_]vk.Fence{sc.fence}, vk.TRUE, std.math.maxInt(u64));
+            try vkd.resetFences(vk_device, 1, &[_]vk.Fence{sc.fence});
+        }
 
         sc.texture_index = result.image_index;
-        const view = sc.texture_views[sc.texture_index];
+        var view = sc.texture_views[sc.texture_index];
         view.manager.reference();
 
         return view;
@@ -1047,7 +1056,7 @@ pub const SwapChain = struct {
         const queue = try sc.device.getQueue();
         const vk_queue = queue.vk_queue;
 
-        const semaphore = sc.semaphores[sc.texture_index];
+        const semaphore = sc.signal_semaphore;
         try queue.signal_semaphores.append(allocator, semaphore);
         try queue.flush();
 
@@ -1204,11 +1213,11 @@ pub const Texture = struct {
     extent: vk.Extent2D,
     image: vk.Image,
     memory: vk.DeviceMemory,
+    swapchain: ?*SwapChain = null,
     // NOTE - this is a naive sync solution as a placeholder until render graphs are implemented
     read_stage_mask: vk.PipelineStageFlags,
     read_access_mask: vk.AccessFlags,
     read_image_layout: vk.ImageLayout,
-    from_swap_chain: bool,
     // TODO - packed texture descriptor struct
     usage: dgpu.Texture.UsageFlags,
     dimension: dgpu.Texture.Dimension,
@@ -1261,10 +1270,10 @@ pub const Texture = struct {
             .extent = .{ .width = extent.width, .height = extent.height },
             .image = vk_image,
             .memory = memory,
+            .swapchain = null,
             .read_stage_mask = conv.vulkanPipelineStageFlagsForImageRead(desc.usage, desc.format),
             .read_access_mask = conv.vulkanAccessFlagsForImageRead(desc.usage, desc.format),
             .read_image_layout = conv.vulkanImageLayoutForRead(desc.usage, desc.format),
-            .from_swap_chain = false,
             .usage = desc.usage,
             .dimension = desc.dimension,
             .size = desc.size,
@@ -1275,17 +1284,22 @@ pub const Texture = struct {
         return texture;
     }
 
-    pub fn initForSwapChain(device: *Device, desc: *const dgpu.SwapChain.Descriptor, image: vk.Image) !*Texture {
+    pub fn initForSwapChain(
+        device: *Device,
+        desc: *const dgpu.SwapChain.Descriptor,
+        image: vk.Image,
+        swapchain: *SwapChain,
+    ) !*Texture {
         var texture = try allocator.create(Texture);
         texture.* = .{
             .device = device,
             .extent = .{ .width = desc.width, .height = desc.height },
             .image = image,
             .memory = .null_handle,
+            .swapchain = swapchain,
             .read_stage_mask = conv.vulkanPipelineStageFlagsForImageRead(desc.usage, desc.format),
             .read_access_mask = conv.vulkanAccessFlagsForImageRead(desc.usage, desc.format),
             .read_image_layout = conv.vulkanImageLayoutForRead(desc.usage, desc.format),
-            .from_swap_chain = true,
             .usage = desc.usage,
             .dimension = .dimension_2d,
             .size = .{ .width = desc.width, .height = desc.height, .depth_or_array_layers = 1 },
@@ -1299,7 +1313,7 @@ pub const Texture = struct {
     pub fn deinit(texture: *Texture) void {
         const vk_device = texture.device.vk_device;
 
-        if (!texture.from_swap_chain) {
+        if (texture.swapchain == null) {
             vkd.freeMemory(vk_device, texture.memory, null);
             vkd.destroyImage(vk_device, texture.image, null);
         }
@@ -2155,6 +2169,8 @@ pub const CommandBuffer = struct {
     manager: utils.Manager(CommandBuffer) = .{},
     device: *Device,
     vk_command_buffer: vk.CommandBuffer,
+    wait_semaphores: std.ArrayListUnmanaged(vk.Semaphore) = .{},
+    wait_dst_stage_masks: std.ArrayListUnmanaged(vk.PipelineStageFlags) = .{},
     reference_tracker: *ReferenceTracker,
     upload_buffer: ?*Buffer = null,
     upload_map: ?[*]u8 = null,
@@ -2185,7 +2201,9 @@ pub const CommandBuffer = struct {
 
     pub fn deinit(command_buffer: *CommandBuffer) void {
         // reference_tracker lifetime is managed externally
-        // buffer lifetime is managed externally
+        // vk_command_buffer lifetime is managed externally
+        command_buffer.wait_dst_stage_masks.deinit(allocator);
+        command_buffer.wait_semaphores.deinit(allocator);
         allocator.destroy(command_buffer);
     }
 
@@ -2267,7 +2285,7 @@ pub const ReferenceTracker = struct {
         }
 
         for (tracker.upload_pages.items) |buffer| {
-            buffer.manager.release();
+            device.streaming_manager.release(buffer);
         }
 
         for (tracker.framebuffers.items) |fb| vkd.destroyFramebuffer(vk_device, fb, null);
@@ -2863,6 +2881,13 @@ pub const RenderPassEncoder = struct {
             if (resolve_view) |v|
                 try cmd_encoder.reference_tracker.referenceTextureView(v);
 
+            if (use_semaphore_wait) {
+                if (view.texture.swapchain) |sc| {
+                    try cmd_encoder.command_buffer.wait_semaphores.append(allocator, sc.wait_semaphore);
+                    try cmd_encoder.command_buffer.wait_dst_stage_masks.append(allocator, .{ .all_commands_bit = true });
+                }
+            }
+
             image_views.appendAssumeCapacity(view.vk_view);
 
             rp_key.colors.appendAssumeCapacity(.{
@@ -3099,6 +3124,8 @@ pub const Queue = struct {
     device: *Device,
     vk_queue: vk.Queue,
     command_buffers: std.ArrayListUnmanaged(*CommandBuffer) = .{},
+    wait_semaphores: std.ArrayListUnmanaged(vk.Semaphore) = .{},
+    wait_dst_stage_masks: std.ArrayListUnmanaged(vk.PipelineStageFlags) = .{},
     signal_semaphores: std.ArrayListUnmanaged(vk.Semaphore) = .{},
     command_encoder: ?*CommandEncoder = null,
 
@@ -3115,6 +3142,8 @@ pub const Queue = struct {
 
     pub fn deinit(queue: *Queue) void {
         if (queue.command_encoder) |command_encoder| command_encoder.manager.release();
+        queue.wait_dst_stage_masks.deinit(allocator);
+        queue.wait_semaphores.deinit(allocator);
         queue.signal_semaphores.deinit(allocator);
         queue.command_buffers.deinit(allocator);
     }
@@ -3122,18 +3151,24 @@ pub const Queue = struct {
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
         for (commands) |command_buffer| {
             command_buffer.manager.reference();
+            try queue.wait_dst_stage_masks.appendSlice(allocator, command_buffer.wait_dst_stage_masks.items);
+            try queue.wait_semaphores.appendSlice(allocator, command_buffer.wait_semaphores.items);
             try queue.command_buffers.append(allocator, command_buffer);
         }
     }
 
     pub fn flush(queue: *Queue) !void {
-        if (queue.command_buffers.items.len == 0 and queue.signal_semaphores.items.len == 0)
+        if (queue.command_buffers.items.len == 0 and
+            queue.signal_semaphores.items.len == 0)
             return;
 
         const vk_queue = queue.vk_queue;
 
         var submit_object = try SubmitObject.init(queue.device);
-        var vk_command_buffers = try std.ArrayListUnmanaged(vk.CommandBuffer).initCapacity(allocator, queue.command_buffers.items.len + 1);
+        var vk_command_buffers = try std.ArrayListUnmanaged(vk.CommandBuffer).initCapacity(
+            allocator,
+            queue.command_buffers.items.len + 1,
+        );
         defer vk_command_buffers.deinit(allocator);
 
         if (queue.command_encoder) |command_encoder| {
@@ -3158,16 +3193,19 @@ pub const Queue = struct {
         const submitInfo = vk.SubmitInfo{
             .command_buffer_count = @intCast(vk_command_buffers.items.len),
             .p_command_buffers = vk_command_buffers.items.ptr,
-            .wait_semaphore_count = 0,
-            .p_wait_semaphores = null,
-            .p_wait_dst_stage_mask = null,
+            .wait_semaphore_count = @intCast(queue.wait_semaphores.items.len),
+            .p_wait_semaphores = queue.wait_semaphores.items.ptr,
+            .p_wait_dst_stage_mask = queue.wait_dst_stage_masks.items.ptr,
             .signal_semaphore_count = @intCast(queue.signal_semaphores.items.len),
             .p_signal_semaphores = queue.signal_semaphores.items.ptr,
         };
 
         try vkd.queueSubmit(vk_queue, 1, @ptrCast(&submitInfo), submit_object.fence);
 
+        queue.wait_semaphores.clearRetainingCapacity();
+        queue.wait_dst_stage_masks.clearRetainingCapacity();
         queue.signal_semaphores.clearRetainingCapacity();
+
         try queue.device.submit_objects.append(allocator, submit_object);
     }
 
