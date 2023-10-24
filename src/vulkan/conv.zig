@@ -1,5 +1,36 @@
 const vk = @import("vulkan");
 const dgpu = @import("../dgpu/main.zig");
+const utils = @import("../utils.zig");
+
+pub fn dgpuAdapterType(device_type: vk.PhysicalDeviceType) dgpu.Adapter.Type {
+    return switch (device_type) {
+        .integrated_gpu => .integrated_gpu,
+        .discrete_gpu => .discrete_gpu,
+        .cpu => .cpu,
+        else => .unknown,
+    };
+}
+
+pub fn vulkanAccessFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.AccessFlags {
+    return .{
+        .indirect_command_read_bit = usage.indirect,
+        .index_read_bit = usage.index,
+        .vertex_attribute_read_bit = usage.vertex,
+        .uniform_read_bit = usage.uniform,
+        .shader_read_bit = usage.storage,
+        .transfer_read_bit = usage.copy_src,
+        .host_read_bit = usage.map_read,
+    };
+}
+
+pub fn vulkanAccessFlagsForImageRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.AccessFlags {
+    return .{
+        .shader_read_bit = usage.texture_binding or usage.storage_binding,
+        .color_attachment_read_bit = usage.render_attachment and !utils.hasDepthStencil(format),
+        .depth_stencil_attachment_read_bit = usage.render_attachment and utils.hasDepthStencil(format),
+        .transfer_read_bit = usage.copy_src,
+    };
+}
 
 pub fn vulkanBlendOp(op: dgpu.BlendOperation) vk.BlendOp {
     return switch (op) {
@@ -33,6 +64,18 @@ pub fn vulkanBlendFactor(op: dgpu.BlendFactor) vk.BlendFactor {
     };
 }
 
+pub fn vulkanBufferUsageFlags(flags: dgpu.Buffer.UsageFlags) vk.BufferUsageFlags {
+    return .{
+        .transfer_src_bit = flags.copy_src,
+        .transfer_dst_bit = flags.copy_dst or flags.query_resolve,
+        .uniform_buffer_bit = flags.uniform,
+        .storage_buffer_bit = flags.storage,
+        .index_buffer_bit = flags.index,
+        .vertex_buffer_bit = flags.vertex,
+        .indirect_buffer_bit = flags.indirect,
+    };
+}
+
 pub fn vulkanCompareOp(op: dgpu.CompareFunction) vk.CompareOp {
     return switch (op) {
         .never => .never,
@@ -44,6 +87,13 @@ pub fn vulkanCompareOp(op: dgpu.CompareFunction) vk.CompareOp {
         .not_equal => .not_equal,
         .always => .always,
         .undefined => unreachable,
+    };
+}
+
+pub fn vulkanCullMode(cull_mode: dgpu.CullMode) vk.CullModeFlags {
+    return .{
+        .front_bit = cull_mode == .front,
+        .back_bit = cull_mode == .back,
     };
 }
 
@@ -60,6 +110,50 @@ pub fn vulkanDepthBiasClamp(ds: ?*const dgpu.DepthStencilState) f32 {
 pub fn vulkanDepthBiasSlopeScale(ds: ?*const dgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return ds.?.depth_bias_slope_scale;
+}
+
+pub fn vulkanDescriptorType(entry: dgpu.BindGroupLayout.Entry) vk.DescriptorType {
+    switch (entry.buffer.type) {
+        .undefined => {},
+
+        .uniform => if (entry.buffer.has_dynamic_offset == .true) {
+            return .uniform_buffer_dynamic;
+        } else {
+            return .uniform_buffer;
+        },
+
+        .storage,
+        .read_only_storage,
+        => if (entry.buffer.has_dynamic_offset == .true) {
+            return .storage_buffer_dynamic;
+        } else {
+            return .storage_buffer;
+        },
+    }
+
+    switch (entry.sampler.type) {
+        .undefined => {},
+        else => return .sampler,
+    }
+
+    switch (entry.texture.sample_type) {
+        .undefined => {},
+        else => return .sampled_image,
+    }
+
+    switch (entry.storage_texture.format) {
+        .undefined => {},
+        else => return .storage_image,
+    }
+
+    unreachable;
+}
+
+pub fn vulkanFilter(filter: dgpu.FilterMode) vk.Filter {
+    return switch (filter) {
+        .nearest => .nearest,
+        .linear => .linear,
+    };
 }
 
 pub fn vulkanFormat(format: dgpu.Texture.Format) vk.Format {
@@ -163,6 +257,127 @@ pub fn vulkanFormat(format: dgpu.Texture.Format) vk.Format {
     };
 }
 
+pub fn vulkanFrontFace(front_face: dgpu.FrontFace) vk.FrontFace {
+    return switch (front_face) {
+        .ccw => vk.FrontFace.counter_clockwise,
+        .cw => vk.FrontFace.clockwise,
+    };
+}
+
+pub fn vulkanImageCreateFlags(cube_compatible: bool, view_format_count: usize) vk.ImageCreateFlags {
+    return .{
+        .mutable_format_bit = view_format_count > 0,
+        .cube_compatible_bit = cube_compatible,
+    };
+}
+
+pub fn vulkanImageLayoutForRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.ImageLayout {
+    return if (usage.storage_binding)
+        .general
+    else if (utils.hasDepthStencil(format))
+        .depth_stencil_read_only_optimal
+    else
+        .shader_read_only_optimal;
+}
+
+pub fn vulkanImageLayoutForTextureBinding(sample_type: dgpu.Texture.SampleType) vk.ImageLayout {
+    return switch (sample_type) {
+        .undefined => .general,
+        .depth => .depth_stencil_read_only_optimal,
+        else => .shader_read_only_optimal,
+    };
+}
+
+pub fn vulkanImageType(dimension: dgpu.Texture.Dimension) vk.ImageType {
+    return switch (dimension) {
+        .dimension_1d => .@"1d",
+        .dimension_2d => .@"2d",
+        .dimension_3d => .@"3d",
+    };
+}
+
+pub fn vulkanImageUsageFlags(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.ImageUsageFlags {
+    return .{
+        .transfer_src_bit = usage.copy_src,
+        .transfer_dst_bit = usage.copy_dst,
+        .sampled_bit = usage.texture_binding,
+        .storage_bit = usage.storage_binding,
+        .color_attachment_bit = usage.render_attachment and !utils.hasDepthStencil(format),
+        .transient_attachment_bit = usage.transient_attachment,
+        .depth_stencil_attachment_bit = usage.render_attachment and utils.hasDepthStencil(format),
+    };
+}
+
+pub fn vulkanImageViewType(dimension: dgpu.TextureView.Dimension) vk.ImageViewType {
+    return switch (dimension) {
+        .dimension_undefined => unreachable,
+        .dimension_1d => .@"1d",
+        .dimension_2d => .@"2d",
+        .dimension_2d_array => .@"2d_array",
+        .dimension_cube => .cube,
+        .dimension_cube_array => .cube_array,
+        .dimension_3d => .@"3d",
+    };
+}
+
+pub fn vulkanIndexType(format: dgpu.IndexFormat) vk.IndexType {
+    return switch (format) {
+        .undefined => unreachable,
+        .uint16 => .uint16,
+        .uint32 => .uint32,
+    };
+}
+
+pub fn vulkanLoadOp(op: dgpu.LoadOp) vk.AttachmentLoadOp {
+    return switch (op) {
+        .load => .load,
+        .clear => .clear,
+        .undefined => .dont_care,
+    };
+}
+
+pub fn vulkanPipelineStageFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.PipelineStageFlags {
+    return .{
+        .draw_indirect_bit = usage.indirect,
+        .vertex_input_bit = usage.index or usage.vertex,
+        .vertex_shader_bit = usage.uniform or usage.storage,
+        .fragment_shader_bit = usage.uniform or usage.storage,
+        .compute_shader_bit = usage.uniform or usage.storage,
+        .transfer_bit = usage.copy_src,
+        .host_bit = usage.map_read,
+    };
+}
+
+pub fn vulkanPipelineStageFlagsForImageRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.PipelineStageFlags {
+    return .{
+        .vertex_shader_bit = usage.texture_binding or usage.storage_binding,
+        .fragment_shader_bit = usage.texture_binding or usage.storage_binding,
+        .early_fragment_tests_bit = usage.render_attachment and utils.hasDepthStencil(format),
+        .late_fragment_tests_bit = usage.render_attachment and utils.hasDepthStencil(format),
+        .color_attachment_output_bit = usage.render_attachment and !utils.hasDepthStencil(format),
+        .compute_shader_bit = usage.texture_binding or usage.storage_binding,
+        .transfer_bit = usage.copy_src,
+    };
+}
+
+pub fn vulkanPrimitiveTopology(topology: dgpu.PrimitiveTopology) vk.PrimitiveTopology {
+    return switch (topology) {
+        .point_list => .point_list,
+        .line_list => .line_list,
+        .line_strip => .line_strip,
+        .triangle_list => .triangle_list,
+        .triangle_strip => .triangle_strip,
+    };
+}
+
+pub fn vulkanPresentMode(present_mode: dgpu.PresentMode) vk.PresentModeKHR {
+    return switch (present_mode) {
+        .immediate => .immediate_khr,
+        .fifo => .fifo_khr,
+        .mailbox => .mailbox_khr,
+    };
+}
+
 pub fn vulkanSampleCount(samples: u32) vk.SampleCountFlags {
     // TODO: https://github.com/Snektron/vulkan-zig/issues/27
     return switch (samples) {
@@ -173,6 +388,29 @@ pub fn vulkanSampleCount(samples: u32) vk.SampleCountFlags {
         16 => .{ .@"16_bit" = true },
         32 => .{ .@"32_bit" = true },
         else => unreachable,
+    };
+}
+
+pub fn vulkanSamplerAddressMode(address_mode: dgpu.Sampler.AddressMode) vk.SamplerAddressMode {
+    return switch (address_mode) {
+        .repeat => .repeat,
+        .mirror_repeat => .mirrored_repeat,
+        .clamp_to_edge => .clamp_to_edge,
+    };
+}
+
+pub fn vulkanSamplerMipmapMode(filter: dgpu.MipmapFilterMode) vk.SamplerMipmapMode {
+    return switch (filter) {
+        .nearest => .nearest,
+        .linear => .linear,
+    };
+}
+
+pub fn vulkanShaderStageFlags(flags: dgpu.ShaderStageFlags) vk.ShaderStageFlags {
+    return .{
+        .vertex_bit = flags.vertex,
+        .fragment_bit = flags.fragment,
+        .compute_bit = flags.compute,
     };
 }
 
@@ -189,19 +427,11 @@ pub fn vulkanStencilOp(op: dgpu.StencilOperation) vk.StencilOp {
     };
 }
 
-pub fn vulkanLoadOp(op: dgpu.LoadOp) vk.AttachmentLoadOp {
-    return switch (op) {
-        .load => .load,
-        .clear => .clear,
-        .undefined => unreachable,
-    };
-}
-
 pub fn vulkanStoreOp(op: dgpu.StoreOp) vk.AttachmentStoreOp {
     return switch (op) {
         .store => .store,
         .discard => .dont_care,
-        .undefined => unreachable,
+        .undefined => .dont_care,
     };
 }
 
@@ -241,60 +471,10 @@ pub fn vulkanVertexFormat(format: dgpu.VertexFormat) vk.Format {
     };
 }
 
-pub fn vulkanDescriptorType(entry: dgpu.BindGroupLayout.Entry) vk.DescriptorType {
-    switch (entry.buffer.type) {
-        .undefined => {},
-
-        .uniform => if (entry.buffer.has_dynamic_offset == .true) {
-            return .uniform_buffer_dynamic;
-        } else {
-            return .uniform_buffer;
-        },
-
-        .storage,
-        .read_only_storage,
-        => if (entry.buffer.has_dynamic_offset == .true) {
-            return .storage_buffer_dynamic;
-        } else {
-            return .storage_buffer;
-        },
-    }
-
-    switch (entry.sampler.type) {
-        .undefined => {},
-        else => return .sampler,
-    }
-
-    // TODO: how to decide?
-    // switch (entry.texture.type) {
-    //     .undefined => {},
-    //     else => return .sampled_image,
-    // }
-
-    // switch (entry.storage_texture.type) {
-    //     .undefined => {},
-    //     else => return .storage_image,
-    // }
-
-    unreachable;
-}
-
-pub fn vulkanShaderStageFlags(flags: dgpu.ShaderStageFlags) vk.ShaderStageFlags {
-    return .{
-        .vertex_bit = flags.vertex,
-        .fragment_bit = flags.fragment,
-        .compute_bit = flags.compute,
-    };
-}
-
-pub fn vulkanBufferUsageFlags(flags: dgpu.Buffer.UsageFlags) vk.BufferUsageFlags {
-    return .{
-        .transfer_src_bit = flags.copy_src,
-        .transfer_dst_bit = flags.copy_dst or flags.query_resolve,
-        .uniform_buffer_bit = flags.uniform,
-        .storage_buffer_bit = flags.storage,
-        .index_buffer_bit = flags.index,
-        .vertex_buffer_bit = flags.vertex,
-        .indirect_buffer_bit = flags.indirect,
+pub fn vulkanVertexInputRate(step_mode: dgpu.VertexStepMode) vk.VertexInputRate {
+    return switch (step_mode) {
+        .vertex => .vertex,
+        .instance => .instance,
+        .vertex_buffer_not_used => unreachable,
     };
 }
