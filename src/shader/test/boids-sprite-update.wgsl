@@ -23,8 +23,7 @@ struct Particles {
 fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
   var index : u32 = GlobalInvocationID.x;
 
-  // if (index >= arrayLength(&particlesA.particles)) {
-  if (index >= 1500) {
+  if (index >= arrayLength(&particlesA.particles)) {
     return;
   }
 
@@ -38,8 +37,7 @@ fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
   var pos : vec2<f32>;
   var vel : vec2<f32>;
 
-  // for (var i : u32 = 0u; i < arrayLength(&particlesA.particles); i = i + 1u) {
-  for (var i : u32 = 0u; i < 1500; i = i + 1u) {
+  for (var i : u32 = 0u; i < arrayLength(&particlesA.particles); i = i + 1u) {
     if (i == index) {
       continue;
     }

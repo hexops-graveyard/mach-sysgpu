@@ -30,6 +30,8 @@ type_value_map: std.ArrayHashMapUnmanaged(Key, IdRef, Key.Adapter, true) = .{},
 decl_map: std.AutoHashMapUnmanaged(InstIndex, Decl) = .{},
 /// Map Air Struct Instruction Index to IdRefs to prevent duplicated declarations
 struct_map: std.AutoHashMapUnmanaged(InstIndex, IdRef) = .{},
+/// Map storage variables and fields with runtime array type into their parent struct pointer
+runtiem_arr_vars: std.AutoHashMapUnmanaged(IdRef, IdRef) = .{},
 decorated: std.AutoHashMapUnmanaged(IdRef, void) = .{},
 capabilities: std.ArrayListUnmanaged(spec.Capability) = .{},
 extended_instructions: ?IdRef = null,
@@ -106,6 +108,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         spv.decorated.deinit(allocator);
         spv.branched.deinit(allocator);
         spv.capabilities.deinit(allocator);
+        spv.runtiem_arr_vars.deinit(allocator);
         if (spv.compute_stage) |stage| allocator.free(stage.interface);
         if (spv.vertex_stage) |stage| allocator.free(stage.interface);
         if (spv.fragment_stage) |stage| allocator.free(stage.interface);
@@ -625,6 +628,18 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
 
             if (!faked_struct) {
                 try spv.decorateStruct(inst.type);
+
+                for (spv.air.refToList(spv.air.getInst(inst.type).@"struct".members)) |member| {
+                    const member_type = spv.air.getInst(member).struct_member.type;
+                    if (spv.air.getInst(member_type) == .array) {
+                        try spv.annotations_section.emit(.OpDecorate, .{
+                            .target = try spv.emitType(member_type),
+                            .decoration = .{ .ArrayStride = .{
+                                .array_stride = spv.getStride(member_type, true),
+                            } },
+                        });
+                    }
+                }
             } else {
                 try spv.annotations_section.emit(.OpMemberDecorate, .{
                     .structure_type = struct_type_id,
@@ -638,6 +653,13 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
                         if (spv.air.getInst(arr_ty.elem_type) == .@"struct") {
                             try spv.decorateStruct(arr_ty.elem_type);
                         }
+
+                        try spv.annotations_section.emit(.OpDecorate, .{
+                            .target = type_id,
+                            .decoration = .{ .ArrayStride = .{
+                                .array_stride = spv.getStride(inst.type, true),
+                            } },
+                        });
                     },
                     .matrix => {
                         try spv.annotations_section.emit(.OpMemberDecorate, .{
@@ -645,49 +667,23 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
                             .member = 0,
                             .decoration = .ColMajor,
                         });
+                        try spv.annotations_section.emit(.OpMemberDecorate, .{
+                            .structure_type = struct_type_id,
+                            .member = 0,
+                            .decoration = .{ .MatrixStride = .{
+                                .matrix_stride = spv.getStride(inst.type, true),
+                            } },
+                        });
                     },
                     else => {},
                 }
             }
 
             switch (inst.addr_space) {
-                .uniform => {
-                    if (faked_struct) {
-                        switch (spv.air.getInst(inst.type)) {
-                            .matrix => try spv.annotations_section.emit(.OpMemberDecorate, .{
-                                .structure_type = struct_type_id,
-                                .member = 0,
-                                .decoration = .{ .MatrixStride = .{
-                                    .matrix_stride = spv.getStride(inst.type, true),
-                                } },
-                            }),
-                            .array => {
-                                try spv.annotations_section.emit(.OpDecorate, .{
-                                    .target = type_id,
-                                    .decoration = .{ .ArrayStride = .{
-                                        .array_stride = spv.getStride(inst.type, true),
-                                    } },
-                                });
-                            },
-                            else => {},
-                        }
-                    } else {
-                        for (spv.air.refToList(spv.air.getInst(inst.type).@"struct".members)) |member| {
-                            const member_type = spv.air.getInst(member).struct_member.type;
-                            if (spv.air.getInst(member_type) == .array) {
-                                try spv.annotations_section.emit(.OpDecorate, .{
-                                    .target = try spv.emitType(member_type),
-                                    .decoration = .{ .ArrayStride = .{
-                                        .array_stride = spv.getStride(member_type, true),
-                                    } },
-                                });
-                            }
-                        }
-
-                        try spv.emitStride(inst.type, type_id);
-                    }
+                .uniform => if (!faked_struct) {
+                    try spv.emitStructStride(inst.type, type_id);
                 },
-                .storage => try spv.emitStride(inst.type, type_id),
+                .storage => try spv.emitStructStride(inst.type, type_id),
                 else => {},
             }
 
@@ -787,7 +783,7 @@ fn decorateStruct(spv: *SpirV, inst: InstIndex) !void {
     }
 }
 
-fn emitStride(spv: *SpirV, inst: InstIndex, id: IdRef) !void {
+fn emitStructStride(spv: *SpirV, inst: InstIndex, id: IdRef) !void {
     switch (spv.air.getInst(inst)) {
         .@"struct" => |@"struct"| {
             for (spv.air.refToList(@"struct".members), 0..) |member, i| {
@@ -1340,6 +1336,8 @@ fn emitVarAccess(spv: *SpirV, section: *Section, inst: InstIndex) !PtrAccess {
             .indexes = &.{index_id},
         });
 
+        try spv.runtiem_arr_vars.put(spv.allocator, id, decl.id);
+
         return .{
             .id = id,
             .type = .{
@@ -1486,6 +1484,12 @@ fn emitFieldAccess(spv: *SpirV, section: *Section, inst: Inst.FieldAccess) !PtrA
         .base = base_decl.id,
         .indexes = &.{index_id},
     });
+
+    if (spv.air.getInst(struct_member.type) == .array and
+        spv.air.getInst(struct_member.type).array.len == .none)
+    {
+        try spv.runtiem_arr_vars.put(spv.allocator, id, base_decl.id);
+    }
 
     return .{
         .id = id,
@@ -2074,6 +2078,16 @@ fn emitUnaryIntrinsic(spv: *SpirV, section: *Section, unary: Inst.UnaryIntrinsic
     };
 
     const instruction: Word = switch (unary.op) {
+        .array_length => {
+            const expr_parent_ptr = spv.runtiem_arr_vars.get(expr) orelse expr;
+            try section.emit(.OpArrayLength, .{
+                .id_result_type = result_type,
+                .id_result = id,
+                .structure = expr_parent_ptr,
+                .array_member = 0, // TODO
+            });
+            return id;
+        },
         .sin => 13,
         .cos => 14,
         .normalize => 69,
