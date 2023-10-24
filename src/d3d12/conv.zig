@@ -2,19 +2,6 @@ const dgpu = @import("../dgpu/main.zig");
 const utils = @import("../utils.zig");
 const c = @import("c.zig");
 
-fn hasDepthStencil(format: dgpu.Texture.Format) bool {
-    return switch (format) {
-        .stencil8,
-        .depth16_unorm,
-        .depth24_plus,
-        .depth24_plus_stencil8,
-        .depth32_float,
-        .depth32_float_stencil8,
-        => true,
-        else => false,
-    };
-}
-
 fn stencilEnable(stencil: dgpu.StencilFaceState) bool {
     return stencil.compare != .always or stencil.fail_op != .keep or stencil.depth_fail_op != .keep or stencil.pass_op != .keep;
 }
@@ -360,7 +347,7 @@ pub fn d3d12ResourceFlagsForTexture(
 ) c.D3D12_RESOURCE_FLAGS {
     var flags: c.D3D12_RESOURCE_FLAGS = c.D3D12_RESOURCE_FLAG_NONE;
     if (usage.render_attachment) {
-        if (hasDepthStencil(format)) {
+        if (utils.hasDepthStencil(format)) {
             flags |= c.D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
         } else {
             flags |= c.D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
@@ -368,7 +355,7 @@ pub fn d3d12ResourceFlagsForTexture(
     }
     if (usage.storage_binding)
         flags |= c.D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-    if (!usage.texture_binding and usage.render_attachment and hasDepthStencil(format))
+    if (!usage.texture_binding and usage.render_attachment and utils.hasDepthStencil(format))
         flags |= c.D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
     return flags;
 }

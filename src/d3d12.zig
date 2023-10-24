@@ -19,7 +19,6 @@ const dsv_heap_size = 1024;
 const dsv_block_size = 1;
 const upload_page_size = 64 * 1024 * 1024; // TODO - split writes and/or support large uploads
 const max_back_buffer_count = 3;
-const max_state_trackers = 8;
 
 var allocator: std.mem.Allocator = undefined;
 var debug_enabled: bool = undefined;
@@ -1226,34 +1225,6 @@ pub const Texture = struct {
     pub fn calcSubresource(texture: *Texture, mip_level: u32, array_slice: u32) u32 {
         return mip_level + (array_slice * texture.mip_level_count);
     }
-
-    pub fn calcOrigin(texture: *Texture, origin: dgpu.Origin3D) struct {
-        x: u32,
-        y: u32,
-        z: u32,
-        array_slice: u32,
-    } {
-        return .{
-            .x = origin.x,
-            .y = origin.y,
-            .z = if (texture.dimension == .dimension_3d) origin.z else 0,
-            .array_slice = if (texture.dimension == .dimension_3d) 0 else origin.z,
-        };
-    }
-
-    pub fn calcExtent(texture: *Texture, extent: dgpu.Extent3D) struct {
-        width: u32,
-        height: u32,
-        depth: u32,
-        array_count: u32,
-    } {
-        return .{
-            .width = extent.width,
-            .height = extent.height,
-            .depth = if (texture.dimension == .dimension_3d) extent.depth_or_array_layers else 1,
-            .array_count = if (texture.dimension == .dimension_3d) 0 else extent.depth_or_array_layers,
-        };
-    }
 };
 
 pub const TextureView = struct {
@@ -1998,11 +1969,11 @@ pub const ShaderModule = struct {
         return module;
     }
 
-    pub fn deinit(shader_module: *ShaderModule) void {
-        shader_module.air.deinit(allocator);
-        allocator.free(shader_module.code);
-        allocator.destroy(shader_module.air);
-        allocator.destroy(shader_module);
+    pub fn deinit(module: *ShaderModule) void {
+        module.air.deinit(allocator);
+        allocator.free(module.code);
+        allocator.destroy(module.air);
+        allocator.destroy(module);
     }
 
     // Internal
@@ -2558,8 +2529,8 @@ pub const CommandEncoder = struct {
         try encoder.state_tracker.transition(&destination_texture.resource, c.D3D12_RESOURCE_STATE_COPY_DEST);
         encoder.state_tracker.flush(command_list);
 
-        const copy_size = destination_texture.calcExtent(copy_size_raw.*);
-        const destination_origin = destination_texture.calcOrigin(destination.origin);
+        const copy_size = utils.calcExtent(destination_texture.dimension, copy_size_raw.*);
+        const destination_origin = utils.calcOrigin(destination_texture.dimension, destination.origin);
         const destination_subresource_index = destination_texture.calcSubresource(destination.mip_level, destination_origin.array_slice);
 
         std.debug.assert(copy_size.array_count == 1); // TODO
@@ -2612,9 +2583,9 @@ pub const CommandEncoder = struct {
         try encoder.state_tracker.transition(&destination_texture.resource, c.D3D12_RESOURCE_STATE_COPY_DEST);
         encoder.state_tracker.flush(command_list);
 
-        const copy_size = destination_texture.calcExtent(copy_size_raw.*);
-        const source_origin = source_texture.calcOrigin(source.origin);
-        const destination_origin = destination_texture.calcOrigin(destination.origin);
+        const copy_size = utils.calcExtent(destination_texture.dimension, copy_size_raw.*);
+        const source_origin = utils.calcOrigin(source_texture.dimension, source.origin);
+        const destination_origin = utils.calcOrigin(destination_texture.dimension, destination.origin);
 
         const source_subresource_index = source_texture.calcSubresource(source.mip_level, source_origin.array_slice);
         const destination_subresource_index = destination_texture.calcSubresource(destination.mip_level, destination_origin.array_slice);
@@ -2707,8 +2678,8 @@ pub const CommandEncoder = struct {
         try encoder.state_tracker.transition(&destination_texture.resource, c.D3D12_RESOURCE_STATE_COPY_DEST);
         encoder.state_tracker.flush(command_list);
 
-        const write_size = destination_texture.calcExtent(write_size_raw.*);
-        const destination_origin = destination_texture.calcOrigin(destination.origin);
+        const write_size = utils.calcExtent(destination_texture.dimension, write_size_raw.*);
+        const destination_origin = utils.calcOrigin(destination_texture.dimension, destination.origin);
         const destination_subresource_index = destination_texture.calcSubresource(destination.mip_level, destination_origin.array_slice);
 
         std.debug.assert(write_size.array_count == 1); // TODO
@@ -3173,6 +3144,8 @@ pub const RenderPassEncoder = struct {
 
             if (attach.resolve_target) |resolve_target_raw| {
                 const resolve_target: *TextureView = @ptrCast(@alignCast(resolve_target_raw));
+
+                try encoder.reference_tracker.referenceTexture(resolve_target.texture);
                 try encoder.state_tracker.transition(&view.texture.resource, c.D3D12_RESOURCE_STATE_RESOLVE_SOURCE);
                 try encoder.state_tracker.transition(&resolve_target.texture.resource, c.D3D12_RESOURCE_STATE_RESOLVE_DEST);
 
@@ -3347,7 +3320,15 @@ pub const RenderPassEncoder = struct {
         encoder.vertex_apply_count = @max(encoder.vertex_apply_count, slot + 1);
     }
 
-    pub fn setViewport(encoder: *RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
+    pub fn setViewport(
+        encoder: *RenderPassEncoder,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
+    ) void {
         const command_list = encoder.command_list;
 
         const viewport = c.D3D12_VIEWPORT{
