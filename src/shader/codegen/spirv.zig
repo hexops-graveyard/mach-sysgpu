@@ -291,7 +291,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                 if (member.builtin) |builtin| {
                     try spv.annotations_section.emit(.OpDecorate, .{
                         .target = return_var_id,
-                        .decoration = .{ .BuiltIn = .{ .built_in = spirvBuiltin(builtin) } },
+                        .decoration = .{ .BuiltIn = .{ .built_in = spirvBuiltin(builtin, inst.stage) } },
                     });
                 }
 
@@ -331,7 +331,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
             if (inst.return_attrs.builtin) |builtin| {
                 try spv.annotations_section.emit(.OpDecorate, .{
                     .target = return_var_id,
-                    .decoration = .{ .BuiltIn = .{ .built_in = spirvBuiltin(builtin) } },
+                    .decoration = .{ .BuiltIn = .{ .built_in = spirvBuiltin(builtin, inst.stage) } },
                 });
             }
 
@@ -385,18 +385,9 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                     try spv.annotations_section.emit(.OpDecorate, .{
                         .target = param_id,
                         .decoration = .{ .BuiltIn = .{
-                            .built_in = spirvBuiltin(builtin),
+                            .built_in = spirvBuiltin(builtin, inst.stage),
                         } },
                     });
-
-                    if (builtin == .local_invocation_id) {
-                        try spv.annotations_section.emit(.OpDecorate, .{
-                            .target = param_id,
-                            .decoration = .{ .BuiltIn = .{
-                                .built_in = .LocalInvocationIndex,
-                            } },
-                        });
-                    }
                 }
 
                 if (param_inst.location) |location| {
@@ -682,8 +673,20 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
             switch (inst.addr_space) {
                 .uniform => if (!faked_struct) {
                     try spv.emitStructStride(inst.type, type_id);
+                    try spv.annotations_section.emit(.OpDecorate, .{
+                        .target = id,
+                        .decoration = .NonWritable,
+                    });
                 },
-                .storage => try spv.emitStructStride(inst.type, type_id),
+                .storage => {
+                    try spv.emitStructStride(inst.type, type_id);
+                    if (inst.access_mode == .read) {
+                        try spv.annotations_section.emit(.OpDecorate, .{
+                            .target = id,
+                            .decoration = .NonWritable,
+                        });
+                    }
+                },
                 else => {},
             }
 
@@ -702,9 +705,13 @@ fn emitVarProto(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     };
 
     const initializer = blk: {
-        if (inst.addr_space == .uniform or inst.addr_space == .storage) break :blk null;
         if (type_inst == .array and type_inst.array.len == .none) break :blk null;
         if (type_inst == .sampler_type or type_inst == .texture_type) break :blk null;
+        switch (inst.addr_space) {
+            .uniform, .storage, .workgroup => break :blk null,
+            else => {},
+        }
+
         break :blk try spv.resolve(.{ .null = type_id });
     };
 
@@ -1081,9 +1088,15 @@ fn emitFor(spv: *SpirV, section: *Section, inst: Inst.For) !void {
 
     try section.emit(.OpLabel, .{ .id_result = header_label });
     const cond = try spv.emitExpr(section, inst.cond);
+    const cond_not = spv.allocId();
+    try section.emit(.OpLogicalNot, .{
+        .id_result = cond_not,
+        .id_result_type = try spv.resolve(.bool_type),
+        .operand = cond,
+    });
     try section.emit(.OpSelectionMerge, .{ .merge_block = true_label, .selection_control = .{} });
     try section.emit(.OpBranchConditional, .{
-        .condition = cond,
+        .condition = cond_not,
         .true_label = false_label,
         .false_label = true_label,
     });
@@ -1092,9 +1105,10 @@ fn emitFor(spv: *SpirV, section: *Section, inst: Inst.For) !void {
     if (inst.body != .none) {
         const body = spv.air.getInst(inst.body).block;
         try spv.emitBlock(section, body);
-        if (spv.branched.get(body) == null) {
-            try section.emit(.OpBranch, .{ .target_label = merge_label });
-        }
+        try section.emit(.OpBranch, .{ .target_label = continue_label });
+        // if (spv.branched.get(body) == null) {
+        //     try section.emit(.OpBranch, .{ .target_label = merge_label });
+        // }
     } else {
         try section.emit(.OpBranch, .{ .target_label = merge_label });
     }
@@ -2286,8 +2300,9 @@ fn emitTextureDimension(spv: *SpirV, section: *Section, ts: Inst.TextureDimensio
     const level = if (ts.level != .none)
         try spv.emitExpr(section, ts.level)
     else
-        try spv.resolve(.{ .int = .{ .type = .i32, .value = 0 } });
+        try spv.resolve(.{ .int = .{ .type = .u32, .value = 0 } });
     const result_type = try spv.emitType(ts.result_type);
+
     try section.emit(.OpImageQuerySizeLod, .{
         .id_result_type = result_type,
         .id_result = id,
@@ -2898,11 +2913,14 @@ fn allocId(spv: *SpirV) IdResult {
     return .{ .id = spv.next_result_id };
 }
 
-fn spirvBuiltin(builtin: Air.Inst.Builtin) spec.BuiltIn {
+fn spirvBuiltin(builtin: Air.Inst.Builtin, stage: Air.Inst.Fn.Stage) spec.BuiltIn {
     return switch (builtin) {
         .vertex_index => .VertexIndex,
         .instance_index => .InstanceIndex,
-        .position => .Position,
+        .position => switch (stage) {
+            .fragment => .FragCoord,
+            else => .Position,
+        },
         .front_facing => .FrontFacing,
         .frag_depth => .FragDepth,
         .local_invocation_id => .LocalInvocationId,
