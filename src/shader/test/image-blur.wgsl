@@ -32,23 +32,30 @@ var<workgroup> tile : array<array<vec3<f32>, 128>, 4>;
 @compute @workgroup_size(32, 1, 1)
 fn main(
   @builtin(workgroup_id) WorkGroupID : vec3<u32>,
-  @builtin(local_invocation_id) LocalInvocationID : vec3<u32>
+  @builtin(local_invocation_id) LocalInvocationID : vec3<u32>,
+  @builtin(local_invocation_index) LocalInvocationIndex : u32
 ) {
+  for (var idx = LocalInvocationIndex; idx < 512u; idx+=32)
+  {
+      tile[idx / 128u][idx % 128u] = vec3(0.0);
+  }
+  workgroupBarrier();
+
   // TODO - mixed vector arithmetic (vec2<u32> and vec2<i32>)
   let filterOffset = (params.filterDim - 1) / 2;
-  let dims = vec2<u32>(textureDimensions(inputTex, 0));
+  let dims = textureDimensions(inputTex, 0);
   let baseIndex = vec2<u32>(WorkGroupID.xy * vec2(params.blockDim, 4) +
                             LocalInvocationID.xy * vec2<u32>(4, 1))
-                  - vec2<u32>(filterOffset, 0);
+                  - vec2<u32>(u32(filterOffset), 0);
 
-  for (var r = 0; r < 4; r++) {
-    for (var c = 0; c < 4; c++) {
+  for (var r: u32 = 0; r < 4; r++) {
+    for (var c: u32 = 0; c < 4; c++) {
       var loadIndex = baseIndex + vec2<u32>(c, r);
       if (flip.value != 0u) {
         loadIndex = loadIndex.yx;
       }
 
-      tile[r][4 * LocalInvocationID.x + u32(c)] = textureSampleLevel(
+      tile[r][4 * LocalInvocationID.x + c] = textureSampleLevel(
         inputTex,
         samp,
         (vec2<f32>(loadIndex) + vec2<f32>(0.25, 0.25)) / vec2<f32>(dims),
@@ -59,20 +66,20 @@ fn main(
 
   workgroupBarrier();
 
-  for (var r = 0; r < 4; r++) {
-    for (var c = 0; c < 4; c++) {
+  for (var r: u32 = 0; r < 4; r++) {
+    for (var c: u32 = 0; c < 4; c++) {
       var writeIndex = baseIndex + vec2<u32>(c, r);
       if (flip.value != 0) {
         writeIndex = writeIndex.yx;
       }
 
       let center = u32(4 * LocalInvocationID.x) + c;
-      if (center >= filterOffset &&
-          center < 128 - filterOffset &&
+      if (center >= u32(filterOffset) &&
+          center < 128 - u32(filterOffset) &&
           all(writeIndex < dims)) {
         var acc = vec3(0.0, 0.0, 0.0);
         for (var f = 0; f < params.filterDim; f++) {
-          var i = center + f - filterOffset;
+          var i = i32(center) + f - filterOffset;
           acc = acc + (1.0 / f32(params.filterDim)) * tile[r][i];
         }
         textureStore(outputTex, writeIndex, vec4(acc, 1.0));
