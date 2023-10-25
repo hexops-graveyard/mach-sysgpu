@@ -18,7 +18,6 @@ pub fn vulkanAccessFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.AccessFl
         .vertex_attribute_read_bit = usage.vertex,
         .uniform_read_bit = usage.uniform,
         .shader_read_bit = usage.storage,
-        .transfer_read_bit = usage.copy_src,
         .host_read_bit = usage.map_read,
     };
 }
@@ -28,7 +27,6 @@ pub fn vulkanAccessFlagsForImageRead(usage: dgpu.Texture.UsageFlags, format: dgp
         .shader_read_bit = usage.texture_binding or usage.storage_binding,
         .color_attachment_read_bit = usage.render_attachment and !utils.hasDepthStencil(format),
         .depth_stencil_attachment_read_bit = usage.render_attachment and utils.hasDepthStencil(format),
-        .transfer_read_bit = usage.copy_src,
     };
 }
 
@@ -264,6 +262,26 @@ pub fn vulkanFrontFace(front_face: dgpu.FrontFace) vk.FrontFace {
     };
 }
 
+pub fn vulkanImageAspectFlags(aspect: dgpu.Texture.Aspect, format: dgpu.Texture.Format) vk.ImageAspectFlags {
+    return switch (aspect) {
+        .all => vulkanImageAspectFlagsForFormat(format),
+        .stencil_only => .{ .stencil_bit = true },
+        .depth_only => .{ .depth_bit = true },
+        .plane0_only => .{ .plane_0_bit = true },
+        .plane1_only => .{ .plane_1_bit = true },
+    };
+}
+
+pub fn vulkanImageAspectFlagsForFormat(format: dgpu.Texture.Format) vk.ImageAspectFlags {
+    return switch (format) {
+        .stencil8 => .{ .stencil_bit = true },
+        .depth16_unorm, .depth24_plus, .depth32_float => .{ .depth_bit = true },
+        .depth24_plus_stencil8, .depth32_float_stencil8 => .{ .depth_bit = true, .stencil_bit = true },
+        .r8_bg8_biplanar420_unorm => .{ .plane_0_bit = true, .plane_1_bit = true },
+        else => .{ .color_bit = true },
+    };
+}
+
 pub fn vulkanImageCreateFlags(cube_compatible: bool, view_format_count: usize) vk.ImageCreateFlags {
     return .{
         .mutable_format_bit = view_format_count > 0,
@@ -272,12 +290,19 @@ pub fn vulkanImageCreateFlags(cube_compatible: bool, view_format_count: usize) v
 }
 
 pub fn vulkanImageLayoutForRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.ImageLayout {
+    // In case where we do not read, use an appropriate write state to avoid unnecessary layout changes
     return if (usage.storage_binding)
         .general
-    else if (utils.hasDepthStencil(format))
+    else if (usage.texture_binding and utils.hasDepthStencil(format))
         .depth_stencil_read_only_optimal
+    else if (usage.texture_binding)
+        .shader_read_only_optimal
+    else if (usage.render_attachment and utils.hasDepthStencil(format))
+        .depth_stencil_read_only_optimal
+    else if (usage.render_attachment)
+        .color_attachment_optimal
     else
-        .shader_read_only_optimal;
+        .general;
 }
 
 pub fn vulkanImageLayoutForTextureBinding(sample_type: dgpu.Texture.SampleType) vk.ImageLayout {
@@ -343,7 +368,6 @@ pub fn vulkanPipelineStageFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.P
         .vertex_shader_bit = usage.uniform or usage.storage,
         .fragment_shader_bit = usage.uniform or usage.storage,
         .compute_shader_bit = usage.uniform or usage.storage,
-        .transfer_bit = usage.copy_src,
         .host_bit = usage.map_read,
     };
 }
@@ -356,7 +380,6 @@ pub fn vulkanPipelineStageFlagsForImageRead(usage: dgpu.Texture.UsageFlags, form
         .late_fragment_tests_bit = usage.render_attachment and utils.hasDepthStencil(format),
         .color_attachment_output_bit = usage.render_attachment and !utils.hasDepthStencil(format),
         .compute_shader_bit = usage.texture_binding or usage.storage_binding,
-        .transfer_bit = usage.copy_src,
     };
 }
 

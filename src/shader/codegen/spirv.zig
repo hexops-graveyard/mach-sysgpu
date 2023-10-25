@@ -2527,7 +2527,7 @@ fn emitFloatCast(spv: *SpirV, section: *Section, dest_type: Inst.Float.Type, cas
                 .id_result_type = dest_type_id,
                 .id_result = id,
                 .condition = value_id,
-                .object_1 = try spv.resolve(.{ .float = .{ .type = dest_type, .value = 1 } }),
+                .object_1 = try spv.resolve(.{ .float = .{ .type = dest_type, .value = @bitCast(@as(f32, 1.0)) } }),
                 .object_2 = try spv.resolve(.{ .float = .{ .type = dest_type, .value = 0 } }),
             });
         },
