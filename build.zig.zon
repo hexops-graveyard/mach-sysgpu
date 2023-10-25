@@ -18,20 +18,20 @@
             .hash = "122080249197eef2dc5290874ead429285741bcd509b57badc22b716f2630d78149e",
         },
         .mach_gpu = .{
-            .url = "https://pkg.machengine.org/mach-gpu/1189b55b5a1bd1a4a03eb0c3a9b358e6bdfa7e52.tar.gz",
-            .hash = "122073087d37d48491245a6da40f6b2be8c255e8607fa5ff37f7b172f3c2d8fa5a79",
+            .url = "https://pkg.machengine.org/mach-gpu/724787c4339f32537550b23f50acb345f7e17f16.tar.gz",
+            .hash = "12207ae0264760e850554e47a71124dd0156e86785510662f87a268b222c10a86206",
         },
         .mach_objc = .{
-            .url = "https://pkg.machengine.org/mach-objc/aa5eb3220a294fefbf768315150827eecd434379.tar.gz",
-            .hash = "1220d0b67b994c7e0d3c4a91d9541c50b294746602e163ce0728c62b1dbeed450a02",
+            .url = "https://pkg.machengine.org/mach-objc/52ce29436bc43e69d84cb48ba8f0b1b284847125.tar.gz",
+            .hash = "122039b4af1d6006d2daa48547a6224464fbc5d69d480a54a9c8f92dfe4a555d1af6",
         },
         .direct3d_headers = .{
             .url = "https://pkg.machengine.org/direct3d-headers/9617cfd497fae598610a7b0a4be0b035e7308e93.tar.gz",
             .hash = "122098cc0b0a39d24aaffcd6d5556e8f31f5dd1a754559ffa468918f2ed6c1ad0a03",
         },
         .xcode_frameworks = .{
-            .url = "https://pkg.machengine.org/xcode-frameworks/e77a5c6809a0d3f62ec549ee56e9d2dc6807cd5b.tar.gz",
-            .hash = "12202044ed9fd69af156b0afde619ffd1d111554c557f57ab670ca9960e76d60d0b8",
+            .url = "https://pkg.machengine.org/xcode-frameworks/8a920385383cc4c0a2a4f55b084d402a9400a5a8.tar.gz",
+            .hash = "122051b3c616c62d55a82207c1cb76e2264b26e8378f56b1e5376d7684bd13616589",
         },
     },
 }
