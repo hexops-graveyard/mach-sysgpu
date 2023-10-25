@@ -674,6 +674,7 @@ pub const Device = struct {
         format: vk.Format,
         load_op: dgpu.LoadOp,
         store_op: dgpu.StoreOp,
+        layout: vk.ImageLayout,
         resolve_format: ?vk.Format,
     };
 
@@ -683,6 +684,7 @@ pub const Device = struct {
         depth_store_op: dgpu.StoreOp,
         stencil_load_op: dgpu.LoadOp,
         stencil_store_op: dgpu.StoreOp,
+        layout: vk.ImageLayout,
         read_only: bool,
     };
 
@@ -698,6 +700,7 @@ pub const Device = struct {
                     .format = .undefined,
                     .load_op = .load,
                     .store_op = .store,
+                    .layout = .undefined,
                     .resolve_format = null,
                 };
             }
@@ -726,8 +729,8 @@ pub const Device = struct {
                 .store_op = conv.vulkanStoreOp(attach.store_op),
                 .stencil_load_op = .dont_care,
                 .stencil_store_op = .dont_care,
-                .initial_layout = .undefined,
-                .final_layout = .present_src_khr,
+                .initial_layout = attach.layout,
+                .final_layout = attach.layout,
             });
             color_refs.appendAssumeCapacity(.{
                 .attachment = @intCast(attachments.len - 1),
@@ -742,8 +745,8 @@ pub const Device = struct {
                     .store_op = .store,
                     .stencil_load_op = .dont_care,
                     .stencil_store_op = .dont_care,
-                    .initial_layout = .undefined,
-                    .final_layout = .present_src_khr,
+                    .initial_layout = attach.layout,
+                    .final_layout = attach.layout,
                 });
                 resolve_refs.appendAssumeCapacity(.{
                     .attachment = @intCast(attachments.len - 1),
@@ -765,8 +768,8 @@ pub const Device = struct {
                 .store_op = conv.vulkanStoreOp(depth_stencil.depth_store_op),
                 .stencil_load_op = conv.vulkanLoadOp(depth_stencil.stencil_load_op),
                 .stencil_store_op = conv.vulkanStoreOp(depth_stencil.stencil_store_op),
-                .initial_layout = layout,
-                .final_layout = layout,
+                .initial_layout = depth_stencil.layout,
+                .final_layout = depth_stencil.layout,
             });
 
             break :blk &vk.AttachmentReference{
@@ -1281,6 +1284,13 @@ pub const Texture = struct {
             .mip_level_count = desc.mip_level_count,
             .sample_count = desc.sample_count,
         };
+        errdefer texture.manager.release();
+
+        // Transition to read-state
+        const queue = try device.getQueue();
+        const encoder = try queue.getCommandEncoder();
+        try encoder.state_tracker.initTexture(texture);
+
         return texture;
     }
 
@@ -1299,7 +1309,7 @@ pub const Texture = struct {
             .swapchain = swapchain,
             .read_stage_mask = conv.vulkanPipelineStageFlagsForImageRead(desc.usage, desc.format),
             .read_access_mask = conv.vulkanAccessFlagsForImageRead(desc.usage, desc.format),
-            .read_image_layout = conv.vulkanImageLayoutForRead(desc.usage, desc.format),
+            .read_image_layout = .present_src_khr,
             .usage = desc.usage,
             .dimension = .dimension_2d,
             .size = .{ .width = desc.width, .height = desc.height, .depth_or_array_layers = 1 },
@@ -1307,6 +1317,13 @@ pub const Texture = struct {
             .mip_level_count = 1,
             .sample_count = 1,
         };
+        errdefer texture.manager.release();
+
+        // Transition to read-state
+        const queue = try device.getQueue();
+        const encoder = try queue.getCommandEncoder();
+        try encoder.state_tracker.initTexture(texture);
+
         return texture;
     }
 
@@ -1345,24 +1362,7 @@ pub const TextureView = struct {
         };
 
         const format = conv.vulkanFormat(if (desc.format != .undefined) desc.format else texture.format);
-        const aspect: vk.ImageAspectFlags = blk: {
-            if (desc.aspect == .all) {
-                break :blk switch (desc.format) {
-                    .stencil8 => .{ .stencil_bit = true },
-                    .depth16_unorm, .depth24_plus, .depth32_float => .{ .depth_bit = true },
-                    .depth24_plus_stencil8, .depth32_float_stencil8 => .{ .depth_bit = true, .stencil_bit = true },
-                    .r8_bg8_biplanar420_unorm => .{ .plane_0_bit = true, .plane_1_bit = true },
-                    else => .{ .color_bit = true },
-                };
-            }
-
-            break :blk .{
-                .stencil_bit = desc.aspect == .stencil_only,
-                .depth_bit = desc.aspect == .depth_only,
-                .plane_0_bit = desc.aspect == .plane0_only,
-                .plane_1_bit = desc.aspect == .plane1_only,
-            };
-        };
+        const aspect = conv.vulkanImageAspectFlags(desc.aspect, desc.format);
 
         const vk_view = try vkd.createImageView(vk_device, &.{
             .image = texture.image,
@@ -2027,6 +2027,7 @@ pub const RenderPipeline = struct {
                     .format = conv.vulkanFormat(target.format),
                     .load_op = .clear,
                     .store_op = .store,
+                    .layout = .color_attachment_optimal,
                     .resolve_format = null,
                 });
             }
@@ -2090,6 +2091,7 @@ pub const RenderPipeline = struct {
                 .depth_store_op = .store,
                 .stencil_load_op = .load,
                 .stencil_store_op = .store,
+                .layout = .depth_stencil_attachment_optimal,
                 .read_only = ds.depth_write_enabled == .false and ds.stencil_write_mask == 0,
             };
         }
@@ -2396,7 +2398,7 @@ pub const CommandEncoder = struct {
 
         try encoder.reference_tracker.referenceBuffer(source);
         try encoder.reference_tracker.referenceBuffer(destination);
-        try encoder.state_tracker.readFromBuffer(source);
+        try encoder.state_tracker.copyFromBuffer(source);
         try encoder.state_tracker.writeToBuffer(destination, .{ .transfer_bit = true }, .{ .transfer_write_bit = true });
         encoder.state_tracker.flush(vk_command_buffer);
 
@@ -2420,7 +2422,7 @@ pub const CommandEncoder = struct {
 
         try encoder.reference_tracker.referenceBuffer(source_buffer);
         try encoder.reference_tracker.referenceTexture(destination_texture);
-        try encoder.state_tracker.readFromBuffer(source_buffer);
+        try encoder.state_tracker.copyFromBuffer(source_buffer);
         try encoder.state_tracker.writeToTexture(
             destination_texture,
             .{ .transfer_bit = true },
@@ -2437,16 +2439,18 @@ pub const CommandEncoder = struct {
             .buffer_row_length = source.layout.bytes_per_row / 4, // TODO
             .buffer_image_height = source.layout.rows_per_image,
             .image_subresource = .{
-                .aspect_mask = .{ .color_bit = true }, // TODO
+                .aspect_mask = conv.vulkanImageAspectFlags(destination.aspect, destination_texture.format),
                 .mip_level = destination.mip_level,
                 .base_array_layer = destination_origin.array_slice,
                 .layer_count = copy_size.array_count,
             },
-            .image_offset = .{ .x = @intCast(destination_origin.x), .y = @intCast(destination_origin.y), .z = @intCast(destination_origin.z) },
+            .image_offset = .{
+                .x = @intCast(destination_origin.x),
+                .y = @intCast(destination_origin.y),
+                .z = @intCast(destination_origin.z),
+            },
             .image_extent = .{ .width = copy_size.width, .height = copy_size.height, .depth = copy_size.depth },
         };
-
-        std.debug.print("copyBufferToTexture {}\n", .{region.buffer_row_length});
 
         vkd.cmdCopyBufferToImage(
             vk_command_buffer,
@@ -2462,12 +2466,62 @@ pub const CommandEncoder = struct {
         encoder: *CommandEncoder,
         source: *const dgpu.ImageCopyTexture,
         destination: *const dgpu.ImageCopyTexture,
-        copy_size: *const dgpu.Extent3D,
+        copy_size_raw: *const dgpu.Extent3D,
     ) !void {
-        _ = copy_size;
-        _ = destination;
-        _ = source;
-        _ = encoder;
+        const vk_command_buffer = encoder.command_buffer.vk_command_buffer;
+        const source_texture: *Texture = @ptrCast(@alignCast(source.texture));
+        const destination_texture: *Texture = @ptrCast(@alignCast(destination.texture));
+
+        try encoder.reference_tracker.referenceTexture(source_texture);
+        try encoder.reference_tracker.referenceTexture(destination_texture);
+        try encoder.state_tracker.copyFromTexture(source_texture);
+        try encoder.state_tracker.writeToTexture(
+            destination_texture,
+            .{ .transfer_bit = true },
+            .{ .transfer_write_bit = true },
+            .transfer_dst_optimal,
+        );
+        encoder.state_tracker.flush(vk_command_buffer);
+
+        const copy_size = utils.calcExtent(destination_texture.dimension, copy_size_raw.*);
+        const source_origin = utils.calcOrigin(source_texture.dimension, source.origin);
+        const destination_origin = utils.calcOrigin(destination_texture.dimension, destination.origin);
+
+        const region = vk.ImageCopy{
+            .src_subresource = .{
+                .aspect_mask = conv.vulkanImageAspectFlags(source.aspect, source_texture.format),
+                .mip_level = source.mip_level,
+                .base_array_layer = source_origin.array_slice,
+                .layer_count = copy_size.array_count,
+            },
+            .src_offset = .{
+                .x = @intCast(source_origin.x),
+                .y = @intCast(source_origin.y),
+                .z = @intCast(source_origin.z),
+            },
+            .dst_subresource = .{
+                .aspect_mask = conv.vulkanImageAspectFlags(destination.aspect, destination_texture.format),
+                .mip_level = destination.mip_level,
+                .base_array_layer = destination_origin.array_slice,
+                .layer_count = copy_size.array_count,
+            },
+            .dst_offset = .{
+                .x = @intCast(destination_origin.x),
+                .y = @intCast(destination_origin.y),
+                .z = @intCast(destination_origin.z),
+            },
+            .extent = .{ .width = copy_size.width, .height = copy_size.height, .depth = copy_size.depth },
+        };
+
+        vkd.cmdCopyImage(
+            vk_command_buffer,
+            source_texture.image,
+            .transfer_src_optimal,
+            destination_texture.image,
+            .transfer_dst_optimal,
+            1,
+            @ptrCast(&region),
+        );
     }
 
     pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
@@ -2520,7 +2574,9 @@ pub const StateTracker = struct {
 
     device: *Device = undefined,
     written_buffers: std.AutoHashMapUnmanaged(*Buffer, BufferState) = .{},
+    copy_buffers: std.AutoHashMapUnmanaged(*Buffer, void) = .{},
     written_textures: std.AutoHashMapUnmanaged(*Texture, TextureState) = .{},
+    copy_textures: std.AutoHashMapUnmanaged(*Texture, void) = .{},
     image_barriers: std.ArrayListUnmanaged(vk.ImageMemoryBarrier) = .{},
     src_stage_mask: vk.PipelineStageFlags = .{},
     dst_stage_mask: vk.PipelineStageFlags = .{},
@@ -2533,7 +2589,9 @@ pub const StateTracker = struct {
 
     pub fn deinit(tracker: *StateTracker) void {
         tracker.written_buffers.deinit(allocator);
+        tracker.copy_buffers.deinit(allocator);
         tracker.written_textures.deinit(allocator);
+        tracker.copy_textures.deinit(allocator);
         tracker.image_barriers.deinit(allocator);
     }
 
@@ -2575,6 +2633,10 @@ pub const StateTracker = struct {
 
             tracker.src_access_mask = tracker.src_access_mask.merge(write.value.access_mask);
             tracker.dst_access_mask = tracker.dst_access_mask.merge(access_mask);
+        } else if (tracker.copy_buffers.fetchRemove(buffer)) |_| {
+            // WAR hazard
+            tracker.src_stage_mask = tracker.src_stage_mask.merge(.{ .transfer_bit = true });
+            tracker.dst_stage_mask = tracker.dst_stage_mask.merge(stage_mask);
         } else {
             // WAR hazard
             tracker.src_stage_mask = tracker.src_stage_mask.merge(buffer.read_stage_mask);
@@ -2600,6 +2662,13 @@ pub const StateTracker = struct {
 
             src_access_mask = write.value.access_mask;
             old_layout = write.value.image_layout;
+        } else if (tracker.copy_textures.fetchRemove(texture)) |_| {
+            // WAR hazard
+            tracker.src_stage_mask = tracker.src_stage_mask.merge(.{ .transfer_bit = true });
+            tracker.dst_stage_mask = tracker.dst_stage_mask.merge(stage_mask);
+
+            src_access_mask = .{};
+            old_layout = .transfer_src_optimal;
         } else {
             // WAR hazard
             tracker.src_stage_mask = tracker.src_stage_mask.merge(texture.read_stage_mask);
@@ -2620,39 +2689,85 @@ pub const StateTracker = struct {
         );
     }
 
-    pub fn readFromBuffer(tracker: *StateTracker, buffer: *Buffer) !void {
+    pub fn readFromBufferEx(
+        tracker: *StateTracker,
+        buffer: *Buffer,
+        stage_mask: vk.PipelineStageFlags,
+        access_mask: vk.AccessFlags,
+    ) !void {
         if (tracker.written_buffers.fetchRemove(buffer)) |write| {
             // RAW hazard
             tracker.src_stage_mask = tracker.src_stage_mask.merge(write.value.stage_mask);
-            tracker.dst_stage_mask = tracker.dst_stage_mask.merge(buffer.read_stage_mask);
+            tracker.dst_stage_mask = tracker.dst_stage_mask.merge(stage_mask);
 
             tracker.src_access_mask = tracker.src_access_mask.merge(write.value.access_mask);
-            tracker.dst_access_mask = tracker.dst_access_mask.merge(buffer.read_access_mask);
+            tracker.dst_access_mask = tracker.dst_access_mask.merge(access_mask);
+        } else if (tracker.copy_buffers.fetchRemove(buffer)) |_| {
+            // RAR hazard - no hazard
         }
     }
 
-    pub fn readFromTexture(tracker: *StateTracker, texture: *Texture) !void {
+    pub fn readFromBuffer(tracker: *StateTracker, buffer: *Buffer) !void {
+        try tracker.readFromBufferEx(buffer, buffer.read_stage_mask, buffer.read_access_mask);
+    }
+
+    pub fn copyFromBuffer(tracker: *StateTracker, buffer: *Buffer) !void {
+        try tracker.readFromBufferEx(buffer, .{ .transfer_bit = true }, .{ .transfer_read_bit = true });
+        try tracker.copy_buffers.put(allocator, buffer, {});
+    }
+
+    pub fn readFromTextureEx(
+        tracker: *StateTracker,
+        texture: *Texture,
+        stage_mask: vk.PipelineStageFlags,
+        access_mask: vk.AccessFlags,
+        image_layout: vk.ImageLayout,
+    ) !void {
         var src_access_mask: vk.AccessFlags = undefined;
         var old_layout: vk.ImageLayout = undefined;
         if (tracker.written_textures.fetchRemove(texture)) |write| {
             // RAW hazard
             tracker.src_stage_mask = tracker.src_stage_mask.merge(write.value.stage_mask);
-            tracker.dst_stage_mask = tracker.dst_stage_mask.merge(texture.read_stage_mask);
+            tracker.dst_stage_mask = tracker.dst_stage_mask.merge(stage_mask);
 
             src_access_mask = write.value.access_mask;
             old_layout = write.value.image_layout;
+        } else if (tracker.copy_textures.fetchRemove(texture)) |_| {
+            // RAR - no execution hazard but needed for layout transition
+            tracker.dst_stage_mask = tracker.dst_stage_mask.merge(stage_mask);
+
+            src_access_mask = .{};
+            old_layout = .transfer_src_optimal;
         } else {
             // RAR - no hazard
+            tracker.dst_stage_mask = tracker.dst_stage_mask.merge(stage_mask);
+
             src_access_mask = .{};
             old_layout = texture.read_image_layout;
         }
 
-        const access_mask = texture.read_access_mask;
-        const image_layout = texture.read_image_layout;
-
         if (old_layout != image_layout) {
             try tracker.addImageBarrier(texture, src_access_mask, access_mask, old_layout, image_layout);
         }
+    }
+
+    pub fn readFromTexture(tracker: *StateTracker, texture: *Texture) !void {
+        try tracker.readFromTextureEx(texture, texture.read_stage_mask, texture.read_access_mask, texture.read_image_layout);
+    }
+
+    pub fn copyFromTexture(tracker: *StateTracker, texture: *Texture) !void {
+        try tracker.readFromTextureEx(texture, .{ .transfer_bit = true }, .{ .transfer_read_bit = true }, .transfer_src_optimal);
+        try tracker.copy_textures.put(allocator, texture, {});
+    }
+
+    pub fn initTexture(tracker: *StateTracker, texture: *Texture) !void {
+        const src_access_mask = .{};
+        const old_layout = .undefined;
+        const access_mask = texture.read_access_mask;
+        const image_layout = texture.read_image_layout;
+        tracker.dst_stage_mask = tracker.dst_stage_mask.merge(texture.read_stage_mask);
+
+        try tracker.addImageBarrier(texture, src_access_mask, access_mask, old_layout, image_layout);
     }
 
     pub fn flush(tracker: *StateTracker, vk_command_buffer: vk.CommandBuffer) void {
@@ -2668,9 +2783,15 @@ pub const StateTracker = struct {
             });
         }
 
+        // If the synchronization2 feature is not enabled, srcStageMask must not be 0
+        const src_stage_mask = if (tracker.src_stage_mask.toInt() != 0)
+            tracker.src_stage_mask
+        else
+            vk.PipelineStageFlags{ .top_of_pipe_bit = true };
+
         vkd.cmdPipelineBarrier(
             vk_command_buffer,
-            tracker.src_stage_mask,
+            src_stage_mask,
             tracker.dst_stage_mask,
             .{},
             memory_barriers.len,
@@ -2705,6 +2826,11 @@ pub const StateTracker = struct {
         }
 
         {
+            // no hazard
+            tracker.copy_buffers.clearRetainingCapacity();
+        }
+
+        {
             var it = tracker.written_textures.iterator();
             while (it.next()) |entry| {
                 const texture = entry.key_ptr.*;
@@ -2723,6 +2849,23 @@ pub const StateTracker = struct {
                 }
             }
             tracker.written_textures.clearRetainingCapacity();
+        }
+
+        {
+            var it = tracker.copy_textures.iterator();
+            while (it.next()) |entry| {
+                const texture = entry.key_ptr.*;
+
+                const src_access_mask: vk.AccessFlags = .{};
+                const old_layout: vk.ImageLayout = .transfer_src_optimal;
+                const access_mask = texture.read_access_mask;
+                const image_layout = texture.read_image_layout;
+
+                if (old_layout != image_layout) {
+                    try tracker.addImageBarrier(texture, src_access_mask, access_mask, old_layout, image_layout);
+                }
+            }
+            tracker.copy_textures.clearRetainingCapacity();
         }
     }
 
@@ -2745,7 +2888,7 @@ pub const StateTracker = struct {
             .dst_queue_family_index = vk.QUEUE_FAMILY_IGNORED,
             .image = texture.image,
             .subresource_range = .{
-                .aspect_mask = .{ .color_bit = true }, // TODO
+                .aspect_mask = conv.vulkanImageAspectFlags(.all, texture.format),
                 .base_mip_level = 0,
                 .level_count = texture.mip_level_count,
                 .base_array_layer = 0,
@@ -2894,6 +3037,7 @@ pub const RenderPassEncoder = struct {
                 .format = view.format,
                 .load_op = attach.load_op,
                 .store_op = attach.store_op,
+                .layout = view.texture.read_image_layout,
                 .resolve_format = if (resolve_view) |rv| rv.format else null,
             });
 
@@ -2926,6 +3070,7 @@ pub const RenderPassEncoder = struct {
                 .depth_store_op = attach.depth_store_op,
                 .stencil_load_op = attach.stencil_load_op,
                 .stencil_store_op = attach.stencil_store_op,
+                .layout = view.texture.read_image_layout,
                 .read_only = attach.depth_read_only == .true or attach.stencil_read_only == .true,
             };
 
