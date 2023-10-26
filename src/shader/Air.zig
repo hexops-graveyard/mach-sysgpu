@@ -37,6 +37,7 @@ pub fn generate(
         .allocator = allocator,
         .tree = tree,
         .scope_pool = std.heap.MemoryPool(AstGen.Scope).init(allocator),
+        .inst_arena = std.heap.ArenaAllocator.init(allocator),
         .entry_point_name = entry_point,
         .errors = errors,
     };
@@ -45,6 +46,7 @@ pub fn generate(
         astgen.scratch.deinit(allocator);
         astgen.global_var_refs.deinit(allocator);
         astgen.scope_pool.deinit();
+        astgen.inst_arena.deinit();
     }
     errdefer {
         astgen.refs.deinit(allocator);

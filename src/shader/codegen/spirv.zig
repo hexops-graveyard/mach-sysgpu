@@ -34,16 +34,15 @@ struct_map: std.AutoHashMapUnmanaged(InstIndex, IdRef) = .{},
 runtiem_arr_vars: std.AutoHashMapUnmanaged(IdRef, IdRef) = .{},
 decorated: std.AutoHashMapUnmanaged(IdRef, void) = .{},
 capabilities: std.ArrayListUnmanaged(spec.Capability) = .{},
+fn_stack: std.ArrayListUnmanaged(FnInfo) = .{},
 extended_instructions: ?IdRef = null,
 emit_debug_names: bool,
 next_result_id: Word = 1,
 compute_stage: ?ComputeStage = null,
 vertex_stage: ?VertexStage = null,
 fragment_stage: ?FragmentStage = null,
-store_return: StoreReturn = .none,
 loop_merge_label: ?IdRef = null,
 loop_continue_label: ?IdRef = null,
-discard_branch: ?IdRef = null,
 branched: std.AutoHashMapUnmanaged(RefIndex, void) = .{},
 current_block: RefIndex,
 
@@ -53,6 +52,11 @@ const Decl = struct {
     is_ptr: bool,
     storage_class: spec.StorageClass,
     faked_struct: bool,
+};
+
+const FnInfo = struct {
+    store_return: StoreReturn,
+    discard_branch: ?IdRef = null,
 };
 
 const StoreReturn = union(enum) {
@@ -109,6 +113,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         spv.branched.deinit(allocator);
         spv.capabilities.deinit(allocator);
         spv.runtiem_arr_vars.deinit(allocator);
+        spv.fn_stack.deinit(allocator);
         if (spv.compute_stage) |stage| allocator.free(stage.interface);
         if (spv.vertex_stage) |stage| allocator.free(stage.interface);
         if (spv.fragment_stage) |stage| allocator.free(stage.interface);
@@ -123,7 +128,9 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
 
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (spv.air.getInst(inst_idx)) {
-            .@"fn" => _ = try spv.emitFn(inst_idx),
+            .@"fn" => |@"fn"| if (@"fn".stage != .none) {
+                _ = try spv.emitFn(inst_idx);
+            },
             .@"const" => _ = try spv.emitConst(&spv.global_section, inst_idx),
             .@"var" => _ = try spv.emitVarProto(&spv.global_section, inst_idx),
             .@"struct" => _ = try spv.emitStruct(inst_idx),
@@ -255,6 +262,8 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     var interface = std.ArrayList(IdRef).init(spv.allocator);
     errdefer interface.deinit();
 
+    var store_return: StoreReturn = undefined;
+
     if (inst.stage != .none and inst.return_type != .none) {
 
         // TODO: eliminate duplicate code
@@ -306,7 +315,9 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                 try store_returns.append(.{ .ptr = return_var_id, .type = member_type_id });
             }
 
-            spv.store_return = .{ .many = try store_returns.toOwnedSlice() };
+            store_return = .{
+                .many = try store_returns.toOwnedSlice(),
+            };
         } else {
             const return_var_id = spv.allocId();
 
@@ -342,12 +353,14 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
                 });
             }
 
-            spv.store_return = .{ .single = return_var_id };
+            store_return = .{ .single = return_var_id };
             try interface.append(return_var_id);
         }
     } else {
-        spv.store_return = .none;
+        store_return = .none;
     }
+
+    try spv.fn_stack.append(spv.allocator, .{ .store_return = store_return });
 
     var params_type = std.ArrayList(IdRef).init(spv.allocator);
     defer params_type.deinit();
@@ -450,10 +463,9 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
     if (body != .none) {
         try spv.emitBlock(&section, body);
 
-        if (spv.discard_branch) |discard_branch| {
+        if (spv.fn_stack.getLast().discard_branch) |discard_branch| {
             try section.emit(.OpLabel, .{ .id_result = discard_branch });
             try section.emit(.OpKill, {});
-            spv.discard_branch = null;
         }
 
         const statements = spv.air.refToList(body);
@@ -464,6 +476,7 @@ fn emitFn(spv: *SpirV, inst_idx: InstIndex) error{OutOfMemory}!IdRef {
         try spv.emitReturn(&section, .none);
     }
 
+    _ = spv.fn_stack.pop();
     try section.emit(.OpFunctionEnd, {});
 
     switch (inst.stage) {
@@ -957,7 +970,7 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutO
             }
         },
         .@"return" => |inst| {
-            switch (spv.store_return) {
+            switch (spv.fn_stack.getLast().store_return) {
                 .none => try spv.emitReturn(section, inst),
                 .single => |store_return| {
                     try section.emit(.OpStore, .{
@@ -1248,7 +1261,7 @@ fn emitAssign(spv: *SpirV, section: *Section, inst: Inst.Assign) !void {
             .shl => .shl,
             .shr => .shr,
         };
-        break :blk try spv.emitBinary(section, .{
+        break :blk try spv.emitBinaryAir(section, .{
             .op = op,
             .result_type = inst.type,
             .lhs_type = inst.type,
@@ -1315,7 +1328,7 @@ fn emitExpr(spv: *SpirV, section: *Section, inst: InstIndex) error{OutOfMemory}!
             });
             return load_id;
         },
-        .binary => |bin| spv.emitBinary(section, bin),
+        .binary => |bin| spv.emitBinaryAir(section, bin),
         .unary => |un| spv.emitUnary(section, un),
         .unary_intrinsic => |un| spv.emitUnaryIntrinsic(section, un),
         .binary_intrinsic => |bin| spv.emitBinaryIntrinsic(section, bin),
@@ -1334,7 +1347,11 @@ const PtrAccess = struct {
 };
 
 fn emitVarAccess(spv: *SpirV, section: *Section, inst: InstIndex) !PtrAccess {
-    const decl = spv.decl_map.get(inst).?;
+    const decl = spv.decl_map.get(inst) orelse blk: {
+        std.debug.assert(spv.air.getInst(inst) == .@"const");
+        _ = try spv.emitConst(section, inst);
+        break :blk spv.decl_map.get(inst).?;
+    };
 
     if (decl.faked_struct) {
         const id = spv.allocId();
@@ -1515,525 +1532,218 @@ fn emitFieldAccess(spv: *SpirV, section: *Section, inst: Inst.FieldAccess) !PtrA
     };
 }
 
-fn emitBinary(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
-    const id = spv.allocId();
-    const type_id = try spv.emitType(binary.result_type);
-    const lhs_res = spv.air.getInst(binary.lhs_type);
-    var rhs_res = spv.air.getInst(binary.rhs_type);
-    const lhs = try spv.emitExpr(section, binary.lhs);
-    const rhs = try spv.emitExpr(section, binary.rhs);
+fn emitBinaryAir(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
+    const result_ty = try spv.emitType(binary.result_type);
+    var lhs = try spv.emitExpr(section, binary.lhs);
+    var rhs = try spv.emitExpr(section, binary.rhs);
+    const lhs_ty = spv.air.getInst(binary.lhs_type);
+    const rhs_ty = spv.air.getInst(binary.rhs_type);
 
-    switch (lhs_res) {
+    return switch (lhs_ty) {
         .bool => switch (binary.op) {
-            .equal => try section.emit(.OpLogicalEqual, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .not_equal => try section.emit(.OpLogicalNotEqual, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .logical_and => try section.emit(.OpLogicalAnd, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .logical_or => try section.emit(.OpLogicalOr, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
+            .equal => spv.emitBinary(section, .OpLogicalEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .not_equal => spv.emitBinary(section, .OpLogicalNotEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .logical_and => spv.emitBinary(section, .OpLogicalAnd, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .logical_or => spv.emitBinary(section, .OpLogicalOr, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
             else => unreachable,
         },
         .int => |int| switch (binary.op) {
-            .mul => try section.emit(.OpIMul, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .add => try section.emit(.OpIAdd, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .sub => try section.emit(.OpISub, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .shl => try section.emit(.OpShiftLeftLogical, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .base = lhs,
-                .shift = rhs,
-            }),
-            .shr => try section.emit(.OpShiftRightLogical, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .base = lhs,
-                .shift = rhs,
-            }),
-            .@"and" => try section.emit(.OpBitwiseAnd, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .@"or" => try section.emit(.OpBitwiseOr, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .xor => try section.emit(.OpBitwiseXor, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .equal => try section.emit(.OpIEqual, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .not_equal => try section.emit(.OpINotEqual, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
+            .mul => spv.emitBinary(section, .OpIMul, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .add => spv.emitBinary(section, .OpIAdd, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .sub => spv.emitBinary(section, .OpISub, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .shl => spv.emitBinary(section, .OpShiftLeftLogical, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .shr => spv.emitBinary(section, .OpShiftRightLogical, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .@"and" => spv.emitBinary(section, .OpBitwiseAnd, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .@"or" => spv.emitBinary(section, .OpBitwiseOr, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .xor => spv.emitBinary(section, .OpBitwiseXor, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .equal => spv.emitBinary(section, .OpIEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .not_equal => spv.emitBinary(section, .OpINotEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
             else => switch (int.type) {
                 .i32 => switch (binary.op) {
-                    .div => try section.emit(.OpSDiv, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .mod => try section.emit(.OpSMod, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .less_than => try section.emit(.OpSLessThan, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .greater_than => try section.emit(.OpSGreaterThan, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .greater_than_equal => try section.emit(.OpSGreaterThanEqual, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
+                    .div => spv.emitBinary(section, .OpSDiv, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .mod => spv.emitBinary(section, .OpSMod, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .less_than => spv.emitBinary(section, .OpSLessThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .greater_than => spv.emitBinary(section, .OpSGreaterThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .greater_than_equal => spv.emitBinary(section, .OpSGreaterThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     else => unreachable,
                 },
                 .u32 => switch (binary.op) {
-                    .div => try section.emit(.OpUDiv, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .mod => try section.emit(.OpUMod, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .less_than => try section.emit(.OpULessThan, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .greater_than => try section.emit(.OpUGreaterThan, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .greater_than_equal => try section.emit(.OpUGreaterThanEqual, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
+                    .div => spv.emitBinary(section, .OpUDiv, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .mod => spv.emitBinary(section, .OpUMod, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .less_than => spv.emitBinary(section, .OpULessThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .greater_than => spv.emitBinary(section, .OpUGreaterThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .greater_than_equal => spv.emitBinary(section, .OpUGreaterThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     else => unreachable,
                 },
             },
         },
         .float => switch (binary.op) {
-            .mul => switch (rhs_res) {
-                .vector => try section.emit(.OpVectorTimesScalar, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .vector = rhs,
-                    .scalar = lhs,
-                }),
-                .float => try section.emit(.OpFMul, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .operand_1 = lhs,
-                    .operand_2 = rhs,
-                }),
-                else => unreachable,
-            },
-            .div => try section.emit(.OpFDiv, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .mod => try section.emit(.OpFMod, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .add => try section.emit(.OpFAdd, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .sub => try section.emit(.OpFSub, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .equal => try section.emit(.OpFOrdEqual, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .not_equal => try section.emit(.OpFOrdNotEqual, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .less_than => try section.emit(.OpFOrdLessThan, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .greater_than => try section.emit(.OpFOrdGreaterThan, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
-            .greater_than_equal => try section.emit(.OpFOrdGreaterThanEqual, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
+            .mul => spv.emitBinary(section, .OpFMul, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .div => spv.emitBinary(section, .OpFDiv, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .mod => spv.emitBinary(section, .OpFMod, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .add => spv.emitBinary(section, .OpFAdd, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .sub => spv.emitBinary(section, .OpFSub, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .equal => spv.emitBinary(section, .OpFOrdEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .not_equal => spv.emitBinary(section, .OpFOrdNotEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .less_than => spv.emitBinary(section, .OpFOrdLessThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .greater_than => spv.emitBinary(section, .OpFOrdGreaterThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+            .greater_than_equal => spv.emitBinary(section, .OpFOrdGreaterThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
             else => unreachable,
         },
-        .vector => switch (binary.op) {
-            .mul => switch (rhs_res) {
-                .int, .float => try section.emit(.OpVectorTimesScalar, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .vector = lhs,
-                    .scalar = rhs,
-                }),
-                .matrix => try section.emit(.OpVectorTimesMatrix, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .vector = lhs,
-                    .matrix = rhs,
-                }),
-                .vector => switch (spv.air.getInst(lhs_res.vector.elem_type)) {
-                    .int => try section.emit(.OpIMul, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .float => try section.emit(.OpFMul, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    else => unreachable,
-                },
-                else => unreachable,
-            },
-            .div => switch (rhs_res) {
-                .float => {
-                    const constructed_float_id = spv.allocId();
-                    var constituents = std.BoundedArray(IdRef, 4).init(@intFromEnum(lhs_res.vector.size)) catch unreachable;
-                    @memset(constituents.slice(), rhs);
-
-                    try section.emit(.OpCompositeConstruct, .{
-                        .id_result = constructed_float_id,
-                        .id_result_type = type_id,
-                        .constituents = constituents.slice(),
-                    });
-
-                    try section.emit(.OpFDiv, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = constructed_float_id,
-                    });
-                },
-                .int => |int| {
-                    const constructed_int_id = spv.allocId();
-                    var constituents = std.BoundedArray(IdRef, 4).init(@intFromEnum(lhs_res.vector.size)) catch unreachable;
-                    @memset(constituents.slice(), rhs);
-
-                    try section.emit(.OpCompositeConstruct, .{
-                        .id_result = constructed_int_id,
-                        .id_result_type = type_id,
-                        .constituents = constituents.slice(),
-                    });
-
-                    switch (int.type) {
-                        .u32 => try section.emit(.OpUDiv, .{
+        .vector => |vec| switch (spv.air.getInst(vec.elem_type)) {
+            .int => |int| switch (binary.op) {
+                .mul => switch (rhs_ty) {
+                    .matrix => {
+                        const id = spv.allocId();
+                        try section.emit(.OpVectorTimesMatrix, .{
                             .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = constructed_int_id,
-                        }),
-                        .i32 => try section.emit(.OpSDiv, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = constructed_int_id,
-                        }),
-                    }
-                },
-                .vector => |vec| switch (spv.air.getInst(vec.elem_type)) {
-                    .int => |int| switch (int.type) {
-                        .u32 => try section.emit(.OpUDiv, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = rhs,
-                        }),
-                        .i32 => try section.emit(.OpSDiv, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = rhs,
-                        }),
+                            .id_result_type = result_ty,
+                            .vector = lhs,
+                            .matrix = rhs,
+                        });
+                        return id;
                     },
-                    .float => try section.emit(.OpFDiv, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    else => unreachable,
+                    else => spv.emitBinary(section, .OpIMul, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                 },
-                else => unreachable,
-            },
-            .add => switch (rhs_res) {
-                .int => {
-                    const constructed_float_id = spv.allocId();
-                    var constituents = std.BoundedArray(IdRef, 4).init(@intFromEnum(lhs_res.vector.size)) catch unreachable;
-                    @memset(constituents.slice(), rhs);
-
-                    try section.emit(.OpCompositeConstruct, .{
-                        .id_result = constructed_float_id,
-                        .id_result_type = type_id,
-                        .constituents = constituents.slice(),
-                    });
-
-                    try section.emit(.OpIAdd, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = constructed_float_id,
-                    });
-                },
-                .float => {
-                    const constructed_float_id = spv.allocId();
-                    var constituents = std.BoundedArray(IdRef, 4).init(@intFromEnum(lhs_res.vector.size)) catch unreachable;
-                    @memset(constituents.slice(), rhs);
-
-                    try section.emit(.OpCompositeConstruct, .{
-                        .id_result = constructed_float_id,
-                        .id_result_type = type_id,
-                        .constituents = constituents.slice(),
-                    });
-
-                    try section.emit(.OpFAdd, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = constructed_float_id,
-                    });
-                },
-                .vector => |vec| switch (spv.air.getInst(vec.elem_type)) {
-                    .int => try section.emit(.OpIAdd, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .float => try section.emit(.OpFAdd, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    else => unreachable,
-                },
-                else => unreachable,
-            },
-            .sub => switch (rhs_res) {
-                .int => {
-                    const constructed_float_id = spv.allocId();
-                    var constituents = std.BoundedArray(IdRef, 4).init(@intFromEnum(lhs_res.vector.size)) catch unreachable;
-                    @memset(constituents.slice(), rhs);
-
-                    try section.emit(.OpCompositeConstruct, .{
-                        .id_result = constructed_float_id,
-                        .id_result_type = type_id,
-                        .constituents = constituents.slice(),
-                    });
-
-                    try section.emit(.OpISub, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = constructed_float_id,
-                    });
-                },
-                .float => {
-                    const constructed_float_id = spv.allocId();
-                    var constituents = std.BoundedArray(IdRef, 4).init(@intFromEnum(lhs_res.vector.size)) catch unreachable;
-                    @memset(constituents.slice(), rhs);
-
-                    try section.emit(.OpCompositeConstruct, .{
-                        .id_result = constructed_float_id,
-                        .id_result_type = type_id,
-                        .constituents = constituents.slice(),
-                    });
-
-                    try section.emit(.OpFSub, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = constructed_float_id,
-                    });
-                },
-                .vector => |vec| switch (spv.air.getInst(vec.elem_type)) {
-                    .float => try section.emit(.OpFSub, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .int => try section.emit(.OpISub, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    else => unreachable,
-                },
-                else => unreachable,
-            },
-            .less_than => switch (rhs_res) {
-                .vector => |vec| switch (spv.air.getInst(vec.elem_type)) {
-                    .float => try section.emit(.OpFOrdLessThan, .{
-                        .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = rhs,
-                    }),
-                    .int => |int| switch (int.type) {
-                        .u32 => try section.emit(.OpULessThan, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = rhs,
-                        }),
-                        .i32 => try section.emit(.OpSLessThan, .{
-                            .id_result = id,
-                            .id_result_type = type_id,
-                            .operand_1 = lhs,
-                            .operand_2 = rhs,
-                        }),
+                .add => spv.emitBinary(section, .OpIAdd, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .sub => spv.emitBinary(section, .OpISub, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .shl => spv.emitBinary(section, .OpShiftLeftLogical, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .shr => spv.emitBinary(section, .OpShiftRightLogical, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .@"and" => spv.emitBinary(section, .OpBitwiseAnd, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .@"or" => spv.emitBinary(section, .OpBitwiseOr, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .xor => spv.emitBinary(section, .OpBitwiseXor, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .equal => spv.emitBinary(section, .OpIEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .not_equal => spv.emitBinary(section, .OpINotEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                else => switch (int.type) {
+                    .i32 => switch (binary.op) {
+                        .div => spv.emitBinary(section, .OpSDiv, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        .mod => spv.emitBinary(section, .OpSMod, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        .less_than => spv.emitBinary(section, .OpSLessThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        .greater_than => spv.emitBinary(section, .OpSGreaterThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        .greater_than_equal => spv.emitBinary(section, .OpSGreaterThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        else => unreachable,
                     },
-                    else => unreachable,
+                    .u32 => switch (binary.op) {
+                        .div => spv.emitBinary(section, .OpUDiv, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        .mod => spv.emitBinary(section, .OpUMod, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        .less_than => spv.emitBinary(section, .OpULessThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        .greater_than => spv.emitBinary(section, .OpUGreaterThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        .greater_than_equal => spv.emitBinary(section, .OpUGreaterThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                        else => unreachable,
+                    },
                 },
+            },
+            .float => switch (binary.op) {
+                .mul => switch (rhs_ty) {
+                    .matrix => {
+                        const id = spv.allocId();
+                        try section.emit(.OpVectorTimesMatrix, .{
+                            .id_result = id,
+                            .id_result_type = result_ty,
+                            .vector = lhs,
+                            .matrix = rhs,
+                        });
+                        return id;
+                    },
+                    else => spv.emitBinary(section, .OpFMul, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                },
+                .div => spv.emitBinary(section, .OpFDiv, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .mod => spv.emitBinary(section, .OpFMod, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .add => spv.emitBinary(section, .OpFAdd, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .sub => spv.emitBinary(section, .OpFSub, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .equal => spv.emitBinary(section, .OpFOrdEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .not_equal => spv.emitBinary(section, .OpFOrdNotEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .less_than => spv.emitBinary(section, .OpFOrdLessThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .greater_than => spv.emitBinary(section, .OpFOrdGreaterThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                .greater_than_equal => spv.emitBinary(section, .OpFOrdGreaterThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                 else => unreachable,
             },
             else => unreachable,
         },
-        .matrix => switch (binary.op) {
-            .mul => switch (rhs_res) {
-                .matrix => try section.emit(.OpMatrixTimesMatrix, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .leftmatrix = lhs,
-                    .rightmatrix = rhs,
-                }),
-                .vector => try section.emit(.OpMatrixTimesVector, .{
-                    .id_result = id,
-                    .id_result_type = type_id,
-                    .matrix = lhs,
-                    .vector = rhs,
-                }),
-                .float => {
-                    const constructed_float_id = spv.allocId();
-                    const size = @as(u8, @intCast(@intFromEnum(lhs_res.matrix.cols))) * @intFromEnum(lhs_res.matrix.rows);
-                    var constituents = std.BoundedArray(IdRef, 16).init(size) catch unreachable;
-                    @memset(constituents.slice(), rhs);
-
-                    try section.emit(.OpCompositeConstruct, .{
-                        .id_result = constructed_float_id,
-                        .id_result_type = type_id,
-                        .constituents = constituents.slice(),
-                    });
-
-                    try section.emit(.OpFMul, .{
+        .matrix => switch (rhs_ty) {
+            .matrix => switch (binary.op) {
+                .mul => {
+                    const id = spv.allocId();
+                    try section.emit(.OpMatrixTimesMatrix, .{
                         .id_result = id,
-                        .id_result_type = type_id,
-                        .operand_1 = lhs,
-                        .operand_2 = constructed_float_id,
+                        .id_result_type = result_ty,
+                        .leftmatrix = lhs,
+                        .rightmatrix = rhs,
                     });
+                    return id;
                 },
                 else => unreachable,
             },
-            .add => try section.emit(.OpFAdd, .{
-                .id_result = id,
-                .id_result_type = type_id,
-                .operand_1 = lhs,
-                .operand_2 = rhs,
-            }),
+            .vector => switch (binary.op) {
+                .mul => {
+                    const id = spv.allocId();
+                    try section.emit(.OpMatrixTimesVector, .{
+                        .id_result = id,
+                        .id_result_type = result_ty,
+                        .matrix = lhs,
+                        .vector = rhs,
+                    });
+                    return id;
+                },
+                else => unreachable,
+            },
             else => unreachable,
         },
         else => unreachable,
+    };
+}
+
+fn emitBinary(
+    spv: *SpirV,
+    section: *Section,
+    comptime op: Opcode,
+    result_ty: IdRef,
+    lhs: *IdRef,
+    rhs: *IdRef,
+    lhs_ty: Inst,
+    rhs_ty: Inst,
+) !IdRef {
+    const id = spv.allocId();
+
+    if (lhs_ty == .vector and rhs_ty != .vector) {
+        var constituents: [4]IdRef = undefined;
+        @memset(constituents[0..@intFromEnum(lhs_ty.vector.size)], rhs.*);
+        rhs.* = spv.allocId();
+        try section.emit(.OpCompositeConstruct, .{
+            .id_result_type = result_ty,
+            .id_result = rhs.*,
+            .constituents = constituents[0..@intFromEnum(lhs_ty.vector.size)],
+        });
+    }
+
+    if (rhs_ty == .vector and lhs_ty != .vector) {
+        var constituents: [4]IdRef = undefined;
+        @memset(constituents[0..@intFromEnum(rhs_ty.vector.size)], lhs.*);
+        lhs.* = spv.allocId();
+        try section.emit(.OpCompositeConstruct, .{
+            .id_result_type = result_ty,
+            .id_result = lhs.*,
+            .constituents = constituents[0..@intFromEnum(rhs_ty.vector.size)],
+        });
+    }
+
+    switch (op) {
+        .OpShiftLeftLogical, .OpShiftRightLogical => {
+            try section.emit(op, .{
+                .id_result = id,
+                .id_result_type = result_ty,
+                .base = lhs.*,
+                .shift = rhs.*,
+            });
+        },
+        else => {
+            try section.emit(op, .{
+                .id_result = id,
+                .id_result_type = result_ty,
+                .operand_1 = lhs.*,
+                .operand_2 = rhs.*,
+            });
+        },
     }
 
     return id;
@@ -2365,8 +2075,9 @@ fn emitTextureStore(spv: *SpirV, section: *Section, ts: Inst.TextureStore) !void
 }
 
 fn emitDiscard(spv: *SpirV, section: *Section) !void {
-    spv.discard_branch = spv.allocId();
-    try section.emit(.OpBranch, .{ .target_label = spv.discard_branch.? });
+    const id = spv.allocId();
+    spv.fn_stack.items[spv.fn_stack.items.len - 1].discard_branch = id;
+    try section.emit(.OpBranch, .{ .target_label = id });
     try section.emit(.OpLabel, .{ .id_result = spv.allocId() });
 }
 
@@ -2760,8 +2471,8 @@ const Key = union(enum) {
         pub fn eql(ctx: Adapter, a: Key, b: Key, b_index: usize) bool {
             _ = ctx;
             _ = b_index;
-            return switch (a) {
-                .fn_type => |a_func| {
+            switch (a) {
+                .fn_type => |a_func| if (b == .fn_type) {
                     const b_func = b.fn_type;
                     if (a_func.return_type.id != b_func.return_type.id) return false;
                     if (a_func.params_type.len != b_func.params_type.len) return false;
@@ -2771,8 +2482,10 @@ const Key = union(enum) {
                     }
                     return true;
                 },
-                else => std.meta.eql(a, b),
-            };
+                else => {},
+            }
+
+            return std.meta.eql(a, b);
         }
     };
 };

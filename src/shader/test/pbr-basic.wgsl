@@ -44,6 +44,26 @@ struct ObjectParams {
     return output;
 }
 
+@fragment fn frag_main(
+     @location(0) position : vec3<f32>,
+     @location(1) normal: vec3<f32> 
+) -> @location(0) vec4<f32> {
+    var N : vec3<f32> = normalize(normal);
+    var V : vec3<f32> = normalize(ubo.camPos - position);
+    var Lo = vec3<f32>(0.0);
+    // Specular contribution
+    for(var i: i32 = 0; i < 4; i++) {
+        var L : vec3<f32> = normalize(uboParams.lights[i].xyz - position);
+        Lo += BRDF(L, V, N, material.metallic, material.roughness);
+    }
+    // Combine with ambient
+    var color : vec3<f32> = material_color() * 0.02;
+    color += Lo;
+    // Gamma correct
+    color = pow(color, vec3<f32>(0.4545));
+    return vec4<f32>(color, 1.0);
+}
+
 const PI : f32 = 3.14159265359;
 
 fn material_color() -> vec3<f32> {
@@ -70,7 +90,7 @@ fn G_SchlicksmithGGX(dotNL : f32, dotNV : f32, roughness : f32) -> f32 {
 // Fresnel function ----------------------------------------------------
 fn F_Schlick(cosTheta : f32, metallic : f32) -> vec3<f32> {
     var F0 : vec3<f32> = mix(vec3<f32>(0.04), material_color(), metallic);
-    var F : vec3<f32> = F0 + (vec3<f32>(1.0) - F0) * pow(1.0 - cosTheta, 5.0);
+    var F : vec3<f32> = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
     return F;
 }
 
@@ -95,25 +115,4 @@ fn BRDF(L : vec3<f32>, V : vec3<f32>, N : vec3<f32>, metallic : f32, roughness :
         color += spec * dotNL * lightColor;
     }
     return color;
-}
-
-// TODO - global variable declaration order
-@fragment fn frag_main(
-     @location(0) position : vec3<f32>,
-     @location(1) normal: vec3<f32> 
-) -> @location(0) vec4<f32> {
-    var N : vec3<f32> = normalize(normal);
-    var V : vec3<f32> = normalize(ubo.camPos - position);
-    var Lo = vec3<f32>(0.0);
-    // Specular contribution
-    for(var i: i32 = 0; i < 4; i++) {
-        var L : vec3<f32> = normalize(uboParams.lights[i].xyz - position);
-        Lo += BRDF(L, V, N, material.metallic, material.roughness);
-    }
-    // Combine with ambient
-    var color : vec3<f32> = material_color() * 0.02;
-    color += Lo;
-    // Gamma correct
-    color = pow(color, vec3<f32>(0.4545));
-    return vec4<f32>(color, 1.0);
 }
