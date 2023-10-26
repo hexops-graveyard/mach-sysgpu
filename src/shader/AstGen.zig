@@ -749,18 +749,18 @@ fn attrGroup(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs_loc = astgen.tree.nodeLoc(node_lhs);
     const group = try astgen.genExpr(scope, node_lhs);
 
-    const group_res = try astgen.resolve(group);
-    if (astgen.getInst(group_res) != .int) {
+    const inst = astgen.getInst(try astgen.resolve(group));
+    if (inst != .int or inst.int.value == null) {
         try astgen.errors.add(
             node_lhs_loc,
-            "group value must be integer",
+            "group value must be a constant integer",
             .{},
             null,
         );
         return error.AnalysisFail;
     }
 
-    if (astgen.getValue(Inst.Int.Value, astgen.getInst(group_res).int.value.?).literal < 0) {
+    if (astgen.getValue(Inst.Int.Value, inst.int.value.?).literal < 0) {
         try astgen.errors.add(
             node_lhs_loc,
             "group value must be a positive",
