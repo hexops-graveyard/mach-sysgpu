@@ -31,6 +31,8 @@ vertex_stage: InstIndex = .none,
 fragment_stage: InstIndex = .none,
 entry_point_name: ?[]const u8 = null,
 scope_pool: std.heap.MemoryPool(Scope),
+current_fn_scope: *Scope = undefined,
+inst_arena: std.heap.ArenaAllocator,
 errors: *ErrorList,
 
 pub const Scope = struct {
@@ -42,8 +44,10 @@ pub const Scope = struct {
     const Tag = union(enum) {
         root,
         @"fn": struct {
+            stage: Inst.Fn.Stage,
             return_type: InstIndex,
             returned: bool,
+            flattened_params: std.AutoHashMapUnmanaged(InstIndex, InstIndex),
         },
         block,
         loop,
@@ -523,12 +527,15 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
     scope.* = .{
         .tag = .{
             .@"fn" = .{
+                .stage = stage,
                 .return_type = return_type,
                 .returned = false,
+                .flattened_params = .{},
             },
         },
         .parent = root_scope,
     };
+    astgen.current_fn_scope = scope;
 
     var params = RefIndex.none;
     if (fn_proto.params != .none) {
@@ -595,52 +602,85 @@ fn genFnParams(astgen: *AstGen, scope: *Scope, node: NodeIndex) !RefIndex {
     try astgen.scanDecls(scope, param_nodes);
 
     for (param_nodes) |param_node| {
-        const param_node_lhs = astgen.tree.nodeLHS(param_node);
-        const param_name_loc = astgen.tree.tokenLoc(astgen.tree.nodeToken(param_node));
         const param_type_node = astgen.tree.nodeRHS(param_node);
-        const param_type = astgen.genType(scope, param_type_node) catch |err| switch (err) {
-            error.AnalysisFail => continue,
-            error.OutOfMemory => return error.OutOfMemory,
-        };
+        const param_type = try astgen.genType(scope, param_type_node);
+        const param_name_loc = astgen.tree.tokenLoc(astgen.tree.nodeToken(param_node));
+        const param_name = try astgen.addString(param_name_loc.slice(astgen.tree.source));
 
-        var builtin: ?Inst.Builtin = null;
-        var inter: ?Inst.Interpolate = null;
-        var location: ?u16 = null;
-        var invariant = false;
-
-        if (param_node_lhs != .none) {
-            for (astgen.tree.spanToList(param_node_lhs)) |attr| {
-                switch (astgen.tree.nodeTag(attr)) {
-                    .attr_invariant => invariant = true,
-                    .attr_location => location = try astgen.attrLocation(scope, attr),
-                    .attr_builtin => builtin = astgen.attrBuiltin(attr),
-                    .attr_interpolate => inter = astgen.attrInterpolate(attr),
-                    else => {
-                        try astgen.errors.add(
-                            astgen.tree.nodeLoc(attr),
-                            "unexpected attribute '{s}'",
-                            .{astgen.tree.nodeLoc(attr).slice(astgen.tree.source)},
-                            null,
-                        );
-                        return error.AnalysisFail;
+        if (scope.tag.@"fn".stage != .none and astgen.getInst(param_type) == .@"struct") {
+            const members = astgen.refToList(astgen.getInst(param_type).@"struct".members);
+            for (members) |member_inst| {
+                const member = astgen.getInst(member_inst).struct_member;
+                const param = try astgen.addInst(.{
+                    .fn_param = .{
+                        .name = member.name,
+                        .type = member.type,
+                        .builtin = member.builtin,
+                        .interpolate = member.interpolate,
+                        .location = member.location,
+                        .invariant = false,
                     },
+                });
+                try astgen.current_fn_scope.tag.@"fn".flattened_params.put(
+                    astgen.inst_arena.allocator(),
+                    member_inst,
+                    param,
+                );
+                try astgen.scratch.append(astgen.allocator, param);
+            }
+
+            // TODO
+            const param = try astgen.addInst(.{
+                .fn_param = .{
+                    .name = param_name,
+                    .type = param_type,
+                    .builtin = null,
+                    .interpolate = null,
+                    .location = null,
+                    .invariant = false,
+                },
+            });
+            scope.decls.putAssumeCapacity(param_node, param);
+        } else {
+            var builtin: ?Inst.Builtin = null;
+            var inter: ?Inst.Interpolate = null;
+            var location: ?u16 = null;
+            var invariant: bool = false;
+
+            const param_attrs_node = astgen.tree.nodeLHS(param_node);
+            if (param_attrs_node != .none) {
+                for (astgen.tree.spanToList(param_attrs_node)) |attr| {
+                    switch (astgen.tree.nodeTag(attr)) {
+                        .attr_invariant => invariant = true,
+                        .attr_location => location = try astgen.attrLocation(scope, attr),
+                        .attr_builtin => builtin = astgen.attrBuiltin(attr),
+                        .attr_interpolate => inter = astgen.attrInterpolate(attr),
+                        else => {
+                            try astgen.errors.add(
+                                astgen.tree.nodeLoc(attr),
+                                "unexpected attribute '{s}'",
+                                .{astgen.tree.nodeLoc(attr).slice(astgen.tree.source)},
+                                null,
+                            );
+                            return error.AnalysisFail;
+                        },
+                    }
                 }
             }
-        }
 
-        const name = try astgen.addString(param_name_loc.slice(astgen.tree.source));
-        const param = try astgen.addInst(.{
-            .fn_param = .{
-                .name = name,
-                .type = param_type,
-                .builtin = builtin,
-                .interpolate = inter,
-                .location = location,
-                .invariant = invariant,
-            },
-        });
-        try astgen.scratch.append(astgen.allocator, param);
-        scope.decls.putAssumeCapacity(param_node, param);
+            const param = try astgen.addInst(.{
+                .fn_param = .{
+                    .name = param_name,
+                    .type = param_type,
+                    .builtin = builtin,
+                    .interpolate = inter,
+                    .location = location,
+                    .invariant = invariant,
+                },
+            });
+            try astgen.scratch.append(astgen.allocator, param);
+            scope.decls.putAssumeCapacity(param_node, param);
+        }
     }
 
     return astgen.addRefList(astgen.scratch.items[scratch_top..]);
@@ -3556,6 +3596,10 @@ fn genFieldAccess(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             for (astgen.refToList(struct_members)) |member| {
                 const member_data = astgen.getInst(member).struct_member;
                 if (std.mem.eql(u8, field_name, astgen.getStr(member_data.name))) {
+                    if (astgen.current_fn_scope.tag.@"fn".flattened_params.get(member)) |fv| {
+                        return try astgen.addInst(.{ .var_ref = fv });
+                    }
+
                     const inst = try astgen.addInst(.{
                         .field_access = .{
                             .base = base,
