@@ -2,6 +2,10 @@ const vk = @import("vulkan");
 const dgpu = @import("../dgpu/main.zig");
 const utils = @import("../utils.zig");
 
+pub fn stencilEnable(stencil: dgpu.StencilFaceState) bool {
+    return stencil.compare != .always or stencil.fail_op != .keep or stencil.depth_fail_op != .keep or stencil.pass_op != .keep;
+}
+
 pub fn dgpuAdapterType(device_type: vk.PhysicalDeviceType) dgpu.Adapter.Type {
     return switch (device_type) {
         .integrated_gpu => .integrated_gpu,
