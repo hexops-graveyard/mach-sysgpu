@@ -43,6 +43,12 @@ pub fn libVulkanBaseLoader(_: vk.Instance, name_ptr: [*:0]const u8) vk.PfnVoidFu
     return libvulkan.?.lookup(vk.PfnVoidFunction, name) orelse null;
 }
 
+const MapCallback = struct {
+    buffer: *Buffer,
+    callback: dgpu.Buffer.MapCallback,
+    userdata: ?*anyopaque,
+};
+
 pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
     vk_instance: vk.Instance,
@@ -452,6 +458,7 @@ pub const Device = struct {
     queue: ?Queue = null,
     streaming_manager: StreamingManager = undefined,
     submit_objects: std.ArrayListUnmanaged(SubmitObject) = .{},
+    map_callbacks: std.ArrayListUnmanaged(MapCallback) = .{},
 
     lost_cb: ?dgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
@@ -582,6 +589,7 @@ pub const Device = struct {
         device.waitAll() catch {};
         device.processQueuedOperations();
 
+        device.map_callbacks.deinit(allocator);
         device.submit_objects.deinit(allocator);
         device.streaming_manager.deinit();
 
@@ -811,6 +819,22 @@ pub const Device = struct {
                 if (status == .success) {
                     submit_object.deinit();
                     _ = device.submit_objects.swapRemove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+
+        // MapAsync
+        {
+            var i: usize = 0;
+            while (i < device.map_callbacks.items.len) {
+                const map_callback = device.map_callbacks.items[i];
+
+                if (map_callback.buffer.gpu_count == 0) {
+                    map_callback.buffer.executeMapAsync(map_callback);
+
+                    _ = device.map_callbacks.swapRemove(i);
                 } else {
                     i += 1;
                 }
@@ -1083,8 +1107,10 @@ pub const Buffer = struct {
     read_access_mask: vk.AccessFlags,
     stage_buffer: ?*Buffer,
     gpu_count: u32 = 0,
-    size: usize,
     map: ?[*]u8,
+    // TODO - packed buffer descriptor struct
+    size: u64,
+    usage: dgpu.Buffer.UsageFlags,
 
     pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
         const vk_device = device.vk_device;
@@ -1146,8 +1172,9 @@ pub const Buffer = struct {
             .read_stage_mask = conv.vulkanPipelineStageFlagsForBufferRead(desc.usage),
             .read_access_mask = conv.vulkanAccessFlagsForBufferRead(desc.usage),
             .stage_buffer = stage_buffer,
-            .size = size,
             .map = @ptrCast(map),
+            .size = desc.size,
+            .usage = desc.usage,
         };
 
         return buffer;
@@ -1167,23 +1194,24 @@ pub const Buffer = struct {
     }
 
     pub fn getSize(buffer: *Buffer) u64 {
-        _ = buffer;
-        @panic("unimplemented");
+        return buffer.size;
     }
 
     pub fn getUsage(buffer: *Buffer) dgpu.Buffer.UsageFlags {
-        _ = buffer;
-        @panic("unimplemented");
+        return buffer.usage;
     }
 
     pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
-        _ = userdata;
-        _ = callback;
         _ = size;
         _ = offset;
         _ = mode;
-        _ = buffer;
-        @panic("unimplemented");
+
+        const map_callback = MapCallback{ .buffer = buffer, .callback = callback, .userdata = userdata };
+        if (buffer.gpu_count == 0) {
+            buffer.executeMapAsync(map_callback);
+        } else {
+            try buffer.device.map_callbacks.append(allocator, map_callback);
+        }
     }
 
     pub fn setLabel(buffer: *Buffer, label: [*:0]const u8) void {
@@ -1207,6 +1235,19 @@ pub const Buffer = struct {
             unmap_memory = buffer.memory;
         }
         vkd.unmapMemory(vk_device, unmap_memory);
+    }
+
+    // Internal
+    pub fn executeMapAsync(buffer: *Buffer, map_callback: MapCallback) void {
+        const vk_device = buffer.device.vk_device;
+
+        var map = vkd.mapMemory(vk_device, buffer.memory, 0, buffer.size, .{}) catch {
+            map_callback.callback(.unknown, map_callback.userdata);
+            return;
+        };
+
+        buffer.map = @ptrCast(map);
+        map_callback.callback(.success, map_callback.userdata);
     }
 };
 
@@ -1347,7 +1388,7 @@ pub const TextureView = struct {
     device: *Device,
     texture: *Texture,
     vk_view: vk.ImageView,
-    format: vk.Format,
+    vk_format: vk.Format,
     extent: vk.Extent2D,
 
     pub fn init(texture: *Texture, desc: *const dgpu.TextureView.Descriptor, extent: vk.Extent2D) !*TextureView {
@@ -1361,13 +1402,15 @@ pub const TextureView = struct {
             .dimension_3d => .dimension_3d,
         };
 
-        const format = conv.vulkanFormat(if (desc.format != .undefined) desc.format else texture.format);
-        const aspect = conv.vulkanImageAspectFlags(desc.aspect, desc.format);
+        const format = if (desc.format != .undefined) desc.format else texture.format;
+        const dimension = if (desc.dimension != .dimension_undefined) desc.dimension else texture_dimension;
+
+        const vk_format = conv.vulkanFormat(format);
 
         const vk_view = try vkd.createImageView(vk_device, &.{
             .image = texture.image,
-            .view_type = conv.vulkanImageViewType(if (desc.dimension != .dimension_undefined) desc.dimension else texture_dimension),
-            .format = format,
+            .view_type = conv.vulkanImageViewType(dimension),
+            .format = vk_format,
             .components = .{
                 .r = .identity,
                 .g = .identity,
@@ -1375,7 +1418,7 @@ pub const TextureView = struct {
                 .a = .identity,
             },
             .subresource_range = .{
-                .aspect_mask = aspect,
+                .aspect_mask = conv.vulkanImageAspectFlags(desc.aspect, format),
                 .base_mip_level = desc.base_mip_level,
                 .level_count = desc.mip_level_count,
                 .base_array_layer = desc.base_array_layer,
@@ -1388,7 +1431,7 @@ pub const TextureView = struct {
             .device = texture.device,
             .texture = texture,
             .vk_view = vk_view,
-            .format = format,
+            .vk_format = vk_format,
             .extent = extent,
         };
         return view;
@@ -2009,7 +2052,7 @@ pub const RenderPipeline = struct {
                 const target = frag.targets.?[i];
                 const blend = target.blend orelse &dgpu.BlendState{};
                 blend_attachments[i] = .{
-                    .blend_enable = vk.FALSE,
+                    .blend_enable = if (target.blend != null) vk.TRUE else vk.FALSE,
                     .src_color_blend_factor = conv.vulkanBlendFactor(blend.color.src_factor),
                     .dst_color_blend_factor = conv.vulkanBlendFactor(blend.color.dst_factor),
                     .color_blend_op = conv.vulkanBlendOp(blend.color.operation),
@@ -2062,10 +2105,10 @@ pub const RenderPipeline = struct {
         };
 
         if (desc.depth_stencil) |ds| {
-            depth_stencil_state.depth_test_enable = @intFromBool(ds.depth_compare == .always and ds.depth_write_enabled == .true);
+            depth_stencil_state.depth_test_enable = @intFromBool(ds.depth_compare != .always or ds.depth_write_enabled == .true);
             depth_stencil_state.depth_write_enable = @intFromBool(ds.depth_write_enabled == .true);
             depth_stencil_state.depth_compare_op = conv.vulkanCompareOp(ds.depth_compare);
-            depth_stencil_state.stencil_test_enable = @intFromBool(ds.stencil_read_mask != 0 or ds.stencil_write_mask != 0);
+            depth_stencil_state.stencil_test_enable = @intFromBool(conv.stencilEnable(ds.stencil_front) or conv.stencilEnable(ds.stencil_back));
             depth_stencil_state.front = .{
                 .fail_op = conv.vulkanStencilOp(ds.stencil_front.fail_op),
                 .depth_fail_op = conv.vulkanStencilOp(ds.stencil_front.depth_fail_op),
@@ -2337,7 +2380,7 @@ pub const ReferenceTracker = struct {
         try tracker.upload_pages.append(allocator, upload_page);
     }
 
-    pub fn submit(tracker: *ReferenceTracker, submit_object: *SubmitObject) !void {
+    pub fn submit(tracker: *ReferenceTracker) !void {
         for (tracker.buffers.items) |buffer| {
             buffer.gpu_count += 1;
         }
@@ -2345,8 +2388,6 @@ pub const ReferenceTracker = struct {
         for (tracker.bind_groups.items) |group| {
             for (group.buffers.items) |access| access.buffer.gpu_count += 1;
         }
-
-        try submit_object.reference_trackers.append(allocator, tracker);
     }
 };
 
@@ -2539,7 +2580,7 @@ pub const CommandEncoder = struct {
         const stream = try encoder.command_buffer.upload(size);
         @memcpy(stream.map[0..size], data[0..size]);
 
-        try encoder.copyBufferToBuffer(stream.buffer, offset, buffer, offset, size);
+        try encoder.copyBufferToBuffer(stream.buffer, stream.offset, buffer, offset, size);
     }
 
     pub fn writeTexture(
@@ -2554,7 +2595,14 @@ pub const CommandEncoder = struct {
         @memcpy(stream.map[0..data_size], data[0..data_size]);
 
         try encoder.copyBufferToTexture(
-            &.{ .layout = data_layout.*, .buffer = @ptrCast(stream.buffer) },
+            &.{
+                .layout = .{
+                    .offset = stream.offset,
+                    .bytes_per_row = data_layout.bytes_per_row,
+                    .rows_per_image = data_layout.rows_per_image,
+                },
+                .buffer = @ptrCast(stream.buffer),
+            },
             destination,
             write_size,
         );
@@ -3034,11 +3082,11 @@ pub const RenderPassEncoder = struct {
             image_views.appendAssumeCapacity(view.vk_view);
 
             rp_key.colors.appendAssumeCapacity(.{
-                .format = view.format,
+                .format = view.vk_format,
                 .load_op = attach.load_op,
                 .store_op = attach.store_op,
                 .layout = view.texture.read_image_layout,
-                .resolve_format = if (resolve_view) |rv| rv.format else null,
+                .resolve_format = if (resolve_view) |rv| rv.vk_format else null,
             });
 
             if (attach.load_op == .clear) {
@@ -3065,7 +3113,7 @@ pub const RenderPassEncoder = struct {
             image_views.appendAssumeCapacity(view.vk_view);
 
             rp_key.depth_stencil = .{
-                .format = view.format,
+                .format = view.vk_format,
                 .depth_load_op = attach.depth_load_op,
                 .depth_store_op = attach.depth_store_op,
                 .stencil_load_op = attach.stencil_load_op,
@@ -3294,11 +3342,26 @@ pub const Queue = struct {
     }
 
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
+        if (queue.command_encoder) |command_encoder| {
+            const command_buffer = try command_encoder.finish(&.{});
+            command_buffer.manager.reference(); // handled in main.zig
+            defer command_buffer.manager.release();
+
+            command_buffer.manager.reference();
+            try queue.command_buffers.append(allocator, command_buffer);
+            try command_buffer.reference_tracker.submit();
+
+            command_encoder.manager.release();
+            queue.command_encoder = null;
+        }
+
         for (commands) |command_buffer| {
             command_buffer.manager.reference();
+            try queue.command_buffers.append(allocator, command_buffer);
+            try command_buffer.reference_tracker.submit();
+
             try queue.wait_dst_stage_masks.appendSlice(allocator, command_buffer.wait_dst_stage_masks.items);
             try queue.wait_semaphores.appendSlice(allocator, command_buffer.wait_semaphores.items);
-            try queue.command_buffers.append(allocator, command_buffer);
         }
     }
 
@@ -3312,25 +3375,13 @@ pub const Queue = struct {
         var submit_object = try SubmitObject.init(queue.device);
         var vk_command_buffers = try std.ArrayListUnmanaged(vk.CommandBuffer).initCapacity(
             allocator,
-            queue.command_buffers.items.len + 1,
+            queue.command_buffers.items.len,
         );
         defer vk_command_buffers.deinit(allocator);
 
-        if (queue.command_encoder) |command_encoder| {
-            const command_buffer = try command_encoder.finish(&.{});
-            command_buffer.manager.reference(); // handled in main.zig
-            defer command_buffer.manager.release();
-
-            vk_command_buffers.appendAssumeCapacity(command_buffer.vk_command_buffer);
-            try command_buffer.reference_tracker.submit(&submit_object);
-
-            command_encoder.manager.release();
-            queue.command_encoder = null;
-        }
-
         for (queue.command_buffers.items) |command_buffer| {
             vk_command_buffers.appendAssumeCapacity(command_buffer.vk_command_buffer);
-            try command_buffer.reference_tracker.submit(&submit_object);
+            try submit_object.reference_trackers.append(allocator, command_buffer.reference_tracker);
             command_buffer.manager.release();
         }
         queue.command_buffers.clearRetainingCapacity();
