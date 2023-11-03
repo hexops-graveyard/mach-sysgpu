@@ -24,9 +24,6 @@ var allocator: std.mem.Allocator = undefined;
 var debug_enabled: bool = undefined;
 var gpu_validation_enabled: bool = undefined;
 
-// workaround issues with @alignCast panicking as these aren't real pointers
-extern fn hwndCast(*anyopaque) c.HWND;
-
 // workaround c-translation errors
 const DXGI_PRESENT_ALLOW_TEARING: c.UINT = 0x00000200;
 
@@ -258,8 +255,11 @@ pub const Surface = struct {
         _ = instance;
 
         if (utils.findChained(dgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
+            var hwnd: c.HWND = undefined;
+            @memcpy(std.mem.asBytes(&hwnd), std.mem.asBytes(&win_desc.hwnd));
+
             var surface = try allocator.create(Surface);
-            surface.* = .{ .hwnd = hwndCast(win_desc.hwnd) };
+            surface.* = .{ .hwnd = hwnd };
             return surface;
         } else {
             return error.InvalidDescriptor;
