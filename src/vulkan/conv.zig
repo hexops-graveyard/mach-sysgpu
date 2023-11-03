@@ -295,14 +295,10 @@ pub fn vulkanImageCreateFlags(cube_compatible: bool, view_format_count: usize) v
 
 pub fn vulkanImageLayoutForRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.ImageLayout {
     // In case where we do not read, use an appropriate write state to avoid unnecessary layout changes
-    return if (usage.storage_binding)
-        .general
-    else if (usage.texture_binding and utils.hasDepthStencil(format))
-        .depth_stencil_read_only_optimal
-    else if (usage.texture_binding)
+    return if (usage.texture_binding)
         .shader_read_only_optimal
     else if (usage.render_attachment and utils.hasDepthStencil(format))
-        .depth_stencil_read_only_optimal
+        .depth_stencil_attachment_optimal
     else if (usage.render_attachment)
         .color_attachment_optimal
     else
@@ -312,7 +308,6 @@ pub fn vulkanImageLayoutForRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Tex
 pub fn vulkanImageLayoutForTextureBinding(sample_type: dgpu.Texture.SampleType) vk.ImageLayout {
     return switch (sample_type) {
         .undefined => .general,
-        .depth => .depth_stencil_read_only_optimal,
         else => .shader_read_only_optimal,
     };
 }
