@@ -678,16 +678,23 @@ pub const Device = struct {
         &.{};
     const device_extensions = &[_][*:0]const u8{vk.extension_info.khr_swapchain.name};
 
+    pub const ResolveKey = struct {
+        format: vk.Format,
+        layout: vk.ImageLayout,
+    };
+
     pub const ColorAttachmentKey = struct {
         format: vk.Format,
+        samples: u32,
         load_op: dgpu.LoadOp,
         store_op: dgpu.StoreOp,
         layout: vk.ImageLayout,
-        resolve_format: ?vk.Format,
+        resolve: ?ResolveKey,
     };
 
     pub const DepthStencilAttachmentKey = struct {
         format: vk.Format,
+        samples: u32,
         depth_load_op: dgpu.LoadOp,
         depth_store_op: dgpu.StoreOp,
         stencil_load_op: dgpu.LoadOp,
@@ -699,24 +706,23 @@ pub const Device = struct {
     pub const RenderPassKey = struct {
         colors: std.BoundedArray(ColorAttachmentKey, 8),
         depth_stencil: ?DepthStencilAttachmentKey,
-        samples: vk.SampleCountFlags,
 
         pub fn init() RenderPassKey {
             var colors = std.BoundedArray(ColorAttachmentKey, 8){};
             for (&colors.buffer) |*color| {
                 color.* = .{
                     .format = .undefined,
+                    .samples = 1,
                     .load_op = .load,
                     .store_op = .store,
                     .layout = .undefined,
-                    .resolve_format = null,
+                    .resolve = null,
                 };
             }
 
             return .{
                 .colors = .{},
                 .depth_stencil = null,
-                .samples = .{ .@"1_bit" = true },
             };
         }
     };
@@ -732,7 +738,7 @@ pub const Device = struct {
         for (key.colors.slice()) |attach| {
             attachments.appendAssumeCapacity(.{
                 .format = attach.format,
-                .samples = key.samples,
+                .samples = conv.vulkanSampleCount(attach.samples),
                 .load_op = conv.vulkanLoadOp(attach.load_op),
                 .store_op = conv.vulkanStoreOp(attach.store_op),
                 .stencil_load_op = .dont_care,
@@ -745,16 +751,16 @@ pub const Device = struct {
                 .layout = .color_attachment_optimal,
             });
 
-            if (attach.resolve_format) |resolve_format| {
+            if (attach.resolve) |resolve| {
                 attachments.appendAssumeCapacity(.{
-                    .format = resolve_format,
-                    .samples = key.samples,
+                    .format = resolve.format,
+                    .samples = conv.vulkanSampleCount(1),
                     .load_op = .dont_care,
                     .store_op = .store,
                     .stencil_load_op = .dont_care,
                     .stencil_store_op = .dont_care,
-                    .initial_layout = attach.layout,
-                    .final_layout = attach.layout,
+                    .initial_layout = resolve.layout,
+                    .final_layout = resolve.layout,
                 });
                 resolve_refs.appendAssumeCapacity(.{
                     .attachment = @intCast(attachments.len - 1),
@@ -771,7 +777,7 @@ pub const Device = struct {
 
             attachments.appendAssumeCapacity(.{
                 .format = depth_stencil.format,
-                .samples = key.samples,
+                .samples = conv.vulkanSampleCount(depth_stencil.samples),
                 .load_op = conv.vulkanLoadOp(depth_stencil.depth_load_op),
                 .store_op = conv.vulkanStoreOp(depth_stencil.depth_store_op),
                 .stencil_load_op = conv.vulkanLoadOp(depth_stencil.stencil_load_op),
@@ -934,6 +940,7 @@ pub const SwapChain = struct {
     textures: []*Texture,
     texture_views: []*TextureView,
     texture_index: u32 = 0,
+    current_texture_view: ?*TextureView = null,
     format: dgpu.Texture.Format,
 
     pub fn init(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
@@ -1057,6 +1064,11 @@ pub const SwapChain = struct {
     pub fn getCurrentTextureView(sc: *SwapChain) !*TextureView {
         const vk_device = sc.device.vk_device;
 
+        if (sc.current_texture_view) |view| {
+            view.manager.reference();
+            return view;
+        }
+
         const result = try vkd.acquireNextImageKHR(
             vk_device,
             sc.vk_swapchain,
@@ -1075,6 +1087,7 @@ pub const SwapChain = struct {
         sc.texture_index = result.image_index;
         var view = sc.texture_views[sc.texture_index];
         view.manager.reference();
+        sc.current_texture_view = view;
 
         return view;
     }
@@ -1094,6 +1107,8 @@ pub const SwapChain = struct {
             .p_swapchains = &[_]vk.SwapchainKHR{sc.vk_swapchain},
             .p_image_indices = &[_]u32{sc.texture_index},
         });
+
+        sc.current_texture_view = null;
     }
 };
 
@@ -1997,7 +2012,9 @@ pub const RenderPipeline = struct {
 
         const viewport = vk.PipelineViewportStateCreateInfo{
             .viewport_count = 1,
+            .p_viewports = &[_]vk.Viewport{.{ .x = 0, .y = 0, .width = 1.0, .height = 1.0, .min_depth = 0.0, .max_depth = 1.0 }},
             .scissor_count = 1,
+            .p_scissors = &[_]vk.Rect2D{.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 1, .height = 1 } }},
         };
 
         const rasterization = vk.PipelineRasterizationStateCreateInfo{
@@ -2043,7 +2060,6 @@ pub const RenderPipeline = struct {
         defer if (desc.fragment != null) allocator.free(blend_attachments);
 
         var rp_key = Device.RenderPassKey.init();
-        rp_key.samples = sample_count;
 
         if (desc.fragment) |frag| {
             blend_attachments = try allocator.alloc(vk.PipelineColorBlendAttachmentState, frag.target_count);
@@ -2068,10 +2084,11 @@ pub const RenderPipeline = struct {
                 };
                 rp_key.colors.appendAssumeCapacity(.{
                     .format = conv.vulkanFormat(target.format),
+                    .samples = desc.multisample.count,
                     .load_op = .clear,
                     .store_op = .store,
                     .layout = .color_attachment_optimal,
-                    .resolve_format = null,
+                    .resolve = null,
                 });
             }
         }
@@ -2130,6 +2147,7 @@ pub const RenderPipeline = struct {
 
             rp_key.depth_stencil = .{
                 .format = conv.vulkanFormat(ds.format),
+                .samples = desc.multisample.count,
                 .depth_load_op = .load,
                 .depth_store_op = .store,
                 .stencil_load_op = .load,
@@ -3044,6 +3062,7 @@ pub const RenderPassEncoder = struct {
     reference_tracker: *ReferenceTracker,
     render_pass: vk.RenderPass,
     framebuffer: vk.Framebuffer,
+    extent: vk.Extent2D,
     pipeline: ?*RenderPipeline = null,
 
     pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
@@ -3052,9 +3071,9 @@ pub const RenderPassEncoder = struct {
         const vk_command_buffer = cmd_encoder.command_buffer.vk_command_buffer;
 
         const depth_stencil_attachment_count = @intFromBool(descriptor.depth_stencil_attachment != null);
-        const attachment_count = descriptor.color_attachment_count + depth_stencil_attachment_count;
+        const max_attachment_count = 2 * (descriptor.color_attachment_count + depth_stencil_attachment_count);
 
-        var image_views = try std.ArrayList(vk.ImageView).initCapacity(allocator, attachment_count);
+        var image_views = try std.ArrayList(vk.ImageView).initCapacity(allocator, max_attachment_count);
         defer image_views.deinit();
 
         var clear_values = std.ArrayList(vk.ClearValue).init(allocator);
@@ -3080,13 +3099,19 @@ pub const RenderPassEncoder = struct {
             }
 
             image_views.appendAssumeCapacity(view.vk_view);
+            if (resolve_view) |rv|
+                image_views.appendAssumeCapacity(rv.vk_view);
 
             rp_key.colors.appendAssumeCapacity(.{
                 .format = view.vk_format,
+                .samples = view.texture.sample_count,
                 .load_op = attach.load_op,
                 .store_op = attach.store_op,
                 .layout = view.texture.read_image_layout,
-                .resolve_format = if (resolve_view) |rv| rv.vk_format else null,
+                .resolve = if (resolve_view) |rv| .{
+                    .format = rv.vk_format,
+                    .layout = rv.texture.read_image_layout,
+                } else null,
             });
 
             if (attach.load_op == .clear) {
@@ -3114,6 +3139,7 @@ pub const RenderPassEncoder = struct {
 
             rp_key.depth_stencil = .{
                 .format = view.vk_format,
+                .samples = view.texture.sample_count,
                 .depth_load_op = attach.depth_load_op,
                 .depth_store_op = attach.depth_store_op,
                 .stencil_load_op = attach.stencil_load_op,
@@ -3182,6 +3208,7 @@ pub const RenderPassEncoder = struct {
             .reference_tracker = cmd_encoder.reference_tracker,
             .render_pass = render_pass,
             .framebuffer = framebuffer,
+            .extent = extent,
         };
 
         return rpe;
@@ -3303,7 +3330,7 @@ pub const RenderPassEncoder = struct {
 
         vkd.cmdSetViewport(vk_command_buffer, 0, 1, @as(*const [1]vk.Viewport, &vk.Viewport{
             .x = x,
-            .y = y,
+            .y = @as(f32, @floatFromInt(encoder.extent.height)) - y,
             .width = width,
             .height = -height,
             .min_depth = min_depth,
