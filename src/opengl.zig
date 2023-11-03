@@ -7,7 +7,7 @@ const c = @import("opengl/c.zig");
 const conv = @import("opengl/conv.zig");
 const proc = @import("opengl/proc.zig");
 
-const log = std.log.scoped(.metal);
+const log = std.log.scoped(.opengl);
 
 const instance_class_name = "dusk-hwnd";
 const max_back_buffer_count = 3;
