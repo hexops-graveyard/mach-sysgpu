@@ -1,10 +1,12 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const build_options = @import("build-options");
 pub const dgpu = @import("dgpu/main.zig");
 const shader = @import("shader.zig");
 const utils = @import("utils.zig");
 
-const backend_type: dgpu.BackendType = switch (builtin.target.os.tag) {
+const backend_type: dgpu.BackendType =
+    if (build_options.backend != .default) build_options.backend else switch (builtin.target.os.tag) {
     .linux => .vulkan,
     .macos, .ios => .metal,
     .windows => .d3d12,
@@ -13,6 +15,7 @@ const backend_type: dgpu.BackendType = switch (builtin.target.os.tag) {
 const impl = switch (backend_type) {
     .d3d12 => @import("d3d12.zig"),
     .metal => @import("metal.zig"),
+    .opengl => @import("opengl.zig"),
     .vulkan => @import("vulkan.zig"),
     else => @compileError("unsupported backend"),
 };

@@ -1,8 +1,19 @@
 const std = @import("std");
 
+pub const Backend = enum {
+    default,
+    webgpu,
+    d3d12,
+    metal,
+    vulkan,
+    opengl,
+};
+
 pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
+
+    const backend = b.option(Backend, "backend", "API Backend") orelse .default;
 
     const vulkan_dep = b.dependency("vulkan_zig_generated", .{});
     const mach_gpu_dep = b.dependency("mach_gpu", .{
@@ -14,12 +25,16 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    const build_options = b.addOptions();
+    build_options.addOption(Backend, "backend", backend);
+
     const module = b.addModule("mach-dusk", .{
         .source_file = .{ .path = "src/main.zig" },
         .dependencies = &.{
             .{ .name = "vulkan", .module = vulkan_dep.module("vulkan-zig-generated") },
             .{ .name = "gpu", .module = mach_gpu_dep.module("mach-gpu") },
             .{ .name = "objc", .module = mach_objc_dep.module("mach-objc") },
+            .{ .name = "build-options", .module = build_options.createModule() },
         },
     });
 
@@ -29,9 +44,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    if (target.isWindows()) {
-        lib.addCSourceFile(.{ .file = .{ .path = "src/d3d12/workarounds.c" }, .flags = &.{} });
-    }
     link(b, lib);
     b.installArtifact(lib);
 
@@ -55,6 +67,8 @@ pub fn build(b: *std.Build) !void {
 }
 
 pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
+    // TODO - how to get the build option here?
+
     if (step.target.isDarwin()) {
         @import("xcode_frameworks").addPaths(step);
         step.linkFramework("AppKit");
@@ -66,6 +80,7 @@ pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
 
     if (step.target.isWindows()) {
         step.linkLibC();
+
         step.linkLibrary(b.dependency("direct3d_headers", .{
             .target = step.target,
             .optimize = step.optimize,
@@ -73,5 +88,11 @@ pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
         @import("direct3d_headers").addLibraryPath(step);
         step.linkSystemLibrary("d3d12");
         step.linkSystemLibrary("d3dcompiler_47");
+
+        step.linkLibrary(b.dependency("opengl_headers", .{
+            .target = step.target,
+            .optimize = step.optimize,
+        }).artifact("opengl-headers"));
+        step.linkSystemLibrary("opengl32");
     }
 }

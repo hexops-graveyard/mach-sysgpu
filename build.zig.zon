@@ -29,6 +29,10 @@
             .url = "https://pkg.machengine.org/direct3d-headers/9617cfd497fae598610a7b0a4be0b035e7308e93.tar.gz",
             .hash = "122098cc0b0a39d24aaffcd6d5556e8f31f5dd1a754559ffa468918f2ed6c1ad0a03",
         },
+        .opengl_headers = .{
+            .url = "https://pkg.machengine.org/opengl-headers/b4b46f2b33384966204555b751544cc0ba9630b2.tar.gz",
+            .hash = "12202041249d1cc8e019efaf4e9e935b124a2afd399c8a1f6b509a67f96a1c74e554",
+        },
         .xcode_frameworks = .{
             .url = "https://pkg.machengine.org/xcode-frameworks/8a920385383cc4c0a2a4f55b084d402a9400a5a8.tar.gz",
             .hash = "122051b3c616c62d55a82207c1cb76e2264b26e8378f56b1e5376d7684bd13616589",
