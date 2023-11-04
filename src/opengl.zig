@@ -21,14 +21,6 @@ pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
     allocator = alloc;
 }
 
-// TODO - struct for procs
-var GetExtensionsStringEXT: c.PFNWGLGETEXTENSIONSSTRINGEXTPROC = undefined;
-var GetExtensionsStringARB: c.PFNWGLGETEXTENSIONSSTRINGARBPROC = undefined;
-var CreateContextAttribsARB: c.PFNWGLCREATECONTEXTATTRIBSARBPROC = undefined;
-var SwapIntervalEXT: c.PFNWGLSWAPINTERVALEXTPROC = undefined;
-var GetPixelFormatAttribivARB: c.PFNWGLGETPIXELFORMATATTRIBIVARBPROC = undefined;
-var ChoosePixelFormatARB: c.PFNWGLCHOOSEPIXELFORMATARBPROC = undefined;
-
 const ActiveContext = struct {
     old_hdc: c.HDC,
     old_hglrc: c.HGLRC,
@@ -68,7 +60,7 @@ fn createDummyWindow() c.HWND {
     );
 }
 
-fn setPixelFormat(hwnd: c.HWND) !c_int {
+fn setPixelFormat(wgl: *proc.InstanceWGL, hwnd: c.HWND) !c_int {
     const hdc = c.GetDC(hwnd);
 
     const format_attribs = [_]c_int{
@@ -82,7 +74,7 @@ fn setPixelFormat(hwnd: c.HWND) !c_int {
 
     var num_formats: c_uint = undefined;
     var pixel_format: c_int = undefined;
-    if (ChoosePixelFormatARB.?(hdc, &format_attribs, null, 1, &pixel_format, &num_formats) == c.FALSE)
+    if (wgl.ChoosePixelFormatARB(hdc, &format_attribs, null, 1, &pixel_format, &num_formats) == c.FALSE)
         return error.ChoosePixelFormatARBFailed;
     if (num_formats == 0)
         return error.NoFormatsAvailable;
@@ -97,8 +89,37 @@ fn setPixelFormat(hwnd: c.HWND) !c_int {
     return pixel_format;
 }
 
+fn messageCallback(
+    source: c.GLenum,
+    message_type: c.GLenum,
+    id: c.GLuint,
+    severity: c.GLenum,
+    length: c.GLsizei,
+    message: [*c]const c.GLchar,
+    user_data: ?*const anyopaque,
+) callconv(.C) void {
+    _ = source;
+    _ = id;
+    _ = length;
+    _ = user_data;
+    std.debug.print("GL CALLBACK: {s} type = 0x{x}, severity = 0x{x}, message = {s}\n", .{
+        if (message_type == c.GL_DEBUG_TYPE_ERROR) "** GL ERROR **" else "",
+        message_type,
+        severity,
+        message,
+    });
+}
+
+fn checkError(gl: *proc.DeviceGL) void {
+    const err = gl.GetError();
+    if (err != c.GL_NO_ERROR) {
+        std.debug.print("glGetError {x}\n", .{err});
+    }
+}
+
 pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
+    wgl: proc.InstanceWGL,
 
     pub fn init(desc: *const dgpu.Instance.Descriptor) !*Instance {
         // TODO
@@ -137,26 +158,26 @@ pub const Instance = struct {
         defer _ = c.wglDeleteContext(hglrc);
 
         // Extension procs
-        {
-            var ctx = try ActiveContext.init(hdc, hglrc);
-            defer ctx.deinit();
+        try proc.init();
 
-            GetExtensionsStringEXT = @ptrCast(c.wglGetProcAddress("wglGetExtensionsStringEXT"));
-            GetExtensionsStringARB = @ptrCast(c.wglGetProcAddress("wglGetExtensionsStringARB"));
-            CreateContextAttribsARB = @ptrCast(c.wglGetProcAddress("wglCreateContextAttribsARB"));
-            SwapIntervalEXT = @ptrCast(c.wglGetProcAddress("wglSwapIntervalEXT"));
-            GetPixelFormatAttribivARB = @ptrCast(c.wglGetProcAddress("wglGetPixelFormatAttribivARB"));
-            ChoosePixelFormatARB = @ptrCast(c.wglGetProcAddress("wglChoosePixelFormatARB"));
-        }
+        var ctx = try ActiveContext.init(hdc, hglrc);
+        defer ctx.deinit();
+
+        var wgl: proc.InstanceWGL = undefined;
+        wgl.load();
 
         // Result
         var instance = try allocator.create(Instance);
-        instance.* = .{};
+        instance.* = .{
+            .wgl = wgl,
+        };
         return instance;
     }
 
     pub fn deinit(instance: *Instance) void {
         const hinstance = c.GetModuleHandleA(null);
+
+        proc.deinit();
         _ = c.UnregisterClassA(instance_class_name, hinstance);
 
         allocator.destroy(instance);
@@ -178,21 +199,19 @@ pub const Adapter = struct {
     version: [*c]const c.GLubyte,
 
     pub fn init(instance: *Instance, options: *const dgpu.RequestAdapterOptions) !*Adapter {
-        _ = instance;
+        const wgl = &instance.wgl;
 
         // Use hwnd from surface is provided
         var hwnd: c.HWND = undefined;
         var pixel_format: c_int = undefined;
         if (options.compatible_surface) |surface_raw| {
-            std.debug.print("Compatible surface\n", .{});
             const surface: *Surface = @ptrCast(@alignCast(surface_raw));
 
             hwnd = surface.hwnd;
             pixel_format = surface.pixel_format;
         } else {
-            std.debug.print("Dummy window\n", .{});
             hwnd = createDummyWindow();
-            pixel_format = try setPixelFormat(hwnd);
+            pixel_format = try setPixelFormat(wgl, hwnd);
         }
 
         // GL context
@@ -202,22 +221,25 @@ pub const Adapter = struct {
 
         const context_attribs = [_]c_int{
             c.WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-            c.WGL_CONTEXT_MINOR_VERSION_ARB, 4,
+            c.WGL_CONTEXT_MINOR_VERSION_ARB, 5,
             c.WGL_CONTEXT_FLAGS_ARB,         c.WGL_CONTEXT_DEBUG_BIT_ARB,
             c.WGL_CONTEXT_PROFILE_MASK_ARB,  c.WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
             0,
         };
 
-        const hglrc = CreateContextAttribsARB.?(hdc, null, &context_attribs);
+        const hglrc = wgl.CreateContextAttribsARB(hdc, null, &context_attribs);
         if (hglrc == null)
             return error.wglCreateContextFailed;
 
         var ctx = try ActiveContext.init(hdc, hglrc);
         defer ctx.deinit();
 
-        const vendor = c.glGetString(c.GL_VENDOR);
-        const renderer = c.glGetString(c.GL_RENDERER);
-        const version = c.glGetString(c.GL_VERSION);
+        var gl: proc.AdapterGL = undefined;
+        gl.load();
+
+        const vendor = gl.GetString(c.GL_VENDOR);
+        const renderer = gl.GetString(c.GL_RENDERER);
+        const version = gl.GetString(c.GL_VERSION);
 
         // Result
         var adapter = try allocator.create(Adapter);
@@ -264,14 +286,14 @@ pub const Surface = struct {
     pixel_format: c_int,
 
     pub fn init(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
-        _ = instance;
+        const wgl = &instance.wgl;
 
         if (utils.findChained(dgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
             // workaround issues with @alignCast panicking as HWND is not a real pointer
             var hwnd: c.HWND = undefined;
             @memcpy(std.mem.asBytes(&hwnd), std.mem.asBytes(&win_desc.hwnd));
 
-            const pixel_format = try setPixelFormat(hwnd);
+            const pixel_format = try setPixelFormat(wgl, hwnd);
 
             var surface = try allocator.create(Surface);
             surface.* = .{
@@ -291,11 +313,12 @@ pub const Surface = struct {
 
 pub const Device = struct {
     manager: utils.Manager(Device) = .{},
-    adapter: *Adapter,
     queue: *Queue,
     hdc: c.HDC,
     hglrc: c.HGLRC,
     pixel_format: c_int,
+    gl: proc.DeviceGL,
+    vao: c.GLuint,
 
     lost_cb: ?dgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
@@ -308,7 +331,18 @@ pub const Device = struct {
         // TODO
         _ = desc;
 
-        adapter.manager.reference();
+        var ctx = try ActiveContext.init(adapter.hdc, adapter.hglrc);
+        defer ctx.deinit();
+
+        var gl: proc.DeviceGL = undefined;
+        gl.loadVersion(4, 5);
+
+        gl.Enable(c.GL_DEBUG_OUTPUT);
+        gl.DebugMessageCallback(messageCallback, null);
+
+        var vao: c.GLuint = undefined;
+        gl.GenVertexArrays(1, &vao);
+        gl.BindVertexArray(vao);
 
         const queue = try allocator.create(Queue);
         errdefer allocator.destroy(queue);
@@ -316,10 +350,11 @@ pub const Device = struct {
         var device = try allocator.create(Device);
         device.* = .{
             .queue = queue,
-            .adapter = adapter,
             .hdc = adapter.hdc,
             .hglrc = adapter.hglrc,
             .pixel_format = adapter.pixel_format,
+            .gl = gl,
+            .vao = vao,
         };
         return device;
     }
@@ -329,8 +364,13 @@ pub const Device = struct {
             lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
         }
 
+        const gl = &device.gl;
+        var ctx = ActiveContext.init(device.hdc, device.hglrc) catch @panic("ActiveContext failed");
+        defer ctx.deinit();
+
+        gl.DeleteVertexArrays(1, &device.vao);
+
         device.queue.manager.release();
-        device.adapter.manager.release();
         allocator.destroy(device.queue);
         allocator.destroy(device);
     }
@@ -453,6 +493,10 @@ pub const SwapChain = struct {
     }
 
     pub fn present(swapchain: *SwapChain) !void {
+        const device = swapchain.device;
+        var ctx = try ActiveContext.init(swapchain.hdc, device.hglrc);
+        defer ctx.deinit();
+
         if (c.SwapBuffers(swapchain.hdc) == c.FALSE)
             return error.SwapBuffersFailed;
     }
@@ -675,13 +719,13 @@ pub const PipelineLayout = struct {
 
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
+    device: *Device,
     air: *shader.Air,
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
-        _ = device;
-
         var module = try allocator.create(ShaderModule);
         module.* = .{
+            .device = device,
             .air = air,
         };
         return module;
@@ -691,6 +735,35 @@ pub const ShaderModule = struct {
         shader_module.air.deinit(allocator);
         allocator.destroy(shader_module.air);
         allocator.destroy(shader_module);
+    }
+
+    pub fn compile(module: *ShaderModule, entrypoint: [*:0]const u8, shader_type: c.GLenum) !c.GLuint {
+        const gl = &module.device.gl;
+
+        const code_span = try shader.CodeGen.generate(allocator, module.air, .glsl, .{ .emit_source_file = "" }, entrypoint);
+        defer allocator.free(code_span);
+        const code_ptr = try allocator.dupeZ(u8, code_span);
+        defer allocator.free(code_ptr);
+
+        //std.debug.print("{s}\n", .{code_span});
+
+        const gl_shader = gl.CreateShader(shader_type);
+        if (gl_shader == 0)
+            return error.CreateShaderFailed;
+
+        gl.ShaderSource(gl_shader, 1, @ptrCast(&code_ptr), null);
+        gl.CompileShader(gl_shader);
+
+        var success: c.GLint = undefined;
+        gl.GetShaderiv(gl_shader, c.GL_COMPILE_STATUS, &success);
+        if (success == c.GL_FALSE) {
+            var info_log: [512]c.GLchar = undefined;
+            gl.GetShaderInfoLog(gl_shader, @sizeOf(@TypeOf(info_log)), null, &info_log);
+            std.debug.print("Compilation Failed {s}\n", .{@as([*:0]u8, @ptrCast(&info_log))});
+            return error.CompilationFailed;
+        }
+
+        return gl_shader;
     }
 };
 
@@ -735,11 +808,26 @@ pub const ComputePipeline = struct {
 
 pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
+    device: *Device,
+    program: c.GLuint,
     layout: *PipelineLayout,
 
     pub fn init(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
+        const gl = &device.gl;
+        var ctx = try ActiveContext.init(device.hdc, device.hglrc);
+        defer ctx.deinit();
+
         // Shaders
         const vertex_module: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
+        const vertex_shader = try vertex_module.compile(desc.vertex.entry_point, c.GL_VERTEX_SHADER);
+        defer gl.DeleteShader(vertex_shader);
+
+        var opt_fragment_shader: ?c.GLuint = null;
+        if (desc.fragment) |frag| {
+            const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
+            opt_fragment_shader = try frag_module.compile(frag.entry_point, c.GL_FRAGMENT_SHADER);
+        }
+        defer if (opt_fragment_shader) |fragment_shader| gl.DeleteShader(fragment_shader);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
@@ -758,15 +846,42 @@ pub const RenderPipeline = struct {
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
 
+        // Program
+        const program = gl.CreateProgram();
+        errdefer gl.DeleteProgram(program);
+
+        gl.AttachShader(program, vertex_shader);
+        if (opt_fragment_shader) |fragment_shader|
+            gl.AttachShader(program, fragment_shader);
+        gl.LinkProgram(program);
+
+        var success: c.GLint = undefined;
+        gl.GetProgramiv(program, c.GL_LINK_STATUS, &success);
+        if (success == c.GL_FALSE) {
+            var info_log: [512]c.GLchar = undefined;
+            gl.GetProgramInfoLog(program, @sizeOf(@TypeOf(info_log)), null, &info_log);
+            std.debug.print("Link Failed {s}\n", .{@as([*:0]u8, @ptrCast(&info_log))});
+            return error.LinkFailed;
+        }
+
         // Result
         var pipeline = try allocator.create(RenderPipeline);
         pipeline.* = .{
+            .device = device,
+            .program = program,
             .layout = layout,
         };
         return pipeline;
     }
 
     pub fn deinit(pipeline: *RenderPipeline) void {
+        const device = pipeline.device;
+        const gl = &device.gl;
+        var ctx = ActiveContext.init(device.hdc, device.hglrc) catch @panic("ActiveContext failed");
+        defer ctx.deinit();
+
+        gl.DeleteProgram(pipeline.program);
+
         pipeline.layout.manager.release();
         allocator.destroy(pipeline);
     }
@@ -950,9 +1065,11 @@ pub const ComputePassEncoder = struct {
 pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
     ctx: ActiveContext,
+    gl: *proc.DeviceGL,
 
     pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const device = cmd_encoder.device;
+        const gl = &device.gl;
 
         // Set context to the HWND.  Offscreen rendering support will come later and may be used
         // universally to simplify coordinate space transformations.
@@ -972,14 +1089,14 @@ pub const RenderPassEncoder = struct {
             const attach = desc.color_attachments.?[i];
 
             if (attach.load_op == .clear) {
-                c.glClearColor(
+                gl.ClearColor(
                     @floatCast(attach.clear_value.r),
                     @floatCast(attach.clear_value.g),
                     @floatCast(attach.clear_value.b),
                     @floatCast(attach.clear_value.a),
                 );
 
-                c.glClear(c.GL_COLOR_BUFFER_BIT);
+                gl.Clear(c.GL_COLOR_BUFFER_BIT);
             }
         }
 
@@ -987,6 +1104,7 @@ pub const RenderPassEncoder = struct {
         var encoder = try allocator.create(RenderPassEncoder);
         encoder.* = .{
             .ctx = ctx,
+            .gl = gl,
         };
         return encoder;
     }
@@ -1004,10 +1122,10 @@ pub const RenderPassEncoder = struct {
         first_instance: u32,
     ) void {
         _ = first_instance;
-        _ = first_vertex;
         _ = instance_count;
-        _ = vertex_count;
-        _ = encoder;
+        const gl = encoder.gl;
+
+        gl.DrawArrays(c.GL_TRIANGLES, @intCast(first_vertex), @intCast(vertex_count));
     }
 
     pub fn drawIndexed(
@@ -1027,7 +1145,9 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn end(encoder: *RenderPassEncoder) !void {
-        _ = encoder;
+        const gl = encoder.gl;
+
+        checkError(gl);
     }
 
     pub fn setBindGroup(
@@ -1059,8 +1179,9 @@ pub const RenderPassEncoder = struct {
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
-        _ = pipeline;
-        _ = encoder;
+        const gl = encoder.gl;
+
+        gl.UseProgram(pipeline.program);
     }
 
     pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {

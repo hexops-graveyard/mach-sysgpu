@@ -1960,7 +1960,7 @@ pub const ShaderModule = struct {
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         _ = device;
 
-        const code = try shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" });
+        const code = try shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" }, null);
 
         var module = try allocator.create(ShaderModule);
         module.* = .{

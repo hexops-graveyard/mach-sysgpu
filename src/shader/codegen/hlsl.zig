@@ -87,15 +87,6 @@ fn emitArrayTypeSuffix(hlsl: *Hlsl, inst: Inst.Array) !void {
     try hlsl.emitTypeSuffix(inst.elem_type);
 }
 
-fn emitTypeAsPointer(hlsl: *Hlsl, inst_idx: InstIndex) !void {
-    if (inst_idx != .none) {
-        switch (hlsl.air.getInst(inst_idx)) {
-            .array => try hlsl.writeAll("*"),
-            else => try hlsl.writeAll("&"),
-        }
-    }
-}
-
 fn emitBoolType(hlsl: *Hlsl, inst: Inst.Bool) !void {
     _ = inst;
     try hlsl.writeAll("bool");
@@ -477,22 +468,6 @@ fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
     try hlsl.writeAll("}\n");
 }
 
-fn emitFnGlobalVar(hlsl: *Hlsl, inst_idx: InstIndex) !void {
-    const inst = hlsl.air.getInst(inst_idx).@"var";
-
-    try hlsl.writeAll(if (inst.addr_space == .uniform) "constant" else "device");
-    try hlsl.writeAll(" ");
-    try hlsl.emitType(inst.type);
-    try hlsl.emitTypeAsPointer(inst.type);
-    try hlsl.writeAll(" ");
-    try hlsl.writeName(inst.name);
-
-    // TODO - slot mapping and different object types
-    if (hlsl.air.resolveInt(inst.binding)) |binding| {
-        try hlsl.print(" [[buffer({})]]", .{binding});
-    }
-}
-
 fn emitFnParam(hlsl: *Hlsl, inst_idx: InstIndex) !void {
     const inst = hlsl.air.getInst(inst_idx).fn_param;
 
@@ -619,11 +594,6 @@ fn emitFor(hlsl: *Hlsl, inst: Inst.For) !void {
         try hlsl.writeAll(")\n");
     }
     try hlsl.emitStatement(inst.body);
-}
-
-fn emitAssignStmt(hlsl: *Hlsl, inst: Inst.Assign) !void {
-    _ = try hlsl.emitAssign(inst);
-    try hlsl.writeAll(";\n");
 }
 
 fn emitDiscard(hlsl: *Hlsl) !void {
