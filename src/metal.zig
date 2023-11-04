@@ -901,7 +901,7 @@ pub const ShaderModule = struct {
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const mtl_device = device.mtl_device;
 
-        const code = try shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" });
+        const code = try shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }, null);
         defer allocator.free(code);
 
         const source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
