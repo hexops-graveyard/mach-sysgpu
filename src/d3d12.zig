@@ -255,6 +255,7 @@ pub const Surface = struct {
         _ = instance;
 
         if (utils.findChained(dgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
+            // workaround issues with @alignCast panicking as HWND is not a real pointer
             var hwnd: c.HWND = undefined;
             @memcpy(std.mem.asBytes(&hwnd), std.mem.asBytes(&win_desc.hwnd));
 
