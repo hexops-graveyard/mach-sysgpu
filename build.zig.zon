@@ -1,5 +1,5 @@
 .{
-    .name = "mach-dusk",
+    .name = "mach-sysgpu",
     .version = "0.1.0",
     .paths = .{
         "src",

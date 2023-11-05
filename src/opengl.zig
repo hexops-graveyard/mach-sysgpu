@@ -9,7 +9,7 @@ const proc = @import("opengl/proc.zig");
 
 const log = std.log.scoped(.opengl);
 
-const instance_class_name = "dusk-hwnd";
+const instance_class_name = "sysgpu-hwnd";
 const max_back_buffer_count = 3;
 
 var allocator: std.mem.Allocator = undefined;

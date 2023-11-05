@@ -1,11 +1,11 @@
-<a href="https://machengine.org/pkg/mach-dusk">
+<a href="https://machengine.org/pkg/mach-sysgpu">
     <picture>
-        <source media="(prefers-color-scheme: dark)" srcset="https://machengine.org/assets/mach/dusk-full-dark.svg">
-        <img alt="mach-dusk" src="https://machengine.org/assets/mach/dusk-full-light.svg" height="150px">
+        <source media="(prefers-color-scheme: dark)" srcset="https://machengine.org/assets/mach/sysgpu-full-dark.svg">
+        <img alt="mach-sysgpu" src="https://machengine.org/assets/mach/sysgpu-full-light.svg" height="150px">
     </picture>
 </a>
 
-Highly experimental, blazingly fast, lean & mean WebGPU implementation in Zig.
+Highly experimental, blazingly fast, lean & mean descendant of WebGPU written in Zig
 
 ## Experimental
 
@@ -17,7 +17,7 @@ This is an **experimental** project according to [our stability guarantees](http
 
 ## Documentation
 
-[machengine.org/pkg/mach-dusk](https://machengine.org/pkg/mach-dusk)
+[machengine.org/pkg/mach-sysgpu](https://machengine.org/pkg/mach-sysgpu)
 
 ## Join the community
 
@@ -25,4 +25,4 @@ Join the [Mach community on Discord](https://discord.gg/XNG3NZgCqp) to discuss t
 
 ## Issues
 
-Issues are tracked in the [main Mach repository](https://github.com/hexops/mach/issues?q=is%3Aissue+is%3Aopen+label%3Adusk).
+Issues are tracked in the [main Mach repository](https://github.com/hexops/mach/issues?q=is%3Aissue+is%3Aopen+label%3Asysgpu).

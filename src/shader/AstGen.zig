@@ -1419,7 +1419,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
                 .{@errorName(err)},
                 try astgen.errors.createNote(
                     null,
-                    "this is a bug in dusk. please report it",
+                    "this is a bug in sysgpu. please report it",
                     .{},
                 ),
             );
@@ -1444,7 +1444,7 @@ fn genNumber(astgen: *AstGen, node: NodeIndex) !InstIndex {
                 .{@errorName(err)},
                 try astgen.errors.createNote(
                     null,
-                    "this is a bug in dusk. please report it",
+                    "this is a bug in sysgpu. please report it",
                     .{},
                 ),
             );

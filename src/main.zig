@@ -32,7 +32,7 @@ pub const Impl = dgpu.Interface(struct {
 
     pub inline fn createInstance(descriptor: ?*const dgpu.Instance.Descriptor) ?*dgpu.Instance {
         if (builtin.mode == .Debug and !inited) {
-            std.log.err("dusk not initialized; did you forget to call dgpu.Impl.init()?", .{});
+            std.log.err("sysgpu not initialized; did you forget to call dgpu.Impl.init()?", .{});
         }
 
         const instance = impl.Instance.init(descriptor orelse &dgpu.Instance.Descriptor{}) catch @panic("api error");

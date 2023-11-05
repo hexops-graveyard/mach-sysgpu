@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) !void {
     const build_options = b.addOptions();
     build_options.addOption(Backend, "backend", backend);
 
-    const module = b.addModule("mach-dusk", .{
+    const module = b.addModule("mach-sysgpu", .{
         .source_file = .{ .path = "src/main.zig" },
         .dependencies = &.{
             .{ .name = "vulkan", .module = vulkan_dep.module("vulkan-zig-generated") },
@@ -39,7 +39,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const lib = b.addStaticLibrary(.{
-        .name = "mach-dusk",
+        .name = "mach-sysgpu",
         .root_source_file = b.addWriteFiles().add("empty.c", ""),
         .target = target,
         .optimize = optimize,
@@ -49,7 +49,7 @@ pub fn build(b: *std.Build) !void {
 
     const test_step = b.step("test", "Run library tests");
     const main_tests = b.addTest(.{
-        .name = "dusk-tests",
+        .name = "sysgpu-tests",
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,

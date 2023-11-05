@@ -169,7 +169,7 @@ fn emitModule(spv: *SpirV, section: *Section) !void {
         // Spir-V 1.3
         spec.Version.toWord(.{ .major = 1, .minor = 3 }),
         // Generator magic number
-        // TODO: register dusk compiler
+        // TODO: register sysgpu compiler
         0,
         // Id's bound
         spv.next_result_id,
