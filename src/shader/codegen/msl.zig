@@ -801,7 +801,7 @@ fn emitUnaryIntrinsic(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
                 .floor => "floor",
                 .fract => "fract",
                 .inverse_sqrt => "rsqrt",
-                //.length => "length",
+                .length => "length",
                 .log => "log",
                 .log2 => "log2",
                 //.quantize_to_F16 => "quantize_to_F16",
@@ -825,7 +825,6 @@ fn emitUnaryIntrinsic(msl: *Msl, inst: Inst.UnaryIntrinsic) !void {
                 .fwidth_coarse => "fwidth",
                 .fwidth_fine => "fwidth",
                 .normalize => "normalize",
-                .length => "length",
                 else => std.debug.panic("TODO: implement Air tag {s}", .{@tagName(inst.op)}),
             });
             try msl.writeAll("(");

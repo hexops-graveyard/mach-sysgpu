@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const dgpu = @import("dgpu/main.zig");
 const limits = @import("limits.zig");
 const utils = @import("utils.zig");
@@ -10,27 +11,43 @@ const proc = @import("opengl/proc.zig");
 const log = std.log.scoped(.opengl);
 
 const instance_class_name = "sysgpu-hwnd";
+const upload_page_size = 64 * 1024 * 1024; // TODO - split writes and/or support large uploads
+const gl_major_version = 4;
+const gl_minor_version = 6; // TODO - lower this after initial implementation is complete
+const use_buffer_storage = true;
 const max_back_buffer_count = 3;
 
 var allocator: std.mem.Allocator = undefined;
+var debug_enabled: bool = undefined;
 
-pub const InitOptions = struct {};
+pub const InitOptions = struct {
+    debug_enabled: bool = builtin.mode == .Debug,
+};
 
 pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
-    _ = options;
     allocator = alloc;
+    debug_enabled = options.debug_enabled;
 }
+
+const BindingPoint = struct { group: u32, binding: u32 };
+const BindingTable = std.AutoHashMapUnmanaged(BindingPoint, u32);
+
+const MapCallback = struct {
+    buffer: *Buffer,
+    callback: dgpu.Buffer.MapCallback,
+    userdata: ?*anyopaque,
+};
 
 const ActiveContext = struct {
     old_hdc: c.HDC,
     old_hglrc: c.HGLRC,
 
-    pub fn init(hdc: c.HDC, hglrc: c.HGLRC) !ActiveContext {
+    pub fn init(hdc: c.HDC, hglrc: c.HGLRC) ActiveContext {
         const old_hdc = c.wglGetCurrentDC();
         const old_hglrc = c.wglGetCurrentContext();
 
         if (c.wglMakeCurrent(hdc, hglrc) == c.FALSE)
-            return error.wglMakeCurrentFailed;
+            @panic("ActiveContext failed");
         return .{ .old_hdc = old_hdc, .old_hglrc = old_hglrc };
     }
 
@@ -51,8 +68,8 @@ fn createDummyWindow() c.HWND {
         dwStyle,
         0,
         0,
-        640,
-        480,
+        1,
+        1,
         null,
         null,
         hinstance,
@@ -74,7 +91,7 @@ fn setPixelFormat(wgl: *proc.InstanceWGL, hwnd: c.HWND) !c_int {
 
     var num_formats: c_uint = undefined;
     var pixel_format: c_int = undefined;
-    if (wgl.ChoosePixelFormatARB(hdc, &format_attribs, null, 1, &pixel_format, &num_formats) == c.FALSE)
+    if (wgl.choosePixelFormatARB(hdc, &format_attribs, null, 1, &pixel_format, &num_formats) == c.FALSE)
         return error.ChoosePixelFormatARBFailed;
     if (num_formats == 0)
         return error.NoFormatsAvailable;
@@ -99,19 +116,24 @@ fn messageCallback(
     user_data: ?*const anyopaque,
 ) callconv(.C) void {
     _ = source;
-    _ = id;
     _ = length;
     _ = user_data;
-    std.debug.print("GL CALLBACK: {s} type = 0x{x}, severity = 0x{x}, message = {s}\n", .{
+    switch (id) {
+        0x20071 => return, // Buffer detailed info
+        else => {},
+    }
+
+    std.debug.print("GL CALLBACK: {s} type = 0x{x}, id = 0x{x}, severity = 0x{x}, message = {s}\n", .{
         if (message_type == c.GL_DEBUG_TYPE_ERROR) "** GL ERROR **" else "",
         message_type,
+        id,
         severity,
         message,
     });
 }
 
 fn checkError(gl: *proc.DeviceGL) void {
-    const err = gl.GetError();
+    const err = gl.getError();
     if (err != c.GL_NO_ERROR) {
         std.debug.print("glGetError {x}\n", .{err});
     }
@@ -160,7 +182,7 @@ pub const Instance = struct {
         // Extension procs
         try proc.init();
 
-        var ctx = try ActiveContext.init(hdc, hglrc);
+        var ctx = ActiveContext.init(hdc, hglrc);
         defer ctx.deinit();
 
         var wgl: proc.InstanceWGL = undefined;
@@ -220,26 +242,26 @@ pub const Adapter = struct {
             return error.GetDCFailed;
 
         const context_attribs = [_]c_int{
-            c.WGL_CONTEXT_MAJOR_VERSION_ARB, 4,
-            c.WGL_CONTEXT_MINOR_VERSION_ARB, 5,
+            c.WGL_CONTEXT_MAJOR_VERSION_ARB, gl_major_version,
+            c.WGL_CONTEXT_MINOR_VERSION_ARB, gl_minor_version,
             c.WGL_CONTEXT_FLAGS_ARB,         c.WGL_CONTEXT_DEBUG_BIT_ARB,
             c.WGL_CONTEXT_PROFILE_MASK_ARB,  c.WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
             0,
         };
 
-        const hglrc = wgl.CreateContextAttribsARB(hdc, null, &context_attribs);
+        const hglrc = wgl.createContextAttribsARB(hdc, null, &context_attribs);
         if (hglrc == null)
             return error.wglCreateContextFailed;
 
-        var ctx = try ActiveContext.init(hdc, hglrc);
+        var ctx = ActiveContext.init(hdc, hglrc);
         defer ctx.deinit();
 
         var gl: proc.AdapterGL = undefined;
         gl.load();
 
-        const vendor = gl.GetString(c.GL_VENDOR);
-        const renderer = gl.GetString(c.GL_RENDERER);
-        const version = gl.GetString(c.GL_VERSION);
+        const vendor = gl.getString(c.GL_VENDOR);
+        const renderer = gl.getString(c.GL_RENDERER);
+        const version = gl.getString(c.GL_VERSION);
 
         // Result
         var adapter = try allocator.create(Adapter);
@@ -318,7 +340,9 @@ pub const Device = struct {
     hglrc: c.HGLRC,
     pixel_format: c_int,
     gl: proc.DeviceGL,
-    vao: c.GLuint,
+    streaming_manager: StreamingManager = undefined,
+    reference_trackers: std.ArrayListUnmanaged(*ReferenceTracker) = .{},
+    map_callbacks: std.ArrayListUnmanaged(MapCallback) = .{},
 
     lost_cb: ?dgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
@@ -331,22 +355,28 @@ pub const Device = struct {
         // TODO
         _ = desc;
 
-        var ctx = try ActiveContext.init(adapter.hdc, adapter.hglrc);
+        var ctx = ActiveContext.init(adapter.hdc, adapter.hglrc);
         defer ctx.deinit();
 
         var gl: proc.DeviceGL = undefined;
-        gl.loadVersion(4, 5);
+        gl.loadVersion(gl_major_version, gl_minor_version);
 
-        gl.Enable(c.GL_DEBUG_OUTPUT);
-        gl.DebugMessageCallback(messageCallback, null);
+        // Default state
+        gl.enable(c.GL_SCISSOR_TEST);
+        gl.enable(c.GL_PRIMITIVE_RESTART_FIXED_INDEX);
+        gl.enable(c.GL_FRAMEBUFFER_SRGB);
 
-        var vao: c.GLuint = undefined;
-        gl.GenVertexArrays(1, &vao);
-        gl.BindVertexArray(vao);
+        if (debug_enabled) {
+            gl.enable(c.GL_DEBUG_OUTPUT);
+            gl.enable(c.GL_DEBUG_OUTPUT_SYNCHRONOUS);
+            gl.debugMessageCallback(messageCallback, null);
+        }
 
+        // Queue
         const queue = try allocator.create(Queue);
         errdefer allocator.destroy(queue);
 
+        // Object
         var device = try allocator.create(Device);
         device.* = .{
             .queue = queue,
@@ -354,8 +384,15 @@ pub const Device = struct {
             .hglrc = adapter.hglrc,
             .pixel_format = adapter.pixel_format,
             .gl = gl,
-            .vao = vao,
         };
+
+        // Initialize
+        device.queue.* = try Queue.init(device);
+        errdefer queue.deinit();
+
+        device.streaming_manager = try StreamingManager.init(device);
+        errdefer device.streaming_manager.deinit();
+
         return device;
     }
 
@@ -364,12 +401,12 @@ pub const Device = struct {
             lost_cb(.destroyed, "Device was destroyed.", device.lost_cb_userdata);
         }
 
-        const gl = &device.gl;
-        var ctx = ActiveContext.init(device.hdc, device.hglrc) catch @panic("ActiveContext failed");
-        defer ctx.deinit();
+        device.waitAll() catch {};
+        device.processQueuedOperations();
 
-        gl.DeleteVertexArrays(1, &device.vao);
-
+        device.map_callbacks.deinit(allocator);
+        device.reference_trackers.deinit(allocator);
+        device.streaming_manager.deinit();
         device.queue.manager.release();
         allocator.destroy(device.queue);
         allocator.destroy(device);
@@ -435,7 +472,105 @@ pub const Device = struct {
 
     // Internal
     pub fn processQueuedOperations(device: *Device) void {
-        _ = device;
+        // Reference trackers
+        if (device.reference_trackers.items.len > 0) {
+            const gl = &device.gl;
+            var ctx = ActiveContext.init(device.hdc, device.hglrc);
+            defer ctx.deinit();
+
+            var i: usize = 0;
+            while (i < device.reference_trackers.items.len) {
+                const reference_tracker = device.reference_trackers.items[i];
+
+                var status: c.GLenum = undefined;
+                gl.getSynciv(reference_tracker.sync, c.GL_SYNC_STATUS, @sizeOf(c.GLenum), null, @ptrCast(&status));
+
+                if (status == c.GL_SIGNALED) {
+                    reference_tracker.deinit();
+                    _ = device.reference_trackers.swapRemove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+
+        // MapAsync
+        {
+            var i: usize = 0;
+            while (i < device.map_callbacks.items.len) {
+                const map_callback = device.map_callbacks.items[i];
+
+                if (map_callback.buffer.gpu_count == 0) {
+                    map_callback.buffer.executeMapAsync(map_callback);
+
+                    _ = device.map_callbacks.swapRemove(i);
+                } else {
+                    i += 1;
+                }
+            }
+        }
+    }
+
+    fn waitAll(device: *Device) !void {
+        if (device.reference_trackers.items.len > 0) {
+            const gl = &device.gl;
+            var ctx = ActiveContext.init(device.hdc, device.hglrc);
+            defer ctx.deinit();
+
+            for (device.reference_trackers.items) |reference_tracker| {
+                _ = gl.clientWaitSync(reference_tracker.sync, c.GL_SYNC_FLUSH_COMMANDS_BIT, std.math.maxInt(u64));
+            }
+        }
+    }
+};
+
+pub const StreamingManager = struct {
+    device: *Device,
+    free_buffers: std.ArrayListUnmanaged(*Buffer) = .{},
+
+    pub fn init(device: *Device) !StreamingManager {
+        return .{
+            .device = device,
+        };
+    }
+
+    pub fn deinit(manager: *StreamingManager) void {
+        for (manager.free_buffers.items) |buffer| buffer.manager.release();
+        manager.free_buffers.deinit(allocator);
+    }
+
+    pub fn acquire(manager: *StreamingManager) !*Buffer {
+        const device = manager.device;
+
+        // Recycle finished buffers
+        if (manager.free_buffers.items.len == 0) {
+            device.processQueuedOperations();
+        }
+
+        // Create new buffer
+        if (manager.free_buffers.items.len == 0) {
+            const buffer = try Buffer.init(device, &.{
+                .label = "upload",
+                .usage = .{
+                    .copy_src = true,
+                    .map_write = true,
+                },
+                .size = upload_page_size,
+                .mapped_at_creation = .true,
+            });
+            errdefer _ = buffer.manager.release();
+
+            try manager.free_buffers.append(allocator, buffer);
+        }
+
+        // Result
+        return manager.free_buffers.pop();
+    }
+
+    pub fn release(manager: *StreamingManager, buffer: *Buffer) void {
+        manager.free_buffers.append(allocator, buffer) catch {
+            std.debug.panic("OutOfMemory", .{});
+        };
     }
 };
 
@@ -494,7 +629,7 @@ pub const SwapChain = struct {
 
     pub fn present(swapchain: *SwapChain) !void {
         const device = swapchain.device;
-        var ctx = try ActiveContext.init(swapchain.hdc, device.hglrc);
+        var ctx = ActiveContext.init(swapchain.hdc, device.hglrc);
         defer ctx.deinit();
 
         if (c.SwapBuffers(swapchain.hdc) == c.FALSE)
@@ -504,29 +639,68 @@ pub const SwapChain = struct {
 
 pub const Buffer = struct {
     manager: utils.Manager(Buffer) = .{},
+    device: *Device,
+    target: c.GLenum,
+    handle: c.GLuint,
+    gpu_count: u32 = 0,
+    map: ?[*]u8,
+    mapped_at_creation: bool,
     // TODO - packed buffer descriptor struct
     size: u64,
     usage: dgpu.Buffer.UsageFlags,
 
     pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
-        _ = device;
+        const gl = &device.gl;
+        var ctx = ActiveContext.init(device.hdc, device.hglrc);
+        defer ctx.deinit();
+
+        const target = conv.glTargetForBuffer(desc.usage);
+
+        var handle: c.GLuint = undefined;
+        gl.genBuffers(1, &handle);
+        gl.bindBuffer(target, handle);
+
+        if (use_buffer_storage) {
+            const flags = conv.glBufferStorageFlags(desc.usage, desc.mapped_at_creation);
+            gl.bufferStorage(target, @intCast(desc.size), null, flags);
+        } else {
+            const usage = conv.glBufferDataUsage(desc.usage, desc.mapped_at_creation);
+            gl.bufferData(target, desc.size, null, usage);
+        }
+
+        // TODO - create an upload buffer instead of using persistent mapping when map_read/write are both false
+        var map: ?*anyopaque = null;
+        const access = conv.glMapAccess(desc.usage, desc.mapped_at_creation);
+        if (access != 0) {
+            map = gl.mapBufferRange(target, 0, @intCast(desc.size), access);
+        }
+
         var buffer = try allocator.create(Buffer);
         buffer.* = .{
+            .device = device,
+            .target = target,
+            .handle = handle,
             .size = desc.size,
             .usage = desc.usage,
+            .map = @ptrCast(map),
+            .mapped_at_creation = desc.mapped_at_creation == .true,
         };
         return buffer;
     }
 
     pub fn deinit(buffer: *Buffer) void {
+        const device = buffer.device;
+        const gl = &device.gl;
+        var ctx = ActiveContext.init(device.hdc, device.hglrc);
+        defer ctx.deinit();
+
+        gl.deleteBuffers(1, &buffer.handle);
+
         allocator.destroy(buffer);
     }
 
     pub fn getMappedRange(buffer: *Buffer, offset: usize, size: usize) !?*anyopaque {
-        _ = size;
-        _ = offset;
-        _ = buffer;
-        return null;
+        return @ptrCast(buffer.map.?[offset .. offset + size]);
     }
 
     pub fn getSize(buffer: *Buffer) u64 {
@@ -537,13 +711,24 @@ pub const Buffer = struct {
         return buffer.usage;
     }
 
-    pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
-        _ = userdata;
-        _ = callback;
-        _ = buffer;
+    pub fn mapAsync(
+        buffer: *Buffer,
+        mode: dgpu.MapModeFlags,
+        offset: usize,
+        size: usize,
+        callback: dgpu.Buffer.MapCallback,
+        userdata: ?*anyopaque,
+    ) !void {
+        _ = mode;
         _ = size;
         _ = offset;
-        _ = mode;
+
+        const map_callback = MapCallback{ .buffer = buffer, .callback = callback, .userdata = userdata };
+        if (buffer.gpu_count == 0) {
+            buffer.executeMapAsync(map_callback);
+        } else {
+            try buffer.device.map_callbacks.append(allocator, map_callback);
+        }
     }
 
     pub fn setLabel(buffer: *Buffer, label: [*:0]const u8) void {
@@ -552,32 +737,68 @@ pub const Buffer = struct {
     }
 
     pub fn unmap(buffer: *Buffer) !void {
+        if (buffer.mapped_at_creation) {
+            const device = buffer.device;
+            const gl = &device.gl;
+            var ctx = ActiveContext.init(device.hdc, device.hglrc);
+            defer ctx.deinit();
+
+            gl.bindBuffer(buffer.target, buffer.handle);
+            _ = gl.unmapBuffer(buffer.target); // TODO - handle error?
+            buffer.mapped_at_creation = false;
+        }
+    }
+
+    // Internal
+    pub fn executeMapAsync(buffer: *Buffer, map_callback: MapCallback) void {
         _ = buffer;
+
+        map_callback.callback(.success, map_callback.userdata);
     }
 };
 
 pub const Texture = struct {
     manager: utils.Manager(Texture) = .{},
+    handle: c.GLuint,
     swapchain: ?*SwapChain = null,
+    // TODO - packed texture descriptor struct
+    usage: dgpu.Texture.UsageFlags,
+    dimension: dgpu.Texture.Dimension,
+    size: dgpu.Extent3D,
+    format: dgpu.Texture.Format,
+    mip_level_count: u32,
+    sample_count: u32,
 
     pub fn init(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
-        _ = desc;
         _ = device;
 
         var texture = try allocator.create(Texture);
         texture.* = .{
+            .handle = 0,
             .swapchain = null,
+            .usage = desc.usage,
+            .dimension = desc.dimension,
+            .size = desc.size,
+            .format = desc.format,
+            .mip_level_count = desc.mip_level_count,
+            .sample_count = desc.sample_count,
         };
         return texture;
     }
 
     pub fn initForSwapChain(device: *Device, desc: *const dgpu.SwapChain.Descriptor, swapchain: *SwapChain) !*Texture {
-        _ = desc;
         _ = device;
 
         var texture = try allocator.create(Texture);
         texture.* = .{
+            .handle = 0,
             .swapchain = swapchain,
+            .usage = desc.usage,
+            .dimension = .dimension_2d,
+            .size = .{ .width = desc.width, .height = desc.height, .depth_or_array_layers = 1 },
+            .format = desc.format,
+            .mip_level_count = 1,
+            .sample_count = 1,
         };
         return texture;
     }
@@ -594,15 +815,33 @@ pub const Texture = struct {
 pub const TextureView = struct {
     manager: utils.Manager(TextureView) = .{},
     texture: *Texture,
+    format: dgpu.Texture.Format,
+    dimension: dgpu.TextureView.Dimension,
+    base_mip_level: u32,
+    mip_level_count: u32,
+    base_array_layer: u32,
+    array_layer_count: u32,
+    aspect: dgpu.Texture.Aspect,
 
     pub fn init(texture: *Texture, desc: *const dgpu.TextureView.Descriptor) !*TextureView {
-        _ = desc;
-
         texture.manager.reference();
+
+        const texture_dimension: dgpu.TextureView.Dimension = switch (texture.dimension) {
+            .dimension_1d => .dimension_1d,
+            .dimension_2d => .dimension_2d,
+            .dimension_3d => .dimension_3d,
+        };
 
         var view = try allocator.create(TextureView);
         view.* = .{
             .texture = texture,
+            .format = if (desc.format != .undefined) desc.format else texture.format,
+            .dimension = if (desc.dimension != .dimension_undefined) desc.dimension else texture_dimension,
+            .base_mip_level = desc.base_mip_level,
+            .mip_level_count = desc.mip_level_count,
+            .base_array_layer = desc.base_array_layer,
+            .array_layer_count = desc.array_layer_count,
+            .aspect = desc.aspect,
         };
         return view;
     }
@@ -610,6 +849,15 @@ pub const TextureView = struct {
     pub fn deinit(view: *TextureView) void {
         view.texture.manager.release();
         allocator.destroy(view);
+    }
+
+    // Internal
+    pub fn width(view: *TextureView) u32 {
+        return @max(1, view.texture.size.width >> @intCast(view.base_mip_level));
+    }
+
+    pub fn height(view: *TextureView) u32 {
+        return @max(1, view.texture.size.height >> @intCast(view.base_mip_level));
     }
 };
 
@@ -632,34 +880,116 @@ pub const Sampler = struct {
 
 pub const BindGroupLayout = struct {
     manager: utils.Manager(BindGroupLayout) = .{},
+    entries: []const dgpu.BindGroupLayout.Entry,
 
-    pub fn init(device: *Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
-        _ = descriptor;
+    pub fn init(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         _ = device;
 
+        var entries: []const dgpu.BindGroupLayout.Entry = undefined;
+        if (desc.entry_count > 0) {
+            entries = try allocator.dupe(dgpu.BindGroupLayout.Entry, desc.entries.?[0..desc.entry_count]);
+        } else {
+            entries = &[_]dgpu.BindGroupLayout.Entry{};
+        }
+
         var layout = try allocator.create(BindGroupLayout);
-        layout.* = .{};
+        layout.* = .{
+            .entries = entries,
+        };
         return layout;
     }
 
     pub fn deinit(layout: *BindGroupLayout) void {
+        if (layout.entries.len > 0)
+            allocator.free(layout.entries);
         allocator.destroy(layout);
+    }
+
+    // Internal
+    pub fn getEntry(layout: *BindGroupLayout, binding: u32) ?*const dgpu.BindGroupLayout.Entry {
+        for (layout.entries) |*entry| {
+            if (entry.binding == binding)
+                return entry;
+        }
+
+        return null;
+    }
+
+    pub fn getDynamicIndex(layout: *BindGroupLayout, binding: u32) ?u32 {
+        var index: u32 = 0;
+        for (layout.entries) |entry| {
+            if (entry.buffer.has_dynamic_offset == .false)
+                continue;
+
+            if (entry.binding == binding)
+                return index;
+            index += 1;
+        }
+
+        return null;
     }
 };
 
 pub const BindGroup = struct {
+    const Kind = enum {
+        buffer,
+        sampler,
+        texture,
+    };
+
+    const Entry = struct {
+        kind: Kind = undefined,
+        binding: u32,
+        dynamic_index: ?u32,
+        target: c.GLenum = 0,
+        buffer: ?*Buffer = null,
+        offset: u32 = 0,
+        size: u32 = 0,
+    };
+
     manager: utils.Manager(BindGroup) = .{},
+    entries: []const Entry,
 
     pub fn init(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
-        _ = desc;
         _ = device;
 
+        const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.layout));
+
+        var entries = try allocator.alloc(Entry, desc.entry_count);
+        errdefer allocator.free(entries);
+
+        for (desc.entries.?[0..desc.entry_count], 0..) |entry, i| {
+            var gl_entry = &entries[i];
+
+            const bind_group_entry = layout.getEntry(entry.binding) orelse return error.UnknownBinding;
+
+            gl_entry.* = .{
+                .binding = entry.binding,
+                .dynamic_index = layout.getDynamicIndex(entry.binding),
+            };
+            if (entry.buffer) |buffer_raw| {
+                const buffer: *Buffer = @ptrCast(@alignCast(buffer_raw));
+                buffer.manager.reference();
+                gl_entry.kind = .buffer;
+                gl_entry.target = conv.glTargetForBufferBinding(bind_group_entry.buffer.type);
+                gl_entry.buffer = buffer;
+                gl_entry.offset = @intCast(entry.offset);
+                gl_entry.size = @intCast(entry.size);
+            }
+        }
+
         var group = try allocator.create(BindGroup);
-        group.* = .{};
+        group.* = .{
+            .entries = entries,
+        };
         return group;
     }
 
     pub fn deinit(group: *BindGroup) void {
+        for (group.entries) |entry| {
+            if (entry.buffer) |buffer| buffer.manager.release();
+        }
+        allocator.free(group.entries);
         allocator.destroy(group);
     }
 };
@@ -747,38 +1077,92 @@ pub const ShaderModule = struct {
 
         //std.debug.print("{s}\n", .{code_span});
 
-        const gl_shader = gl.CreateShader(shader_type);
+        const gl_shader = gl.createShader(shader_type);
         if (gl_shader == 0)
             return error.CreateShaderFailed;
 
-        gl.ShaderSource(gl_shader, 1, @ptrCast(&code_ptr), null);
-        gl.CompileShader(gl_shader);
+        gl.shaderSource(gl_shader, 1, @ptrCast(&code_ptr), null);
+        gl.compileShader(gl_shader);
 
         var success: c.GLint = undefined;
-        gl.GetShaderiv(gl_shader, c.GL_COMPILE_STATUS, &success);
+        gl.getShaderiv(gl_shader, c.GL_COMPILE_STATUS, &success);
         if (success == c.GL_FALSE) {
             var info_log: [512]c.GLchar = undefined;
-            gl.GetShaderInfoLog(gl_shader, @sizeOf(@TypeOf(info_log)), null, &info_log);
+            gl.getShaderInfoLog(gl_shader, @sizeOf(@TypeOf(info_log)), null, &info_log);
             std.debug.print("Compilation Failed {s}\n", .{@as([*:0]u8, @ptrCast(&info_log))});
             return error.CompilationFailed;
         }
 
         return gl_shader;
     }
+
+    // Internal
+    pub fn addBindings(
+        shader_module: *ShaderModule,
+        bindings: *BindingTable,
+    ) !void {
+        const air = shader_module.air;
+        var buffer_index: u32 = 0;
+        var texture_index: u32 = 0;
+        var sampler_index: u32 = 0;
+
+        for (air.refToList(air.globals_index)) |inst_idx| {
+            switch (air.getInst(inst_idx)) {
+                .@"var" => |var_inst| {
+                    if (var_inst.addr_space == .workgroup)
+                        continue;
+
+                    const var_type = air.getInst(var_inst.type);
+                    const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.constExpr);
+                    const binding: u32 = @intCast(air.resolveInt(var_inst.binding) orelse return error.constExpr);
+                    const key = .{ .group = group, .binding = binding };
+
+                    switch (var_type) {
+                        .sampler_type, .comparison_sampler_type => {
+                            try bindings.put(allocator, key, sampler_index);
+                            sampler_index += 1;
+                        },
+                        .texture_type => {
+                            try bindings.put(allocator, key, texture_index);
+                            texture_index += 1;
+                        },
+                        else => {
+                            try bindings.put(allocator, key, buffer_index);
+                            buffer_index += 1;
+                        },
+                    }
+                },
+                else => {},
+            }
+        }
+    }
 };
 
 pub const ComputePipeline = struct {
     manager: utils.Manager(ComputePipeline) = .{},
+    device: *Device,
     layout: *PipelineLayout,
+    program: c.GLuint,
+    bindings: BindingTable,
 
     pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
+        const gl = &device.gl;
+        var ctx = ActiveContext.init(device.hdc, device.hglrc);
+        defer ctx.deinit();
+
         // Shaders
+        var bindings: BindingTable = .{};
+        errdefer bindings.deinit(allocator);
+
         const compute_module: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
+        try compute_module.addBindings(&bindings);
+        const compute_shader = try compute_module.compile(desc.compute.entry_point, c.GL_COMPUTE_SHADER);
+        defer gl.deleteShader(compute_shader);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
-        if (desc.layout) |l| {
-            layout = @ptrCast(@alignCast(l));
+        if (desc.layout) |layout_raw| {
+            layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
         } else {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
@@ -787,16 +1171,44 @@ pub const ComputePipeline = struct {
             try layout_desc.addFunction(compute_module.air, .{ .compute = true }, desc.compute.entry_point);
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
+        errdefer layout.manager.release();
+
+        // Program
+        const program = gl.createProgram();
+        errdefer gl.deleteProgram(program);
+
+        gl.attachShader(program, compute_shader);
+        gl.linkProgram(program);
+
+        var success: c.GLint = undefined;
+        gl.getProgramiv(program, c.GL_LINK_STATUS, &success);
+        if (success == c.GL_FALSE) {
+            var info_log: [512]c.GLchar = undefined;
+            gl.getProgramInfoLog(program, @sizeOf(@TypeOf(info_log)), null, &info_log);
+            std.debug.print("Link Failed {s}\n", .{@as([*:0]u8, @ptrCast(&info_log))});
+            return error.LinkFailed;
+        }
 
         // Result
         var pipeline = try allocator.create(ComputePipeline);
         pipeline.* = .{
+            .device = device,
             .layout = layout,
+            .program = program,
+            .bindings = bindings,
         };
         return pipeline;
     }
 
     pub fn deinit(pipeline: *ComputePipeline) void {
+        const device = pipeline.device;
+        const gl = &device.gl;
+        var ctx = ActiveContext.init(device.hdc, device.hglrc);
+        defer ctx.deinit();
+
+        gl.deleteProgram(pipeline.program);
+
+        pipeline.bindings.deinit(allocator);
         pipeline.layout.manager.release();
         allocator.destroy(pipeline);
     }
@@ -807,32 +1219,91 @@ pub const ComputePipeline = struct {
 };
 
 pub const RenderPipeline = struct {
+    const Attribute = struct {
+        is_int: bool,
+        index: c.GLuint,
+        count: c.GLint,
+        vertex_type: c.GLenum,
+        normalized: c.GLboolean,
+        stride: c.GLsizei,
+        offset: c.GLuint,
+    };
+    const ColorTarget = struct {
+        blend_enabled: bool,
+        color_op: c.GLenum,
+        alpha_op: c.GLenum,
+        src_color_blend: c.GLenum,
+        dst_color_blend: c.GLenum,
+        src_alpha_blend: c.GLenum,
+        dst_alpha_blend: c.GLenum,
+        write_red: c.GLboolean,
+        write_green: c.GLboolean,
+        write_blue: c.GLboolean,
+        write_alpha: c.GLboolean,
+    };
+
     manager: utils.Manager(RenderPipeline) = .{},
     device: *Device,
-    program: c.GLuint,
     layout: *PipelineLayout,
+    program: c.GLuint,
+    bindings: BindingTable,
+    vao: c.GLuint,
+    attributes: []Attribute,
+    buffer_attributes: [][]Attribute,
+    mode: c.GLenum,
+    front_face: c.GLenum,
+    cull_enabled: bool,
+    cull_face: c.GLenum,
+    depth_test_enabled: bool,
+    depth_mask: c.GLboolean,
+    depth_func: c.GLenum,
+    stencil_test_enabled: bool,
+    stencil_read_mask: c.GLuint,
+    stencil_write_mask: c.GLuint,
+    stencil_back_compare_func: c.GLenum,
+    stencil_back_fail_op: c.GLenum,
+    stencil_back_depth_fail_op: c.GLenum,
+    stencil_back_pass_op: c.GLenum,
+    stencil_front_compare_func: c.GLenum,
+    stencil_front_fail_op: c.GLenum,
+    stencil_front_depth_fail_op: c.GLenum,
+    stencil_front_pass_op: c.GLenum,
+    polygon_offset_enabled: bool,
+    depth_bias: f32,
+    depth_bias_slope_scale: f32,
+    depth_bias_clamp: f32,
+    multisample_enabled: bool,
+    sample_mask_enabled: bool,
+    sample_mask_value: c.GLuint,
+    alpha_to_coverage_enabled: bool,
+    color_targets: []ColorTarget,
 
     pub fn init(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         const gl = &device.gl;
-        var ctx = try ActiveContext.init(device.hdc, device.hglrc);
+        var ctx = ActiveContext.init(device.hdc, device.hglrc);
         defer ctx.deinit();
 
         // Shaders
+        var bindings: BindingTable = .{};
+        errdefer bindings.deinit(allocator);
+
         const vertex_module: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
+        try vertex_module.addBindings(&bindings);
         const vertex_shader = try vertex_module.compile(desc.vertex.entry_point, c.GL_VERTEX_SHADER);
-        defer gl.DeleteShader(vertex_shader);
+        defer gl.deleteShader(vertex_shader);
 
         var opt_fragment_shader: ?c.GLuint = null;
         if (desc.fragment) |frag| {
             const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
+            try frag_module.addBindings(&bindings);
             opt_fragment_shader = try frag_module.compile(frag.entry_point, c.GL_FRAGMENT_SHADER);
         }
-        defer if (opt_fragment_shader) |fragment_shader| gl.DeleteShader(fragment_shader);
+        defer if (opt_fragment_shader) |fragment_shader| gl.deleteShader(fragment_shader);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
-        if (desc.layout) |l| {
-            layout = @ptrCast(@alignCast(l));
+        if (desc.layout) |layout_raw| {
+            layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
         } else {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
@@ -845,72 +1316,896 @@ pub const RenderPipeline = struct {
             }
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
+        errdefer layout.manager.release();
+
+        // Vertex State
+        var vao: c.GLuint = undefined;
+        gl.genVertexArrays(1, &vao);
+        gl.bindVertexArray(vao);
+
+        var attribute_count: usize = 0;
+        for (0..desc.vertex.buffer_count) |i| {
+            const buffer = desc.vertex.buffers.?[i];
+            attribute_count += buffer.attribute_count;
+        }
+
+        var attributes = try allocator.alloc(Attribute, attribute_count);
+        errdefer allocator.free(attributes);
+
+        var buffer_attributes = try allocator.alloc([]Attribute, desc.vertex.buffer_count);
+        errdefer allocator.free(buffer_attributes);
+
+        attribute_count = 0;
+        for (0..desc.vertex.buffer_count) |i| {
+            const buffer = desc.vertex.buffers.?[i];
+
+            const attributes_begin = attribute_count;
+            for (0..buffer.attribute_count) |j| {
+                const attr = buffer.attributes.?[j];
+
+                const format_type = utils.vertexFormatType(attr.format);
+                attributes[attribute_count] = .{
+                    .is_int = conv.glAttributeIsInt(format_type),
+                    .index = attr.shader_location,
+                    .count = conv.glAttributeCount(attr.format),
+                    .vertex_type = conv.glAttributeType(attr.format),
+                    .normalized = conv.glAttributeIsNormalized(format_type),
+                    .stride = @intCast(buffer.array_stride),
+                    .offset = @intCast(attr.offset),
+                };
+
+                gl.enableVertexAttribArray(attr.shader_location);
+                if (buffer.step_mode == .instance)
+                    gl.vertexAttribDivisor(attr.shader_location, 1);
+
+                attribute_count += 1;
+            }
+
+            buffer_attributes[i] = attributes[attributes_begin..attribute_count];
+        }
+
+        // Primitive State
+        const mode = conv.glPrimitiveMode(desc.primitive.topology);
+        const front_face = conv.glFrontFace(desc.primitive.front_face);
+        const cull_enabled = conv.glCullEnabled(desc.primitive.cull_mode);
+        const cull_face = conv.glCullFace(desc.primitive.cull_mode);
+
+        // Depth Stencil State
+        var depth_test_enabled = false;
+        var depth_mask: c.GLboolean = c.GL_FALSE;
+        var depth_func: c.GLenum = c.GL_LESS;
+        var stencil_test_enabled = false;
+        var stencil_read_mask: c.GLuint = 0xff;
+        var stencil_write_mask: c.GLuint = 0xff;
+        var stencil_back_compare_func: c.GLenum = c.GL_ALWAYS;
+        var stencil_back_fail_op: c.GLenum = c.GL_KEEP;
+        var stencil_back_depth_fail_op: c.GLenum = c.GL_KEEP;
+        var stencil_back_pass_op: c.GLenum = c.GL_KEEP;
+        var stencil_front_compare_func: c.GLenum = c.GL_ALWAYS;
+        var stencil_front_fail_op: c.GLenum = c.GL_KEEP;
+        var stencil_front_depth_fail_op: c.GLenum = c.GL_KEEP;
+        var stencil_front_pass_op: c.GLenum = c.GL_KEEP;
+        var polygon_offset_enabled = false;
+        var depth_bias: f32 = 0.0;
+        var depth_bias_slope_scale: f32 = 0.0;
+        var depth_bias_clamp: f32 = 0.0;
+        if (desc.depth_stencil) |ds| {
+            depth_test_enabled = conv.glDepthTestEnabled(ds);
+            depth_mask = conv.glDepthMask(ds);
+            depth_func = conv.glCompareFunc(ds.depth_compare);
+            stencil_test_enabled = conv.glStencilTestEnabled(ds);
+            stencil_read_mask = @intCast(ds.stencil_read_mask & 0xff);
+            stencil_write_mask = @intCast(ds.stencil_write_mask & 0xff);
+            stencil_back_compare_func = conv.glCompareFunc(ds.stencil_back.compare);
+            stencil_back_fail_op = conv.glStencilOp(ds.stencil_back.fail_op);
+            stencil_back_depth_fail_op = conv.glStencilOp(ds.stencil_back.depth_fail_op);
+            stencil_back_pass_op = conv.glStencilOp(ds.stencil_back.pass_op);
+            stencil_front_compare_func = conv.glCompareFunc(ds.stencil_front.compare);
+            stencil_front_fail_op = conv.glStencilOp(ds.stencil_front.fail_op);
+            stencil_front_depth_fail_op = conv.glStencilOp(ds.stencil_front.depth_fail_op);
+            stencil_front_pass_op = conv.glStencilOp(ds.stencil_front.pass_op);
+            polygon_offset_enabled = ds.depth_bias != 0;
+            depth_bias = @floatFromInt(ds.depth_bias);
+            depth_bias_slope_scale = ds.depth_bias_slope_scale;
+            depth_bias_clamp = ds.depth_bias_clamp;
+        }
+
+        // Multisample
+        const multisample_enabled = desc.multisample.count != 1;
+        const sample_mask_enabled = desc.multisample.mask != 0xFFFFFFFF;
+        const sample_mask_value = desc.multisample.mask;
+        const alpha_to_coverage_enabled = desc.multisample.alpha_to_coverage_enabled == .true;
+
+        // Fragment
+        const target_count = if (desc.fragment) |fragment| fragment.target_count else 0;
+        var color_targets = try allocator.alloc(ColorTarget, target_count);
+        errdefer allocator.free(color_targets);
+
+        if (desc.fragment) |fragment| {
+            for (0..fragment.target_count) |i| {
+                const target = fragment.targets.?[i];
+
+                var blend_enabled = false;
+                var color_op: c.GLenum = c.GL_FUNC_ADD;
+                var alpha_op: c.GLenum = c.GL_FUNC_ADD;
+                var src_color_blend: c.GLenum = c.GL_ONE;
+                var dst_color_blend: c.GLenum = c.GL_ZERO;
+                var src_alpha_blend: c.GLenum = c.GL_ONE;
+                var dst_alpha_blend: c.GLenum = c.GL_ZERO;
+                var write_red: c.GLboolean = if (target.write_mask.red) c.GL_TRUE else c.GL_FALSE;
+                var write_green: c.GLboolean = if (target.write_mask.green) c.GL_TRUE else c.GL_FALSE;
+                var write_blue: c.GLboolean = if (target.write_mask.blue) c.GL_TRUE else c.GL_FALSE;
+                var write_alpha: c.GLboolean = if (target.write_mask.alpha) c.GL_TRUE else c.GL_FALSE;
+                if (target.blend) |blend| {
+                    blend_enabled = true;
+                    color_op = conv.glBlendOp(blend.color.operation);
+                    alpha_op = conv.glBlendOp(blend.alpha.operation);
+                    src_color_blend = conv.glBlendFactor(blend.color.src_factor, true);
+                    dst_color_blend = conv.glBlendFactor(blend.color.dst_factor, true);
+                    src_alpha_blend = conv.glBlendFactor(blend.alpha.src_factor, false);
+                    dst_alpha_blend = conv.glBlendFactor(blend.alpha.dst_factor, false);
+                }
+
+                color_targets[i] = .{
+                    .blend_enabled = blend_enabled,
+                    .color_op = color_op,
+                    .alpha_op = alpha_op,
+                    .src_color_blend = src_color_blend,
+                    .dst_color_blend = dst_color_blend,
+                    .src_alpha_blend = src_alpha_blend,
+                    .dst_alpha_blend = dst_alpha_blend,
+                    .write_red = write_red,
+                    .write_green = write_green,
+                    .write_blue = write_blue,
+                    .write_alpha = write_alpha,
+                };
+            }
+        }
+
+        // Object
+        var pipeline = try allocator.create(RenderPipeline);
+        pipeline.* = .{
+            .device = device,
+            .layout = layout,
+            .program = 0,
+            .bindings = bindings,
+            .vao = vao,
+            .attributes = attributes,
+            .buffer_attributes = buffer_attributes,
+            .mode = mode,
+            .front_face = front_face,
+            .cull_enabled = cull_enabled,
+            .cull_face = cull_face,
+            .depth_test_enabled = depth_test_enabled,
+            .depth_mask = depth_mask,
+            .depth_func = depth_func,
+            .stencil_test_enabled = stencil_test_enabled,
+            .stencil_read_mask = stencil_read_mask,
+            .stencil_write_mask = stencil_write_mask,
+            .stencil_back_compare_func = stencil_back_compare_func,
+            .stencil_back_fail_op = stencil_back_fail_op,
+            .stencil_back_depth_fail_op = stencil_back_depth_fail_op,
+            .stencil_back_pass_op = stencil_back_pass_op,
+            .stencil_front_compare_func = stencil_front_compare_func,
+            .stencil_front_fail_op = stencil_front_fail_op,
+            .stencil_front_depth_fail_op = stencil_front_depth_fail_op,
+            .stencil_front_pass_op = stencil_front_pass_op,
+            .polygon_offset_enabled = polygon_offset_enabled,
+            .depth_bias = depth_bias,
+            .depth_bias_slope_scale = depth_bias_slope_scale,
+            .depth_bias_clamp = depth_bias_clamp,
+            .multisample_enabled = multisample_enabled,
+            .sample_mask_enabled = sample_mask_enabled,
+            .sample_mask_value = sample_mask_value,
+            .alpha_to_coverage_enabled = alpha_to_coverage_enabled,
+            .color_targets = color_targets,
+        };
+
+        // Apply state to avoid program recompilation
+        pipeline.applyState(0);
 
         // Program
-        const program = gl.CreateProgram();
-        errdefer gl.DeleteProgram(program);
+        const program = gl.createProgram();
+        errdefer gl.deleteProgram(program);
 
-        gl.AttachShader(program, vertex_shader);
+        gl.attachShader(program, vertex_shader);
         if (opt_fragment_shader) |fragment_shader|
-            gl.AttachShader(program, fragment_shader);
-        gl.LinkProgram(program);
+            gl.attachShader(program, fragment_shader);
+        gl.linkProgram(program);
 
         var success: c.GLint = undefined;
-        gl.GetProgramiv(program, c.GL_LINK_STATUS, &success);
+        gl.getProgramiv(program, c.GL_LINK_STATUS, &success);
         if (success == c.GL_FALSE) {
             var info_log: [512]c.GLchar = undefined;
-            gl.GetProgramInfoLog(program, @sizeOf(@TypeOf(info_log)), null, &info_log);
+            gl.getProgramInfoLog(program, @sizeOf(@TypeOf(info_log)), null, &info_log);
             std.debug.print("Link Failed {s}\n", .{@as([*:0]u8, @ptrCast(&info_log))});
             return error.LinkFailed;
         }
 
-        // Result
-        var pipeline = try allocator.create(RenderPipeline);
-        pipeline.* = .{
-            .device = device,
-            .program = program,
-            .layout = layout,
-        };
+        pipeline.program = program;
+
         return pipeline;
     }
 
     pub fn deinit(pipeline: *RenderPipeline) void {
         const device = pipeline.device;
         const gl = &device.gl;
-        var ctx = ActiveContext.init(device.hdc, device.hglrc) catch @panic("ActiveContext failed");
+        var ctx = ActiveContext.init(device.hdc, device.hglrc);
         defer ctx.deinit();
 
-        gl.DeleteProgram(pipeline.program);
+        gl.deleteVertexArrays(1, &pipeline.vao);
+        gl.deleteProgram(pipeline.program);
 
+        pipeline.bindings.deinit(allocator);
         pipeline.layout.manager.release();
+        allocator.free(pipeline.color_targets);
+        allocator.free(pipeline.attributes);
+        allocator.free(pipeline.buffer_attributes);
         allocator.destroy(pipeline);
     }
 
+    // Internal
     pub fn getBindGroupLayout(pipeline: *RenderPipeline, group_index: u32) *BindGroupLayout {
         return @ptrCast(pipeline.layout.group_layouts[group_index]);
     }
+
+    pub fn applyState(pipeline: *RenderPipeline, stencil_ref: c.GLint) void {
+        const device = pipeline.device;
+        const gl = &device.gl;
+        var ctx = ActiveContext.init(device.hdc, device.hglrc);
+        defer ctx.deinit();
+
+        gl.bindVertexArray(pipeline.vao);
+        gl.frontFace(pipeline.front_face);
+        if (pipeline.cull_enabled) {
+            gl.enable(c.GL_CULL_FACE);
+            gl.cullFace(pipeline.cull_face);
+        } else {
+            gl.disable(c.GL_CULL_FACE);
+        }
+        if (pipeline.depth_test_enabled) {
+            gl.enable(c.GL_DEPTH_TEST);
+            gl.depthMask(pipeline.depth_mask);
+            gl.depthFunc(pipeline.depth_func);
+        } else {
+            gl.disable(c.GL_DEPTH_TEST);
+        }
+        if (pipeline.stencil_test_enabled) {
+            gl.enable(c.GL_STENCIL_TEST);
+            gl.stencilFuncSeparate(
+                c.GL_BACK,
+                pipeline.stencil_back_compare_func,
+                stencil_ref,
+                pipeline.stencil_read_mask,
+            );
+            gl.stencilFuncSeparate(
+                c.GL_FRONT,
+                pipeline.stencil_front_compare_func,
+                stencil_ref,
+                pipeline.stencil_read_mask,
+            );
+            gl.stencilOpSeparate(
+                c.GL_BACK,
+                pipeline.stencil_back_fail_op,
+                pipeline.stencil_back_depth_fail_op,
+                pipeline.stencil_back_pass_op,
+            );
+            gl.stencilOpSeparate(
+                c.GL_FRONT,
+                pipeline.stencil_front_fail_op,
+                pipeline.stencil_front_depth_fail_op,
+                pipeline.stencil_front_pass_op,
+            );
+            gl.stencilMask(pipeline.stencil_write_mask);
+        } else {
+            gl.disable(c.GL_STENCIL_TEST);
+        }
+        if (pipeline.polygon_offset_enabled) {
+            gl.enable(c.GL_POLYGON_OFFSET_FILL);
+            gl.polygonOffsetClamp(
+                pipeline.depth_bias_slope_scale,
+                pipeline.depth_bias,
+                pipeline.depth_bias_clamp,
+            );
+        } else {
+            gl.disable(c.GL_POLYGON_OFFSET_FILL);
+        }
+        if (pipeline.multisample_enabled) {
+            gl.enable(c.GL_MULTISAMPLE);
+            if (pipeline.sample_mask_enabled) {
+                gl.enable(c.GL_SAMPLE_MASK);
+                gl.sampleMaski(0, pipeline.sample_mask_value);
+            } else {
+                gl.disable(c.GL_SAMPLE_MASK);
+            }
+            if (pipeline.alpha_to_coverage_enabled) {
+                gl.enable(c.GL_SAMPLE_ALPHA_TO_COVERAGE);
+            } else {
+                gl.disable(c.GL_SAMPLE_ALPHA_TO_COVERAGE);
+            }
+        } else {
+            gl.disable(c.GL_MULTISAMPLE);
+        }
+        for (pipeline.color_targets, 0..) |target, i| {
+            const buf: c.GLuint = @intCast(i);
+            if (target.blend_enabled) {
+                gl.enablei(c.GL_BLEND, buf);
+                gl.blendEquationSeparatei(buf, target.color_op, target.alpha_op);
+                gl.blendFuncSeparatei(
+                    buf,
+                    target.src_color_blend,
+                    target.dst_color_blend,
+                    target.src_alpha_blend,
+                    target.dst_alpha_blend,
+                );
+            } else {
+                gl.disablei(c.GL_BLEND, buf);
+            }
+            gl.colorMaski(buf, target.write_red, target.write_green, target.write_blue, target.write_alpha);
+        }
+    }
+};
+
+const Command = union(enum) {
+    begin_render_pass: struct {
+        color_attachments: std.BoundedArray(dgpu.RenderPassColorAttachment, limits.max_color_attachments),
+        depth_stencil_attachment: ?dgpu.RenderPassDepthStencilAttachment,
+    },
+    end_render_pass,
+    copy_buffer_to_buffer: struct {
+        source: *Buffer,
+        source_offset: u64,
+        destination: *Buffer,
+        destination_offset: u64,
+        size: u64,
+    },
+    dispatch_workgroups: struct {
+        workgroup_count_x: u32,
+        workgroup_count_y: u32,
+        workgroup_count_z: u32,
+    },
+    draw: struct {
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    },
+    draw_indexed: struct {
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        base_vertex: i32,
+        first_instance: u32,
+    },
+    set_compute_bind_group: struct {
+        group_index: u32,
+        group: *BindGroup,
+        dynamic_offsets: std.BoundedArray(u32, limits.max_bind_groups),
+    },
+    set_compute_pipeline: struct {
+        pipeline: *ComputePipeline,
+    },
+    set_render_bind_group: struct {
+        group_index: u32,
+        group: *BindGroup,
+        dynamic_offsets: std.BoundedArray(u32, limits.max_bind_groups),
+    },
+    set_index_buffer: struct {
+        buffer: *Buffer,
+        format: dgpu.IndexFormat,
+        offset: u64,
+    },
+    set_render_pipeline: struct {
+        pipeline: *RenderPipeline,
+    },
+    set_scissor_rect: struct {
+        x: c.GLint,
+        y: c.GLint,
+        width: c.GLsizei,
+        height: c.GLsizei,
+    },
+    set_vertex_buffer: struct {
+        slot: u32,
+        buffer: *Buffer,
+        offset: u64,
+    },
+    set_viewport: struct {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
+    },
 };
 
 pub const CommandBuffer = struct {
+    const VertexBuffersState = struct {
+        apply_count: u32 = 0,
+        buffers: [limits.max_vertex_buffers]?*Buffer = std.mem.zeroes([limits.max_vertex_buffers]?*Buffer),
+        buffer_offsets: [limits.max_vertex_buffers]u64 = std.mem.zeroes([limits.max_vertex_buffers]u64),
+    };
+
     manager: utils.Manager(CommandBuffer) = .{},
+    device: *Device,
+    commands: std.ArrayListUnmanaged(Command) = .{},
+    reference_tracker: *ReferenceTracker,
 
     pub fn init(device: *Device) !*CommandBuffer {
-        _ = device;
+        const reference_tracker = try ReferenceTracker.init(device);
+        errdefer reference_tracker.deinit();
 
         var command_buffer = try allocator.create(CommandBuffer);
-        command_buffer.* = .{};
+        command_buffer.* = .{
+            .device = device,
+            .reference_tracker = reference_tracker,
+        };
         return command_buffer;
     }
 
     pub fn deinit(command_buffer: *CommandBuffer) void {
+        // reference_tracker lifetime is managed externally
+        command_buffer.commands.deinit(allocator);
         allocator.destroy(command_buffer);
+    }
+
+    // Internal
+    pub fn execute(command_buffer: *CommandBuffer) !void {
+        const device = command_buffer.device;
+        const gl = &device.gl;
+        var ctx = ActiveContext.init(device.hdc, device.hglrc);
+        defer ctx.deinit();
+
+        var compute_pipeline: ?*ComputePipeline = null;
+        var render_pass_fbo: ?c.GLuint = null;
+        var render_pipeline: ?*RenderPipeline = null;
+        var stencil_ref: c.GLint = 0;
+        var index_type: c.GLenum = undefined;
+        var index_element_size: usize = undefined;
+        var index_buffer: ?*Buffer = null;
+        var index_buffer_offset: usize = undefined;
+        var vertex_state: VertexBuffersState = .{};
+
+        try command_buffer.reference_tracker.submit();
+        try device.reference_trackers.append(allocator, command_buffer.reference_tracker);
+
+        for (command_buffer.commands.items) |command| {
+            switch (command) {
+                .begin_render_pass => |cmd| {
+                    // Test if rendering to default framebuffer
+                    var default_framebuffer = false;
+                    if (cmd.color_attachments.len == 1) {
+                        const attach = cmd.color_attachments.buffer[0];
+                        if (attach.view) |view_raw| {
+                            const view: *TextureView = @ptrCast(@alignCast(view_raw));
+                            if (view.texture.swapchain) |swapchain| {
+                                default_framebuffer = true;
+                                if (swapchain.hdc != device.hdc) {
+                                    if (c.wglMakeCurrent(swapchain.hdc, device.hglrc) == c.FALSE)
+                                        return error.wglMakeCurrentFailed;
+                                }
+                            }
+                        }
+                    }
+
+                    // Framebuffer
+                    var width: u32 = 0;
+                    var height: u32 = 0;
+                    if (!default_framebuffer) {
+                        var fbo: c.GLuint = undefined;
+                        gl.genFramebuffers(1, &fbo);
+                        render_pass_fbo = fbo;
+
+                        gl.bindFramebuffer(c.GL_DRAW_FRAMEBUFFER, fbo);
+
+                        var draw_buffers: std.BoundedArray(c.GLenum, limits.max_color_attachments) = .{};
+
+                        for (cmd.color_attachments.buffer, 0..) |attach, i| {
+                            if (attach.view) |view_raw| {
+                                const view: *TextureView = @ptrCast(@alignCast(view_raw));
+                                width = view.width();
+                                height = view.height();
+
+                                draw_buffers.appendAssumeCapacity(@intCast(c.GL_COLOR_ATTACHMENT0 + i));
+                                gl.framebufferTexture2D(
+                                    c.GL_FRAMEBUFFER,
+                                    c.GL_COLOR_ATTACHMENT0,
+                                    c.GL_TEXTURE_2D,
+                                    view.texture.handle,
+                                    0,
+                                );
+                            } else {
+                                draw_buffers.appendAssumeCapacity(c.GL_NONE);
+                            }
+                        }
+                        if (cmd.depth_stencil_attachment) |attach| {
+                            const view: *TextureView = @ptrCast(@alignCast(attach.view));
+                            width = view.width();
+                            height = view.height();
+
+                            const attachment: c.GLuint = switch (utils.textureFormatType(view.texture.format)) {
+                                .depth => c.GL_DEPTH_ATTACHMENT,
+                                .stencil => c.GL_STENCIL_ATTACHMENT,
+                                .depth_stencil => c.GL_DEPTH_STENCIL_ATTACHMENT,
+                                else => unreachable,
+                            };
+
+                            gl.framebufferTexture2D(
+                                c.GL_FRAMEBUFFER,
+                                attachment,
+                                c.GL_TEXTURE_2D,
+                                view.texture.handle,
+                                0,
+                            );
+                        }
+
+                        gl.drawBuffers(draw_buffers.len, &draw_buffers.buffer);
+                        if (gl.checkFramebufferStatus(c.GL_FRAMEBUFFER) != c.GL_FRAMEBUFFER_COMPLETE)
+                            return error.CheckFramebufferStatusFailed;
+                    } else {
+                        // TODO - always render to framebuffer?
+                        gl.bindFramebuffer(c.GL_DRAW_FRAMEBUFFER, 0);
+                        const view: *TextureView = @ptrCast(@alignCast(cmd.color_attachments.buffer[0].view.?));
+
+                        width = view.width();
+                        height = view.height();
+                    }
+
+                    // Default State
+                    gl.viewport(0, 0, @intCast(width), @intCast(height));
+                    gl.depthRangef(0.0, 1.0);
+                    gl.scissor(0, 0, @intCast(width), @intCast(height));
+                    gl.blendColor(0, 0, 0, 0);
+                    gl.colorMask(c.GL_TRUE, c.GL_TRUE, c.GL_TRUE, c.GL_TRUE);
+                    gl.depthMask(c.GL_TRUE);
+                    gl.stencilMask(0xff);
+
+                    // Clear color targets
+                    for (cmd.color_attachments.buffer, 0..) |attach, i| {
+                        if (attach.view) |view_raw| {
+                            const view: *TextureView = @ptrCast(@alignCast(view_raw));
+
+                            if (attach.load_op == .clear) {
+                                switch (utils.textureFormatType(view.texture.format)) {
+                                    .float,
+                                    .unorm,
+                                    .unorm_srgb,
+                                    .snorm,
+                                    => {
+                                        const data = [4]f32{
+                                            @floatCast(attach.clear_value.r),
+                                            @floatCast(attach.clear_value.g),
+                                            @floatCast(attach.clear_value.b),
+                                            @floatCast(attach.clear_value.a),
+                                        };
+                                        gl.clearBufferfv(c.GL_COLOR, @intCast(i), &data);
+                                    },
+                                    .uint => {
+                                        const data = [4]u32{
+                                            @intFromFloat(attach.clear_value.r),
+                                            @intFromFloat(attach.clear_value.g),
+                                            @intFromFloat(attach.clear_value.b),
+                                            @intFromFloat(attach.clear_value.a),
+                                        };
+                                        gl.clearBufferuiv(c.GL_COLOR, @intCast(i), &data);
+                                    },
+                                    .sint => {
+                                        const data = [4]i32{
+                                            @intFromFloat(attach.clear_value.r),
+                                            @intFromFloat(attach.clear_value.g),
+                                            @intFromFloat(attach.clear_value.b),
+                                            @intFromFloat(attach.clear_value.a),
+                                        };
+                                        gl.clearBufferiv(c.GL_COLOR, @intCast(i), &data);
+                                    },
+                                    else => unreachable,
+                                }
+                            }
+                        }
+                    }
+
+                    // Clear depth target
+                    if (cmd.depth_stencil_attachment) |attach| {
+                        const view: *TextureView = @ptrCast(@alignCast(attach.view));
+                        const format_type = utils.textureFormatType(view.texture.format);
+                        const depth_clear =
+                            attach.depth_load_op == .clear and
+                            (format_type == .depth or format_type == .depth_stencil);
+                        const stencil_clear =
+                            attach.stencil_load_op == .clear and
+                            (format_type == .stencil or format_type == .depth_stencil);
+
+                        if (depth_clear and stencil_clear) {
+                            gl.clearBufferfi(
+                                c.GL_DEPTH_STENCIL,
+                                0,
+                                attach.depth_clear_value,
+                                @intCast(attach.stencil_clear_value),
+                            );
+                        } else if (depth_clear) {
+                            gl.clearBufferfv(c.GL_DEPTH, 0, &attach.depth_clear_value);
+                        } else if (stencil_clear) {
+                            gl.clearBufferiv(c.GL_STENCIL, 0, attach.stencil_clear_value);
+                        }
+                    }
+
+                    // Release references
+                    for (cmd.color_attachments.buffer) |attach| {
+                        if (attach.view) |view_raw| {
+                            const view: *TextureView = @ptrCast(@alignCast(view_raw));
+                            view.manager.release();
+                        }
+                    }
+                    if (cmd.depth_stencil_attachment) |attach| {
+                        const view: *TextureView = @ptrCast(@alignCast(attach.view));
+                        view.manager.release();
+                    }
+                },
+                .end_render_pass => {
+                    // TODO - invalidate on discard
+                    if (render_pass_fbo) |fbo| gl.deleteFramebuffers(1, &fbo);
+                    render_pass_fbo = null;
+                },
+                .copy_buffer_to_buffer => |cmd| {
+                    gl.bindBuffer(c.GL_COPY_READ_BUFFER, cmd.source.handle);
+                    gl.bindBuffer(c.GL_COPY_WRITE_BUFFER, cmd.destination.handle);
+
+                    gl.copyBufferSubData(
+                        c.GL_COPY_READ_BUFFER,
+                        c.GL_COPY_WRITE_BUFFER,
+                        @intCast(cmd.source_offset),
+                        @intCast(cmd.destination_offset),
+                        @intCast(cmd.size),
+                    );
+                },
+                .dispatch_workgroups => |cmd| {
+                    gl.dispatchCompute(cmd.workgroup_count_x, cmd.workgroup_count_y, cmd.workgroup_count_z);
+                },
+                .draw => |cmd| {
+                    if (vertex_state.apply_count > 0)
+                        applyVertexBuffers(gl, &vertex_state, render_pipeline.?);
+
+                    gl.drawArraysInstancedBaseInstance(
+                        render_pipeline.?.mode,
+                        @intCast(cmd.first_vertex),
+                        @intCast(cmd.vertex_count),
+                        @intCast(cmd.instance_count),
+                        cmd.first_instance,
+                    );
+                },
+                .draw_indexed => |cmd| {
+                    if (vertex_state.apply_count > 0)
+                        applyVertexBuffers(gl, &vertex_state, render_pipeline.?);
+
+                    gl.drawElementsInstancedBaseVertexBaseInstance(
+                        render_pipeline.?.mode,
+                        @intCast(cmd.index_count),
+                        index_type,
+                        @ptrFromInt(index_buffer_offset + cmd.first_index * index_element_size),
+                        @intCast(cmd.instance_count),
+                        cmd.base_vertex,
+                        cmd.first_instance,
+                    );
+                },
+                .set_index_buffer => |cmd| {
+                    var buffer = cmd.buffer;
+                    gl.bindBuffer(c.GL_ELEMENT_ARRAY_BUFFER, buffer.handle);
+                    index_type = conv.glIndexType(cmd.format);
+                    index_element_size = conv.glIndexElementSize(cmd.format);
+                    index_buffer_offset = cmd.offset;
+
+                    if (index_buffer) |old_index_buffer| old_index_buffer.manager.release();
+                    index_buffer = buffer;
+                },
+                .set_compute_pipeline => |cmd| {
+                    var pipeline = cmd.pipeline;
+                    gl.useProgram(pipeline.program);
+
+                    if (compute_pipeline) |old_pipeline| old_pipeline.manager.release();
+                    compute_pipeline = pipeline;
+                },
+                .set_compute_bind_group => |cmd| {
+                    // NOTE - this does not work yet for applications that expect bind groups to stay valid after
+                    // pipeline changes.  For that we will need to defer GLSL compilation until layout is known.
+                    const group = cmd.group;
+
+                    for (group.entries) |entry| {
+                        const key = BindingPoint{ .group = cmd.group_index, .binding = entry.binding };
+
+                        if (compute_pipeline.?.bindings.get(key)) |slot| {
+                            switch (entry.kind) {
+                                .buffer => {
+                                    var offset = entry.offset;
+                                    if (entry.dynamic_index) |i|
+                                        offset += cmd.dynamic_offsets.buffer[i];
+                                    gl.bindBufferRange(entry.target, slot, entry.buffer.?.handle, offset, entry.size);
+                                },
+                                else => @panic("unimplemented"),
+                            }
+                        }
+                    }
+
+                    group.manager.release();
+                },
+                .set_render_bind_group => |cmd| {
+                    // NOTE - this does not work yet for applications that expect bind groups to stay valid after
+                    // pipeline changes.  For that we will need to defer GLSL compilation until layout is known.
+                    const group = cmd.group;
+
+                    for (group.entries) |entry| {
+                        const key = BindingPoint{ .group = cmd.group_index, .binding = entry.binding };
+
+                        if (render_pipeline.?.bindings.get(key)) |slot| {
+                            switch (entry.kind) {
+                                .buffer => {
+                                    var offset = entry.offset;
+                                    if (entry.dynamic_index) |i|
+                                        offset += cmd.dynamic_offsets.buffer[i];
+                                    gl.bindBufferRange(entry.target, slot, entry.buffer.?.handle, offset, entry.size);
+                                },
+                                else => @panic("unimplemented"),
+                            }
+                        }
+                    }
+                    group.manager.release();
+                },
+                .set_render_pipeline => |cmd| {
+                    var pipeline = cmd.pipeline;
+
+                    pipeline.applyState(stencil_ref);
+                    gl.useProgram(pipeline.program);
+
+                    if (render_pipeline) |old_pipeline| old_pipeline.manager.release();
+                    render_pipeline = pipeline;
+                },
+                .set_scissor_rect => |cmd| {
+                    gl.scissor(cmd.x, cmd.y, cmd.width, cmd.height);
+                },
+                .set_vertex_buffer => |cmd| {
+                    var buffer = cmd.buffer;
+                    vertex_state.buffers[cmd.slot] = buffer;
+                    vertex_state.buffer_offsets[cmd.slot] = cmd.offset;
+                    vertex_state.apply_count = @max(vertex_state.apply_count, cmd.slot + 1);
+                },
+                .set_viewport => |cmd| {
+                    gl.viewportIndexedf(0, cmd.x, cmd.y, cmd.width, cmd.height);
+                    gl.depthRangef(cmd.min_depth, cmd.max_depth);
+                },
+            }
+        }
+
+        command_buffer.reference_tracker.sync = gl.fenceSync(c.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+
+        std.debug.assert(render_pass_fbo == null);
+        if (compute_pipeline) |pipeline| pipeline.manager.release();
+        if (render_pipeline) |pipeline| pipeline.manager.release();
+        if (index_buffer) |buffer| buffer.manager.release();
+        checkError(gl);
+    }
+
+    fn applyVertexBuffers(gl: *proc.DeviceGL, vertex_state: *VertexBuffersState, render_pipeline: *RenderPipeline) void {
+        for (0..vertex_state.apply_count) |buffer_index| {
+            if (vertex_state.buffers[buffer_index]) |buffer| {
+                gl.bindBuffer(c.GL_ARRAY_BUFFER, buffer.handle);
+
+                const offset = vertex_state.buffer_offsets[buffer_index];
+                for (render_pipeline.buffer_attributes[buffer_index]) |attribute| {
+                    if (attribute.is_int) {
+                        gl.vertexAttribIPointer(
+                            attribute.index,
+                            attribute.count,
+                            attribute.vertex_type,
+                            attribute.stride,
+                            @ptrFromInt(attribute.offset + offset),
+                        );
+                    } else {
+                        gl.vertexAttribPointer(
+                            attribute.index,
+                            attribute.count,
+                            attribute.vertex_type,
+                            attribute.normalized,
+                            attribute.stride,
+                            @ptrFromInt(attribute.offset + offset),
+                        );
+                    }
+                }
+                buffer.manager.release();
+                vertex_state.buffers[buffer_index] = null;
+            }
+        }
+
+        vertex_state.apply_count = 0;
+    }
+};
+
+pub const ReferenceTracker = struct {
+    device: *Device,
+    sync: c.GLsync = undefined,
+    buffers: std.ArrayListUnmanaged(*Buffer) = .{},
+    bind_groups: std.ArrayListUnmanaged(*BindGroup) = .{},
+    upload_pages: std.ArrayListUnmanaged(*Buffer) = .{},
+
+    pub fn init(device: *Device) !*ReferenceTracker {
+        var tracker = try allocator.create(ReferenceTracker);
+        tracker.* = .{
+            .device = device,
+        };
+        return tracker;
+    }
+
+    pub fn deinit(tracker: *ReferenceTracker) void {
+        const device = tracker.device;
+
+        for (tracker.buffers.items) |buffer| {
+            buffer.gpu_count -= 1;
+            buffer.manager.release();
+        }
+
+        for (tracker.bind_groups.items) |group| {
+            for (group.entries) |entry| {
+                switch (entry.kind) {
+                    .buffer => entry.buffer.?.gpu_count -= 1,
+                    else => {},
+                }
+            }
+            group.manager.release();
+        }
+
+        for (tracker.upload_pages.items) |buffer| {
+            device.streaming_manager.release(buffer);
+        }
+
+        tracker.buffers.deinit(allocator);
+        tracker.bind_groups.deinit(allocator);
+        tracker.upload_pages.deinit(allocator);
+        allocator.destroy(tracker);
+    }
+
+    pub fn referenceBuffer(tracker: *ReferenceTracker, buffer: *Buffer) !void {
+        buffer.manager.reference();
+        try tracker.buffers.append(allocator, buffer);
+    }
+
+    pub fn referenceBindGroup(tracker: *ReferenceTracker, group: *BindGroup) !void {
+        group.manager.reference();
+        try tracker.bind_groups.append(allocator, group);
+    }
+
+    pub fn referenceUploadPage(tracker: *ReferenceTracker, upload_page: *Buffer) !void {
+        try tracker.upload_pages.append(allocator, upload_page);
+    }
+
+    pub fn submit(tracker: *ReferenceTracker) !void {
+        for (tracker.buffers.items) |buffer| {
+            buffer.gpu_count += 1;
+        }
+
+        for (tracker.bind_groups.items) |group| {
+            for (group.entries) |entry| {
+                switch (entry.kind) {
+                    .buffer => entry.buffer.?.gpu_count += 1,
+                    else => {},
+                }
+            }
+        }
     }
 };
 
 pub const CommandEncoder = struct {
+    pub const StreamingResult = struct {
+        buffer: *Buffer,
+        map: [*]u8,
+        offset: u32,
+    };
+
     manager: utils.Manager(CommandEncoder) = .{},
     device: *Device,
     command_buffer: *CommandBuffer,
+    commands: *std.ArrayListUnmanaged(Command),
+    reference_tracker: *ReferenceTracker,
+    upload_buffer: ?*Buffer = null,
+    upload_map: ?[*]u8 = null,
+    upload_next_offset: u32 = upload_page_size,
 
     pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         _ = desc;
@@ -921,6 +2216,8 @@ pub const CommandEncoder = struct {
         encoder.* = .{
             .device = device,
             .command_buffer = command_buffer,
+            .commands = &command_buffer.commands,
+            .reference_tracker = command_buffer.reference_tracker,
         };
         return encoder;
     }
@@ -946,12 +2243,16 @@ pub const CommandEncoder = struct {
         destination_offset: u64,
         size: u64,
     ) !void {
-        _ = size;
-        _ = destination_offset;
-        _ = destination;
-        _ = source_offset;
-        _ = source;
-        _ = encoder;
+        try encoder.reference_tracker.referenceBuffer(source);
+        try encoder.reference_tracker.referenceBuffer(destination);
+
+        try encoder.commands.append(allocator, .{ .copy_buffer_to_buffer = .{
+            .source = source,
+            .source_offset = source_offset,
+            .destination = destination,
+            .destination_offset = destination_offset,
+            .size = size,
+        } });
     }
 
     pub fn copyBufferToTexture(
@@ -962,8 +2263,9 @@ pub const CommandEncoder = struct {
     ) !void {
         _ = copy_size;
         _ = destination;
-        _ = source;
-        _ = encoder;
+        const source_buffer: *Buffer = @ptrCast(@alignCast(source.buffer));
+
+        try encoder.reference_tracker.referenceBuffer(source_buffer);
     }
 
     pub fn copyTextureToTexture(
@@ -986,11 +2288,10 @@ pub const CommandEncoder = struct {
     }
 
     pub fn writeBuffer(encoder: *CommandEncoder, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
-        _ = size;
-        _ = data;
-        _ = offset;
-        _ = buffer;
-        _ = encoder;
+        const stream = try encoder.upload(size);
+        @memcpy(stream.map[0..size], data[0..size]);
+
+        try encoder.copyBufferToBuffer(stream.buffer, stream.offset, buffer, offset, size);
     }
 
     pub fn writeTexture(
@@ -1001,24 +2302,59 @@ pub const CommandEncoder = struct {
         data_layout: *const dgpu.Texture.DataLayout,
         write_size: *const dgpu.Extent3D,
     ) !void {
-        _ = write_size;
-        _ = data_layout;
-        _ = data_size;
-        _ = data;
-        _ = destination;
-        _ = encoder;
+        const stream = try encoder.upload(data_size);
+        @memcpy(stream.map[0..data_size], data[0..data_size]);
+
+        try encoder.copyBufferToTexture(
+            &.{
+                .layout = .{
+                    .offset = stream.offset,
+                    .bytes_per_row = data_layout.bytes_per_row,
+                    .rows_per_image = data_layout.rows_per_image,
+                },
+                .buffer = @ptrCast(stream.buffer),
+            },
+            destination,
+            write_size,
+        );
+    }
+
+    pub fn upload(encoder: *CommandEncoder, size: u64) !StreamingResult {
+        if (encoder.upload_next_offset + size > upload_page_size) {
+            const streaming_manager = &encoder.device.streaming_manager;
+
+            std.debug.assert(size <= upload_page_size); // TODO - support large uploads
+            const buffer = try streaming_manager.acquire();
+
+            try encoder.reference_tracker.referenceUploadPage(buffer);
+            encoder.upload_buffer = buffer;
+            encoder.upload_map = buffer.map;
+            encoder.upload_next_offset = 0;
+        }
+
+        const offset = encoder.upload_next_offset;
+        encoder.upload_next_offset = @intCast(utils.alignUp(offset + size, limits.min_uniform_buffer_offset_alignment));
+        return StreamingResult{
+            .buffer = encoder.upload_buffer.?,
+            .map = encoder.upload_map.? + offset,
+            .offset = offset,
+        };
     }
 };
 
 pub const ComputePassEncoder = struct {
     manager: utils.Manager(ComputePassEncoder) = .{},
+    commands: *std.ArrayListUnmanaged(Command),
+    reference_tracker: *ReferenceTracker,
 
     pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
-        _ = cmd_encoder;
 
         var encoder = try allocator.create(ComputePassEncoder);
-        encoder.* = .{};
+        encoder.* = .{
+            .commands = &cmd_encoder.command_buffer.commands,
+            .reference_tracker = cmd_encoder.reference_tracker,
+        };
         return encoder;
     }
 
@@ -1032,10 +2368,11 @@ pub const ComputePassEncoder = struct {
         workgroup_count_y: u32,
         workgroup_count_z: u32,
     ) !void {
-        _ = workgroup_count_z;
-        _ = workgroup_count_y;
-        _ = workgroup_count_x;
-        _ = encoder;
+        try encoder.commands.append(allocator, .{ .dispatch_workgroups = .{
+            .workgroup_count_x = workgroup_count_x,
+            .workgroup_count_y = workgroup_count_y,
+            .workgroup_count_z = workgroup_count_z,
+        } });
     }
 
     pub fn end(encoder: *ComputePassEncoder) void {
@@ -1049,68 +2386,62 @@ pub const ComputePassEncoder = struct {
         dynamic_offset_count: usize,
         dynamic_offsets: ?[*]const u32,
     ) !void {
-        _ = dynamic_offsets;
-        _ = dynamic_offset_count;
-        _ = group;
-        _ = group_index;
-        _ = encoder;
+        group.manager.reference();
+        var dynamic_offsets_array: std.BoundedArray(u32, limits.max_bind_groups) = .{};
+        if (dynamic_offset_count > 0)
+            dynamic_offsets_array.appendSliceAssumeCapacity(dynamic_offsets.?[0..dynamic_offset_count]);
+
+        try encoder.commands.append(allocator, .{ .set_compute_bind_group = .{
+            .group_index = group_index,
+            .group = group,
+            .dynamic_offsets = dynamic_offsets_array,
+        } });
     }
 
     pub fn setPipeline(encoder: *ComputePassEncoder, pipeline: *ComputePipeline) !void {
-        _ = pipeline;
-        _ = encoder;
+        pipeline.manager.reference();
+        try encoder.commands.append(allocator, .{ .set_compute_pipeline = .{
+            .pipeline = pipeline,
+        } });
     }
 };
 
 pub const RenderPassEncoder = struct {
     manager: utils.Manager(RenderPassEncoder) = .{},
-    ctx: ActiveContext,
-    gl: *proc.DeviceGL,
+    commands: *std.ArrayListUnmanaged(Command),
+    reference_tracker: *ReferenceTracker,
 
     pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
-        const device = cmd_encoder.device;
-        const gl = &device.gl;
-
-        // Set context to the HWND.  Offscreen rendering support will come later and may be used
-        // universally to simplify coordinate space transformations.
-        var hdc = device.hdc;
-        for (0..desc.color_attachment_count) |i| {
-            const attach = desc.color_attachments.?[i];
-            const view: *TextureView = @ptrCast(@alignCast(attach.view.?));
-
-            // TODO - offscreen render support (which we may always want to do)
-            if (view.texture.swapchain) |swapchain|
-                hdc = swapchain.hdc;
-        }
-
-        var ctx = try ActiveContext.init(hdc, device.hglrc);
-
-        for (0..desc.color_attachment_count) |i| {
-            const attach = desc.color_attachments.?[i];
-
-            if (attach.load_op == .clear) {
-                gl.ClearColor(
-                    @floatCast(attach.clear_value.r),
-                    @floatCast(attach.clear_value.g),
-                    @floatCast(attach.clear_value.b),
-                    @floatCast(attach.clear_value.a),
-                );
-
-                gl.Clear(c.GL_COLOR_BUFFER_BIT);
-            }
-        }
-
-        // Result
         var encoder = try allocator.create(RenderPassEncoder);
         encoder.* = .{
-            .ctx = ctx,
-            .gl = gl,
+            .commands = &cmd_encoder.command_buffer.commands,
+            .reference_tracker = cmd_encoder.reference_tracker,
         };
+
+        var color_attachments: std.BoundedArray(dgpu.RenderPassColorAttachment, limits.max_color_attachments) = .{};
+        for (0..desc.color_attachment_count) |i| {
+            const attach = &desc.color_attachments.?[i];
+            if (attach.view) |view_raw| {
+                const view: *TextureView = @ptrCast(@alignCast(view_raw));
+                view.manager.reference();
+            }
+            color_attachments.appendAssumeCapacity(attach.*);
+        }
+
+        if (desc.depth_stencil_attachment) |attach| {
+            const view: *TextureView = @ptrCast(@alignCast(attach.view));
+            view.manager.reference();
+        }
+
+        try encoder.commands.append(allocator, .{ .begin_render_pass = .{
+            .color_attachments = color_attachments,
+            .depth_stencil_attachment = if (desc.depth_stencil_attachment) |ds| ds.* else null,
+        } });
+
         return encoder;
     }
 
     pub fn deinit(encoder: *RenderPassEncoder) void {
-        encoder.ctx.deinit();
         allocator.destroy(encoder);
     }
 
@@ -1120,12 +2451,13 @@ pub const RenderPassEncoder = struct {
         instance_count: u32,
         first_vertex: u32,
         first_instance: u32,
-    ) void {
-        _ = first_instance;
-        _ = instance_count;
-        const gl = encoder.gl;
-
-        gl.DrawArrays(c.GL_TRIANGLES, @intCast(first_vertex), @intCast(vertex_count));
+    ) !void {
+        try encoder.commands.append(allocator, .{ .draw = .{
+            .vertex_count = vertex_count,
+            .instance_count = instance_count,
+            .first_vertex = first_vertex,
+            .first_instance = first_instance,
+        } });
     }
 
     pub fn drawIndexed(
@@ -1135,19 +2467,18 @@ pub const RenderPassEncoder = struct {
         first_index: u32,
         base_vertex: i32,
         first_instance: u32,
-    ) void {
-        _ = first_instance;
-        _ = base_vertex;
-        _ = first_index;
-        _ = instance_count;
-        _ = index_count;
-        _ = encoder;
+    ) !void {
+        try encoder.commands.append(allocator, .{ .draw_indexed = .{
+            .index_count = index_count,
+            .instance_count = instance_count,
+            .first_index = first_index,
+            .base_vertex = base_vertex,
+            .first_instance = first_instance,
+        } });
     }
 
     pub fn end(encoder: *RenderPassEncoder) !void {
-        const gl = encoder.gl;
-
-        checkError(gl);
+        try encoder.commands.append(allocator, .end_render_pass);
     }
 
     pub fn setBindGroup(
@@ -1157,11 +2488,16 @@ pub const RenderPassEncoder = struct {
         dynamic_offset_count: usize,
         dynamic_offsets: ?[*]const u32,
     ) !void {
-        _ = dynamic_offsets;
-        _ = dynamic_offset_count;
-        _ = group;
-        _ = group_index;
-        _ = encoder;
+        group.manager.reference();
+        var dynamic_offsets_array: std.BoundedArray(u32, limits.max_bind_groups) = .{};
+        if (dynamic_offset_count > 0)
+            dynamic_offsets_array.appendSliceAssumeCapacity(dynamic_offsets.?[0..dynamic_offset_count]);
+
+        try encoder.commands.append(allocator, .{ .set_render_bind_group = .{
+            .group_index = group_index,
+            .group = group,
+            .dynamic_offsets = dynamic_offsets_array,
+        } });
     }
 
     pub fn setIndexBuffer(
@@ -1172,71 +2508,100 @@ pub const RenderPassEncoder = struct {
         size: u64,
     ) !void {
         _ = size;
-        _ = offset;
-        _ = format;
-        _ = buffer;
-        _ = encoder;
+
+        try encoder.reference_tracker.referenceBuffer(buffer);
+
+        buffer.manager.reference();
+        try encoder.commands.append(allocator, .{ .set_index_buffer = .{
+            .buffer = buffer,
+            .format = format,
+            .offset = offset,
+        } });
     }
 
     pub fn setPipeline(encoder: *RenderPassEncoder, pipeline: *RenderPipeline) !void {
-        const gl = encoder.gl;
-
-        gl.UseProgram(pipeline.program);
+        pipeline.manager.reference();
+        try encoder.commands.append(allocator, .{ .set_render_pipeline = .{
+            .pipeline = pipeline,
+        } });
     }
 
-    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
-        _ = height;
-        _ = width;
-        _ = y;
-        _ = x;
-        _ = encoder;
+    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) !void {
+        try encoder.commands.append(allocator, .{ .set_scissor_rect = .{
+            .x = @intCast(x),
+            .y = @intCast(y),
+            .width = @intCast(width),
+            .height = @intCast(height),
+        } });
     }
 
     pub fn setVertexBuffer(encoder: *RenderPassEncoder, slot: u32, buffer: *Buffer, offset: u64, size: u64) !void {
         _ = size;
-        _ = offset;
-        _ = buffer;
-        _ = slot;
-        _ = encoder;
+
+        try encoder.reference_tracker.referenceBuffer(buffer);
+
+        buffer.manager.reference();
+        try encoder.commands.append(allocator, .{ .set_vertex_buffer = .{
+            .slot = slot,
+            .buffer = buffer,
+            .offset = offset,
+        } });
     }
 
-    pub fn setViewport(encoder: *RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
-        _ = max_depth;
-        _ = min_depth;
-        _ = height;
-        _ = width;
-        _ = y;
-        _ = x;
-        _ = encoder;
+    pub fn setViewport(
+        encoder: *RenderPassEncoder,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
+    ) !void {
+        try encoder.commands.append(allocator, .{ .set_viewport = .{
+            .x = x,
+            .y = y,
+            .width = width,
+            .height = height,
+            .min_depth = min_depth,
+            .max_depth = max_depth,
+        } });
     }
 };
 
 pub const Queue = struct {
     manager: utils.Manager(Queue) = .{},
+    device: *Device,
+    command_encoder: ?*CommandEncoder = null,
 
-    pub fn init(device: *Device) !*Queue {
-        _ = device;
-
-        var queue = try allocator.create(Queue);
-        queue.* = .{};
-        return queue;
+    pub fn init(device: *Device) !Queue {
+        return .{
+            .device = device,
+        };
     }
 
     pub fn deinit(queue: *Queue) void {
-        allocator.destroy(queue);
+        if (queue.command_encoder) |command_encoder| command_encoder.manager.release();
     }
 
     pub fn submit(queue: *Queue, commands: []const *CommandBuffer) !void {
-        _ = commands;
-        _ = queue;
+        if (queue.command_encoder) |command_encoder| {
+            const command_buffer = try command_encoder.finish(&.{});
+            command_buffer.manager.reference(); // handled in main.zig
+            defer command_buffer.manager.release();
+
+            try command_buffer.execute();
+
+            command_encoder.manager.release();
+            queue.command_encoder = null;
+        }
+        for (commands) |command_buffer| {
+            try command_buffer.execute();
+        }
     }
 
     pub fn writeBuffer(queue: *Queue, buffer: *Buffer, offset: u64, data: [*]const u8, size: u64) !void {
-        _ = size;
-        _ = data;
-        _ = offset;
-        _ = buffer;
-        _ = queue;
+        const encoder = try queue.getCommandEncoder();
+        try encoder.writeBuffer(buffer, offset, data, size);
     }
 
     pub fn writeTexture(
@@ -1247,12 +2612,17 @@ pub const Queue = struct {
         data_layout: *const dgpu.Texture.DataLayout,
         write_size: *const dgpu.Extent3D,
     ) !void {
-        _ = write_size;
-        _ = data_layout;
-        _ = data_size;
-        _ = data;
-        _ = destination;
-        _ = queue;
+        const encoder = try queue.getCommandEncoder();
+        try encoder.writeTexture(destination, data, data_size, data_layout, write_size);
+    }
+
+    // Private
+    fn getCommandEncoder(queue: *Queue) !*CommandEncoder {
+        if (queue.command_encoder) |command_encoder| return command_encoder;
+
+        const command_encoder = try CommandEncoder.init(queue.device, &.{});
+        queue.command_encoder = command_encoder;
+        return command_encoder;
     }
 };
 

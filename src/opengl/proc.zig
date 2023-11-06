@@ -24,1436 +24,1436 @@ pub fn deinit() void {
 }
 
 pub const InstanceWGL = struct {
-    GetExtensionsStringARB: removeOptional(c.PFNWGLGETEXTENSIONSSTRINGARBPROC),
-    CreateContextAttribsARB: removeOptional(c.PFNWGLCREATECONTEXTATTRIBSARBPROC),
-    ChoosePixelFormatARB: removeOptional(c.PFNWGLCHOOSEPIXELFORMATARBPROC),
+    getExtensionsStringARB: removeOptional(c.PFNWGLGETEXTENSIONSSTRINGARBPROC),
+    createContextAttribsARB: removeOptional(c.PFNWGLCREATECONTEXTATTRIBSARBPROC),
+    choosePixelFormatARB: removeOptional(c.PFNWGLCHOOSEPIXELFORMATARBPROC),
 
     pub fn load(wgl: *InstanceWGL) void {
-        wgl.GetExtensionsStringARB = @ptrCast(c.wglGetProcAddress("wglGetExtensionsStringARB"));
-        wgl.CreateContextAttribsARB = @ptrCast(c.wglGetProcAddress("wglCreateContextAttribsARB"));
-        wgl.ChoosePixelFormatARB = @ptrCast(c.wglGetProcAddress("wglChoosePixelFormatARB"));
+        wgl.getExtensionsStringARB = @ptrCast(c.wglGetProcAddress("wglGetExtensionsStringARB"));
+        wgl.createContextAttribsARB = @ptrCast(c.wglGetProcAddress("wglCreateContextAttribsARB"));
+        wgl.choosePixelFormatARB = @ptrCast(c.wglGetProcAddress("wglChoosePixelFormatARB"));
     }
 };
 
 pub const AdapterGL = struct {
-    GetString: removeOptional(c.PFNGLGETSTRINGPROC),
+    getString: removeOptional(c.PFNGLGETSTRINGPROC),
 
     pub fn load(gl: *AdapterGL) void {
-        gl.GetString = @ptrCast(getProcAddress("glGetString"));
+        gl.getString = @ptrCast(getProcAddress("glGetString"));
     }
 };
 
 pub const DeviceGL = struct {
     // 1.0
-    CullFace: removeOptional(c.PFNGLCULLFACEPROC),
-    FrontFace: removeOptional(c.PFNGLFRONTFACEPROC),
-    Hint: removeOptional(c.PFNGLHINTPROC),
-    LineWidth: removeOptional(c.PFNGLLINEWIDTHPROC),
-    PointSize: removeOptional(c.PFNGLPOINTSIZEPROC),
-    PolygonMode: removeOptional(c.PFNGLPOLYGONMODEPROC),
-    Scissor: removeOptional(c.PFNGLSCISSORPROC),
-    TexParameterf: removeOptional(c.PFNGLTEXPARAMETERFPROC),
-    TexParameterfv: removeOptional(c.PFNGLTEXPARAMETERFVPROC),
-    TexParameteri: removeOptional(c.PFNGLTEXPARAMETERIPROC),
-    TexParameteriv: removeOptional(c.PFNGLTEXPARAMETERIVPROC),
-    TexImage1D: removeOptional(c.PFNGLTEXIMAGE1DPROC),
-    TexImage2D: removeOptional(c.PFNGLTEXIMAGE2DPROC),
-    DrawBuffer: removeOptional(c.PFNGLDRAWBUFFERPROC),
-    Clear: removeOptional(c.PFNGLCLEARPROC),
-    ClearColor: removeOptional(c.PFNGLCLEARCOLORPROC),
-    ClearStencil: removeOptional(c.PFNGLCLEARSTENCILPROC),
-    ClearDepth: removeOptional(c.PFNGLCLEARDEPTHPROC),
-    StencilMask: removeOptional(c.PFNGLSTENCILMASKPROC),
-    ColorMask: removeOptional(c.PFNGLCOLORMASKPROC),
-    DepthMask: removeOptional(c.PFNGLDEPTHMASKPROC),
-    Disable: removeOptional(c.PFNGLDISABLEPROC),
-    Enable: removeOptional(c.PFNGLENABLEPROC),
-    Finish: removeOptional(c.PFNGLFINISHPROC),
-    Flush: removeOptional(c.PFNGLFLUSHPROC),
-    BlendFunc: removeOptional(c.PFNGLBLENDFUNCPROC),
-    LogicOp: removeOptional(c.PFNGLLOGICOPPROC),
-    StencilFunc: removeOptional(c.PFNGLSTENCILFUNCPROC),
-    StencilOp: removeOptional(c.PFNGLSTENCILOPPROC),
-    DepthFunc: removeOptional(c.PFNGLDEPTHFUNCPROC),
-    PixelStoref: removeOptional(c.PFNGLPIXELSTOREFPROC),
-    PixelStorei: removeOptional(c.PFNGLPIXELSTOREIPROC),
-    ReadBuffer: removeOptional(c.PFNGLREADBUFFERPROC),
-    ReadPixels: removeOptional(c.PFNGLREADPIXELSPROC),
-    GetBooleanv: removeOptional(c.PFNGLGETBOOLEANVPROC),
-    GetDoublev: removeOptional(c.PFNGLGETDOUBLEVPROC),
-    GetError: removeOptional(c.PFNGLGETERRORPROC),
-    GetFloatv: removeOptional(c.PFNGLGETFLOATVPROC),
-    GetIntegerv: removeOptional(c.PFNGLGETINTEGERVPROC),
-    GetString: removeOptional(c.PFNGLGETSTRINGPROC),
-    GetTexImage: removeOptional(c.PFNGLGETTEXIMAGEPROC),
-    GetTexParameterfv: removeOptional(c.PFNGLGETTEXPARAMETERFVPROC),
-    GetTexParameteriv: removeOptional(c.PFNGLGETTEXPARAMETERIVPROC),
-    GetTexLevelParameterfv: removeOptional(c.PFNGLGETTEXLEVELPARAMETERFVPROC),
-    GetTexLevelParameteriv: removeOptional(c.PFNGLGETTEXLEVELPARAMETERIVPROC),
-    IsEnabled: removeOptional(c.PFNGLISENABLEDPROC),
-    DepthRange: removeOptional(c.PFNGLDEPTHRANGEPROC),
-    Viewport: removeOptional(c.PFNGLVIEWPORTPROC),
+    cullFace: removeOptional(c.PFNGLCULLFACEPROC),
+    frontFace: removeOptional(c.PFNGLFRONTFACEPROC),
+    hint: removeOptional(c.PFNGLHINTPROC),
+    lineWidth: removeOptional(c.PFNGLLINEWIDTHPROC),
+    pointSize: removeOptional(c.PFNGLPOINTSIZEPROC),
+    polygonMode: removeOptional(c.PFNGLPOLYGONMODEPROC),
+    scissor: removeOptional(c.PFNGLSCISSORPROC),
+    texParameterf: removeOptional(c.PFNGLTEXPARAMETERFPROC),
+    texParameterfv: removeOptional(c.PFNGLTEXPARAMETERFVPROC),
+    texParameteri: removeOptional(c.PFNGLTEXPARAMETERIPROC),
+    texParameteriv: removeOptional(c.PFNGLTEXPARAMETERIVPROC),
+    texImage1D: removeOptional(c.PFNGLTEXIMAGE1DPROC),
+    texImage2D: removeOptional(c.PFNGLTEXIMAGE2DPROC),
+    drawBuffer: removeOptional(c.PFNGLDRAWBUFFERPROC),
+    clear: removeOptional(c.PFNGLCLEARPROC),
+    clearColor: removeOptional(c.PFNGLCLEARCOLORPROC),
+    clearStencil: removeOptional(c.PFNGLCLEARSTENCILPROC),
+    clearDepth: removeOptional(c.PFNGLCLEARDEPTHPROC),
+    stencilMask: removeOptional(c.PFNGLSTENCILMASKPROC),
+    colorMask: removeOptional(c.PFNGLCOLORMASKPROC),
+    depthMask: removeOptional(c.PFNGLDEPTHMASKPROC),
+    disable: removeOptional(c.PFNGLDISABLEPROC),
+    enable: removeOptional(c.PFNGLENABLEPROC),
+    finish: removeOptional(c.PFNGLFINISHPROC),
+    flush: removeOptional(c.PFNGLFLUSHPROC),
+    blendFunc: removeOptional(c.PFNGLBLENDFUNCPROC),
+    logicOp: removeOptional(c.PFNGLLOGICOPPROC),
+    stencilFunc: removeOptional(c.PFNGLSTENCILFUNCPROC),
+    stencilOp: removeOptional(c.PFNGLSTENCILOPPROC),
+    depthFunc: removeOptional(c.PFNGLDEPTHFUNCPROC),
+    pixelStoref: removeOptional(c.PFNGLPIXELSTOREFPROC),
+    pixelStorei: removeOptional(c.PFNGLPIXELSTOREIPROC),
+    readBuffer: removeOptional(c.PFNGLREADBUFFERPROC),
+    readPixels: removeOptional(c.PFNGLREADPIXELSPROC),
+    getBooleanv: removeOptional(c.PFNGLGETBOOLEANVPROC),
+    getDoublev: removeOptional(c.PFNGLGETDOUBLEVPROC),
+    getError: removeOptional(c.PFNGLGETERRORPROC),
+    getFloatv: removeOptional(c.PFNGLGETFLOATVPROC),
+    getIntegerv: removeOptional(c.PFNGLGETINTEGERVPROC),
+    getString: removeOptional(c.PFNGLGETSTRINGPROC),
+    getTexImage: removeOptional(c.PFNGLGETTEXIMAGEPROC),
+    getTexParameterfv: removeOptional(c.PFNGLGETTEXPARAMETERFVPROC),
+    getTexParameteriv: removeOptional(c.PFNGLGETTEXPARAMETERIVPROC),
+    getTexLevelParameterfv: removeOptional(c.PFNGLGETTEXLEVELPARAMETERFVPROC),
+    getTexLevelParameteriv: removeOptional(c.PFNGLGETTEXLEVELPARAMETERIVPROC),
+    isEnabled: removeOptional(c.PFNGLISENABLEDPROC),
+    depthRange: removeOptional(c.PFNGLDEPTHRANGEPROC),
+    viewport: removeOptional(c.PFNGLVIEWPORTPROC),
 
     // 1.1
-    DrawArrays: removeOptional(c.PFNGLDRAWARRAYSPROC),
-    DrawElements: removeOptional(c.PFNGLDRAWELEMENTSPROC),
-    GetPointerv: removeOptional(c.PFNGLGETPOINTERVPROC),
-    PolygonOffset: removeOptional(c.PFNGLPOLYGONOFFSETPROC),
-    CopyTexImage1D: removeOptional(c.PFNGLCOPYTEXIMAGE1DPROC),
-    CopyTexImage2D: removeOptional(c.PFNGLCOPYTEXIMAGE2DPROC),
-    CopyTexSubImage1D: removeOptional(c.PFNGLCOPYTEXSUBIMAGE1DPROC),
-    CopyTexSubImage2D: removeOptional(c.PFNGLCOPYTEXSUBIMAGE2DPROC),
-    TexSubImage1D: removeOptional(c.PFNGLTEXSUBIMAGE1DPROC),
-    TexSubImage2D: removeOptional(c.PFNGLTEXSUBIMAGE2DPROC),
-    BindTexture: removeOptional(c.PFNGLBINDTEXTUREPROC),
-    DeleteTextures: removeOptional(c.PFNGLDELETETEXTURESPROC),
-    GenTextures: removeOptional(c.PFNGLGENTEXTURESPROC),
-    IsTexture: removeOptional(c.PFNGLISTEXTUREPROC),
+    drawArrays: removeOptional(c.PFNGLDRAWARRAYSPROC),
+    drawElements: removeOptional(c.PFNGLDRAWELEMENTSPROC),
+    getPointerv: removeOptional(c.PFNGLGETPOINTERVPROC),
+    polygonOffset: removeOptional(c.PFNGLPOLYGONOFFSETPROC),
+    copyTexImage1D: removeOptional(c.PFNGLCOPYTEXIMAGE1DPROC),
+    copyTexImage2D: removeOptional(c.PFNGLCOPYTEXIMAGE2DPROC),
+    copyTexSubImage1D: removeOptional(c.PFNGLCOPYTEXSUBIMAGE1DPROC),
+    copyTexSubImage2D: removeOptional(c.PFNGLCOPYTEXSUBIMAGE2DPROC),
+    texSubImage1D: removeOptional(c.PFNGLTEXSUBIMAGE1DPROC),
+    texSubImage2D: removeOptional(c.PFNGLTEXSUBIMAGE2DPROC),
+    bindTexture: removeOptional(c.PFNGLBINDTEXTUREPROC),
+    deleteTextures: removeOptional(c.PFNGLDELETETEXTURESPROC),
+    genTextures: removeOptional(c.PFNGLGENTEXTURESPROC),
+    isTexture: removeOptional(c.PFNGLISTEXTUREPROC),
 
     // 1.2
-    DrawRangeElements: removeOptional(c.PFNGLDRAWRANGEELEMENTSPROC),
-    TexImage3D: removeOptional(c.PFNGLTEXIMAGE3DPROC),
-    TexSubImage3D: removeOptional(c.PFNGLTEXSUBIMAGE3DPROC),
-    CopyTexSubImage3D: removeOptional(c.PFNGLCOPYTEXSUBIMAGE3DPROC),
+    drawRangeElements: removeOptional(c.PFNGLDRAWRANGEELEMENTSPROC),
+    texImage3D: removeOptional(c.PFNGLTEXIMAGE3DPROC),
+    texSubImage3D: removeOptional(c.PFNGLTEXSUBIMAGE3DPROC),
+    copyTexSubImage3D: removeOptional(c.PFNGLCOPYTEXSUBIMAGE3DPROC),
 
     // 1.3
-    ActiveTexture: removeOptional(c.PFNGLACTIVETEXTUREPROC),
-    SampleCoverage: removeOptional(c.PFNGLSAMPLECOVERAGEPROC),
-    CompressedTexImage3D: removeOptional(c.PFNGLCOMPRESSEDTEXIMAGE3DPROC),
-    CompressedTexImage2D: removeOptional(c.PFNGLCOMPRESSEDTEXIMAGE2DPROC),
-    CompressedTexImage1D: removeOptional(c.PFNGLCOMPRESSEDTEXIMAGE1DPROC),
-    CompressedTexSubImage3D: removeOptional(c.PFNGLCOMPRESSEDTEXSUBIMAGE3DPROC),
-    CompressedTexSubImage2D: removeOptional(c.PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC),
-    CompressedTexSubImage1D: removeOptional(c.PFNGLCOMPRESSEDTEXSUBIMAGE1DPROC),
-    GetCompressedTexImage: removeOptional(c.PFNGLGETCOMPRESSEDTEXIMAGEPROC),
+    activeTexture: removeOptional(c.PFNGLACTIVETEXTUREPROC),
+    sampleCoverage: removeOptional(c.PFNGLSAMPLECOVERAGEPROC),
+    compressedTexImage3D: removeOptional(c.PFNGLCOMPRESSEDTEXIMAGE3DPROC),
+    compressedTexImage2D: removeOptional(c.PFNGLCOMPRESSEDTEXIMAGE2DPROC),
+    compressedTexImage1D: removeOptional(c.PFNGLCOMPRESSEDTEXIMAGE1DPROC),
+    compressedTexSubImage3D: removeOptional(c.PFNGLCOMPRESSEDTEXSUBIMAGE3DPROC),
+    compressedTexSubImage2D: removeOptional(c.PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC),
+    compressedTexSubImage1D: removeOptional(c.PFNGLCOMPRESSEDTEXSUBIMAGE1DPROC),
+    getCompressedTexImage: removeOptional(c.PFNGLGETCOMPRESSEDTEXIMAGEPROC),
 
     // 1.4
-    BlendFuncSeparate: removeOptional(c.PFNGLBLENDFUNCSEPARATEPROC),
-    MultiDrawArrays: removeOptional(c.PFNGLMULTIDRAWARRAYSPROC),
-    MultiDrawElements: removeOptional(c.PFNGLMULTIDRAWELEMENTSPROC),
-    PointParameterf: removeOptional(c.PFNGLPOINTPARAMETERFPROC),
-    PointParameterfv: removeOptional(c.PFNGLPOINTPARAMETERFVPROC),
-    PointParameteri: removeOptional(c.PFNGLPOINTPARAMETERIPROC),
-    PointParameteriv: removeOptional(c.PFNGLPOINTPARAMETERIVPROC),
-    BlendColor: removeOptional(c.PFNGLBLENDCOLORPROC),
-    BlendEquation: removeOptional(c.PFNGLBLENDEQUATIONPROC),
+    blendFuncSeparate: removeOptional(c.PFNGLBLENDFUNCSEPARATEPROC),
+    multiDrawArrays: removeOptional(c.PFNGLMULTIDRAWARRAYSPROC),
+    multiDrawElements: removeOptional(c.PFNGLMULTIDRAWELEMENTSPROC),
+    pointParameterf: removeOptional(c.PFNGLPOINTPARAMETERFPROC),
+    pointParameterfv: removeOptional(c.PFNGLPOINTPARAMETERFVPROC),
+    pointParameteri: removeOptional(c.PFNGLPOINTPARAMETERIPROC),
+    pointParameteriv: removeOptional(c.PFNGLPOINTPARAMETERIVPROC),
+    blendColor: removeOptional(c.PFNGLBLENDCOLORPROC),
+    blendEquation: removeOptional(c.PFNGLBLENDEQUATIONPROC),
 
     // 1.5
-    GenQueries: removeOptional(c.PFNGLGENQUERIESPROC),
-    DeleteQueries: removeOptional(c.PFNGLDELETEQUERIESPROC),
-    IsQuery: removeOptional(c.PFNGLISQUERYPROC),
-    BeginQuery: removeOptional(c.PFNGLBEGINQUERYPROC),
-    EndQuery: removeOptional(c.PFNGLENDQUERYPROC),
-    GetQueryiv: removeOptional(c.PFNGLGETQUERYIVPROC),
-    GetQueryObjectiv: removeOptional(c.PFNGLGETQUERYOBJECTIVPROC),
-    GetQueryObjectuiv: removeOptional(c.PFNGLGETQUERYOBJECTUIVPROC),
-    BindBuffer: removeOptional(c.PFNGLBINDBUFFERPROC),
-    DeleteBuffers: removeOptional(c.PFNGLDELETEBUFFERSPROC),
-    GenBuffers: removeOptional(c.PFNGLGENBUFFERSPROC),
-    IsBuffer: removeOptional(c.PFNGLISBUFFERPROC),
-    BufferData: removeOptional(c.PFNGLBUFFERDATAPROC),
-    BufferSubData: removeOptional(c.PFNGLBUFFERSUBDATAPROC),
-    GetBufferSubData: removeOptional(c.PFNGLGETBUFFERSUBDATAPROC),
-    MapBuffer: removeOptional(c.PFNGLMAPBUFFERPROC),
-    UnmapBuffer: removeOptional(c.PFNGLUNMAPBUFFERPROC),
-    GetBufferParameteriv: removeOptional(c.PFNGLGETBUFFERPARAMETERIVPROC),
-    GetBufferPointerv: removeOptional(c.PFNGLGETBUFFERPOINTERVPROC),
+    genQueries: removeOptional(c.PFNGLGENQUERIESPROC),
+    deleteQueries: removeOptional(c.PFNGLDELETEQUERIESPROC),
+    isQuery: removeOptional(c.PFNGLISQUERYPROC),
+    beginQuery: removeOptional(c.PFNGLBEGINQUERYPROC),
+    endQuery: removeOptional(c.PFNGLENDQUERYPROC),
+    getQueryiv: removeOptional(c.PFNGLGETQUERYIVPROC),
+    getQueryObjectiv: removeOptional(c.PFNGLGETQUERYOBJECTIVPROC),
+    getQueryObjectuiv: removeOptional(c.PFNGLGETQUERYOBJECTUIVPROC),
+    bindBuffer: removeOptional(c.PFNGLBINDBUFFERPROC),
+    deleteBuffers: removeOptional(c.PFNGLDELETEBUFFERSPROC),
+    genBuffers: removeOptional(c.PFNGLGENBUFFERSPROC),
+    isBuffer: removeOptional(c.PFNGLISBUFFERPROC),
+    bufferData: removeOptional(c.PFNGLBUFFERDATAPROC),
+    bufferSubData: removeOptional(c.PFNGLBUFFERSUBDATAPROC),
+    getBufferSubData: removeOptional(c.PFNGLGETBUFFERSUBDATAPROC),
+    mapBuffer: removeOptional(c.PFNGLMAPBUFFERPROC),
+    unmapBuffer: removeOptional(c.PFNGLUNMAPBUFFERPROC),
+    getBufferParameteriv: removeOptional(c.PFNGLGETBUFFERPARAMETERIVPROC),
+    getBufferPointerv: removeOptional(c.PFNGLGETBUFFERPOINTERVPROC),
 
     // 2.0
-    BlendEquationSeparate: removeOptional(c.PFNGLBLENDEQUATIONSEPARATEPROC),
-    DrawBuffers: removeOptional(c.PFNGLDRAWBUFFERSPROC),
-    StencilOpSeparate: removeOptional(c.PFNGLSTENCILOPSEPARATEPROC),
-    StencilFuncSeparate: removeOptional(c.PFNGLSTENCILFUNCSEPARATEPROC),
-    StencilMaskSeparate: removeOptional(c.PFNGLSTENCILMASKSEPARATEPROC),
-    AttachShader: removeOptional(c.PFNGLATTACHSHADERPROC),
-    BindAttribLocation: removeOptional(c.PFNGLBINDATTRIBLOCATIONPROC),
-    CompileShader: removeOptional(c.PFNGLCOMPILESHADERPROC),
-    CreateProgram: removeOptional(c.PFNGLCREATEPROGRAMPROC),
-    CreateShader: removeOptional(c.PFNGLCREATESHADERPROC),
-    DeleteProgram: removeOptional(c.PFNGLDELETEPROGRAMPROC),
-    DeleteShader: removeOptional(c.PFNGLDELETESHADERPROC),
-    DetachShader: removeOptional(c.PFNGLDETACHSHADERPROC),
-    DisableVertexAttribArray: removeOptional(c.PFNGLDISABLEVERTEXATTRIBARRAYPROC),
-    EnableVertexAttribArray: removeOptional(c.PFNGLENABLEVERTEXATTRIBARRAYPROC),
-    GetActiveAttrib: removeOptional(c.PFNGLGETACTIVEATTRIBPROC),
-    GetActiveUniform: removeOptional(c.PFNGLGETACTIVEUNIFORMPROC),
-    GetAttachedShaders: removeOptional(c.PFNGLGETATTACHEDSHADERSPROC),
-    GetAttribLocation: removeOptional(c.PFNGLGETATTRIBLOCATIONPROC),
-    GetProgramiv: removeOptional(c.PFNGLGETPROGRAMIVPROC),
-    GetProgramInfoLog: removeOptional(c.PFNGLGETPROGRAMINFOLOGPROC),
-    GetShaderiv: removeOptional(c.PFNGLGETSHADERIVPROC),
-    GetShaderInfoLog: removeOptional(c.PFNGLGETSHADERINFOLOGPROC),
-    GetShaderSource: removeOptional(c.PFNGLGETSHADERSOURCEPROC),
-    GetUniformLocation: removeOptional(c.PFNGLGETUNIFORMLOCATIONPROC),
-    GetUniformfv: removeOptional(c.PFNGLGETUNIFORMFVPROC),
-    GetUniformiv: removeOptional(c.PFNGLGETUNIFORMIVPROC),
-    GetVertexAttribdv: removeOptional(c.PFNGLGETVERTEXATTRIBDVPROC),
-    GetVertexAttribfv: removeOptional(c.PFNGLGETVERTEXATTRIBFVPROC),
-    GetVertexAttribiv: removeOptional(c.PFNGLGETVERTEXATTRIBIVPROC),
-    GetVertexAttribPointerv: removeOptional(c.PFNGLGETVERTEXATTRIBPOINTERVPROC),
-    IsProgram: removeOptional(c.PFNGLISPROGRAMPROC),
-    IsShader: removeOptional(c.PFNGLISSHADERPROC),
-    LinkProgram: removeOptional(c.PFNGLLINKPROGRAMPROC),
-    ShaderSource: removeOptional(c.PFNGLSHADERSOURCEPROC),
-    UseProgram: removeOptional(c.PFNGLUSEPROGRAMPROC),
-    Uniform1f: removeOptional(c.PFNGLUNIFORM1FPROC),
-    Uniform2f: removeOptional(c.PFNGLUNIFORM2FPROC),
-    Uniform3f: removeOptional(c.PFNGLUNIFORM3FPROC),
-    Uniform4f: removeOptional(c.PFNGLUNIFORM4FPROC),
-    Uniform1i: removeOptional(c.PFNGLUNIFORM1IPROC),
-    Uniform2i: removeOptional(c.PFNGLUNIFORM2IPROC),
-    Uniform3i: removeOptional(c.PFNGLUNIFORM3IPROC),
-    Uniform4i: removeOptional(c.PFNGLUNIFORM4IPROC),
-    Uniform1fv: removeOptional(c.PFNGLUNIFORM1FVPROC),
-    Uniform2fv: removeOptional(c.PFNGLUNIFORM2FVPROC),
-    Uniform3fv: removeOptional(c.PFNGLUNIFORM3FVPROC),
-    Uniform4fv: removeOptional(c.PFNGLUNIFORM4FVPROC),
-    Uniform1iv: removeOptional(c.PFNGLUNIFORM1IVPROC),
-    Uniform2iv: removeOptional(c.PFNGLUNIFORM2IVPROC),
-    Uniform3iv: removeOptional(c.PFNGLUNIFORM3IVPROC),
-    Uniform4iv: removeOptional(c.PFNGLUNIFORM4IVPROC),
-    UniformMatrix2fv: removeOptional(c.PFNGLUNIFORMMATRIX2FVPROC),
-    UniformMatrix3fv: removeOptional(c.PFNGLUNIFORMMATRIX3FVPROC),
-    UniformMatrix4fv: removeOptional(c.PFNGLUNIFORMMATRIX4FVPROC),
-    ValidateProgram: removeOptional(c.PFNGLVALIDATEPROGRAMPROC),
-    VertexAttrib1d: removeOptional(c.PFNGLVERTEXATTRIB1DPROC),
-    VertexAttrib1dv: removeOptional(c.PFNGLVERTEXATTRIB1DVPROC),
-    VertexAttrib1f: removeOptional(c.PFNGLVERTEXATTRIB1FPROC),
-    VertexAttrib1fv: removeOptional(c.PFNGLVERTEXATTRIB1FVPROC),
-    VertexAttrib1s: removeOptional(c.PFNGLVERTEXATTRIB1SPROC),
-    VertexAttrib1sv: removeOptional(c.PFNGLVERTEXATTRIB1SVPROC),
-    VertexAttrib2d: removeOptional(c.PFNGLVERTEXATTRIB2DPROC),
-    VertexAttrib2dv: removeOptional(c.PFNGLVERTEXATTRIB2DVPROC),
-    VertexAttrib2f: removeOptional(c.PFNGLVERTEXATTRIB2FPROC),
-    VertexAttrib2fv: removeOptional(c.PFNGLVERTEXATTRIB2FVPROC),
-    VertexAttrib2s: removeOptional(c.PFNGLVERTEXATTRIB2SPROC),
-    VertexAttrib2sv: removeOptional(c.PFNGLVERTEXATTRIB2SVPROC),
-    VertexAttrib3d: removeOptional(c.PFNGLVERTEXATTRIB3DPROC),
-    VertexAttrib3dv: removeOptional(c.PFNGLVERTEXATTRIB3DVPROC),
-    VertexAttrib3f: removeOptional(c.PFNGLVERTEXATTRIB3FPROC),
-    VertexAttrib3fv: removeOptional(c.PFNGLVERTEXATTRIB3FVPROC),
-    VertexAttrib3s: removeOptional(c.PFNGLVERTEXATTRIB3SPROC),
-    VertexAttrib3sv: removeOptional(c.PFNGLVERTEXATTRIB3SVPROC),
-    VertexAttrib4Nbv: removeOptional(c.PFNGLVERTEXATTRIB4NBVPROC),
-    VertexAttrib4Niv: removeOptional(c.PFNGLVERTEXATTRIB4NIVPROC),
-    VertexAttrib4Nsv: removeOptional(c.PFNGLVERTEXATTRIB4NSVPROC),
-    VertexAttrib4Nub: removeOptional(c.PFNGLVERTEXATTRIB4NUBPROC),
-    VertexAttrib4Nubv: removeOptional(c.PFNGLVERTEXATTRIB4NUBVPROC),
-    VertexAttrib4Nuiv: removeOptional(c.PFNGLVERTEXATTRIB4NUIVPROC),
-    VertexAttrib4Nusv: removeOptional(c.PFNGLVERTEXATTRIB4NUSVPROC),
-    VertexAttrib4bv: removeOptional(c.PFNGLVERTEXATTRIB4BVPROC),
-    VertexAttrib4d: removeOptional(c.PFNGLVERTEXATTRIB4DPROC),
-    VertexAttrib4dv: removeOptional(c.PFNGLVERTEXATTRIB4DVPROC),
-    VertexAttrib4f: removeOptional(c.PFNGLVERTEXATTRIB4FPROC),
-    VertexAttrib4fv: removeOptional(c.PFNGLVERTEXATTRIB4FVPROC),
-    VertexAttrib4iv: removeOptional(c.PFNGLVERTEXATTRIB4IVPROC),
-    VertexAttrib4s: removeOptional(c.PFNGLVERTEXATTRIB4SPROC),
-    VertexAttrib4sv: removeOptional(c.PFNGLVERTEXATTRIB4SVPROC),
-    VertexAttrib4ubv: removeOptional(c.PFNGLVERTEXATTRIB4UBVPROC),
-    VertexAttrib4uiv: removeOptional(c.PFNGLVERTEXATTRIB4UIVPROC),
-    VertexAttrib4usv: removeOptional(c.PFNGLVERTEXATTRIB4USVPROC),
-    VertexAttribPointer: removeOptional(c.PFNGLVERTEXATTRIBPOINTERPROC),
+    blendEquationSeparate: removeOptional(c.PFNGLBLENDEQUATIONSEPARATEPROC),
+    drawBuffers: removeOptional(c.PFNGLDRAWBUFFERSPROC),
+    stencilOpSeparate: removeOptional(c.PFNGLSTENCILOPSEPARATEPROC),
+    stencilFuncSeparate: removeOptional(c.PFNGLSTENCILFUNCSEPARATEPROC),
+    stencilMaskSeparate: removeOptional(c.PFNGLSTENCILMASKSEPARATEPROC),
+    attachShader: removeOptional(c.PFNGLATTACHSHADERPROC),
+    bindAttribLocation: removeOptional(c.PFNGLBINDATTRIBLOCATIONPROC),
+    compileShader: removeOptional(c.PFNGLCOMPILESHADERPROC),
+    createProgram: removeOptional(c.PFNGLCREATEPROGRAMPROC),
+    createShader: removeOptional(c.PFNGLCREATESHADERPROC),
+    deleteProgram: removeOptional(c.PFNGLDELETEPROGRAMPROC),
+    deleteShader: removeOptional(c.PFNGLDELETESHADERPROC),
+    detachShader: removeOptional(c.PFNGLDETACHSHADERPROC),
+    disableVertexAttribArray: removeOptional(c.PFNGLDISABLEVERTEXATTRIBARRAYPROC),
+    enableVertexAttribArray: removeOptional(c.PFNGLENABLEVERTEXATTRIBARRAYPROC),
+    getActiveAttrib: removeOptional(c.PFNGLGETACTIVEATTRIBPROC),
+    getActiveUniform: removeOptional(c.PFNGLGETACTIVEUNIFORMPROC),
+    getAttachedShaders: removeOptional(c.PFNGLGETATTACHEDSHADERSPROC),
+    getAttribLocation: removeOptional(c.PFNGLGETATTRIBLOCATIONPROC),
+    getProgramiv: removeOptional(c.PFNGLGETPROGRAMIVPROC),
+    getProgramInfoLog: removeOptional(c.PFNGLGETPROGRAMINFOLOGPROC),
+    getShaderiv: removeOptional(c.PFNGLGETSHADERIVPROC),
+    getShaderInfoLog: removeOptional(c.PFNGLGETSHADERINFOLOGPROC),
+    getShaderSource: removeOptional(c.PFNGLGETSHADERSOURCEPROC),
+    getUniformLocation: removeOptional(c.PFNGLGETUNIFORMLOCATIONPROC),
+    getUniformfv: removeOptional(c.PFNGLGETUNIFORMFVPROC),
+    getUniformiv: removeOptional(c.PFNGLGETUNIFORMIVPROC),
+    getVertexAttribdv: removeOptional(c.PFNGLGETVERTEXATTRIBDVPROC),
+    getVertexAttribfv: removeOptional(c.PFNGLGETVERTEXATTRIBFVPROC),
+    getVertexAttribiv: removeOptional(c.PFNGLGETVERTEXATTRIBIVPROC),
+    getVertexAttribPointerv: removeOptional(c.PFNGLGETVERTEXATTRIBPOINTERVPROC),
+    isProgram: removeOptional(c.PFNGLISPROGRAMPROC),
+    isShader: removeOptional(c.PFNGLISSHADERPROC),
+    linkProgram: removeOptional(c.PFNGLLINKPROGRAMPROC),
+    shaderSource: removeOptional(c.PFNGLSHADERSOURCEPROC),
+    useProgram: removeOptional(c.PFNGLUSEPROGRAMPROC),
+    uniform1f: removeOptional(c.PFNGLUNIFORM1FPROC),
+    uniform2f: removeOptional(c.PFNGLUNIFORM2FPROC),
+    uniform3f: removeOptional(c.PFNGLUNIFORM3FPROC),
+    uniform4f: removeOptional(c.PFNGLUNIFORM4FPROC),
+    uniform1i: removeOptional(c.PFNGLUNIFORM1IPROC),
+    uniform2i: removeOptional(c.PFNGLUNIFORM2IPROC),
+    uniform3i: removeOptional(c.PFNGLUNIFORM3IPROC),
+    uniform4i: removeOptional(c.PFNGLUNIFORM4IPROC),
+    uniform1fv: removeOptional(c.PFNGLUNIFORM1FVPROC),
+    uniform2fv: removeOptional(c.PFNGLUNIFORM2FVPROC),
+    uniform3fv: removeOptional(c.PFNGLUNIFORM3FVPROC),
+    uniform4fv: removeOptional(c.PFNGLUNIFORM4FVPROC),
+    uniform1iv: removeOptional(c.PFNGLUNIFORM1IVPROC),
+    uniform2iv: removeOptional(c.PFNGLUNIFORM2IVPROC),
+    uniform3iv: removeOptional(c.PFNGLUNIFORM3IVPROC),
+    uniform4iv: removeOptional(c.PFNGLUNIFORM4IVPROC),
+    uniformMatrix2fv: removeOptional(c.PFNGLUNIFORMMATRIX2FVPROC),
+    uniformMatrix3fv: removeOptional(c.PFNGLUNIFORMMATRIX3FVPROC),
+    uniformMatrix4fv: removeOptional(c.PFNGLUNIFORMMATRIX4FVPROC),
+    validateProgram: removeOptional(c.PFNGLVALIDATEPROGRAMPROC),
+    vertexAttrib1d: removeOptional(c.PFNGLVERTEXATTRIB1DPROC),
+    vertexAttrib1dv: removeOptional(c.PFNGLVERTEXATTRIB1DVPROC),
+    vertexAttrib1f: removeOptional(c.PFNGLVERTEXATTRIB1FPROC),
+    vertexAttrib1fv: removeOptional(c.PFNGLVERTEXATTRIB1FVPROC),
+    vertexAttrib1s: removeOptional(c.PFNGLVERTEXATTRIB1SPROC),
+    vertexAttrib1sv: removeOptional(c.PFNGLVERTEXATTRIB1SVPROC),
+    vertexAttrib2d: removeOptional(c.PFNGLVERTEXATTRIB2DPROC),
+    vertexAttrib2dv: removeOptional(c.PFNGLVERTEXATTRIB2DVPROC),
+    vertexAttrib2f: removeOptional(c.PFNGLVERTEXATTRIB2FPROC),
+    vertexAttrib2fv: removeOptional(c.PFNGLVERTEXATTRIB2FVPROC),
+    vertexAttrib2s: removeOptional(c.PFNGLVERTEXATTRIB2SPROC),
+    vertexAttrib2sv: removeOptional(c.PFNGLVERTEXATTRIB2SVPROC),
+    vertexAttrib3d: removeOptional(c.PFNGLVERTEXATTRIB3DPROC),
+    vertexAttrib3dv: removeOptional(c.PFNGLVERTEXATTRIB3DVPROC),
+    vertexAttrib3f: removeOptional(c.PFNGLVERTEXATTRIB3FPROC),
+    vertexAttrib3fv: removeOptional(c.PFNGLVERTEXATTRIB3FVPROC),
+    vertexAttrib3s: removeOptional(c.PFNGLVERTEXATTRIB3SPROC),
+    vertexAttrib3sv: removeOptional(c.PFNGLVERTEXATTRIB3SVPROC),
+    vertexAttrib4Nbv: removeOptional(c.PFNGLVERTEXATTRIB4NBVPROC),
+    vertexAttrib4Niv: removeOptional(c.PFNGLVERTEXATTRIB4NIVPROC),
+    vertexAttrib4Nsv: removeOptional(c.PFNGLVERTEXATTRIB4NSVPROC),
+    vertexAttrib4Nub: removeOptional(c.PFNGLVERTEXATTRIB4NUBPROC),
+    vertexAttrib4Nubv: removeOptional(c.PFNGLVERTEXATTRIB4NUBVPROC),
+    vertexAttrib4Nuiv: removeOptional(c.PFNGLVERTEXATTRIB4NUIVPROC),
+    vertexAttrib4Nusv: removeOptional(c.PFNGLVERTEXATTRIB4NUSVPROC),
+    vertexAttrib4bv: removeOptional(c.PFNGLVERTEXATTRIB4BVPROC),
+    vertexAttrib4d: removeOptional(c.PFNGLVERTEXATTRIB4DPROC),
+    vertexAttrib4dv: removeOptional(c.PFNGLVERTEXATTRIB4DVPROC),
+    vertexAttrib4f: removeOptional(c.PFNGLVERTEXATTRIB4FPROC),
+    vertexAttrib4fv: removeOptional(c.PFNGLVERTEXATTRIB4FVPROC),
+    vertexAttrib4iv: removeOptional(c.PFNGLVERTEXATTRIB4IVPROC),
+    vertexAttrib4s: removeOptional(c.PFNGLVERTEXATTRIB4SPROC),
+    vertexAttrib4sv: removeOptional(c.PFNGLVERTEXATTRIB4SVPROC),
+    vertexAttrib4ubv: removeOptional(c.PFNGLVERTEXATTRIB4UBVPROC),
+    vertexAttrib4uiv: removeOptional(c.PFNGLVERTEXATTRIB4UIVPROC),
+    vertexAttrib4usv: removeOptional(c.PFNGLVERTEXATTRIB4USVPROC),
+    vertexAttribPointer: removeOptional(c.PFNGLVERTEXATTRIBPOINTERPROC),
 
     // 2.1
-    UniformMatrix2x3fv: removeOptional(c.PFNGLUNIFORMMATRIX2X3FVPROC),
-    UniformMatrix3x2fv: removeOptional(c.PFNGLUNIFORMMATRIX3X2FVPROC),
-    UniformMatrix2x4fv: removeOptional(c.PFNGLUNIFORMMATRIX2X4FVPROC),
-    UniformMatrix4x2fv: removeOptional(c.PFNGLUNIFORMMATRIX4X2FVPROC),
-    UniformMatrix3x4fv: removeOptional(c.PFNGLUNIFORMMATRIX3X4FVPROC),
-    UniformMatrix4x3fv: removeOptional(c.PFNGLUNIFORMMATRIX4X3FVPROC),
+    uniformMatrix2x3fv: removeOptional(c.PFNGLUNIFORMMATRIX2X3FVPROC),
+    uniformMatrix3x2fv: removeOptional(c.PFNGLUNIFORMMATRIX3X2FVPROC),
+    uniformMatrix2x4fv: removeOptional(c.PFNGLUNIFORMMATRIX2X4FVPROC),
+    uniformMatrix4x2fv: removeOptional(c.PFNGLUNIFORMMATRIX4X2FVPROC),
+    uniformMatrix3x4fv: removeOptional(c.PFNGLUNIFORMMATRIX3X4FVPROC),
+    uniformMatrix4x3fv: removeOptional(c.PFNGLUNIFORMMATRIX4X3FVPROC),
 
     // 3.0
-    ColorMaski: removeOptional(c.PFNGLCOLORMASKIPROC),
-    GetBooleani_v: removeOptional(c.PFNGLGETBOOLEANI_VPROC),
-    GetIntegeri_v: removeOptional(c.PFNGLGETINTEGERI_VPROC),
-    Enablei: removeOptional(c.PFNGLENABLEIPROC),
-    Disablei: removeOptional(c.PFNGLDISABLEIPROC),
-    IsEnabledi: removeOptional(c.PFNGLISENABLEDIPROC),
-    BeginTransformFeedback: removeOptional(c.PFNGLBEGINTRANSFORMFEEDBACKPROC),
-    EndTransformFeedback: removeOptional(c.PFNGLENDTRANSFORMFEEDBACKPROC),
-    BindBufferRange: removeOptional(c.PFNGLBINDBUFFERRANGEPROC),
-    BindBufferBase: removeOptional(c.PFNGLBINDBUFFERBASEPROC),
-    TransformFeedbackVaryings: removeOptional(c.PFNGLTRANSFORMFEEDBACKVARYINGSPROC),
-    GetTransformFeedbackVarying: removeOptional(c.PFNGLGETTRANSFORMFEEDBACKVARYINGPROC),
-    ClampColor: removeOptional(c.PFNGLCLAMPCOLORPROC),
-    BeginConditionalRender: removeOptional(c.PFNGLBEGINCONDITIONALRENDERPROC),
-    EndConditionalRender: removeOptional(c.PFNGLENDCONDITIONALRENDERPROC),
-    VertexAttribIPointer: removeOptional(c.PFNGLVERTEXATTRIBIPOINTERPROC),
-    GetVertexAttribIiv: removeOptional(c.PFNGLGETVERTEXATTRIBIIVPROC),
-    GetVertexAttribIuiv: removeOptional(c.PFNGLGETVERTEXATTRIBIUIVPROC),
-    VertexAttribI1i: removeOptional(c.PFNGLVERTEXATTRIBI1IPROC),
-    VertexAttribI2i: removeOptional(c.PFNGLVERTEXATTRIBI2IPROC),
-    VertexAttribI3i: removeOptional(c.PFNGLVERTEXATTRIBI3IPROC),
-    VertexAttribI4i: removeOptional(c.PFNGLVERTEXATTRIBI4IPROC),
-    VertexAttribI1ui: removeOptional(c.PFNGLVERTEXATTRIBI1UIPROC),
-    VertexAttribI2ui: removeOptional(c.PFNGLVERTEXATTRIBI2UIPROC),
-    VertexAttribI3ui: removeOptional(c.PFNGLVERTEXATTRIBI3UIPROC),
-    VertexAttribI4ui: removeOptional(c.PFNGLVERTEXATTRIBI4UIPROC),
-    VertexAttribI1iv: removeOptional(c.PFNGLVERTEXATTRIBI1IVPROC),
-    VertexAttribI2iv: removeOptional(c.PFNGLVERTEXATTRIBI2IVPROC),
-    VertexAttribI3iv: removeOptional(c.PFNGLVERTEXATTRIBI3IVPROC),
-    VertexAttribI4iv: removeOptional(c.PFNGLVERTEXATTRIBI4IVPROC),
-    VertexAttribI1uiv: removeOptional(c.PFNGLVERTEXATTRIBI1UIVPROC),
-    VertexAttribI2uiv: removeOptional(c.PFNGLVERTEXATTRIBI2UIVPROC),
-    VertexAttribI3uiv: removeOptional(c.PFNGLVERTEXATTRIBI3UIVPROC),
-    VertexAttribI4uiv: removeOptional(c.PFNGLVERTEXATTRIBI4UIVPROC),
-    VertexAttribI4bv: removeOptional(c.PFNGLVERTEXATTRIBI4BVPROC),
-    VertexAttribI4sv: removeOptional(c.PFNGLVERTEXATTRIBI4SVPROC),
-    VertexAttribI4ubv: removeOptional(c.PFNGLVERTEXATTRIBI4UBVPROC),
-    VertexAttribI4usv: removeOptional(c.PFNGLVERTEXATTRIBI4USVPROC),
-    GetUniformuiv: removeOptional(c.PFNGLGETUNIFORMUIVPROC),
-    BindFragDataLocation: removeOptional(c.PFNGLBINDFRAGDATALOCATIONPROC),
-    GetFragDataLocation: removeOptional(c.PFNGLGETFRAGDATALOCATIONPROC),
-    Uniform1ui: removeOptional(c.PFNGLUNIFORM1UIPROC),
-    Uniform2ui: removeOptional(c.PFNGLUNIFORM2UIPROC),
-    Uniform3ui: removeOptional(c.PFNGLUNIFORM3UIPROC),
-    Uniform4ui: removeOptional(c.PFNGLUNIFORM4UIPROC),
-    Uniform1uiv: removeOptional(c.PFNGLUNIFORM1UIVPROC),
-    Uniform2uiv: removeOptional(c.PFNGLUNIFORM2UIVPROC),
-    Uniform3uiv: removeOptional(c.PFNGLUNIFORM3UIVPROC),
-    Uniform4uiv: removeOptional(c.PFNGLUNIFORM4UIVPROC),
-    TexParameterIiv: removeOptional(c.PFNGLTEXPARAMETERIIVPROC),
-    TexParameterIuiv: removeOptional(c.PFNGLTEXPARAMETERIUIVPROC),
-    GetTexParameterIiv: removeOptional(c.PFNGLGETTEXPARAMETERIIVPROC),
-    GetTexParameterIuiv: removeOptional(c.PFNGLGETTEXPARAMETERIUIVPROC),
-    ClearBufferiv: removeOptional(c.PFNGLCLEARBUFFERIVPROC),
-    ClearBufferuiv: removeOptional(c.PFNGLCLEARBUFFERUIVPROC),
-    ClearBufferfv: removeOptional(c.PFNGLCLEARBUFFERFVPROC),
-    ClearBufferfi: removeOptional(c.PFNGLCLEARBUFFERFIPROC),
-    GetStringi: removeOptional(c.PFNGLGETSTRINGIPROC),
-    IsRenderbuffer: removeOptional(c.PFNGLISRENDERBUFFERPROC),
-    BindRenderbuffer: removeOptional(c.PFNGLBINDRENDERBUFFERPROC),
-    DeleteRenderbuffers: removeOptional(c.PFNGLDELETERENDERBUFFERSPROC),
-    GenRenderbuffers: removeOptional(c.PFNGLGENRENDERBUFFERSPROC),
-    RenderbufferStorage: removeOptional(c.PFNGLRENDERBUFFERSTORAGEPROC),
-    GetRenderbufferParameteriv: removeOptional(c.PFNGLGETRENDERBUFFERPARAMETERIVPROC),
-    IsFramebuffer: removeOptional(c.PFNGLISFRAMEBUFFERPROC),
-    BindFramebuffer: removeOptional(c.PFNGLBINDFRAMEBUFFERPROC),
-    DeleteFramebuffers: removeOptional(c.PFNGLDELETEFRAMEBUFFERSPROC),
-    GenFramebuffers: removeOptional(c.PFNGLGENFRAMEBUFFERSPROC),
-    CheckFramebufferStatus: removeOptional(c.PFNGLCHECKFRAMEBUFFERSTATUSPROC),
-    FramebufferTexture1D: removeOptional(c.PFNGLFRAMEBUFFERTEXTURE1DPROC),
-    FramebufferTexture2D: removeOptional(c.PFNGLFRAMEBUFFERTEXTURE2DPROC),
-    FramebufferTexture3D: removeOptional(c.PFNGLFRAMEBUFFERTEXTURE3DPROC),
-    FramebufferRenderbuffer: removeOptional(c.PFNGLFRAMEBUFFERRENDERBUFFERPROC),
-    GetFramebufferAttachmentParameteriv: removeOptional(c.PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC),
-    GenerateMipmap: removeOptional(c.PFNGLGENERATEMIPMAPPROC),
-    BlitFramebuffer: removeOptional(c.PFNGLBLITFRAMEBUFFERPROC),
-    RenderbufferStorageMultisample: removeOptional(c.PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC),
-    FramebufferTextureLayer: removeOptional(c.PFNGLFRAMEBUFFERTEXTURELAYERPROC),
-    MapBufferRange: removeOptional(c.PFNGLMAPBUFFERRANGEPROC),
-    FlushMappedBufferRange: removeOptional(c.PFNGLFLUSHMAPPEDBUFFERRANGEPROC),
-    BindVertexArray: removeOptional(c.PFNGLBINDVERTEXARRAYPROC),
-    DeleteVertexArrays: removeOptional(c.PFNGLDELETEVERTEXARRAYSPROC),
-    GenVertexArrays: removeOptional(c.PFNGLGENVERTEXARRAYSPROC),
-    IsVertexArray: removeOptional(c.PFNGLISVERTEXARRAYPROC),
+    colorMaski: removeOptional(c.PFNGLCOLORMASKIPROC),
+    getBooleani_v: removeOptional(c.PFNGLGETBOOLEANI_VPROC),
+    getIntegeri_v: removeOptional(c.PFNGLGETINTEGERI_VPROC),
+    enablei: removeOptional(c.PFNGLENABLEIPROC),
+    disablei: removeOptional(c.PFNGLDISABLEIPROC),
+    isEnabledi: removeOptional(c.PFNGLISENABLEDIPROC),
+    beginTransformFeedback: removeOptional(c.PFNGLBEGINTRANSFORMFEEDBACKPROC),
+    endTransformFeedback: removeOptional(c.PFNGLENDTRANSFORMFEEDBACKPROC),
+    bindBufferRange: removeOptional(c.PFNGLBINDBUFFERRANGEPROC),
+    bindBufferBase: removeOptional(c.PFNGLBINDBUFFERBASEPROC),
+    transformFeedbackVaryings: removeOptional(c.PFNGLTRANSFORMFEEDBACKVARYINGSPROC),
+    getTransformFeedbackVarying: removeOptional(c.PFNGLGETTRANSFORMFEEDBACKVARYINGPROC),
+    clampColor: removeOptional(c.PFNGLCLAMPCOLORPROC),
+    beginConditionalRender: removeOptional(c.PFNGLBEGINCONDITIONALRENDERPROC),
+    endConditionalRender: removeOptional(c.PFNGLENDCONDITIONALRENDERPROC),
+    vertexAttribIPointer: removeOptional(c.PFNGLVERTEXATTRIBIPOINTERPROC),
+    getVertexAttribIiv: removeOptional(c.PFNGLGETVERTEXATTRIBIIVPROC),
+    getVertexAttribIuiv: removeOptional(c.PFNGLGETVERTEXATTRIBIUIVPROC),
+    vertexAttribI1i: removeOptional(c.PFNGLVERTEXATTRIBI1IPROC),
+    vertexAttribI2i: removeOptional(c.PFNGLVERTEXATTRIBI2IPROC),
+    vertexAttribI3i: removeOptional(c.PFNGLVERTEXATTRIBI3IPROC),
+    vertexAttribI4i: removeOptional(c.PFNGLVERTEXATTRIBI4IPROC),
+    vertexAttribI1ui: removeOptional(c.PFNGLVERTEXATTRIBI1UIPROC),
+    vertexAttribI2ui: removeOptional(c.PFNGLVERTEXATTRIBI2UIPROC),
+    vertexAttribI3ui: removeOptional(c.PFNGLVERTEXATTRIBI3UIPROC),
+    vertexAttribI4ui: removeOptional(c.PFNGLVERTEXATTRIBI4UIPROC),
+    vertexAttribI1iv: removeOptional(c.PFNGLVERTEXATTRIBI1IVPROC),
+    vertexAttribI2iv: removeOptional(c.PFNGLVERTEXATTRIBI2IVPROC),
+    vertexAttribI3iv: removeOptional(c.PFNGLVERTEXATTRIBI3IVPROC),
+    vertexAttribI4iv: removeOptional(c.PFNGLVERTEXATTRIBI4IVPROC),
+    vertexAttribI1uiv: removeOptional(c.PFNGLVERTEXATTRIBI1UIVPROC),
+    vertexAttribI2uiv: removeOptional(c.PFNGLVERTEXATTRIBI2UIVPROC),
+    vertexAttribI3uiv: removeOptional(c.PFNGLVERTEXATTRIBI3UIVPROC),
+    vertexAttribI4uiv: removeOptional(c.PFNGLVERTEXATTRIBI4UIVPROC),
+    vertexAttribI4bv: removeOptional(c.PFNGLVERTEXATTRIBI4BVPROC),
+    vertexAttribI4sv: removeOptional(c.PFNGLVERTEXATTRIBI4SVPROC),
+    vertexAttribI4ubv: removeOptional(c.PFNGLVERTEXATTRIBI4UBVPROC),
+    vertexAttribI4usv: removeOptional(c.PFNGLVERTEXATTRIBI4USVPROC),
+    getUniformuiv: removeOptional(c.PFNGLGETUNIFORMUIVPROC),
+    bindFragDataLocation: removeOptional(c.PFNGLBINDFRAGDATALOCATIONPROC),
+    getFragDataLocation: removeOptional(c.PFNGLGETFRAGDATALOCATIONPROC),
+    uniform1ui: removeOptional(c.PFNGLUNIFORM1UIPROC),
+    uniform2ui: removeOptional(c.PFNGLUNIFORM2UIPROC),
+    uniform3ui: removeOptional(c.PFNGLUNIFORM3UIPROC),
+    uniform4ui: removeOptional(c.PFNGLUNIFORM4UIPROC),
+    uniform1uiv: removeOptional(c.PFNGLUNIFORM1UIVPROC),
+    uniform2uiv: removeOptional(c.PFNGLUNIFORM2UIVPROC),
+    uniform3uiv: removeOptional(c.PFNGLUNIFORM3UIVPROC),
+    uniform4uiv: removeOptional(c.PFNGLUNIFORM4UIVPROC),
+    texParameterIiv: removeOptional(c.PFNGLTEXPARAMETERIIVPROC),
+    texParameterIuiv: removeOptional(c.PFNGLTEXPARAMETERIUIVPROC),
+    getTexParameterIiv: removeOptional(c.PFNGLGETTEXPARAMETERIIVPROC),
+    getTexParameterIuiv: removeOptional(c.PFNGLGETTEXPARAMETERIUIVPROC),
+    clearBufferiv: removeOptional(c.PFNGLCLEARBUFFERIVPROC),
+    clearBufferuiv: removeOptional(c.PFNGLCLEARBUFFERUIVPROC),
+    clearBufferfv: removeOptional(c.PFNGLCLEARBUFFERFVPROC),
+    clearBufferfi: removeOptional(c.PFNGLCLEARBUFFERFIPROC),
+    getStringi: removeOptional(c.PFNGLGETSTRINGIPROC),
+    isRenderbuffer: removeOptional(c.PFNGLISRENDERBUFFERPROC),
+    bindRenderbuffer: removeOptional(c.PFNGLBINDRENDERBUFFERPROC),
+    deleteRenderbuffers: removeOptional(c.PFNGLDELETERENDERBUFFERSPROC),
+    genRenderbuffers: removeOptional(c.PFNGLGENRENDERBUFFERSPROC),
+    renderbufferStorage: removeOptional(c.PFNGLRENDERBUFFERSTORAGEPROC),
+    getRenderbufferParameteriv: removeOptional(c.PFNGLGETRENDERBUFFERPARAMETERIVPROC),
+    isFramebuffer: removeOptional(c.PFNGLISFRAMEBUFFERPROC),
+    bindFramebuffer: removeOptional(c.PFNGLBINDFRAMEBUFFERPROC),
+    deleteFramebuffers: removeOptional(c.PFNGLDELETEFRAMEBUFFERSPROC),
+    genFramebuffers: removeOptional(c.PFNGLGENFRAMEBUFFERSPROC),
+    checkFramebufferStatus: removeOptional(c.PFNGLCHECKFRAMEBUFFERSTATUSPROC),
+    framebufferTexture1D: removeOptional(c.PFNGLFRAMEBUFFERTEXTURE1DPROC),
+    framebufferTexture2D: removeOptional(c.PFNGLFRAMEBUFFERTEXTURE2DPROC),
+    framebufferTexture3D: removeOptional(c.PFNGLFRAMEBUFFERTEXTURE3DPROC),
+    framebufferRenderbuffer: removeOptional(c.PFNGLFRAMEBUFFERRENDERBUFFERPROC),
+    getFramebufferAttachmentParameteriv: removeOptional(c.PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC),
+    generateMipmap: removeOptional(c.PFNGLGENERATEMIPMAPPROC),
+    blitFramebuffer: removeOptional(c.PFNGLBLITFRAMEBUFFERPROC),
+    renderbufferStorageMultisample: removeOptional(c.PFNGLRENDERBUFFERSTORAGEMULTISAMPLEPROC),
+    framebufferTextureLayer: removeOptional(c.PFNGLFRAMEBUFFERTEXTURELAYERPROC),
+    mapBufferRange: removeOptional(c.PFNGLMAPBUFFERRANGEPROC),
+    flushMappedBufferRange: removeOptional(c.PFNGLFLUSHMAPPEDBUFFERRANGEPROC),
+    bindVertexArray: removeOptional(c.PFNGLBINDVERTEXARRAYPROC),
+    deleteVertexArrays: removeOptional(c.PFNGLDELETEVERTEXARRAYSPROC),
+    genVertexArrays: removeOptional(c.PFNGLGENVERTEXARRAYSPROC),
+    isVertexArray: removeOptional(c.PFNGLISVERTEXARRAYPROC),
 
     // 3.1
-    DrawArraysInstanced: removeOptional(c.PFNGLDRAWARRAYSINSTANCEDPROC),
-    DrawElementsInstanced: removeOptional(c.PFNGLDRAWELEMENTSINSTANCEDPROC),
-    TexBuffer: removeOptional(c.PFNGLTEXBUFFERPROC),
-    PrimitiveRestartIndex: removeOptional(c.PFNGLPRIMITIVERESTARTINDEXPROC),
-    CopyBufferSubData: removeOptional(c.PFNGLCOPYBUFFERSUBDATAPROC),
-    GetUniformIndices: removeOptional(c.PFNGLGETUNIFORMINDICESPROC),
-    GetActiveUniformsiv: removeOptional(c.PFNGLGETACTIVEUNIFORMSIVPROC),
-    GetActiveUniformName: removeOptional(c.PFNGLGETACTIVEUNIFORMNAMEPROC),
-    GetUniformBlockIndex: removeOptional(c.PFNGLGETUNIFORMBLOCKINDEXPROC),
-    GetActiveUniformBlockiv: removeOptional(c.PFNGLGETACTIVEUNIFORMBLOCKIVPROC),
-    GetActiveUniformBlockName: removeOptional(c.PFNGLGETACTIVEUNIFORMBLOCKNAMEPROC),
-    UniformBlockBinding: removeOptional(c.PFNGLUNIFORMBLOCKBINDINGPROC),
+    drawArraysInstanced: removeOptional(c.PFNGLDRAWARRAYSINSTANCEDPROC),
+    drawElementsInstanced: removeOptional(c.PFNGLDRAWELEMENTSINSTANCEDPROC),
+    texBuffer: removeOptional(c.PFNGLTEXBUFFERPROC),
+    primitiveRestartIndex: removeOptional(c.PFNGLPRIMITIVERESTARTINDEXPROC),
+    copyBufferSubData: removeOptional(c.PFNGLCOPYBUFFERSUBDATAPROC),
+    getUniformIndices: removeOptional(c.PFNGLGETUNIFORMINDICESPROC),
+    getActiveUniformsiv: removeOptional(c.PFNGLGETACTIVEUNIFORMSIVPROC),
+    getActiveUniformName: removeOptional(c.PFNGLGETACTIVEUNIFORMNAMEPROC),
+    getUniformBlockIndex: removeOptional(c.PFNGLGETUNIFORMBLOCKINDEXPROC),
+    getActiveUniformBlockiv: removeOptional(c.PFNGLGETACTIVEUNIFORMBLOCKIVPROC),
+    getActiveUniformBlockName: removeOptional(c.PFNGLGETACTIVEUNIFORMBLOCKNAMEPROC),
+    uniformBlockBinding: removeOptional(c.PFNGLUNIFORMBLOCKBINDINGPROC),
 
     // 3.2
-    DrawElementsBaseVertex: removeOptional(c.PFNGLDRAWELEMENTSBASEVERTEXPROC),
-    DrawRangeElementsBaseVertex: removeOptional(c.PFNGLDRAWRANGEELEMENTSBASEVERTEXPROC),
-    DrawElementsInstancedBaseVertex: removeOptional(c.PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXPROC),
-    MultiDrawElementsBaseVertex: removeOptional(c.PFNGLMULTIDRAWELEMENTSBASEVERTEXPROC),
-    ProvokingVertex: removeOptional(c.PFNGLPROVOKINGVERTEXPROC),
-    FenceSync: removeOptional(c.PFNGLFENCESYNCPROC),
-    IsSync: removeOptional(c.PFNGLISSYNCPROC),
-    DeleteSync: removeOptional(c.PFNGLDELETESYNCPROC),
-    ClientWaitSync: removeOptional(c.PFNGLCLIENTWAITSYNCPROC),
-    WaitSync: removeOptional(c.PFNGLWAITSYNCPROC),
-    GetInteger64v: removeOptional(c.PFNGLGETINTEGER64VPROC),
-    GetSynciv: removeOptional(c.PFNGLGETSYNCIVPROC),
-    GetInteger64i_v: removeOptional(c.PFNGLGETINTEGER64I_VPROC),
-    GetBufferParameteri64v: removeOptional(c.PFNGLGETBUFFERPARAMETERI64VPROC),
-    FramebufferTexture: removeOptional(c.PFNGLFRAMEBUFFERTEXTUREPROC),
-    TexImage2DMultisample: removeOptional(c.PFNGLTEXIMAGE2DMULTISAMPLEPROC),
-    TexImage3DMultisample: removeOptional(c.PFNGLTEXIMAGE3DMULTISAMPLEPROC),
-    GetMultisamplefv: removeOptional(c.PFNGLGETMULTISAMPLEFVPROC),
-    SampleMaski: removeOptional(c.PFNGLSAMPLEMASKIPROC),
+    drawElementsBaseVertex: removeOptional(c.PFNGLDRAWELEMENTSBASEVERTEXPROC),
+    drawRangeElementsBaseVertex: removeOptional(c.PFNGLDRAWRANGEELEMENTSBASEVERTEXPROC),
+    drawElementsInstancedBaseVertex: removeOptional(c.PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXPROC),
+    multiDrawElementsBaseVertex: removeOptional(c.PFNGLMULTIDRAWELEMENTSBASEVERTEXPROC),
+    provokingVertex: removeOptional(c.PFNGLPROVOKINGVERTEXPROC),
+    fenceSync: removeOptional(c.PFNGLFENCESYNCPROC),
+    isSync: removeOptional(c.PFNGLISSYNCPROC),
+    deleteSync: removeOptional(c.PFNGLDELETESYNCPROC),
+    clientWaitSync: removeOptional(c.PFNGLCLIENTWAITSYNCPROC),
+    waitSync: removeOptional(c.PFNGLWAITSYNCPROC),
+    getInteger64v: removeOptional(c.PFNGLGETINTEGER64VPROC),
+    getSynciv: removeOptional(c.PFNGLGETSYNCIVPROC),
+    getInteger64i_v: removeOptional(c.PFNGLGETINTEGER64I_VPROC),
+    getBufferParameteri64v: removeOptional(c.PFNGLGETBUFFERPARAMETERI64VPROC),
+    framebufferTexture: removeOptional(c.PFNGLFRAMEBUFFERTEXTUREPROC),
+    texImage2DMultisample: removeOptional(c.PFNGLTEXIMAGE2DMULTISAMPLEPROC),
+    texImage3DMultisample: removeOptional(c.PFNGLTEXIMAGE3DMULTISAMPLEPROC),
+    getMultisamplefv: removeOptional(c.PFNGLGETMULTISAMPLEFVPROC),
+    sampleMaski: removeOptional(c.PFNGLSAMPLEMASKIPROC),
 
     // 3.3
-    BindFragDataLocationIndexed: removeOptional(c.PFNGLBINDFRAGDATALOCATIONINDEXEDPROC),
-    GetFragDataIndex: removeOptional(c.PFNGLGETFRAGDATAINDEXPROC),
-    GenSamplers: removeOptional(c.PFNGLGENSAMPLERSPROC),
-    DeleteSamplers: removeOptional(c.PFNGLDELETESAMPLERSPROC),
-    IsSampler: removeOptional(c.PFNGLISSAMPLERPROC),
-    BindSampler: removeOptional(c.PFNGLBINDSAMPLERPROC),
-    SamplerParameteri: removeOptional(c.PFNGLSAMPLERPARAMETERIPROC),
-    SamplerParameteriv: removeOptional(c.PFNGLSAMPLERPARAMETERIVPROC),
-    SamplerParameterf: removeOptional(c.PFNGLSAMPLERPARAMETERFPROC),
-    SamplerParameterfv: removeOptional(c.PFNGLSAMPLERPARAMETERFVPROC),
-    SamplerParameterIiv: removeOptional(c.PFNGLSAMPLERPARAMETERIIVPROC),
-    SamplerParameterIuiv: removeOptional(c.PFNGLSAMPLERPARAMETERIUIVPROC),
-    GetSamplerParameteriv: removeOptional(c.PFNGLGETSAMPLERPARAMETERIVPROC),
-    GetSamplerParameterIiv: removeOptional(c.PFNGLGETSAMPLERPARAMETERIIVPROC),
-    GetSamplerParameterfv: removeOptional(c.PFNGLGETSAMPLERPARAMETERFVPROC),
-    GetSamplerParameterIuiv: removeOptional(c.PFNGLGETSAMPLERPARAMETERIUIVPROC),
-    QueryCounter: removeOptional(c.PFNGLQUERYCOUNTERPROC),
-    GetQueryObjecti64v: removeOptional(c.PFNGLGETQUERYOBJECTI64VPROC),
-    GetQueryObjectui64v: removeOptional(c.PFNGLGETQUERYOBJECTUI64VPROC),
-    VertexAttribDivisor: removeOptional(c.PFNGLVERTEXATTRIBDIVISORPROC),
-    VertexAttribP1ui: removeOptional(c.PFNGLVERTEXATTRIBP1UIPROC),
-    VertexAttribP1uiv: removeOptional(c.PFNGLVERTEXATTRIBP1UIVPROC),
-    VertexAttribP2ui: removeOptional(c.PFNGLVERTEXATTRIBP2UIPROC),
-    VertexAttribP2uiv: removeOptional(c.PFNGLVERTEXATTRIBP2UIVPROC),
-    VertexAttribP3ui: removeOptional(c.PFNGLVERTEXATTRIBP3UIPROC),
-    VertexAttribP3uiv: removeOptional(c.PFNGLVERTEXATTRIBP3UIVPROC),
-    VertexAttribP4ui: removeOptional(c.PFNGLVERTEXATTRIBP4UIPROC),
-    VertexAttribP4uiv: removeOptional(c.PFNGLVERTEXATTRIBP4UIVPROC),
+    bindFragDataLocationIndexed: removeOptional(c.PFNGLBINDFRAGDATALOCATIONINDEXEDPROC),
+    getFragDataIndex: removeOptional(c.PFNGLGETFRAGDATAINDEXPROC),
+    genSamplers: removeOptional(c.PFNGLGENSAMPLERSPROC),
+    deleteSamplers: removeOptional(c.PFNGLDELETESAMPLERSPROC),
+    isSampler: removeOptional(c.PFNGLISSAMPLERPROC),
+    bindSampler: removeOptional(c.PFNGLBINDSAMPLERPROC),
+    samplerParameteri: removeOptional(c.PFNGLSAMPLERPARAMETERIPROC),
+    samplerParameteriv: removeOptional(c.PFNGLSAMPLERPARAMETERIVPROC),
+    samplerParameterf: removeOptional(c.PFNGLSAMPLERPARAMETERFPROC),
+    samplerParameterfv: removeOptional(c.PFNGLSAMPLERPARAMETERFVPROC),
+    samplerParameterIiv: removeOptional(c.PFNGLSAMPLERPARAMETERIIVPROC),
+    samplerParameterIuiv: removeOptional(c.PFNGLSAMPLERPARAMETERIUIVPROC),
+    getSamplerParameteriv: removeOptional(c.PFNGLGETSAMPLERPARAMETERIVPROC),
+    getSamplerParameterIiv: removeOptional(c.PFNGLGETSAMPLERPARAMETERIIVPROC),
+    getSamplerParameterfv: removeOptional(c.PFNGLGETSAMPLERPARAMETERFVPROC),
+    getSamplerParameterIuiv: removeOptional(c.PFNGLGETSAMPLERPARAMETERIUIVPROC),
+    queryCounter: removeOptional(c.PFNGLQUERYCOUNTERPROC),
+    getQueryObjecti64v: removeOptional(c.PFNGLGETQUERYOBJECTI64VPROC),
+    getQueryObjectui64v: removeOptional(c.PFNGLGETQUERYOBJECTUI64VPROC),
+    vertexAttribDivisor: removeOptional(c.PFNGLVERTEXATTRIBDIVISORPROC),
+    vertexAttribP1ui: removeOptional(c.PFNGLVERTEXATTRIBP1UIPROC),
+    vertexAttribP1uiv: removeOptional(c.PFNGLVERTEXATTRIBP1UIVPROC),
+    vertexAttribP2ui: removeOptional(c.PFNGLVERTEXATTRIBP2UIPROC),
+    vertexAttribP2uiv: removeOptional(c.PFNGLVERTEXATTRIBP2UIVPROC),
+    vertexAttribP3ui: removeOptional(c.PFNGLVERTEXATTRIBP3UIPROC),
+    vertexAttribP3uiv: removeOptional(c.PFNGLVERTEXATTRIBP3UIVPROC),
+    vertexAttribP4ui: removeOptional(c.PFNGLVERTEXATTRIBP4UIPROC),
+    vertexAttribP4uiv: removeOptional(c.PFNGLVERTEXATTRIBP4UIVPROC),
 
     // 4.0
-    MinSampleShading: removeOptional(c.PFNGLMINSAMPLESHADINGPROC),
-    BlendEquationi: removeOptional(c.PFNGLBLENDEQUATIONIPROC),
-    BlendEquationSeparatei: removeOptional(c.PFNGLBLENDEQUATIONSEPARATEIPROC),
-    BlendFunci: removeOptional(c.PFNGLBLENDFUNCIPROC),
-    BlendFuncSeparatei: removeOptional(c.PFNGLBLENDFUNCSEPARATEIPROC),
-    DrawArraysIndirect: removeOptional(c.PFNGLDRAWARRAYSINDIRECTPROC),
-    DrawElementsIndirect: removeOptional(c.PFNGLDRAWELEMENTSINDIRECTPROC),
-    Uniform1d: removeOptional(c.PFNGLUNIFORM1DPROC),
-    Uniform2d: removeOptional(c.PFNGLUNIFORM2DPROC),
-    Uniform3d: removeOptional(c.PFNGLUNIFORM3DPROC),
-    Uniform4d: removeOptional(c.PFNGLUNIFORM4DPROC),
-    Uniform1dv: removeOptional(c.PFNGLUNIFORM1DVPROC),
-    Uniform2dv: removeOptional(c.PFNGLUNIFORM2DVPROC),
-    Uniform3dv: removeOptional(c.PFNGLUNIFORM3DVPROC),
-    Uniform4dv: removeOptional(c.PFNGLUNIFORM4DVPROC),
-    UniformMatrix2dv: removeOptional(c.PFNGLUNIFORMMATRIX2DVPROC),
-    UniformMatrix3dv: removeOptional(c.PFNGLUNIFORMMATRIX3DVPROC),
-    UniformMatrix4dv: removeOptional(c.PFNGLUNIFORMMATRIX4DVPROC),
-    UniformMatrix2x3dv: removeOptional(c.PFNGLUNIFORMMATRIX2X3DVPROC),
-    UniformMatrix2x4dv: removeOptional(c.PFNGLUNIFORMMATRIX2X4DVPROC),
-    UniformMatrix3x2dv: removeOptional(c.PFNGLUNIFORMMATRIX3X2DVPROC),
-    UniformMatrix3x4dv: removeOptional(c.PFNGLUNIFORMMATRIX3X4DVPROC),
-    UniformMatrix4x2dv: removeOptional(c.PFNGLUNIFORMMATRIX4X2DVPROC),
-    UniformMatrix4x3dv: removeOptional(c.PFNGLUNIFORMMATRIX4X3DVPROC),
-    GetUniformdv: removeOptional(c.PFNGLGETUNIFORMDVPROC),
-    GetSubroutineUniformLocation: removeOptional(c.PFNGLGETSUBROUTINEUNIFORMLOCATIONPROC),
-    GetSubroutineIndex: removeOptional(c.PFNGLGETSUBROUTINEINDEXPROC),
-    GetActiveSubroutineUniformiv: removeOptional(c.PFNGLGETACTIVESUBROUTINEUNIFORMIVPROC),
-    GetActiveSubroutineUniformName: removeOptional(c.PFNGLGETACTIVESUBROUTINEUNIFORMNAMEPROC),
-    GetActiveSubroutineName: removeOptional(c.PFNGLGETACTIVESUBROUTINENAMEPROC),
-    UniformSubroutinesuiv: removeOptional(c.PFNGLUNIFORMSUBROUTINESUIVPROC),
-    GetUniformSubroutineuiv: removeOptional(c.PFNGLGETUNIFORMSUBROUTINEUIVPROC),
-    GetProgramStageiv: removeOptional(c.PFNGLGETPROGRAMSTAGEIVPROC),
-    PatchParameteri: removeOptional(c.PFNGLPATCHPARAMETERIPROC),
-    PatchParameterfv: removeOptional(c.PFNGLPATCHPARAMETERFVPROC),
-    BindTransformFeedback: removeOptional(c.PFNGLBINDTRANSFORMFEEDBACKPROC),
-    DeleteTransformFeedbacks: removeOptional(c.PFNGLDELETETRANSFORMFEEDBACKSPROC),
-    GenTransformFeedbacks: removeOptional(c.PFNGLGENTRANSFORMFEEDBACKSPROC),
-    IsTransformFeedback: removeOptional(c.PFNGLISTRANSFORMFEEDBACKPROC),
-    PauseTransformFeedback: removeOptional(c.PFNGLPAUSETRANSFORMFEEDBACKPROC),
-    ResumeTransformFeedback: removeOptional(c.PFNGLRESUMETRANSFORMFEEDBACKPROC),
-    DrawTransformFeedback: removeOptional(c.PFNGLDRAWTRANSFORMFEEDBACKPROC),
-    DrawTransformFeedbackStream: removeOptional(c.PFNGLDRAWTRANSFORMFEEDBACKSTREAMPROC),
-    BeginQueryIndexed: removeOptional(c.PFNGLBEGINQUERYINDEXEDPROC),
-    EndQueryIndexed: removeOptional(c.PFNGLENDQUERYINDEXEDPROC),
-    GetQueryIndexediv: removeOptional(c.PFNGLGETQUERYINDEXEDIVPROC),
+    minSampleShading: removeOptional(c.PFNGLMINSAMPLESHADINGPROC),
+    blendEquationi: removeOptional(c.PFNGLBLENDEQUATIONIPROC),
+    blendEquationSeparatei: removeOptional(c.PFNGLBLENDEQUATIONSEPARATEIPROC),
+    blendFunci: removeOptional(c.PFNGLBLENDFUNCIPROC),
+    blendFuncSeparatei: removeOptional(c.PFNGLBLENDFUNCSEPARATEIPROC),
+    drawArraysIndirect: removeOptional(c.PFNGLDRAWARRAYSINDIRECTPROC),
+    drawElementsIndirect: removeOptional(c.PFNGLDRAWELEMENTSINDIRECTPROC),
+    uniform1d: removeOptional(c.PFNGLUNIFORM1DPROC),
+    uniform2d: removeOptional(c.PFNGLUNIFORM2DPROC),
+    uniform3d: removeOptional(c.PFNGLUNIFORM3DPROC),
+    uniform4d: removeOptional(c.PFNGLUNIFORM4DPROC),
+    uniform1dv: removeOptional(c.PFNGLUNIFORM1DVPROC),
+    uniform2dv: removeOptional(c.PFNGLUNIFORM2DVPROC),
+    uniform3dv: removeOptional(c.PFNGLUNIFORM3DVPROC),
+    uniform4dv: removeOptional(c.PFNGLUNIFORM4DVPROC),
+    uniformMatrix2dv: removeOptional(c.PFNGLUNIFORMMATRIX2DVPROC),
+    uniformMatrix3dv: removeOptional(c.PFNGLUNIFORMMATRIX3DVPROC),
+    uniformMatrix4dv: removeOptional(c.PFNGLUNIFORMMATRIX4DVPROC),
+    uniformMatrix2x3dv: removeOptional(c.PFNGLUNIFORMMATRIX2X3DVPROC),
+    uniformMatrix2x4dv: removeOptional(c.PFNGLUNIFORMMATRIX2X4DVPROC),
+    uniformMatrix3x2dv: removeOptional(c.PFNGLUNIFORMMATRIX3X2DVPROC),
+    uniformMatrix3x4dv: removeOptional(c.PFNGLUNIFORMMATRIX3X4DVPROC),
+    uniformMatrix4x2dv: removeOptional(c.PFNGLUNIFORMMATRIX4X2DVPROC),
+    uniformMatrix4x3dv: removeOptional(c.PFNGLUNIFORMMATRIX4X3DVPROC),
+    getUniformdv: removeOptional(c.PFNGLGETUNIFORMDVPROC),
+    getSubroutineUniformLocation: removeOptional(c.PFNGLGETSUBROUTINEUNIFORMLOCATIONPROC),
+    getSubroutineIndex: removeOptional(c.PFNGLGETSUBROUTINEINDEXPROC),
+    getActiveSubroutineUniformiv: removeOptional(c.PFNGLGETACTIVESUBROUTINEUNIFORMIVPROC),
+    getActiveSubroutineUniformName: removeOptional(c.PFNGLGETACTIVESUBROUTINEUNIFORMNAMEPROC),
+    getActiveSubroutineName: removeOptional(c.PFNGLGETACTIVESUBROUTINENAMEPROC),
+    uniformSubroutinesuiv: removeOptional(c.PFNGLUNIFORMSUBROUTINESUIVPROC),
+    getUniformSubroutineuiv: removeOptional(c.PFNGLGETUNIFORMSUBROUTINEUIVPROC),
+    getProgramStageiv: removeOptional(c.PFNGLGETPROGRAMSTAGEIVPROC),
+    patchParameteri: removeOptional(c.PFNGLPATCHPARAMETERIPROC),
+    patchParameterfv: removeOptional(c.PFNGLPATCHPARAMETERFVPROC),
+    bindTransformFeedback: removeOptional(c.PFNGLBINDTRANSFORMFEEDBACKPROC),
+    deleteTransformFeedbacks: removeOptional(c.PFNGLDELETETRANSFORMFEEDBACKSPROC),
+    genTransformFeedbacks: removeOptional(c.PFNGLGENTRANSFORMFEEDBACKSPROC),
+    isTransformFeedback: removeOptional(c.PFNGLISTRANSFORMFEEDBACKPROC),
+    pauseTransformFeedback: removeOptional(c.PFNGLPAUSETRANSFORMFEEDBACKPROC),
+    resumeTransformFeedback: removeOptional(c.PFNGLRESUMETRANSFORMFEEDBACKPROC),
+    drawTransformFeedback: removeOptional(c.PFNGLDRAWTRANSFORMFEEDBACKPROC),
+    drawTransformFeedbackStream: removeOptional(c.PFNGLDRAWTRANSFORMFEEDBACKSTREAMPROC),
+    beginQueryIndexed: removeOptional(c.PFNGLBEGINQUERYINDEXEDPROC),
+    endQueryIndexed: removeOptional(c.PFNGLENDQUERYINDEXEDPROC),
+    getQueryIndexediv: removeOptional(c.PFNGLGETQUERYINDEXEDIVPROC),
 
     // 4.1
-    ReleaseShaderCompiler: removeOptional(c.PFNGLRELEASESHADERCOMPILERPROC),
-    ShaderBinary: removeOptional(c.PFNGLSHADERBINARYPROC),
-    GetShaderPrecisionFormat: removeOptional(c.PFNGLGETSHADERPRECISIONFORMATPROC),
-    DepthRangef: removeOptional(c.PFNGLDEPTHRANGEFPROC),
-    ClearDepthf: removeOptional(c.PFNGLCLEARDEPTHFPROC),
-    GetProgramBinary: removeOptional(c.PFNGLGETPROGRAMBINARYPROC),
-    ProgramBinary: removeOptional(c.PFNGLPROGRAMBINARYPROC),
-    ProgramParameteri: removeOptional(c.PFNGLPROGRAMPARAMETERIPROC),
-    UseProgramStages: removeOptional(c.PFNGLUSEPROGRAMSTAGESPROC),
-    ActiveShaderProgram: removeOptional(c.PFNGLACTIVESHADERPROGRAMPROC),
-    CreateShaderProgramv: removeOptional(c.PFNGLCREATESHADERPROGRAMVPROC),
-    BindProgramPipeline: removeOptional(c.PFNGLBINDPROGRAMPIPELINEPROC),
-    DeleteProgramPipelines: removeOptional(c.PFNGLDELETEPROGRAMPIPELINESPROC),
-    GenProgramPipelines: removeOptional(c.PFNGLGENPROGRAMPIPELINESPROC),
-    IsProgramPipeline: removeOptional(c.PFNGLISPROGRAMPIPELINEPROC),
-    GetProgramPipelineiv: removeOptional(c.PFNGLGETPROGRAMPIPELINEIVPROC),
-    ProgramUniform1i: removeOptional(c.PFNGLPROGRAMUNIFORM1IPROC),
-    ProgramUniform1iv: removeOptional(c.PFNGLPROGRAMUNIFORM1IVPROC),
-    ProgramUniform1f: removeOptional(c.PFNGLPROGRAMUNIFORM1FPROC),
-    ProgramUniform1fv: removeOptional(c.PFNGLPROGRAMUNIFORM1FVPROC),
-    ProgramUniform1d: removeOptional(c.PFNGLPROGRAMUNIFORM1DPROC),
-    ProgramUniform1dv: removeOptional(c.PFNGLPROGRAMUNIFORM1DVPROC),
-    ProgramUniform1ui: removeOptional(c.PFNGLPROGRAMUNIFORM1UIPROC),
-    ProgramUniform1uiv: removeOptional(c.PFNGLPROGRAMUNIFORM1UIVPROC),
-    ProgramUniform2i: removeOptional(c.PFNGLPROGRAMUNIFORM2IPROC),
-    ProgramUniform2iv: removeOptional(c.PFNGLPROGRAMUNIFORM2IVPROC),
-    ProgramUniform2f: removeOptional(c.PFNGLPROGRAMUNIFORM2FPROC),
-    ProgramUniform2fv: removeOptional(c.PFNGLPROGRAMUNIFORM2FVPROC),
-    ProgramUniform2d: removeOptional(c.PFNGLPROGRAMUNIFORM2DPROC),
-    ProgramUniform2dv: removeOptional(c.PFNGLPROGRAMUNIFORM2DVPROC),
-    ProgramUniform2ui: removeOptional(c.PFNGLPROGRAMUNIFORM2UIPROC),
-    ProgramUniform2uiv: removeOptional(c.PFNGLPROGRAMUNIFORM2UIVPROC),
-    ProgramUniform3i: removeOptional(c.PFNGLPROGRAMUNIFORM3IPROC),
-    ProgramUniform3iv: removeOptional(c.PFNGLPROGRAMUNIFORM3IVPROC),
-    ProgramUniform3f: removeOptional(c.PFNGLPROGRAMUNIFORM3FPROC),
-    ProgramUniform3fv: removeOptional(c.PFNGLPROGRAMUNIFORM3FVPROC),
-    ProgramUniform3d: removeOptional(c.PFNGLPROGRAMUNIFORM3DPROC),
-    ProgramUniform3dv: removeOptional(c.PFNGLPROGRAMUNIFORM3DVPROC),
-    ProgramUniform3ui: removeOptional(c.PFNGLPROGRAMUNIFORM3UIPROC),
-    ProgramUniform3uiv: removeOptional(c.PFNGLPROGRAMUNIFORM3UIVPROC),
-    ProgramUniform4i: removeOptional(c.PFNGLPROGRAMUNIFORM4IPROC),
-    ProgramUniform4iv: removeOptional(c.PFNGLPROGRAMUNIFORM4IVPROC),
-    ProgramUniform4f: removeOptional(c.PFNGLPROGRAMUNIFORM4FPROC),
-    ProgramUniform4fv: removeOptional(c.PFNGLPROGRAMUNIFORM4FVPROC),
-    ProgramUniform4d: removeOptional(c.PFNGLPROGRAMUNIFORM4DPROC),
-    ProgramUniform4dv: removeOptional(c.PFNGLPROGRAMUNIFORM4DVPROC),
-    ProgramUniform4ui: removeOptional(c.PFNGLPROGRAMUNIFORM4UIPROC),
-    ProgramUniform4uiv: removeOptional(c.PFNGLPROGRAMUNIFORM4UIVPROC),
-    ProgramUniformMatrix2fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2FVPROC),
-    ProgramUniformMatrix3fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3FVPROC),
-    ProgramUniformMatrix4fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4FVPROC),
-    ProgramUniformMatrix2dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2DVPROC),
-    ProgramUniformMatrix3dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3DVPROC),
-    ProgramUniformMatrix4dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4DVPROC),
-    ProgramUniformMatrix2x3fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2X3FVPROC),
-    ProgramUniformMatrix3x2fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3X2FVPROC),
-    ProgramUniformMatrix2x4fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2X4FVPROC),
-    ProgramUniformMatrix4x2fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4X2FVPROC),
-    ProgramUniformMatrix3x4fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3X4FVPROC),
-    ProgramUniformMatrix4x3fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4X3FVPROC),
-    ProgramUniformMatrix2x3dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2X3DVPROC),
-    ProgramUniformMatrix3x2dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3X2DVPROC),
-    ProgramUniformMatrix2x4dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2X4DVPROC),
-    ProgramUniformMatrix4x2dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4X2DVPROC),
-    ProgramUniformMatrix3x4dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3X4DVPROC),
-    ProgramUniformMatrix4x3dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4X3DVPROC),
-    ValidateProgramPipeline: removeOptional(c.PFNGLVALIDATEPROGRAMPIPELINEPROC),
-    GetProgramPipelineInfoLog: removeOptional(c.PFNGLGETPROGRAMPIPELINEINFOLOGPROC),
-    VertexAttribL1d: removeOptional(c.PFNGLVERTEXATTRIBL1DPROC),
-    VertexAttribL2d: removeOptional(c.PFNGLVERTEXATTRIBL2DPROC),
-    VertexAttribL3d: removeOptional(c.PFNGLVERTEXATTRIBL3DPROC),
-    VertexAttribL4d: removeOptional(c.PFNGLVERTEXATTRIBL4DPROC),
-    VertexAttribL1dv: removeOptional(c.PFNGLVERTEXATTRIBL1DVPROC),
-    VertexAttribL2dv: removeOptional(c.PFNGLVERTEXATTRIBL2DVPROC),
-    VertexAttribL3dv: removeOptional(c.PFNGLVERTEXATTRIBL3DVPROC),
-    VertexAttribL4dv: removeOptional(c.PFNGLVERTEXATTRIBL4DVPROC),
-    VertexAttribLPointer: removeOptional(c.PFNGLVERTEXATTRIBLPOINTERPROC),
-    GetVertexAttribLdv: removeOptional(c.PFNGLGETVERTEXATTRIBLDVPROC),
-    ViewportArrayv: removeOptional(c.PFNGLVIEWPORTARRAYVPROC),
-    ViewportIndexedf: removeOptional(c.PFNGLVIEWPORTINDEXEDFPROC),
-    ViewportIndexedfv: removeOptional(c.PFNGLVIEWPORTINDEXEDFVPROC),
-    ScissorArrayv: removeOptional(c.PFNGLSCISSORARRAYVPROC),
-    ScissorIndexed: removeOptional(c.PFNGLSCISSORINDEXEDPROC),
-    ScissorIndexedv: removeOptional(c.PFNGLSCISSORINDEXEDVPROC),
-    DepthRangeArrayv: removeOptional(c.PFNGLDEPTHRANGEARRAYVPROC),
-    DepthRangeIndexed: removeOptional(c.PFNGLDEPTHRANGEINDEXEDPROC),
-    GetFloati_v: removeOptional(c.PFNGLGETFLOATI_VPROC),
-    GetDoublei_v: removeOptional(c.PFNGLGETDOUBLEI_VPROC),
+    releaseShaderCompiler: removeOptional(c.PFNGLRELEASESHADERCOMPILERPROC),
+    shaderBinary: removeOptional(c.PFNGLSHADERBINARYPROC),
+    getShaderPrecisionFormat: removeOptional(c.PFNGLGETSHADERPRECISIONFORMATPROC),
+    depthRangef: removeOptional(c.PFNGLDEPTHRANGEFPROC),
+    clearDepthf: removeOptional(c.PFNGLCLEARDEPTHFPROC),
+    getProgramBinary: removeOptional(c.PFNGLGETPROGRAMBINARYPROC),
+    programBinary: removeOptional(c.PFNGLPROGRAMBINARYPROC),
+    programParameteri: removeOptional(c.PFNGLPROGRAMPARAMETERIPROC),
+    useProgramStages: removeOptional(c.PFNGLUSEPROGRAMSTAGESPROC),
+    activeShaderProgram: removeOptional(c.PFNGLACTIVESHADERPROGRAMPROC),
+    createShaderProgramv: removeOptional(c.PFNGLCREATESHADERPROGRAMVPROC),
+    bindProgramPipeline: removeOptional(c.PFNGLBINDPROGRAMPIPELINEPROC),
+    deleteProgramPipelines: removeOptional(c.PFNGLDELETEPROGRAMPIPELINESPROC),
+    genProgramPipelines: removeOptional(c.PFNGLGENPROGRAMPIPELINESPROC),
+    isProgramPipeline: removeOptional(c.PFNGLISPROGRAMPIPELINEPROC),
+    getProgramPipelineiv: removeOptional(c.PFNGLGETPROGRAMPIPELINEIVPROC),
+    programUniform1i: removeOptional(c.PFNGLPROGRAMUNIFORM1IPROC),
+    programUniform1iv: removeOptional(c.PFNGLPROGRAMUNIFORM1IVPROC),
+    programUniform1f: removeOptional(c.PFNGLPROGRAMUNIFORM1FPROC),
+    programUniform1fv: removeOptional(c.PFNGLPROGRAMUNIFORM1FVPROC),
+    programUniform1d: removeOptional(c.PFNGLPROGRAMUNIFORM1DPROC),
+    programUniform1dv: removeOptional(c.PFNGLPROGRAMUNIFORM1DVPROC),
+    programUniform1ui: removeOptional(c.PFNGLPROGRAMUNIFORM1UIPROC),
+    programUniform1uiv: removeOptional(c.PFNGLPROGRAMUNIFORM1UIVPROC),
+    programUniform2i: removeOptional(c.PFNGLPROGRAMUNIFORM2IPROC),
+    programUniform2iv: removeOptional(c.PFNGLPROGRAMUNIFORM2IVPROC),
+    programUniform2f: removeOptional(c.PFNGLPROGRAMUNIFORM2FPROC),
+    programUniform2fv: removeOptional(c.PFNGLPROGRAMUNIFORM2FVPROC),
+    programUniform2d: removeOptional(c.PFNGLPROGRAMUNIFORM2DPROC),
+    programUniform2dv: removeOptional(c.PFNGLPROGRAMUNIFORM2DVPROC),
+    programUniform2ui: removeOptional(c.PFNGLPROGRAMUNIFORM2UIPROC),
+    programUniform2uiv: removeOptional(c.PFNGLPROGRAMUNIFORM2UIVPROC),
+    programUniform3i: removeOptional(c.PFNGLPROGRAMUNIFORM3IPROC),
+    programUniform3iv: removeOptional(c.PFNGLPROGRAMUNIFORM3IVPROC),
+    programUniform3f: removeOptional(c.PFNGLPROGRAMUNIFORM3FPROC),
+    programUniform3fv: removeOptional(c.PFNGLPROGRAMUNIFORM3FVPROC),
+    programUniform3d: removeOptional(c.PFNGLPROGRAMUNIFORM3DPROC),
+    programUniform3dv: removeOptional(c.PFNGLPROGRAMUNIFORM3DVPROC),
+    programUniform3ui: removeOptional(c.PFNGLPROGRAMUNIFORM3UIPROC),
+    programUniform3uiv: removeOptional(c.PFNGLPROGRAMUNIFORM3UIVPROC),
+    programUniform4i: removeOptional(c.PFNGLPROGRAMUNIFORM4IPROC),
+    programUniform4iv: removeOptional(c.PFNGLPROGRAMUNIFORM4IVPROC),
+    programUniform4f: removeOptional(c.PFNGLPROGRAMUNIFORM4FPROC),
+    programUniform4fv: removeOptional(c.PFNGLPROGRAMUNIFORM4FVPROC),
+    programUniform4d: removeOptional(c.PFNGLPROGRAMUNIFORM4DPROC),
+    programUniform4dv: removeOptional(c.PFNGLPROGRAMUNIFORM4DVPROC),
+    programUniform4ui: removeOptional(c.PFNGLPROGRAMUNIFORM4UIPROC),
+    programUniform4uiv: removeOptional(c.PFNGLPROGRAMUNIFORM4UIVPROC),
+    programUniformMatrix2fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2FVPROC),
+    programUniformMatrix3fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3FVPROC),
+    programUniformMatrix4fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4FVPROC),
+    programUniformMatrix2dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2DVPROC),
+    programUniformMatrix3dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3DVPROC),
+    programUniformMatrix4dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4DVPROC),
+    programUniformMatrix2x3fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2X3FVPROC),
+    programUniformMatrix3x2fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3X2FVPROC),
+    programUniformMatrix2x4fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2X4FVPROC),
+    programUniformMatrix4x2fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4X2FVPROC),
+    programUniformMatrix3x4fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3X4FVPROC),
+    programUniformMatrix4x3fv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4X3FVPROC),
+    programUniformMatrix2x3dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2X3DVPROC),
+    programUniformMatrix3x2dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3X2DVPROC),
+    programUniformMatrix2x4dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX2X4DVPROC),
+    programUniformMatrix4x2dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4X2DVPROC),
+    programUniformMatrix3x4dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX3X4DVPROC),
+    programUniformMatrix4x3dv: removeOptional(c.PFNGLPROGRAMUNIFORMMATRIX4X3DVPROC),
+    validateProgramPipeline: removeOptional(c.PFNGLVALIDATEPROGRAMPIPELINEPROC),
+    getProgramPipelineInfoLog: removeOptional(c.PFNGLGETPROGRAMPIPELINEINFOLOGPROC),
+    vertexAttribL1d: removeOptional(c.PFNGLVERTEXATTRIBL1DPROC),
+    vertexAttribL2d: removeOptional(c.PFNGLVERTEXATTRIBL2DPROC),
+    vertexAttribL3d: removeOptional(c.PFNGLVERTEXATTRIBL3DPROC),
+    vertexAttribL4d: removeOptional(c.PFNGLVERTEXATTRIBL4DPROC),
+    vertexAttribL1dv: removeOptional(c.PFNGLVERTEXATTRIBL1DVPROC),
+    vertexAttribL2dv: removeOptional(c.PFNGLVERTEXATTRIBL2DVPROC),
+    vertexAttribL3dv: removeOptional(c.PFNGLVERTEXATTRIBL3DVPROC),
+    vertexAttribL4dv: removeOptional(c.PFNGLVERTEXATTRIBL4DVPROC),
+    vertexAttribLPointer: removeOptional(c.PFNGLVERTEXATTRIBLPOINTERPROC),
+    getVertexAttribLdv: removeOptional(c.PFNGLGETVERTEXATTRIBLDVPROC),
+    viewportArrayv: removeOptional(c.PFNGLVIEWPORTARRAYVPROC),
+    viewportIndexedf: removeOptional(c.PFNGLVIEWPORTINDEXEDFPROC),
+    viewportIndexedfv: removeOptional(c.PFNGLVIEWPORTINDEXEDFVPROC),
+    scissorArrayv: removeOptional(c.PFNGLSCISSORARRAYVPROC),
+    scissorIndexed: removeOptional(c.PFNGLSCISSORINDEXEDPROC),
+    scissorIndexedv: removeOptional(c.PFNGLSCISSORINDEXEDVPROC),
+    depthRangeArrayv: removeOptional(c.PFNGLDEPTHRANGEARRAYVPROC),
+    depthRangeIndexed: removeOptional(c.PFNGLDEPTHRANGEINDEXEDPROC),
+    getFloati_v: removeOptional(c.PFNGLGETFLOATI_VPROC),
+    getDoublei_v: removeOptional(c.PFNGLGETDOUBLEI_VPROC),
 
     // 4.2
-    DrawArraysInstancedBaseInstance: removeOptional(c.PFNGLDRAWARRAYSINSTANCEDBASEINSTANCEPROC),
-    DrawElementsInstancedBaseInstance: removeOptional(c.PFNGLDRAWELEMENTSINSTANCEDBASEINSTANCEPROC),
-    DrawElementsInstancedBaseVertexBaseInstance: removeOptional(c.PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXBASEINSTANCEPROC),
-    GetInternalformativ: removeOptional(c.PFNGLGETINTERNALFORMATIVPROC),
-    GetActiveAtomicCounterBufferiv: removeOptional(c.PFNGLGETACTIVEATOMICCOUNTERBUFFERIVPROC),
-    BindImageTexture: removeOptional(c.PFNGLBINDIMAGETEXTUREPROC),
-    MemoryBarrier: removeOptional(c.PFNGLMEMORYBARRIERPROC),
-    TexStorage1D: removeOptional(c.PFNGLTEXSTORAGE1DPROC),
-    TexStorage2D: removeOptional(c.PFNGLTEXSTORAGE2DPROC),
-    TexStorage3D: removeOptional(c.PFNGLTEXSTORAGE3DPROC),
-    DrawTransformFeedbackInstanced: removeOptional(c.PFNGLDRAWTRANSFORMFEEDBACKINSTANCEDPROC),
-    DrawTransformFeedbackStreamInstanced: removeOptional(c.PFNGLDRAWTRANSFORMFEEDBACKSTREAMINSTANCEDPROC),
+    drawArraysInstancedBaseInstance: removeOptional(c.PFNGLDRAWARRAYSINSTANCEDBASEINSTANCEPROC),
+    drawElementsInstancedBaseInstance: removeOptional(c.PFNGLDRAWELEMENTSINSTANCEDBASEINSTANCEPROC),
+    drawElementsInstancedBaseVertexBaseInstance: removeOptional(c.PFNGLDRAWELEMENTSINSTANCEDBASEVERTEXBASEINSTANCEPROC),
+    getInternalformativ: removeOptional(c.PFNGLGETINTERNALFORMATIVPROC),
+    getActiveAtomicCounterBufferiv: removeOptional(c.PFNGLGETACTIVEATOMICCOUNTERBUFFERIVPROC),
+    bindImageTexture: removeOptional(c.PFNGLBINDIMAGETEXTUREPROC),
+    memoryBarrier: removeOptional(c.PFNGLMEMORYBARRIERPROC),
+    texStorage1D: removeOptional(c.PFNGLTEXSTORAGE1DPROC),
+    texStorage2D: removeOptional(c.PFNGLTEXSTORAGE2DPROC),
+    texStorage3D: removeOptional(c.PFNGLTEXSTORAGE3DPROC),
+    drawTransformFeedbackInstanced: removeOptional(c.PFNGLDRAWTRANSFORMFEEDBACKINSTANCEDPROC),
+    drawTransformFeedbackStreamInstanced: removeOptional(c.PFNGLDRAWTRANSFORMFEEDBACKSTREAMINSTANCEDPROC),
 
     // 4.3
-    ClearBufferData: removeOptional(c.PFNGLCLEARBUFFERDATAPROC),
-    ClearBufferSubData: removeOptional(c.PFNGLCLEARBUFFERSUBDATAPROC),
-    DispatchCompute: removeOptional(c.PFNGLDISPATCHCOMPUTEPROC),
-    DispatchComputeIndirect: removeOptional(c.PFNGLDISPATCHCOMPUTEINDIRECTPROC),
-    CopyImageSubData: removeOptional(c.PFNGLCOPYIMAGESUBDATAPROC),
-    FramebufferParameteri: removeOptional(c.PFNGLFRAMEBUFFERPARAMETERIPROC),
-    GetFramebufferParameteriv: removeOptional(c.PFNGLGETFRAMEBUFFERPARAMETERIVPROC),
-    GetInternalformati64v: removeOptional(c.PFNGLGETINTERNALFORMATI64VPROC),
-    InvalidateTexSubImage: removeOptional(c.PFNGLINVALIDATETEXSUBIMAGEPROC),
-    InvalidateTexImage: removeOptional(c.PFNGLINVALIDATETEXIMAGEPROC),
-    InvalidateBufferSubData: removeOptional(c.PFNGLINVALIDATEBUFFERSUBDATAPROC),
-    InvalidateBufferData: removeOptional(c.PFNGLINVALIDATEBUFFERDATAPROC),
-    InvalidateFramebuffer: removeOptional(c.PFNGLINVALIDATEFRAMEBUFFERPROC),
-    InvalidateSubFramebuffer: removeOptional(c.PFNGLINVALIDATESUBFRAMEBUFFERPROC),
-    MultiDrawArraysIndirect: removeOptional(c.PFNGLMULTIDRAWARRAYSINDIRECTPROC),
-    MultiDrawElementsIndirect: removeOptional(c.PFNGLMULTIDRAWELEMENTSINDIRECTPROC),
-    GetProgramInterfaceiv: removeOptional(c.PFNGLGETPROGRAMINTERFACEIVPROC),
-    GetProgramResourceIndex: removeOptional(c.PFNGLGETPROGRAMRESOURCEINDEXPROC),
-    GetProgramResourceName: removeOptional(c.PFNGLGETPROGRAMRESOURCENAMEPROC),
-    GetProgramResourceiv: removeOptional(c.PFNGLGETPROGRAMRESOURCEIVPROC),
-    GetProgramResourceLocation: removeOptional(c.PFNGLGETPROGRAMRESOURCELOCATIONPROC),
-    GetProgramResourceLocationIndex: removeOptional(c.PFNGLGETPROGRAMRESOURCELOCATIONINDEXPROC),
-    ShaderStorageBlockBinding: removeOptional(c.PFNGLSHADERSTORAGEBLOCKBINDINGPROC),
-    TexBufferRange: removeOptional(c.PFNGLTEXBUFFERRANGEPROC),
-    TexStorage2DMultisample: removeOptional(c.PFNGLTEXSTORAGE2DMULTISAMPLEPROC),
-    TexStorage3DMultisample: removeOptional(c.PFNGLTEXSTORAGE3DMULTISAMPLEPROC),
-    TextureView: removeOptional(c.PFNGLTEXTUREVIEWPROC),
-    BindVertexBuffer: removeOptional(c.PFNGLBINDVERTEXBUFFERPROC),
-    VertexAttribFormat: removeOptional(c.PFNGLVERTEXATTRIBFORMATPROC),
-    VertexAttribIFormat: removeOptional(c.PFNGLVERTEXATTRIBIFORMATPROC),
-    VertexAttribLFormat: removeOptional(c.PFNGLVERTEXATTRIBLFORMATPROC),
-    VertexAttribBinding: removeOptional(c.PFNGLVERTEXATTRIBBINDINGPROC),
-    VertexBindingDivisor: removeOptional(c.PFNGLVERTEXBINDINGDIVISORPROC),
-    DebugMessageControl: removeOptional(c.PFNGLDEBUGMESSAGECONTROLPROC),
-    DebugMessageInsert: removeOptional(c.PFNGLDEBUGMESSAGEINSERTPROC),
-    DebugMessageCallback: removeOptional(c.PFNGLDEBUGMESSAGECALLBACKPROC),
-    GetDebugMessageLog: removeOptional(c.PFNGLGETDEBUGMESSAGELOGPROC),
-    PushDebugGroup: removeOptional(c.PFNGLPUSHDEBUGGROUPPROC),
-    PopDebugGroup: removeOptional(c.PFNGLPOPDEBUGGROUPPROC),
-    ObjectLabel: removeOptional(c.PFNGLOBJECTLABELPROC),
-    GetObjectLabel: removeOptional(c.PFNGLGETOBJECTLABELPROC),
-    ObjectPtrLabel: removeOptional(c.PFNGLOBJECTPTRLABELPROC),
-    GetObjectPtrLabel: removeOptional(c.PFNGLGETOBJECTPTRLABELPROC),
+    clearBufferData: removeOptional(c.PFNGLCLEARBUFFERDATAPROC),
+    clearBufferSubData: removeOptional(c.PFNGLCLEARBUFFERSUBDATAPROC),
+    dispatchCompute: removeOptional(c.PFNGLDISPATCHCOMPUTEPROC),
+    dispatchComputeIndirect: removeOptional(c.PFNGLDISPATCHCOMPUTEINDIRECTPROC),
+    copyImageSubData: removeOptional(c.PFNGLCOPYIMAGESUBDATAPROC),
+    framebufferParameteri: removeOptional(c.PFNGLFRAMEBUFFERPARAMETERIPROC),
+    getFramebufferParameteriv: removeOptional(c.PFNGLGETFRAMEBUFFERPARAMETERIVPROC),
+    getInternalformati64v: removeOptional(c.PFNGLGETINTERNALFORMATI64VPROC),
+    invalidateTexSubImage: removeOptional(c.PFNGLINVALIDATETEXSUBIMAGEPROC),
+    invalidateTexImage: removeOptional(c.PFNGLINVALIDATETEXIMAGEPROC),
+    invalidateBufferSubData: removeOptional(c.PFNGLINVALIDATEBUFFERSUBDATAPROC),
+    invalidateBufferData: removeOptional(c.PFNGLINVALIDATEBUFFERDATAPROC),
+    invalidateFramebuffer: removeOptional(c.PFNGLINVALIDATEFRAMEBUFFERPROC),
+    invalidateSubFramebuffer: removeOptional(c.PFNGLINVALIDATESUBFRAMEBUFFERPROC),
+    multiDrawArraysIndirect: removeOptional(c.PFNGLMULTIDRAWARRAYSINDIRECTPROC),
+    multiDrawElementsIndirect: removeOptional(c.PFNGLMULTIDRAWELEMENTSINDIRECTPROC),
+    getProgramInterfaceiv: removeOptional(c.PFNGLGETPROGRAMINTERFACEIVPROC),
+    getProgramResourceIndex: removeOptional(c.PFNGLGETPROGRAMRESOURCEINDEXPROC),
+    getProgramResourceName: removeOptional(c.PFNGLGETPROGRAMRESOURCENAMEPROC),
+    getProgramResourceiv: removeOptional(c.PFNGLGETPROGRAMRESOURCEIVPROC),
+    getProgramResourceLocation: removeOptional(c.PFNGLGETPROGRAMRESOURCELOCATIONPROC),
+    getProgramResourceLocationIndex: removeOptional(c.PFNGLGETPROGRAMRESOURCELOCATIONINDEXPROC),
+    shaderStorageBlockBinding: removeOptional(c.PFNGLSHADERSTORAGEBLOCKBINDINGPROC),
+    texBufferRange: removeOptional(c.PFNGLTEXBUFFERRANGEPROC),
+    texStorage2DMultisample: removeOptional(c.PFNGLTEXSTORAGE2DMULTISAMPLEPROC),
+    texStorage3DMultisample: removeOptional(c.PFNGLTEXSTORAGE3DMULTISAMPLEPROC),
+    textureView: removeOptional(c.PFNGLTEXTUREVIEWPROC),
+    bindVertexBuffer: removeOptional(c.PFNGLBINDVERTEXBUFFERPROC),
+    vertexAttribFormat: removeOptional(c.PFNGLVERTEXATTRIBFORMATPROC),
+    vertexAttribIFormat: removeOptional(c.PFNGLVERTEXATTRIBIFORMATPROC),
+    vertexAttribLFormat: removeOptional(c.PFNGLVERTEXATTRIBLFORMATPROC),
+    vertexAttribBinding: removeOptional(c.PFNGLVERTEXATTRIBBINDINGPROC),
+    vertexBindingDivisor: removeOptional(c.PFNGLVERTEXBINDINGDIVISORPROC),
+    debugMessageControl: removeOptional(c.PFNGLDEBUGMESSAGECONTROLPROC),
+    debugMessageInsert: removeOptional(c.PFNGLDEBUGMESSAGEINSERTPROC),
+    debugMessageCallback: removeOptional(c.PFNGLDEBUGMESSAGECALLBACKPROC),
+    getDebugMessageLog: removeOptional(c.PFNGLGETDEBUGMESSAGELOGPROC),
+    pushDebugGroup: removeOptional(c.PFNGLPUSHDEBUGGROUPPROC),
+    popDebugGroup: removeOptional(c.PFNGLPOPDEBUGGROUPPROC),
+    objectLabel: removeOptional(c.PFNGLOBJECTLABELPROC),
+    getObjectLabel: removeOptional(c.PFNGLGETOBJECTLABELPROC),
+    objectPtrLabel: removeOptional(c.PFNGLOBJECTPTRLABELPROC),
+    getObjectPtrLabel: removeOptional(c.PFNGLGETOBJECTPTRLABELPROC),
 
     // 4.4
-    BufferStorage: removeOptional(c.PFNGLBUFFERSTORAGEPROC),
-    ClearTexImage: removeOptional(c.PFNGLCLEARTEXIMAGEPROC),
-    ClearTexSubImage: removeOptional(c.PFNGLCLEARTEXSUBIMAGEPROC),
-    BindBuffersBase: removeOptional(c.PFNGLBINDBUFFERSBASEPROC),
-    BindBuffersRange: removeOptional(c.PFNGLBINDBUFFERSRANGEPROC),
-    BindTextures: removeOptional(c.PFNGLBINDTEXTURESPROC),
-    BindSamplers: removeOptional(c.PFNGLBINDSAMPLERSPROC),
-    BindImageTextures: removeOptional(c.PFNGLBINDIMAGETEXTURESPROC),
-    BindVertexBuffers: removeOptional(c.PFNGLBINDVERTEXBUFFERSPROC),
+    bufferStorage: removeOptional(c.PFNGLBUFFERSTORAGEPROC),
+    clearTexImage: removeOptional(c.PFNGLCLEARTEXIMAGEPROC),
+    clearTexSubImage: removeOptional(c.PFNGLCLEARTEXSUBIMAGEPROC),
+    bindBuffersBase: removeOptional(c.PFNGLBINDBUFFERSBASEPROC),
+    bindBuffersRange: removeOptional(c.PFNGLBINDBUFFERSRANGEPROC),
+    bindTextures: removeOptional(c.PFNGLBINDTEXTURESPROC),
+    bindSamplers: removeOptional(c.PFNGLBINDSAMPLERSPROC),
+    bindImageTextures: removeOptional(c.PFNGLBINDIMAGETEXTURESPROC),
+    bindVertexBuffers: removeOptional(c.PFNGLBINDVERTEXBUFFERSPROC),
 
     // 4.5
-    ClipControl: removeOptional(c.PFNGLCLIPCONTROLPROC),
-    CreateTransformFeedbacks: removeOptional(c.PFNGLCREATETRANSFORMFEEDBACKSPROC),
-    TransformFeedbackBufferBase: removeOptional(c.PFNGLTRANSFORMFEEDBACKBUFFERBASEPROC),
-    TransformFeedbackBufferRange: removeOptional(c.PFNGLTRANSFORMFEEDBACKBUFFERRANGEPROC),
-    GetTransformFeedbackiv: removeOptional(c.PFNGLGETTRANSFORMFEEDBACKIVPROC),
-    GetTransformFeedbacki_v: removeOptional(c.PFNGLGETTRANSFORMFEEDBACKI_VPROC),
-    GetTransformFeedbacki64_v: removeOptional(c.PFNGLGETTRANSFORMFEEDBACKI64_VPROC),
-    CreateBuffers: removeOptional(c.PFNGLCREATEBUFFERSPROC),
-    NamedBufferStorage: removeOptional(c.PFNGLNAMEDBUFFERSTORAGEPROC),
-    NamedBufferData: removeOptional(c.PFNGLNAMEDBUFFERDATAPROC),
-    NamedBufferSubData: removeOptional(c.PFNGLNAMEDBUFFERSUBDATAPROC),
-    CopyNamedBufferSubData: removeOptional(c.PFNGLCOPYNAMEDBUFFERSUBDATAPROC),
-    ClearNamedBufferData: removeOptional(c.PFNGLCLEARNAMEDBUFFERDATAPROC),
-    ClearNamedBufferSubData: removeOptional(c.PFNGLCLEARNAMEDBUFFERSUBDATAPROC),
-    MapNamedBuffer: removeOptional(c.PFNGLMAPNAMEDBUFFERPROC),
-    MapNamedBufferRange: removeOptional(c.PFNGLMAPNAMEDBUFFERRANGEPROC),
-    UnmapNamedBuffer: removeOptional(c.PFNGLUNMAPNAMEDBUFFERPROC),
-    FlushMappedNamedBufferRange: removeOptional(c.PFNGLFLUSHMAPPEDNAMEDBUFFERRANGEPROC),
-    GetNamedBufferParameteriv: removeOptional(c.PFNGLGETNAMEDBUFFERPARAMETERIVPROC),
-    GetNamedBufferParameteri64v: removeOptional(c.PFNGLGETNAMEDBUFFERPARAMETERI64VPROC),
-    GetNamedBufferPointerv: removeOptional(c.PFNGLGETNAMEDBUFFERPOINTERVPROC),
-    GetNamedBufferSubData: removeOptional(c.PFNGLGETNAMEDBUFFERSUBDATAPROC),
-    CreateFramebuffers: removeOptional(c.PFNGLCREATEFRAMEBUFFERSPROC),
-    NamedFramebufferRenderbuffer: removeOptional(c.PFNGLNAMEDFRAMEBUFFERRENDERBUFFERPROC),
-    NamedFramebufferParameteri: removeOptional(c.PFNGLNAMEDFRAMEBUFFERPARAMETERIPROC),
-    NamedFramebufferTexture: removeOptional(c.PFNGLNAMEDFRAMEBUFFERTEXTUREPROC),
-    NamedFramebufferTextureLayer: removeOptional(c.PFNGLNAMEDFRAMEBUFFERTEXTURELAYERPROC),
-    NamedFramebufferDrawBuffer: removeOptional(c.PFNGLNAMEDFRAMEBUFFERDRAWBUFFERPROC),
-    NamedFramebufferDrawBuffers: removeOptional(c.PFNGLNAMEDFRAMEBUFFERDRAWBUFFERSPROC),
-    NamedFramebufferReadBuffer: removeOptional(c.PFNGLNAMEDFRAMEBUFFERREADBUFFERPROC),
-    InvalidateNamedFramebufferData: removeOptional(c.PFNGLINVALIDATENAMEDFRAMEBUFFERDATAPROC),
-    InvalidateNamedFramebufferSubData: removeOptional(c.PFNGLINVALIDATENAMEDFRAMEBUFFERSUBDATAPROC),
-    ClearNamedFramebufferiv: removeOptional(c.PFNGLCLEARNAMEDFRAMEBUFFERIVPROC),
-    ClearNamedFramebufferuiv: removeOptional(c.PFNGLCLEARNAMEDFRAMEBUFFERUIVPROC),
-    ClearNamedFramebufferfv: removeOptional(c.PFNGLCLEARNAMEDFRAMEBUFFERFVPROC),
-    ClearNamedFramebufferfi: removeOptional(c.PFNGLCLEARNAMEDFRAMEBUFFERFIPROC),
-    BlitNamedFramebuffer: removeOptional(c.PFNGLBLITNAMEDFRAMEBUFFERPROC),
-    CheckNamedFramebufferStatus: removeOptional(c.PFNGLCHECKNAMEDFRAMEBUFFERSTATUSPROC),
-    GetNamedFramebufferParameteriv: removeOptional(c.PFNGLGETNAMEDFRAMEBUFFERPARAMETERIVPROC),
-    GetNamedFramebufferAttachmentParameteriv: removeOptional(c.PFNGLGETNAMEDFRAMEBUFFERATTACHMENTPARAMETERIVPROC),
-    CreateRenderbuffers: removeOptional(c.PFNGLCREATERENDERBUFFERSPROC),
-    NamedRenderbufferStorage: removeOptional(c.PFNGLNAMEDRENDERBUFFERSTORAGEPROC),
-    NamedRenderbufferStorageMultisample: removeOptional(c.PFNGLNAMEDRENDERBUFFERSTORAGEMULTISAMPLEPROC),
-    GetNamedRenderbufferParameteriv: removeOptional(c.PFNGLGETNAMEDRENDERBUFFERPARAMETERIVPROC),
-    CreateTextures: removeOptional(c.PFNGLCREATETEXTURESPROC),
-    TextureBuffer: removeOptional(c.PFNGLTEXTUREBUFFERPROC),
-    TextureBufferRange: removeOptional(c.PFNGLTEXTUREBUFFERRANGEPROC),
-    TextureStorage1D: removeOptional(c.PFNGLTEXTURESTORAGE1DPROC),
-    TextureStorage2D: removeOptional(c.PFNGLTEXTURESTORAGE2DPROC),
-    TextureStorage3D: removeOptional(c.PFNGLTEXTURESTORAGE3DPROC),
-    TextureStorage2DMultisample: removeOptional(c.PFNGLTEXTURESTORAGE2DMULTISAMPLEPROC),
-    TextureStorage3DMultisample: removeOptional(c.PFNGLTEXTURESTORAGE3DMULTISAMPLEPROC),
-    TextureSubImage1D: removeOptional(c.PFNGLTEXTURESUBIMAGE1DPROC),
-    TextureSubImage2D: removeOptional(c.PFNGLTEXTURESUBIMAGE2DPROC),
-    TextureSubImage3D: removeOptional(c.PFNGLTEXTURESUBIMAGE3DPROC),
-    CompressedTextureSubImage1D: removeOptional(c.PFNGLCOMPRESSEDTEXTURESUBIMAGE1DPROC),
-    CompressedTextureSubImage2D: removeOptional(c.PFNGLCOMPRESSEDTEXTURESUBIMAGE2DPROC),
-    CompressedTextureSubImage3D: removeOptional(c.PFNGLCOMPRESSEDTEXTURESUBIMAGE3DPROC),
-    CopyTextureSubImage1D: removeOptional(c.PFNGLCOPYTEXTURESUBIMAGE1DPROC),
-    CopyTextureSubImage2D: removeOptional(c.PFNGLCOPYTEXTURESUBIMAGE2DPROC),
-    CopyTextureSubImage3D: removeOptional(c.PFNGLCOPYTEXTURESUBIMAGE3DPROC),
-    TextureParameterf: removeOptional(c.PFNGLTEXTUREPARAMETERFPROC),
-    TextureParameterfv: removeOptional(c.PFNGLTEXTUREPARAMETERFVPROC),
-    TextureParameteri: removeOptional(c.PFNGLTEXTUREPARAMETERIPROC),
-    TextureParameterIiv: removeOptional(c.PFNGLTEXTUREPARAMETERIIVPROC),
-    TextureParameterIuiv: removeOptional(c.PFNGLTEXTUREPARAMETERIUIVPROC),
-    TextureParameteriv: removeOptional(c.PFNGLTEXTUREPARAMETERIVPROC),
-    GenerateTextureMipmap: removeOptional(c.PFNGLGENERATETEXTUREMIPMAPPROC),
-    BindTextureUnit: removeOptional(c.PFNGLBINDTEXTUREUNITPROC),
-    GetTextureImage: removeOptional(c.PFNGLGETTEXTUREIMAGEPROC),
-    GetCompressedTextureImage: removeOptional(c.PFNGLGETCOMPRESSEDTEXTUREIMAGEPROC),
-    GetTextureLevelParameterfv: removeOptional(c.PFNGLGETTEXTURELEVELPARAMETERFVPROC),
-    GetTextureLevelParameteriv: removeOptional(c.PFNGLGETTEXTURELEVELPARAMETERIVPROC),
-    GetTextureParameterfv: removeOptional(c.PFNGLGETTEXTUREPARAMETERFVPROC),
-    GetTextureParameterIiv: removeOptional(c.PFNGLGETTEXTUREPARAMETERIIVPROC),
-    GetTextureParameterIuiv: removeOptional(c.PFNGLGETTEXTUREPARAMETERIUIVPROC),
-    GetTextureParameteriv: removeOptional(c.PFNGLGETTEXTUREPARAMETERIVPROC),
-    CreateVertexArrays: removeOptional(c.PFNGLCREATEVERTEXARRAYSPROC),
-    DisableVertexArrayAttrib: removeOptional(c.PFNGLDISABLEVERTEXARRAYATTRIBPROC),
-    EnableVertexArrayAttrib: removeOptional(c.PFNGLENABLEVERTEXARRAYATTRIBPROC),
-    VertexArrayElementBuffer: removeOptional(c.PFNGLVERTEXARRAYELEMENTBUFFERPROC),
-    VertexArrayVertexBuffer: removeOptional(c.PFNGLVERTEXARRAYVERTEXBUFFERPROC),
-    VertexArrayVertexBuffers: removeOptional(c.PFNGLVERTEXARRAYVERTEXBUFFERSPROC),
-    VertexArrayAttribBinding: removeOptional(c.PFNGLVERTEXARRAYATTRIBBINDINGPROC),
-    VertexArrayAttribFormat: removeOptional(c.PFNGLVERTEXARRAYATTRIBFORMATPROC),
-    VertexArrayAttribIFormat: removeOptional(c.PFNGLVERTEXARRAYATTRIBIFORMATPROC),
-    VertexArrayAttribLFormat: removeOptional(c.PFNGLVERTEXARRAYATTRIBLFORMATPROC),
-    VertexArrayBindingDivisor: removeOptional(c.PFNGLVERTEXARRAYBINDINGDIVISORPROC),
-    GetVertexArrayiv: removeOptional(c.PFNGLGETVERTEXARRAYIVPROC),
-    GetVertexArrayIndexediv: removeOptional(c.PFNGLGETVERTEXARRAYINDEXEDIVPROC),
-    GetVertexArrayIndexed64iv: removeOptional(c.PFNGLGETVERTEXARRAYINDEXED64IVPROC),
-    CreateSamplers: removeOptional(c.PFNGLCREATESAMPLERSPROC),
-    CreateProgramPipelines: removeOptional(c.PFNGLCREATEPROGRAMPIPELINESPROC),
-    CreateQueries: removeOptional(c.PFNGLCREATEQUERIESPROC),
-    GetQueryBufferObjecti64v: removeOptional(c.PFNGLGETQUERYBUFFEROBJECTI64VPROC),
-    GetQueryBufferObjectiv: removeOptional(c.PFNGLGETQUERYBUFFEROBJECTIVPROC),
-    GetQueryBufferObjectui64v: removeOptional(c.PFNGLGETQUERYBUFFEROBJECTUI64VPROC),
-    GetQueryBufferObjectuiv: removeOptional(c.PFNGLGETQUERYBUFFEROBJECTUIVPROC),
-    MemoryBarrierByRegion: removeOptional(c.PFNGLMEMORYBARRIERBYREGIONPROC),
-    GetTextureSubImage: removeOptional(c.PFNGLGETTEXTURESUBIMAGEPROC),
-    GetCompressedTextureSubImage: removeOptional(c.PFNGLGETCOMPRESSEDTEXTURESUBIMAGEPROC),
-    GetGraphicsResetStatus: removeOptional(c.PFNGLGETGRAPHICSRESETSTATUSPROC),
-    GetnCompressedTexImage: removeOptional(c.PFNGLGETNCOMPRESSEDTEXIMAGEPROC),
-    GetnTexImage: removeOptional(c.PFNGLGETNTEXIMAGEPROC),
-    GetnUniformdv: removeOptional(c.PFNGLGETNUNIFORMDVPROC),
-    GetnUniformfv: removeOptional(c.PFNGLGETNUNIFORMFVPROC),
-    GetnUniformiv: removeOptional(c.PFNGLGETNUNIFORMIVPROC),
-    GetnUniformuiv: removeOptional(c.PFNGLGETNUNIFORMUIVPROC),
-    ReadnPixels: removeOptional(c.PFNGLREADNPIXELSPROC),
-    TextureBarrier: removeOptional(c.PFNGLTEXTUREBARRIERPROC),
+    clipControl: removeOptional(c.PFNGLCLIPCONTROLPROC),
+    createTransformFeedbacks: removeOptional(c.PFNGLCREATETRANSFORMFEEDBACKSPROC),
+    transformFeedbackBufferBase: removeOptional(c.PFNGLTRANSFORMFEEDBACKBUFFERBASEPROC),
+    transformFeedbackBufferRange: removeOptional(c.PFNGLTRANSFORMFEEDBACKBUFFERRANGEPROC),
+    getTransformFeedbackiv: removeOptional(c.PFNGLGETTRANSFORMFEEDBACKIVPROC),
+    getTransformFeedbacki_v: removeOptional(c.PFNGLGETTRANSFORMFEEDBACKI_VPROC),
+    getTransformFeedbacki64_v: removeOptional(c.PFNGLGETTRANSFORMFEEDBACKI64_VPROC),
+    createBuffers: removeOptional(c.PFNGLCREATEBUFFERSPROC),
+    namedBufferStorage: removeOptional(c.PFNGLNAMEDBUFFERSTORAGEPROC),
+    namedBufferData: removeOptional(c.PFNGLNAMEDBUFFERDATAPROC),
+    namedBufferSubData: removeOptional(c.PFNGLNAMEDBUFFERSUBDATAPROC),
+    copyNamedBufferSubData: removeOptional(c.PFNGLCOPYNAMEDBUFFERSUBDATAPROC),
+    clearNamedBufferData: removeOptional(c.PFNGLCLEARNAMEDBUFFERDATAPROC),
+    clearNamedBufferSubData: removeOptional(c.PFNGLCLEARNAMEDBUFFERSUBDATAPROC),
+    mapNamedBuffer: removeOptional(c.PFNGLMAPNAMEDBUFFERPROC),
+    mapNamedBufferRange: removeOptional(c.PFNGLMAPNAMEDBUFFERRANGEPROC),
+    unmapNamedBuffer: removeOptional(c.PFNGLUNMAPNAMEDBUFFERPROC),
+    flushMappedNamedBufferRange: removeOptional(c.PFNGLFLUSHMAPPEDNAMEDBUFFERRANGEPROC),
+    getNamedBufferParameteriv: removeOptional(c.PFNGLGETNAMEDBUFFERPARAMETERIVPROC),
+    getNamedBufferParameteri64v: removeOptional(c.PFNGLGETNAMEDBUFFERPARAMETERI64VPROC),
+    getNamedBufferPointerv: removeOptional(c.PFNGLGETNAMEDBUFFERPOINTERVPROC),
+    getNamedBufferSubData: removeOptional(c.PFNGLGETNAMEDBUFFERSUBDATAPROC),
+    createFramebuffers: removeOptional(c.PFNGLCREATEFRAMEBUFFERSPROC),
+    namedFramebufferRenderbuffer: removeOptional(c.PFNGLNAMEDFRAMEBUFFERRENDERBUFFERPROC),
+    namedFramebufferParameteri: removeOptional(c.PFNGLNAMEDFRAMEBUFFERPARAMETERIPROC),
+    namedFramebufferTexture: removeOptional(c.PFNGLNAMEDFRAMEBUFFERTEXTUREPROC),
+    namedFramebufferTextureLayer: removeOptional(c.PFNGLNAMEDFRAMEBUFFERTEXTURELAYERPROC),
+    namedFramebufferDrawBuffer: removeOptional(c.PFNGLNAMEDFRAMEBUFFERDRAWBUFFERPROC),
+    namedFramebufferDrawBuffers: removeOptional(c.PFNGLNAMEDFRAMEBUFFERDRAWBUFFERSPROC),
+    namedFramebufferReadBuffer: removeOptional(c.PFNGLNAMEDFRAMEBUFFERREADBUFFERPROC),
+    invalidateNamedFramebufferData: removeOptional(c.PFNGLINVALIDATENAMEDFRAMEBUFFERDATAPROC),
+    invalidateNamedFramebufferSubData: removeOptional(c.PFNGLINVALIDATENAMEDFRAMEBUFFERSUBDATAPROC),
+    clearNamedFramebufferiv: removeOptional(c.PFNGLCLEARNAMEDFRAMEBUFFERIVPROC),
+    clearNamedFramebufferuiv: removeOptional(c.PFNGLCLEARNAMEDFRAMEBUFFERUIVPROC),
+    clearNamedFramebufferfv: removeOptional(c.PFNGLCLEARNAMEDFRAMEBUFFERFVPROC),
+    clearNamedFramebufferfi: removeOptional(c.PFNGLCLEARNAMEDFRAMEBUFFERFIPROC),
+    blitNamedFramebuffer: removeOptional(c.PFNGLBLITNAMEDFRAMEBUFFERPROC),
+    checkNamedFramebufferStatus: removeOptional(c.PFNGLCHECKNAMEDFRAMEBUFFERSTATUSPROC),
+    getNamedFramebufferParameteriv: removeOptional(c.PFNGLGETNAMEDFRAMEBUFFERPARAMETERIVPROC),
+    getNamedFramebufferAttachmentParameteriv: removeOptional(c.PFNGLGETNAMEDFRAMEBUFFERATTACHMENTPARAMETERIVPROC),
+    createRenderbuffers: removeOptional(c.PFNGLCREATERENDERBUFFERSPROC),
+    namedRenderbufferStorage: removeOptional(c.PFNGLNAMEDRENDERBUFFERSTORAGEPROC),
+    namedRenderbufferStorageMultisample: removeOptional(c.PFNGLNAMEDRENDERBUFFERSTORAGEMULTISAMPLEPROC),
+    getNamedRenderbufferParameteriv: removeOptional(c.PFNGLGETNAMEDRENDERBUFFERPARAMETERIVPROC),
+    createTextures: removeOptional(c.PFNGLCREATETEXTURESPROC),
+    textureBuffer: removeOptional(c.PFNGLTEXTUREBUFFERPROC),
+    textureBufferRange: removeOptional(c.PFNGLTEXTUREBUFFERRANGEPROC),
+    textureStorage1D: removeOptional(c.PFNGLTEXTURESTORAGE1DPROC),
+    textureStorage2D: removeOptional(c.PFNGLTEXTURESTORAGE2DPROC),
+    textureStorage3D: removeOptional(c.PFNGLTEXTURESTORAGE3DPROC),
+    textureStorage2DMultisample: removeOptional(c.PFNGLTEXTURESTORAGE2DMULTISAMPLEPROC),
+    textureStorage3DMultisample: removeOptional(c.PFNGLTEXTURESTORAGE3DMULTISAMPLEPROC),
+    textureSubImage1D: removeOptional(c.PFNGLTEXTURESUBIMAGE1DPROC),
+    textureSubImage2D: removeOptional(c.PFNGLTEXTURESUBIMAGE2DPROC),
+    textureSubImage3D: removeOptional(c.PFNGLTEXTURESUBIMAGE3DPROC),
+    compressedTextureSubImage1D: removeOptional(c.PFNGLCOMPRESSEDTEXTURESUBIMAGE1DPROC),
+    compressedTextureSubImage2D: removeOptional(c.PFNGLCOMPRESSEDTEXTURESUBIMAGE2DPROC),
+    compressedTextureSubImage3D: removeOptional(c.PFNGLCOMPRESSEDTEXTURESUBIMAGE3DPROC),
+    copyTextureSubImage1D: removeOptional(c.PFNGLCOPYTEXTURESUBIMAGE1DPROC),
+    copyTextureSubImage2D: removeOptional(c.PFNGLCOPYTEXTURESUBIMAGE2DPROC),
+    copyTextureSubImage3D: removeOptional(c.PFNGLCOPYTEXTURESUBIMAGE3DPROC),
+    textureParameterf: removeOptional(c.PFNGLTEXTUREPARAMETERFPROC),
+    textureParameterfv: removeOptional(c.PFNGLTEXTUREPARAMETERFVPROC),
+    textureParameteri: removeOptional(c.PFNGLTEXTUREPARAMETERIPROC),
+    textureParameterIiv: removeOptional(c.PFNGLTEXTUREPARAMETERIIVPROC),
+    textureParameterIuiv: removeOptional(c.PFNGLTEXTUREPARAMETERIUIVPROC),
+    textureParameteriv: removeOptional(c.PFNGLTEXTUREPARAMETERIVPROC),
+    generateTextureMipmap: removeOptional(c.PFNGLGENERATETEXTUREMIPMAPPROC),
+    bindTextureUnit: removeOptional(c.PFNGLBINDTEXTUREUNITPROC),
+    getTextureImage: removeOptional(c.PFNGLGETTEXTUREIMAGEPROC),
+    getCompressedTextureImage: removeOptional(c.PFNGLGETCOMPRESSEDTEXTUREIMAGEPROC),
+    getTextureLevelParameterfv: removeOptional(c.PFNGLGETTEXTURELEVELPARAMETERFVPROC),
+    getTextureLevelParameteriv: removeOptional(c.PFNGLGETTEXTURELEVELPARAMETERIVPROC),
+    getTextureParameterfv: removeOptional(c.PFNGLGETTEXTUREPARAMETERFVPROC),
+    getTextureParameterIiv: removeOptional(c.PFNGLGETTEXTUREPARAMETERIIVPROC),
+    getTextureParameterIuiv: removeOptional(c.PFNGLGETTEXTUREPARAMETERIUIVPROC),
+    getTextureParameteriv: removeOptional(c.PFNGLGETTEXTUREPARAMETERIVPROC),
+    createVertexArrays: removeOptional(c.PFNGLCREATEVERTEXARRAYSPROC),
+    disableVertexArrayAttrib: removeOptional(c.PFNGLDISABLEVERTEXARRAYATTRIBPROC),
+    enableVertexArrayAttrib: removeOptional(c.PFNGLENABLEVERTEXARRAYATTRIBPROC),
+    vertexArrayElementBuffer: removeOptional(c.PFNGLVERTEXARRAYELEMENTBUFFERPROC),
+    vertexArrayVertexBuffer: removeOptional(c.PFNGLVERTEXARRAYVERTEXBUFFERPROC),
+    vertexArrayVertexBuffers: removeOptional(c.PFNGLVERTEXARRAYVERTEXBUFFERSPROC),
+    vertexArrayAttribBinding: removeOptional(c.PFNGLVERTEXARRAYATTRIBBINDINGPROC),
+    vertexArrayAttribFormat: removeOptional(c.PFNGLVERTEXARRAYATTRIBFORMATPROC),
+    vertexArrayAttribIFormat: removeOptional(c.PFNGLVERTEXARRAYATTRIBIFORMATPROC),
+    vertexArrayAttribLFormat: removeOptional(c.PFNGLVERTEXARRAYATTRIBLFORMATPROC),
+    vertexArrayBindingDivisor: removeOptional(c.PFNGLVERTEXARRAYBINDINGDIVISORPROC),
+    getVertexArrayiv: removeOptional(c.PFNGLGETVERTEXARRAYIVPROC),
+    getVertexArrayIndexediv: removeOptional(c.PFNGLGETVERTEXARRAYINDEXEDIVPROC),
+    getVertexArrayIndexed64iv: removeOptional(c.PFNGLGETVERTEXARRAYINDEXED64IVPROC),
+    createSamplers: removeOptional(c.PFNGLCREATESAMPLERSPROC),
+    createProgramPipelines: removeOptional(c.PFNGLCREATEPROGRAMPIPELINESPROC),
+    createQueries: removeOptional(c.PFNGLCREATEQUERIESPROC),
+    getQueryBufferObjecti64v: removeOptional(c.PFNGLGETQUERYBUFFEROBJECTI64VPROC),
+    getQueryBufferObjectiv: removeOptional(c.PFNGLGETQUERYBUFFEROBJECTIVPROC),
+    getQueryBufferObjectui64v: removeOptional(c.PFNGLGETQUERYBUFFEROBJECTUI64VPROC),
+    getQueryBufferObjectuiv: removeOptional(c.PFNGLGETQUERYBUFFEROBJECTUIVPROC),
+    memoryBarrierByRegion: removeOptional(c.PFNGLMEMORYBARRIERBYREGIONPROC),
+    getTextureSubImage: removeOptional(c.PFNGLGETTEXTURESUBIMAGEPROC),
+    getCompressedTextureSubImage: removeOptional(c.PFNGLGETCOMPRESSEDTEXTURESUBIMAGEPROC),
+    getGraphicsResetStatus: removeOptional(c.PFNGLGETGRAPHICSRESETSTATUSPROC),
+    getnCompressedTexImage: removeOptional(c.PFNGLGETNCOMPRESSEDTEXIMAGEPROC),
+    getnTexImage: removeOptional(c.PFNGLGETNTEXIMAGEPROC),
+    getnUniformdv: removeOptional(c.PFNGLGETNUNIFORMDVPROC),
+    getnUniformfv: removeOptional(c.PFNGLGETNUNIFORMFVPROC),
+    getnUniformiv: removeOptional(c.PFNGLGETNUNIFORMIVPROC),
+    getnUniformuiv: removeOptional(c.PFNGLGETNUNIFORMUIVPROC),
+    readnPixels: removeOptional(c.PFNGLREADNPIXELSPROC),
+    textureBarrier: removeOptional(c.PFNGLTEXTUREBARRIERPROC),
 
     // 4.6
-    SpecializeShader: removeOptional(c.PFNGLSPECIALIZESHADERPROC),
-    MultiDrawArraysIndirectCount: removeOptional(c.PFNGLMULTIDRAWARRAYSINDIRECTCOUNTPROC),
-    MultiDrawElementsIndirectCount: removeOptional(c.PFNGLMULTIDRAWELEMENTSINDIRECTCOUNTPROC),
-    PolygonOffsetClamp: removeOptional(c.PFNGLPOLYGONOFFSETCLAMPPROC),
+    specializeShader: removeOptional(c.PFNGLSPECIALIZESHADERPROC),
+    multiDrawArraysIndirectCount: removeOptional(c.PFNGLMULTIDRAWARRAYSINDIRECTCOUNTPROC),
+    multiDrawElementsIndirectCount: removeOptional(c.PFNGLMULTIDRAWELEMENTSINDIRECTCOUNTPROC),
+    polygonOffsetClamp: removeOptional(c.PFNGLPOLYGONOFFSETCLAMPPROC),
 
     pub fn loadVersion(gl: *DeviceGL, major_version: u32, minor_version: u32) void {
         const version = major_version * 100 + minor_version * 10;
 
         if (version >= 100) {
-            gl.CullFace = @ptrCast(getProcAddress("glCullFace"));
-            gl.FrontFace = @ptrCast(getProcAddress("glFrontFace"));
-            gl.Hint = @ptrCast(getProcAddress("glHint"));
-            gl.LineWidth = @ptrCast(getProcAddress("glLineWidth"));
-            gl.PointSize = @ptrCast(getProcAddress("glPointSize"));
-            gl.PolygonMode = @ptrCast(getProcAddress("glPolygonMode"));
-            gl.Scissor = @ptrCast(getProcAddress("glScissor"));
-            gl.TexParameterf = @ptrCast(getProcAddress("glTexParameterf"));
-            gl.TexParameterfv = @ptrCast(getProcAddress("glTexParameterfv"));
-            gl.TexParameteri = @ptrCast(getProcAddress("glTexParameteri"));
-            gl.TexParameteriv = @ptrCast(getProcAddress("glTexParameteriv"));
-            gl.TexImage1D = @ptrCast(getProcAddress("glTexImage1D"));
-            gl.TexImage2D = @ptrCast(getProcAddress("glTexImage2D"));
-            gl.DrawBuffer = @ptrCast(getProcAddress("glDrawBuffer"));
-            gl.Clear = @ptrCast(getProcAddress("glClear"));
-            gl.ClearColor = @ptrCast(getProcAddress("glClearColor"));
-            gl.ClearStencil = @ptrCast(getProcAddress("glClearStencil"));
-            gl.ClearDepth = @ptrCast(getProcAddress("glClearDepth"));
-            gl.StencilMask = @ptrCast(getProcAddress("glStencilMask"));
-            gl.ColorMask = @ptrCast(getProcAddress("glColorMask"));
-            gl.DepthMask = @ptrCast(getProcAddress("glDepthMask"));
-            gl.Disable = @ptrCast(getProcAddress("glDisable"));
-            gl.Enable = @ptrCast(getProcAddress("glEnable"));
-            gl.Finish = @ptrCast(getProcAddress("glFinish"));
-            gl.Flush = @ptrCast(getProcAddress("glFlush"));
-            gl.BlendFunc = @ptrCast(getProcAddress("glBlendFunc"));
-            gl.LogicOp = @ptrCast(getProcAddress("glLogicOp"));
-            gl.StencilFunc = @ptrCast(getProcAddress("glStencilFunc"));
-            gl.StencilOp = @ptrCast(getProcAddress("glStencilOp"));
-            gl.DepthFunc = @ptrCast(getProcAddress("glDepthFunc"));
-            gl.PixelStoref = @ptrCast(getProcAddress("glPixelStoref"));
-            gl.PixelStorei = @ptrCast(getProcAddress("glPixelStorei"));
-            gl.ReadBuffer = @ptrCast(getProcAddress("glReadBuffer"));
-            gl.ReadPixels = @ptrCast(getProcAddress("glReadPixels"));
-            gl.GetBooleanv = @ptrCast(getProcAddress("glGetBooleanv"));
-            gl.GetDoublev = @ptrCast(getProcAddress("glGetDoublev"));
-            gl.GetError = @ptrCast(getProcAddress("glGetError"));
-            gl.GetFloatv = @ptrCast(getProcAddress("glGetFloatv"));
-            gl.GetIntegerv = @ptrCast(getProcAddress("glGetIntegerv"));
-            gl.GetString = @ptrCast(getProcAddress("glGetString"));
-            gl.GetTexImage = @ptrCast(getProcAddress("glGetTexImage"));
-            gl.GetTexParameterfv = @ptrCast(getProcAddress("glGetTexParameterfv"));
-            gl.GetTexParameteriv = @ptrCast(getProcAddress("glGetTexParameteriv"));
-            gl.GetTexLevelParameterfv = @ptrCast(getProcAddress("glGetTexLevelParameterfv"));
-            gl.GetTexLevelParameteriv = @ptrCast(getProcAddress("glGetTexLevelParameteriv"));
-            gl.IsEnabled = @ptrCast(getProcAddress("glIsEnabled"));
-            gl.DepthRange = @ptrCast(getProcAddress("glDepthRange"));
-            gl.Viewport = @ptrCast(getProcAddress("glViewport"));
+            gl.cullFace = @ptrCast(getProcAddress("glCullFace"));
+            gl.frontFace = @ptrCast(getProcAddress("glFrontFace"));
+            gl.hint = @ptrCast(getProcAddress("glHint"));
+            gl.lineWidth = @ptrCast(getProcAddress("glLineWidth"));
+            gl.pointSize = @ptrCast(getProcAddress("glPointSize"));
+            gl.polygonMode = @ptrCast(getProcAddress("glPolygonMode"));
+            gl.scissor = @ptrCast(getProcAddress("glScissor"));
+            gl.texParameterf = @ptrCast(getProcAddress("glTexParameterf"));
+            gl.texParameterfv = @ptrCast(getProcAddress("glTexParameterfv"));
+            gl.texParameteri = @ptrCast(getProcAddress("glTexParameteri"));
+            gl.texParameteriv = @ptrCast(getProcAddress("glTexParameteriv"));
+            gl.texImage1D = @ptrCast(getProcAddress("glTexImage1D"));
+            gl.texImage2D = @ptrCast(getProcAddress("glTexImage2D"));
+            gl.drawBuffer = @ptrCast(getProcAddress("glDrawBuffer"));
+            gl.clear = @ptrCast(getProcAddress("glClear"));
+            gl.clearColor = @ptrCast(getProcAddress("glClearColor"));
+            gl.clearStencil = @ptrCast(getProcAddress("glClearStencil"));
+            gl.clearDepth = @ptrCast(getProcAddress("glClearDepth"));
+            gl.stencilMask = @ptrCast(getProcAddress("glStencilMask"));
+            gl.colorMask = @ptrCast(getProcAddress("glColorMask"));
+            gl.depthMask = @ptrCast(getProcAddress("glDepthMask"));
+            gl.disable = @ptrCast(getProcAddress("glDisable"));
+            gl.enable = @ptrCast(getProcAddress("glEnable"));
+            gl.finish = @ptrCast(getProcAddress("glFinish"));
+            gl.flush = @ptrCast(getProcAddress("glFlush"));
+            gl.blendFunc = @ptrCast(getProcAddress("glBlendFunc"));
+            gl.logicOp = @ptrCast(getProcAddress("glLogicOp"));
+            gl.stencilFunc = @ptrCast(getProcAddress("glStencilFunc"));
+            gl.stencilOp = @ptrCast(getProcAddress("glStencilOp"));
+            gl.depthFunc = @ptrCast(getProcAddress("glDepthFunc"));
+            gl.pixelStoref = @ptrCast(getProcAddress("glPixelStoref"));
+            gl.pixelStorei = @ptrCast(getProcAddress("glPixelStorei"));
+            gl.readBuffer = @ptrCast(getProcAddress("glReadBuffer"));
+            gl.readPixels = @ptrCast(getProcAddress("glReadPixels"));
+            gl.getBooleanv = @ptrCast(getProcAddress("glGetBooleanv"));
+            gl.getDoublev = @ptrCast(getProcAddress("glGetDoublev"));
+            gl.getError = @ptrCast(getProcAddress("glGetError"));
+            gl.getFloatv = @ptrCast(getProcAddress("glGetFloatv"));
+            gl.getIntegerv = @ptrCast(getProcAddress("glGetIntegerv"));
+            gl.getString = @ptrCast(getProcAddress("glGetString"));
+            gl.getTexImage = @ptrCast(getProcAddress("glGetTexImage"));
+            gl.getTexParameterfv = @ptrCast(getProcAddress("glGetTexParameterfv"));
+            gl.getTexParameteriv = @ptrCast(getProcAddress("glGetTexParameteriv"));
+            gl.getTexLevelParameterfv = @ptrCast(getProcAddress("glGetTexLevelParameterfv"));
+            gl.getTexLevelParameteriv = @ptrCast(getProcAddress("glGetTexLevelParameteriv"));
+            gl.isEnabled = @ptrCast(getProcAddress("glIsEnabled"));
+            gl.depthRange = @ptrCast(getProcAddress("glDepthRange"));
+            gl.viewport = @ptrCast(getProcAddress("glViewport"));
         }
 
         if (version >= 110) {
-            gl.DrawArrays = @ptrCast(getProcAddress("glDrawArrays"));
-            gl.DrawElements = @ptrCast(getProcAddress("glDrawElements"));
-            gl.GetPointerv = @ptrCast(getProcAddress("glGetPointerv"));
-            gl.PolygonOffset = @ptrCast(getProcAddress("glPolygonOffset"));
-            gl.CopyTexImage1D = @ptrCast(getProcAddress("glCopyTexImage1D"));
-            gl.CopyTexImage2D = @ptrCast(getProcAddress("glCopyTexImage2D"));
-            gl.CopyTexSubImage1D = @ptrCast(getProcAddress("glCopyTexSubImage1D"));
-            gl.CopyTexSubImage2D = @ptrCast(getProcAddress("glCopyTexSubImage2D"));
-            gl.TexSubImage1D = @ptrCast(getProcAddress("glTexSubImage1D"));
-            gl.TexSubImage2D = @ptrCast(getProcAddress("glTexSubImage2D"));
-            gl.BindTexture = @ptrCast(getProcAddress("glBindTexture"));
-            gl.DeleteTextures = @ptrCast(getProcAddress("glDeleteTextures"));
-            gl.GenTextures = @ptrCast(getProcAddress("glGenTextures"));
-            gl.IsTexture = @ptrCast(getProcAddress("glIsTexture"));
+            gl.drawArrays = @ptrCast(getProcAddress("glDrawArrays"));
+            gl.drawElements = @ptrCast(getProcAddress("glDrawElements"));
+            gl.getPointerv = @ptrCast(getProcAddress("glGetPointerv"));
+            gl.polygonOffset = @ptrCast(getProcAddress("glPolygonOffset"));
+            gl.copyTexImage1D = @ptrCast(getProcAddress("glCopyTexImage1D"));
+            gl.copyTexImage2D = @ptrCast(getProcAddress("glCopyTexImage2D"));
+            gl.copyTexSubImage1D = @ptrCast(getProcAddress("glCopyTexSubImage1D"));
+            gl.copyTexSubImage2D = @ptrCast(getProcAddress("glCopyTexSubImage2D"));
+            gl.texSubImage1D = @ptrCast(getProcAddress("glTexSubImage1D"));
+            gl.texSubImage2D = @ptrCast(getProcAddress("glTexSubImage2D"));
+            gl.bindTexture = @ptrCast(getProcAddress("glBindTexture"));
+            gl.deleteTextures = @ptrCast(getProcAddress("glDeleteTextures"));
+            gl.genTextures = @ptrCast(getProcAddress("glGenTextures"));
+            gl.isTexture = @ptrCast(getProcAddress("glIsTexture"));
         }
 
         if (version >= 120) {
-            gl.DrawRangeElements = @ptrCast(c.wglGetProcAddress("glDrawRangeElements"));
-            gl.TexImage3D = @ptrCast(c.wglGetProcAddress("glTexImage3D"));
-            gl.TexSubImage3D = @ptrCast(c.wglGetProcAddress("glTexSubImage3D"));
-            gl.CopyTexSubImage3D = @ptrCast(c.wglGetProcAddress("glCopyTexSubImage3D"));
+            gl.drawRangeElements = @ptrCast(c.wglGetProcAddress("glDrawRangeElements"));
+            gl.texImage3D = @ptrCast(c.wglGetProcAddress("glTexImage3D"));
+            gl.texSubImage3D = @ptrCast(c.wglGetProcAddress("glTexSubImage3D"));
+            gl.copyTexSubImage3D = @ptrCast(c.wglGetProcAddress("glCopyTexSubImage3D"));
         }
 
         if (version >= 130) {
-            gl.ActiveTexture = @ptrCast(c.wglGetProcAddress("glActiveTexture"));
-            gl.SampleCoverage = @ptrCast(c.wglGetProcAddress("glSampleCoverage"));
-            gl.CompressedTexImage3D = @ptrCast(c.wglGetProcAddress("glCompressedTexImage3D"));
-            gl.CompressedTexImage2D = @ptrCast(c.wglGetProcAddress("glCompressedTexImage2D"));
-            gl.CompressedTexImage1D = @ptrCast(c.wglGetProcAddress("glCompressedTexImage1D"));
-            gl.CompressedTexSubImage3D = @ptrCast(c.wglGetProcAddress("glCompressedTexSubImage3D"));
-            gl.CompressedTexSubImage2D = @ptrCast(c.wglGetProcAddress("glCompressedTexSubImage2D"));
-            gl.CompressedTexSubImage1D = @ptrCast(c.wglGetProcAddress("glCompressedTexSubImage1D"));
-            gl.GetCompressedTexImage = @ptrCast(c.wglGetProcAddress("glGetCompressedTexImage"));
+            gl.activeTexture = @ptrCast(c.wglGetProcAddress("glActiveTexture"));
+            gl.sampleCoverage = @ptrCast(c.wglGetProcAddress("glSampleCoverage"));
+            gl.compressedTexImage3D = @ptrCast(c.wglGetProcAddress("glCompressedTexImage3D"));
+            gl.compressedTexImage2D = @ptrCast(c.wglGetProcAddress("glCompressedTexImage2D"));
+            gl.compressedTexImage1D = @ptrCast(c.wglGetProcAddress("glCompressedTexImage1D"));
+            gl.compressedTexSubImage3D = @ptrCast(c.wglGetProcAddress("glCompressedTexSubImage3D"));
+            gl.compressedTexSubImage2D = @ptrCast(c.wglGetProcAddress("glCompressedTexSubImage2D"));
+            gl.compressedTexSubImage1D = @ptrCast(c.wglGetProcAddress("glCompressedTexSubImage1D"));
+            gl.getCompressedTexImage = @ptrCast(c.wglGetProcAddress("glGetCompressedTexImage"));
         }
 
         if (version >= 140) {
-            gl.BlendFuncSeparate = @ptrCast(c.wglGetProcAddress("glBlendFuncSeparate"));
-            gl.MultiDrawArrays = @ptrCast(c.wglGetProcAddress("glMultiDrawArrays"));
-            gl.MultiDrawElements = @ptrCast(c.wglGetProcAddress("glMultiDrawElements"));
-            gl.PointParameterf = @ptrCast(c.wglGetProcAddress("glPointParameterf"));
-            gl.PointParameterfv = @ptrCast(c.wglGetProcAddress("glPointParameterfv"));
-            gl.PointParameteri = @ptrCast(c.wglGetProcAddress("glPointParameteri"));
-            gl.PointParameteriv = @ptrCast(c.wglGetProcAddress("glPointParameteriv"));
-            gl.BlendColor = @ptrCast(c.wglGetProcAddress("glBlendColor"));
-            gl.BlendEquation = @ptrCast(c.wglGetProcAddress("glBlendEquation"));
+            gl.blendFuncSeparate = @ptrCast(c.wglGetProcAddress("glBlendFuncSeparate"));
+            gl.multiDrawArrays = @ptrCast(c.wglGetProcAddress("glMultiDrawArrays"));
+            gl.multiDrawElements = @ptrCast(c.wglGetProcAddress("glMultiDrawElements"));
+            gl.pointParameterf = @ptrCast(c.wglGetProcAddress("glPointParameterf"));
+            gl.pointParameterfv = @ptrCast(c.wglGetProcAddress("glPointParameterfv"));
+            gl.pointParameteri = @ptrCast(c.wglGetProcAddress("glPointParameteri"));
+            gl.pointParameteriv = @ptrCast(c.wglGetProcAddress("glPointParameteriv"));
+            gl.blendColor = @ptrCast(c.wglGetProcAddress("glBlendColor"));
+            gl.blendEquation = @ptrCast(c.wglGetProcAddress("glBlendEquation"));
         }
 
         if (version >= 150) {
-            gl.GenQueries = @ptrCast(c.wglGetProcAddress("glGenQueries"));
-            gl.DeleteQueries = @ptrCast(c.wglGetProcAddress("glDeleteQueries"));
-            gl.IsQuery = @ptrCast(c.wglGetProcAddress("glIsQuery"));
-            gl.BeginQuery = @ptrCast(c.wglGetProcAddress("glBeginQuery"));
-            gl.EndQuery = @ptrCast(c.wglGetProcAddress("glEndQuery"));
-            gl.GetQueryiv = @ptrCast(c.wglGetProcAddress("glGetQueryiv"));
-            gl.GetQueryObjectiv = @ptrCast(c.wglGetProcAddress("glGetQueryObjectiv"));
-            gl.GetQueryObjectuiv = @ptrCast(c.wglGetProcAddress("glGetQueryObjectuiv"));
-            gl.BindBuffer = @ptrCast(c.wglGetProcAddress("glBindBuffer"));
-            gl.DeleteBuffers = @ptrCast(c.wglGetProcAddress("glDeleteBuffers"));
-            gl.GenBuffers = @ptrCast(c.wglGetProcAddress("glGenBuffers"));
-            gl.IsBuffer = @ptrCast(c.wglGetProcAddress("glIsBuffer"));
-            gl.BufferData = @ptrCast(c.wglGetProcAddress("glBufferData"));
-            gl.BufferSubData = @ptrCast(c.wglGetProcAddress("glBufferSubData"));
-            gl.GetBufferSubData = @ptrCast(c.wglGetProcAddress("glGetBufferSubData"));
-            gl.MapBuffer = @ptrCast(c.wglGetProcAddress("glMapBuffer"));
-            gl.UnmapBuffer = @ptrCast(c.wglGetProcAddress("glUnmapBuffer"));
-            gl.GetBufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetBufferParameteriv"));
-            gl.GetBufferPointerv = @ptrCast(c.wglGetProcAddress("glGetBufferPointerv"));
+            gl.genQueries = @ptrCast(c.wglGetProcAddress("glGenQueries"));
+            gl.deleteQueries = @ptrCast(c.wglGetProcAddress("glDeleteQueries"));
+            gl.isQuery = @ptrCast(c.wglGetProcAddress("glIsQuery"));
+            gl.beginQuery = @ptrCast(c.wglGetProcAddress("glBeginQuery"));
+            gl.endQuery = @ptrCast(c.wglGetProcAddress("glEndQuery"));
+            gl.getQueryiv = @ptrCast(c.wglGetProcAddress("glGetQueryiv"));
+            gl.getQueryObjectiv = @ptrCast(c.wglGetProcAddress("glGetQueryObjectiv"));
+            gl.getQueryObjectuiv = @ptrCast(c.wglGetProcAddress("glGetQueryObjectuiv"));
+            gl.bindBuffer = @ptrCast(c.wglGetProcAddress("glBindBuffer"));
+            gl.deleteBuffers = @ptrCast(c.wglGetProcAddress("glDeleteBuffers"));
+            gl.genBuffers = @ptrCast(c.wglGetProcAddress("glGenBuffers"));
+            gl.isBuffer = @ptrCast(c.wglGetProcAddress("glIsBuffer"));
+            gl.bufferData = @ptrCast(c.wglGetProcAddress("glBufferData"));
+            gl.bufferSubData = @ptrCast(c.wglGetProcAddress("glBufferSubData"));
+            gl.getBufferSubData = @ptrCast(c.wglGetProcAddress("glGetBufferSubData"));
+            gl.mapBuffer = @ptrCast(c.wglGetProcAddress("glMapBuffer"));
+            gl.unmapBuffer = @ptrCast(c.wglGetProcAddress("glUnmapBuffer"));
+            gl.getBufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetBufferParameteriv"));
+            gl.getBufferPointerv = @ptrCast(c.wglGetProcAddress("glGetBufferPointerv"));
         }
 
         if (version >= 200) {
-            gl.BlendEquationSeparate = @ptrCast(c.wglGetProcAddress("glBlendEquationSeparate"));
-            gl.DrawBuffers = @ptrCast(c.wglGetProcAddress("glDrawBuffers"));
-            gl.StencilOpSeparate = @ptrCast(c.wglGetProcAddress("glStencilOpSeparate"));
-            gl.StencilFuncSeparate = @ptrCast(c.wglGetProcAddress("glStencilFuncSeparate"));
-            gl.StencilMaskSeparate = @ptrCast(c.wglGetProcAddress("glStencilMaskSeparate"));
-            gl.AttachShader = @ptrCast(c.wglGetProcAddress("glAttachShader"));
-            gl.BindAttribLocation = @ptrCast(c.wglGetProcAddress("glBindAttribLocation"));
-            gl.CompileShader = @ptrCast(c.wglGetProcAddress("glCompileShader"));
-            gl.CreateProgram = @ptrCast(c.wglGetProcAddress("glCreateProgram"));
-            gl.CreateShader = @ptrCast(c.wglGetProcAddress("glCreateShader"));
-            gl.DeleteProgram = @ptrCast(c.wglGetProcAddress("glDeleteProgram"));
-            gl.DeleteShader = @ptrCast(c.wglGetProcAddress("glDeleteShader"));
-            gl.DetachShader = @ptrCast(c.wglGetProcAddress("glDetachShader"));
-            gl.DisableVertexAttribArray = @ptrCast(c.wglGetProcAddress("glDisableVertexAttribArray"));
-            gl.EnableVertexAttribArray = @ptrCast(c.wglGetProcAddress("glEnableVertexAttribArray"));
-            gl.GetActiveAttrib = @ptrCast(c.wglGetProcAddress("glGetActiveAttrib"));
-            gl.GetActiveUniform = @ptrCast(c.wglGetProcAddress("glGetActiveUniform"));
-            gl.GetAttachedShaders = @ptrCast(c.wglGetProcAddress("glGetAttachedShaders"));
-            gl.GetAttribLocation = @ptrCast(c.wglGetProcAddress("glGetAttribLocation"));
-            gl.GetProgramiv = @ptrCast(c.wglGetProcAddress("glGetProgramiv"));
-            gl.GetProgramInfoLog = @ptrCast(c.wglGetProcAddress("glGetProgramInfoLog"));
-            gl.GetShaderiv = @ptrCast(c.wglGetProcAddress("glGetShaderiv"));
-            gl.GetShaderInfoLog = @ptrCast(c.wglGetProcAddress("glGetShaderInfoLog"));
-            gl.GetShaderSource = @ptrCast(c.wglGetProcAddress("glGetShaderSource"));
-            gl.GetUniformLocation = @ptrCast(c.wglGetProcAddress("glGetUniformLocation"));
-            gl.GetUniformfv = @ptrCast(c.wglGetProcAddress("glGetUniformfv"));
-            gl.GetUniformiv = @ptrCast(c.wglGetProcAddress("glGetUniformiv"));
-            gl.GetVertexAttribdv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribdv"));
-            gl.GetVertexAttribfv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribfv"));
-            gl.GetVertexAttribiv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribiv"));
-            gl.GetVertexAttribPointerv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribPointerv"));
-            gl.IsProgram = @ptrCast(c.wglGetProcAddress("glIsProgram"));
-            gl.IsShader = @ptrCast(c.wglGetProcAddress("glIsShader"));
-            gl.LinkProgram = @ptrCast(c.wglGetProcAddress("glLinkProgram"));
-            gl.ShaderSource = @ptrCast(c.wglGetProcAddress("glShaderSource"));
-            gl.UseProgram = @ptrCast(c.wglGetProcAddress("glUseProgram"));
-            gl.Uniform1f = @ptrCast(c.wglGetProcAddress("glUniform1f"));
-            gl.Uniform2f = @ptrCast(c.wglGetProcAddress("glUniform2f"));
-            gl.Uniform3f = @ptrCast(c.wglGetProcAddress("glUniform3f"));
-            gl.Uniform4f = @ptrCast(c.wglGetProcAddress("glUniform4f"));
-            gl.Uniform1i = @ptrCast(c.wglGetProcAddress("glUniform1i"));
-            gl.Uniform2i = @ptrCast(c.wglGetProcAddress("glUniform2i"));
-            gl.Uniform3i = @ptrCast(c.wglGetProcAddress("glUniform3i"));
-            gl.Uniform4i = @ptrCast(c.wglGetProcAddress("glUniform4i"));
-            gl.Uniform1fv = @ptrCast(c.wglGetProcAddress("glUniform1fv"));
-            gl.Uniform2fv = @ptrCast(c.wglGetProcAddress("glUniform2fv"));
-            gl.Uniform3fv = @ptrCast(c.wglGetProcAddress("glUniform3fv"));
-            gl.Uniform4fv = @ptrCast(c.wglGetProcAddress("glUniform4fv"));
-            gl.Uniform1iv = @ptrCast(c.wglGetProcAddress("glUniform1iv"));
-            gl.Uniform2iv = @ptrCast(c.wglGetProcAddress("glUniform2iv"));
-            gl.Uniform3iv = @ptrCast(c.wglGetProcAddress("glUniform3iv"));
-            gl.Uniform4iv = @ptrCast(c.wglGetProcAddress("glUniform4iv"));
-            gl.UniformMatrix2fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2fv"));
-            gl.UniformMatrix3fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3fv"));
-            gl.UniformMatrix4fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4fv"));
-            gl.ValidateProgram = @ptrCast(c.wglGetProcAddress("glValidateProgram"));
-            gl.VertexAttrib1d = @ptrCast(c.wglGetProcAddress("glVertexAttrib1d"));
-            gl.VertexAttrib1dv = @ptrCast(c.wglGetProcAddress("glVertexAttrib1dv"));
-            gl.VertexAttrib1f = @ptrCast(c.wglGetProcAddress("glVertexAttrib1f"));
-            gl.VertexAttrib1fv = @ptrCast(c.wglGetProcAddress("glVertexAttrib1fv"));
-            gl.VertexAttrib1s = @ptrCast(c.wglGetProcAddress("glVertexAttrib1s"));
-            gl.VertexAttrib1sv = @ptrCast(c.wglGetProcAddress("glVertexAttrib1sv"));
-            gl.VertexAttrib2d = @ptrCast(c.wglGetProcAddress("glVertexAttrib2d"));
-            gl.VertexAttrib2dv = @ptrCast(c.wglGetProcAddress("glVertexAttrib2dv"));
-            gl.VertexAttrib2f = @ptrCast(c.wglGetProcAddress("glVertexAttrib2f"));
-            gl.VertexAttrib2fv = @ptrCast(c.wglGetProcAddress("glVertexAttrib2fv"));
-            gl.VertexAttrib2s = @ptrCast(c.wglGetProcAddress("glVertexAttrib2s"));
-            gl.VertexAttrib2sv = @ptrCast(c.wglGetProcAddress("glVertexAttrib2sv"));
-            gl.VertexAttrib3d = @ptrCast(c.wglGetProcAddress("glVertexAttrib3d"));
-            gl.VertexAttrib3dv = @ptrCast(c.wglGetProcAddress("glVertexAttrib3dv"));
-            gl.VertexAttrib3f = @ptrCast(c.wglGetProcAddress("glVertexAttrib3f"));
-            gl.VertexAttrib3fv = @ptrCast(c.wglGetProcAddress("glVertexAttrib3fv"));
-            gl.VertexAttrib3s = @ptrCast(c.wglGetProcAddress("glVertexAttrib3s"));
-            gl.VertexAttrib3sv = @ptrCast(c.wglGetProcAddress("glVertexAttrib3sv"));
-            gl.VertexAttrib4Nbv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nbv"));
-            gl.VertexAttrib4Niv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Niv"));
-            gl.VertexAttrib4Nsv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nsv"));
-            gl.VertexAttrib4Nub = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nub"));
-            gl.VertexAttrib4Nubv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nubv"));
-            gl.VertexAttrib4Nuiv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nuiv"));
-            gl.VertexAttrib4Nusv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nusv"));
-            gl.VertexAttrib4bv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4bv"));
-            gl.VertexAttrib4d = @ptrCast(c.wglGetProcAddress("glVertexAttrib4d"));
-            gl.VertexAttrib4dv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4dv"));
-            gl.VertexAttrib4f = @ptrCast(c.wglGetProcAddress("glVertexAttrib4f"));
-            gl.VertexAttrib4fv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4fv"));
-            gl.VertexAttrib4iv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4iv"));
-            gl.VertexAttrib4s = @ptrCast(c.wglGetProcAddress("glVertexAttrib4s"));
-            gl.VertexAttrib4sv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4sv"));
-            gl.VertexAttrib4ubv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4ubv"));
-            gl.VertexAttrib4uiv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4uiv"));
-            gl.VertexAttrib4usv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4usv"));
-            gl.VertexAttribPointer = @ptrCast(c.wglGetProcAddress("glVertexAttribPointer"));
+            gl.blendEquationSeparate = @ptrCast(c.wglGetProcAddress("glBlendEquationSeparate"));
+            gl.drawBuffers = @ptrCast(c.wglGetProcAddress("glDrawBuffers"));
+            gl.stencilOpSeparate = @ptrCast(c.wglGetProcAddress("glStencilOpSeparate"));
+            gl.stencilFuncSeparate = @ptrCast(c.wglGetProcAddress("glStencilFuncSeparate"));
+            gl.stencilMaskSeparate = @ptrCast(c.wglGetProcAddress("glStencilMaskSeparate"));
+            gl.attachShader = @ptrCast(c.wglGetProcAddress("glAttachShader"));
+            gl.bindAttribLocation = @ptrCast(c.wglGetProcAddress("glBindAttribLocation"));
+            gl.compileShader = @ptrCast(c.wglGetProcAddress("glCompileShader"));
+            gl.createProgram = @ptrCast(c.wglGetProcAddress("glCreateProgram"));
+            gl.createShader = @ptrCast(c.wglGetProcAddress("glCreateShader"));
+            gl.deleteProgram = @ptrCast(c.wglGetProcAddress("glDeleteProgram"));
+            gl.deleteShader = @ptrCast(c.wglGetProcAddress("glDeleteShader"));
+            gl.detachShader = @ptrCast(c.wglGetProcAddress("glDetachShader"));
+            gl.disableVertexAttribArray = @ptrCast(c.wglGetProcAddress("glDisableVertexAttribArray"));
+            gl.enableVertexAttribArray = @ptrCast(c.wglGetProcAddress("glEnableVertexAttribArray"));
+            gl.getActiveAttrib = @ptrCast(c.wglGetProcAddress("glGetActiveAttrib"));
+            gl.getActiveUniform = @ptrCast(c.wglGetProcAddress("glGetActiveUniform"));
+            gl.getAttachedShaders = @ptrCast(c.wglGetProcAddress("glGetAttachedShaders"));
+            gl.getAttribLocation = @ptrCast(c.wglGetProcAddress("glGetAttribLocation"));
+            gl.getProgramiv = @ptrCast(c.wglGetProcAddress("glGetProgramiv"));
+            gl.getProgramInfoLog = @ptrCast(c.wglGetProcAddress("glGetProgramInfoLog"));
+            gl.getShaderiv = @ptrCast(c.wglGetProcAddress("glGetShaderiv"));
+            gl.getShaderInfoLog = @ptrCast(c.wglGetProcAddress("glGetShaderInfoLog"));
+            gl.getShaderSource = @ptrCast(c.wglGetProcAddress("glGetShaderSource"));
+            gl.getUniformLocation = @ptrCast(c.wglGetProcAddress("glGetUniformLocation"));
+            gl.getUniformfv = @ptrCast(c.wglGetProcAddress("glGetUniformfv"));
+            gl.getUniformiv = @ptrCast(c.wglGetProcAddress("glGetUniformiv"));
+            gl.getVertexAttribdv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribdv"));
+            gl.getVertexAttribfv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribfv"));
+            gl.getVertexAttribiv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribiv"));
+            gl.getVertexAttribPointerv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribPointerv"));
+            gl.isProgram = @ptrCast(c.wglGetProcAddress("glIsProgram"));
+            gl.isShader = @ptrCast(c.wglGetProcAddress("glIsShader"));
+            gl.linkProgram = @ptrCast(c.wglGetProcAddress("glLinkProgram"));
+            gl.shaderSource = @ptrCast(c.wglGetProcAddress("glShaderSource"));
+            gl.useProgram = @ptrCast(c.wglGetProcAddress("glUseProgram"));
+            gl.uniform1f = @ptrCast(c.wglGetProcAddress("glUniform1f"));
+            gl.uniform2f = @ptrCast(c.wglGetProcAddress("glUniform2f"));
+            gl.uniform3f = @ptrCast(c.wglGetProcAddress("glUniform3f"));
+            gl.uniform4f = @ptrCast(c.wglGetProcAddress("glUniform4f"));
+            gl.uniform1i = @ptrCast(c.wglGetProcAddress("glUniform1i"));
+            gl.uniform2i = @ptrCast(c.wglGetProcAddress("glUniform2i"));
+            gl.uniform3i = @ptrCast(c.wglGetProcAddress("glUniform3i"));
+            gl.uniform4i = @ptrCast(c.wglGetProcAddress("glUniform4i"));
+            gl.uniform1fv = @ptrCast(c.wglGetProcAddress("glUniform1fv"));
+            gl.uniform2fv = @ptrCast(c.wglGetProcAddress("glUniform2fv"));
+            gl.uniform3fv = @ptrCast(c.wglGetProcAddress("glUniform3fv"));
+            gl.uniform4fv = @ptrCast(c.wglGetProcAddress("glUniform4fv"));
+            gl.uniform1iv = @ptrCast(c.wglGetProcAddress("glUniform1iv"));
+            gl.uniform2iv = @ptrCast(c.wglGetProcAddress("glUniform2iv"));
+            gl.uniform3iv = @ptrCast(c.wglGetProcAddress("glUniform3iv"));
+            gl.uniform4iv = @ptrCast(c.wglGetProcAddress("glUniform4iv"));
+            gl.uniformMatrix2fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2fv"));
+            gl.uniformMatrix3fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3fv"));
+            gl.uniformMatrix4fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4fv"));
+            gl.validateProgram = @ptrCast(c.wglGetProcAddress("glValidateProgram"));
+            gl.vertexAttrib1d = @ptrCast(c.wglGetProcAddress("glVertexAttrib1d"));
+            gl.vertexAttrib1dv = @ptrCast(c.wglGetProcAddress("glVertexAttrib1dv"));
+            gl.vertexAttrib1f = @ptrCast(c.wglGetProcAddress("glVertexAttrib1f"));
+            gl.vertexAttrib1fv = @ptrCast(c.wglGetProcAddress("glVertexAttrib1fv"));
+            gl.vertexAttrib1s = @ptrCast(c.wglGetProcAddress("glVertexAttrib1s"));
+            gl.vertexAttrib1sv = @ptrCast(c.wglGetProcAddress("glVertexAttrib1sv"));
+            gl.vertexAttrib2d = @ptrCast(c.wglGetProcAddress("glVertexAttrib2d"));
+            gl.vertexAttrib2dv = @ptrCast(c.wglGetProcAddress("glVertexAttrib2dv"));
+            gl.vertexAttrib2f = @ptrCast(c.wglGetProcAddress("glVertexAttrib2f"));
+            gl.vertexAttrib2fv = @ptrCast(c.wglGetProcAddress("glVertexAttrib2fv"));
+            gl.vertexAttrib2s = @ptrCast(c.wglGetProcAddress("glVertexAttrib2s"));
+            gl.vertexAttrib2sv = @ptrCast(c.wglGetProcAddress("glVertexAttrib2sv"));
+            gl.vertexAttrib3d = @ptrCast(c.wglGetProcAddress("glVertexAttrib3d"));
+            gl.vertexAttrib3dv = @ptrCast(c.wglGetProcAddress("glVertexAttrib3dv"));
+            gl.vertexAttrib3f = @ptrCast(c.wglGetProcAddress("glVertexAttrib3f"));
+            gl.vertexAttrib3fv = @ptrCast(c.wglGetProcAddress("glVertexAttrib3fv"));
+            gl.vertexAttrib3s = @ptrCast(c.wglGetProcAddress("glVertexAttrib3s"));
+            gl.vertexAttrib3sv = @ptrCast(c.wglGetProcAddress("glVertexAttrib3sv"));
+            gl.vertexAttrib4Nbv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nbv"));
+            gl.vertexAttrib4Niv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Niv"));
+            gl.vertexAttrib4Nsv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nsv"));
+            gl.vertexAttrib4Nub = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nub"));
+            gl.vertexAttrib4Nubv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nubv"));
+            gl.vertexAttrib4Nuiv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nuiv"));
+            gl.vertexAttrib4Nusv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4Nusv"));
+            gl.vertexAttrib4bv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4bv"));
+            gl.vertexAttrib4d = @ptrCast(c.wglGetProcAddress("glVertexAttrib4d"));
+            gl.vertexAttrib4dv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4dv"));
+            gl.vertexAttrib4f = @ptrCast(c.wglGetProcAddress("glVertexAttrib4f"));
+            gl.vertexAttrib4fv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4fv"));
+            gl.vertexAttrib4iv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4iv"));
+            gl.vertexAttrib4s = @ptrCast(c.wglGetProcAddress("glVertexAttrib4s"));
+            gl.vertexAttrib4sv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4sv"));
+            gl.vertexAttrib4ubv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4ubv"));
+            gl.vertexAttrib4uiv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4uiv"));
+            gl.vertexAttrib4usv = @ptrCast(c.wglGetProcAddress("glVertexAttrib4usv"));
+            gl.vertexAttribPointer = @ptrCast(c.wglGetProcAddress("glVertexAttribPointer"));
         }
 
         if (version >= 210) {
-            gl.UniformMatrix2x3fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2x3fv"));
-            gl.UniformMatrix3x2fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3x2fv"));
-            gl.UniformMatrix2x4fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2x4fv"));
-            gl.UniformMatrix4x2fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4x2fv"));
-            gl.UniformMatrix3x4fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3x4fv"));
-            gl.UniformMatrix4x3fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4x3fv"));
+            gl.uniformMatrix2x3fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2x3fv"));
+            gl.uniformMatrix3x2fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3x2fv"));
+            gl.uniformMatrix2x4fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2x4fv"));
+            gl.uniformMatrix4x2fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4x2fv"));
+            gl.uniformMatrix3x4fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3x4fv"));
+            gl.uniformMatrix4x3fv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4x3fv"));
         }
 
         if (version >= 300) {
-            gl.ColorMaski = @ptrCast(c.wglGetProcAddress("glColorMaski"));
-            gl.GetBooleani_v = @ptrCast(c.wglGetProcAddress("glGetBooleani_v"));
-            gl.GetIntegeri_v = @ptrCast(c.wglGetProcAddress("glGetIntegeri_v"));
-            gl.Enablei = @ptrCast(c.wglGetProcAddress("glEnablei"));
-            gl.Disablei = @ptrCast(c.wglGetProcAddress("glDisablei"));
-            gl.IsEnabledi = @ptrCast(c.wglGetProcAddress("glIsEnabledi"));
-            gl.BeginTransformFeedback = @ptrCast(c.wglGetProcAddress("glBeginTransformFeedback"));
-            gl.EndTransformFeedback = @ptrCast(c.wglGetProcAddress("glEndTransformFeedback"));
-            gl.BindBufferRange = @ptrCast(c.wglGetProcAddress("glBindBufferRange"));
-            gl.BindBufferBase = @ptrCast(c.wglGetProcAddress("glBindBufferBase"));
-            gl.TransformFeedbackVaryings = @ptrCast(c.wglGetProcAddress("glTransformFeedbackVaryings"));
-            gl.GetTransformFeedbackVarying = @ptrCast(c.wglGetProcAddress("glGetTransformFeedbackVarying"));
-            gl.ClampColor = @ptrCast(c.wglGetProcAddress("glClampColor"));
-            gl.BeginConditionalRender = @ptrCast(c.wglGetProcAddress("glBeginConditionalRender"));
-            gl.EndConditionalRender = @ptrCast(c.wglGetProcAddress("glEndConditionalRender"));
-            gl.VertexAttribIPointer = @ptrCast(c.wglGetProcAddress("glVertexAttribIPointer"));
-            gl.GetVertexAttribIiv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribIiv"));
-            gl.GetVertexAttribIuiv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribIuiv"));
-            gl.VertexAttribI1i = @ptrCast(c.wglGetProcAddress("glVertexAttribI1i"));
-            gl.VertexAttribI2i = @ptrCast(c.wglGetProcAddress("glVertexAttribI2i"));
-            gl.VertexAttribI3i = @ptrCast(c.wglGetProcAddress("glVertexAttribI3i"));
-            gl.VertexAttribI4i = @ptrCast(c.wglGetProcAddress("glVertexAttribI4i"));
-            gl.VertexAttribI1ui = @ptrCast(c.wglGetProcAddress("glVertexAttribI1ui"));
-            gl.VertexAttribI2ui = @ptrCast(c.wglGetProcAddress("glVertexAttribI2ui"));
-            gl.VertexAttribI3ui = @ptrCast(c.wglGetProcAddress("glVertexAttribI3ui"));
-            gl.VertexAttribI4ui = @ptrCast(c.wglGetProcAddress("glVertexAttribI4ui"));
-            gl.VertexAttribI1iv = @ptrCast(c.wglGetProcAddress("glVertexAttribI1iv"));
-            gl.VertexAttribI2iv = @ptrCast(c.wglGetProcAddress("glVertexAttribI2iv"));
-            gl.VertexAttribI3iv = @ptrCast(c.wglGetProcAddress("glVertexAttribI3iv"));
-            gl.VertexAttribI4iv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4iv"));
-            gl.VertexAttribI1uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribI1uiv"));
-            gl.VertexAttribI2uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribI2uiv"));
-            gl.VertexAttribI3uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribI3uiv"));
-            gl.VertexAttribI4uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4uiv"));
-            gl.VertexAttribI4bv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4bv"));
-            gl.VertexAttribI4sv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4sv"));
-            gl.VertexAttribI4ubv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4ubv"));
-            gl.VertexAttribI4usv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4usv"));
-            gl.GetUniformuiv = @ptrCast(c.wglGetProcAddress("glGetUniformuiv"));
-            gl.BindFragDataLocation = @ptrCast(c.wglGetProcAddress("glBindFragDataLocation"));
-            gl.GetFragDataLocation = @ptrCast(c.wglGetProcAddress("glGetFragDataLocation"));
-            gl.Uniform1ui = @ptrCast(c.wglGetProcAddress("glUniform1ui"));
-            gl.Uniform2ui = @ptrCast(c.wglGetProcAddress("glUniform2ui"));
-            gl.Uniform3ui = @ptrCast(c.wglGetProcAddress("glUniform3ui"));
-            gl.Uniform4ui = @ptrCast(c.wglGetProcAddress("glUniform4ui"));
-            gl.Uniform1uiv = @ptrCast(c.wglGetProcAddress("glUniform1uiv"));
-            gl.Uniform2uiv = @ptrCast(c.wglGetProcAddress("glUniform2uiv"));
-            gl.Uniform3uiv = @ptrCast(c.wglGetProcAddress("glUniform3uiv"));
-            gl.Uniform4uiv = @ptrCast(c.wglGetProcAddress("glUniform4uiv"));
-            gl.TexParameterIiv = @ptrCast(c.wglGetProcAddress("glTexParameterIiv"));
-            gl.TexParameterIuiv = @ptrCast(c.wglGetProcAddress("glTexParameterIuiv"));
-            gl.GetTexParameterIiv = @ptrCast(c.wglGetProcAddress("glGetTexParameterIiv"));
-            gl.GetTexParameterIuiv = @ptrCast(c.wglGetProcAddress("glGetTexParameterIuiv"));
-            gl.ClearBufferiv = @ptrCast(c.wglGetProcAddress("glClearBufferiv"));
-            gl.ClearBufferuiv = @ptrCast(c.wglGetProcAddress("glClearBufferuiv"));
-            gl.ClearBufferfv = @ptrCast(c.wglGetProcAddress("glClearBufferfv"));
-            gl.ClearBufferfi = @ptrCast(c.wglGetProcAddress("glClearBufferfi"));
-            gl.GetStringi = @ptrCast(c.wglGetProcAddress("glGetStringi"));
-            gl.IsRenderbuffer = @ptrCast(c.wglGetProcAddress("glIsRenderbuffer"));
-            gl.BindRenderbuffer = @ptrCast(c.wglGetProcAddress("glBindRenderbuffer"));
-            gl.DeleteRenderbuffers = @ptrCast(c.wglGetProcAddress("glDeleteRenderbuffers"));
-            gl.GenRenderbuffers = @ptrCast(c.wglGetProcAddress("glGenRenderbuffers"));
-            gl.RenderbufferStorage = @ptrCast(c.wglGetProcAddress("glRenderbufferStorage"));
-            gl.GetRenderbufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetRenderbufferParameteriv"));
-            gl.IsFramebuffer = @ptrCast(c.wglGetProcAddress("glIsFramebuffer"));
-            gl.BindFramebuffer = @ptrCast(c.wglGetProcAddress("glBindFramebuffer"));
-            gl.DeleteFramebuffers = @ptrCast(c.wglGetProcAddress("glDeleteFramebuffers"));
-            gl.GenFramebuffers = @ptrCast(c.wglGetProcAddress("glGenFramebuffers"));
-            gl.CheckFramebufferStatus = @ptrCast(c.wglGetProcAddress("glCheckFramebufferStatus"));
-            gl.FramebufferTexture1D = @ptrCast(c.wglGetProcAddress("glFramebufferTexture1D"));
-            gl.FramebufferTexture2D = @ptrCast(c.wglGetProcAddress("glFramebufferTexture2D"));
-            gl.FramebufferTexture3D = @ptrCast(c.wglGetProcAddress("glFramebufferTexture3D"));
-            gl.FramebufferRenderbuffer = @ptrCast(c.wglGetProcAddress("glFramebufferRenderbuffer"));
-            gl.GetFramebufferAttachmentParameteriv = @ptrCast(c.wglGetProcAddress("glGetFramebufferAttachmentParameteriv"));
-            gl.GenerateMipmap = @ptrCast(c.wglGetProcAddress("glGenerateMipmap"));
-            gl.BlitFramebuffer = @ptrCast(c.wglGetProcAddress("glBlitFramebuffer"));
-            gl.RenderbufferStorageMultisample = @ptrCast(c.wglGetProcAddress("glRenderbufferStorageMultisample"));
-            gl.FramebufferTextureLayer = @ptrCast(c.wglGetProcAddress("glFramebufferTextureLayer"));
-            gl.MapBufferRange = @ptrCast(c.wglGetProcAddress("glMapBufferRange"));
-            gl.FlushMappedBufferRange = @ptrCast(c.wglGetProcAddress("glFlushMappedBufferRange"));
-            gl.BindVertexArray = @ptrCast(c.wglGetProcAddress("glBindVertexArray"));
-            gl.DeleteVertexArrays = @ptrCast(c.wglGetProcAddress("glDeleteVertexArrays"));
-            gl.GenVertexArrays = @ptrCast(c.wglGetProcAddress("glGenVertexArrays"));
-            gl.IsVertexArray = @ptrCast(c.wglGetProcAddress("glIsVertexArray"));
+            gl.colorMaski = @ptrCast(c.wglGetProcAddress("glColorMaski"));
+            gl.getBooleani_v = @ptrCast(c.wglGetProcAddress("glGetBooleani_v"));
+            gl.getIntegeri_v = @ptrCast(c.wglGetProcAddress("glGetIntegeri_v"));
+            gl.enablei = @ptrCast(c.wglGetProcAddress("glEnablei"));
+            gl.disablei = @ptrCast(c.wglGetProcAddress("glDisablei"));
+            gl.isEnabledi = @ptrCast(c.wglGetProcAddress("glIsEnabledi"));
+            gl.beginTransformFeedback = @ptrCast(c.wglGetProcAddress("glBeginTransformFeedback"));
+            gl.endTransformFeedback = @ptrCast(c.wglGetProcAddress("glEndTransformFeedback"));
+            gl.bindBufferRange = @ptrCast(c.wglGetProcAddress("glBindBufferRange"));
+            gl.bindBufferBase = @ptrCast(c.wglGetProcAddress("glBindBufferBase"));
+            gl.transformFeedbackVaryings = @ptrCast(c.wglGetProcAddress("glTransformFeedbackVaryings"));
+            gl.getTransformFeedbackVarying = @ptrCast(c.wglGetProcAddress("glGetTransformFeedbackVarying"));
+            gl.clampColor = @ptrCast(c.wglGetProcAddress("glClampColor"));
+            gl.beginConditionalRender = @ptrCast(c.wglGetProcAddress("glBeginConditionalRender"));
+            gl.endConditionalRender = @ptrCast(c.wglGetProcAddress("glEndConditionalRender"));
+            gl.vertexAttribIPointer = @ptrCast(c.wglGetProcAddress("glVertexAttribIPointer"));
+            gl.getVertexAttribIiv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribIiv"));
+            gl.getVertexAttribIuiv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribIuiv"));
+            gl.vertexAttribI1i = @ptrCast(c.wglGetProcAddress("glVertexAttribI1i"));
+            gl.vertexAttribI2i = @ptrCast(c.wglGetProcAddress("glVertexAttribI2i"));
+            gl.vertexAttribI3i = @ptrCast(c.wglGetProcAddress("glVertexAttribI3i"));
+            gl.vertexAttribI4i = @ptrCast(c.wglGetProcAddress("glVertexAttribI4i"));
+            gl.vertexAttribI1ui = @ptrCast(c.wglGetProcAddress("glVertexAttribI1ui"));
+            gl.vertexAttribI2ui = @ptrCast(c.wglGetProcAddress("glVertexAttribI2ui"));
+            gl.vertexAttribI3ui = @ptrCast(c.wglGetProcAddress("glVertexAttribI3ui"));
+            gl.vertexAttribI4ui = @ptrCast(c.wglGetProcAddress("glVertexAttribI4ui"));
+            gl.vertexAttribI1iv = @ptrCast(c.wglGetProcAddress("glVertexAttribI1iv"));
+            gl.vertexAttribI2iv = @ptrCast(c.wglGetProcAddress("glVertexAttribI2iv"));
+            gl.vertexAttribI3iv = @ptrCast(c.wglGetProcAddress("glVertexAttribI3iv"));
+            gl.vertexAttribI4iv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4iv"));
+            gl.vertexAttribI1uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribI1uiv"));
+            gl.vertexAttribI2uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribI2uiv"));
+            gl.vertexAttribI3uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribI3uiv"));
+            gl.vertexAttribI4uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4uiv"));
+            gl.vertexAttribI4bv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4bv"));
+            gl.vertexAttribI4sv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4sv"));
+            gl.vertexAttribI4ubv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4ubv"));
+            gl.vertexAttribI4usv = @ptrCast(c.wglGetProcAddress("glVertexAttribI4usv"));
+            gl.getUniformuiv = @ptrCast(c.wglGetProcAddress("glGetUniformuiv"));
+            gl.bindFragDataLocation = @ptrCast(c.wglGetProcAddress("glBindFragDataLocation"));
+            gl.getFragDataLocation = @ptrCast(c.wglGetProcAddress("glGetFragDataLocation"));
+            gl.uniform1ui = @ptrCast(c.wglGetProcAddress("glUniform1ui"));
+            gl.uniform2ui = @ptrCast(c.wglGetProcAddress("glUniform2ui"));
+            gl.uniform3ui = @ptrCast(c.wglGetProcAddress("glUniform3ui"));
+            gl.uniform4ui = @ptrCast(c.wglGetProcAddress("glUniform4ui"));
+            gl.uniform1uiv = @ptrCast(c.wglGetProcAddress("glUniform1uiv"));
+            gl.uniform2uiv = @ptrCast(c.wglGetProcAddress("glUniform2uiv"));
+            gl.uniform3uiv = @ptrCast(c.wglGetProcAddress("glUniform3uiv"));
+            gl.uniform4uiv = @ptrCast(c.wglGetProcAddress("glUniform4uiv"));
+            gl.texParameterIiv = @ptrCast(c.wglGetProcAddress("glTexParameterIiv"));
+            gl.texParameterIuiv = @ptrCast(c.wglGetProcAddress("glTexParameterIuiv"));
+            gl.getTexParameterIiv = @ptrCast(c.wglGetProcAddress("glGetTexParameterIiv"));
+            gl.getTexParameterIuiv = @ptrCast(c.wglGetProcAddress("glGetTexParameterIuiv"));
+            gl.clearBufferiv = @ptrCast(c.wglGetProcAddress("glClearBufferiv"));
+            gl.clearBufferuiv = @ptrCast(c.wglGetProcAddress("glClearBufferuiv"));
+            gl.clearBufferfv = @ptrCast(c.wglGetProcAddress("glClearBufferfv"));
+            gl.clearBufferfi = @ptrCast(c.wglGetProcAddress("glClearBufferfi"));
+            gl.getStringi = @ptrCast(c.wglGetProcAddress("glGetStringi"));
+            gl.isRenderbuffer = @ptrCast(c.wglGetProcAddress("glIsRenderbuffer"));
+            gl.bindRenderbuffer = @ptrCast(c.wglGetProcAddress("glBindRenderbuffer"));
+            gl.deleteRenderbuffers = @ptrCast(c.wglGetProcAddress("glDeleteRenderbuffers"));
+            gl.genRenderbuffers = @ptrCast(c.wglGetProcAddress("glGenRenderbuffers"));
+            gl.renderbufferStorage = @ptrCast(c.wglGetProcAddress("glRenderbufferStorage"));
+            gl.getRenderbufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetRenderbufferParameteriv"));
+            gl.isFramebuffer = @ptrCast(c.wglGetProcAddress("glIsFramebuffer"));
+            gl.bindFramebuffer = @ptrCast(c.wglGetProcAddress("glBindFramebuffer"));
+            gl.deleteFramebuffers = @ptrCast(c.wglGetProcAddress("glDeleteFramebuffers"));
+            gl.genFramebuffers = @ptrCast(c.wglGetProcAddress("glGenFramebuffers"));
+            gl.checkFramebufferStatus = @ptrCast(c.wglGetProcAddress("glCheckFramebufferStatus"));
+            gl.framebufferTexture1D = @ptrCast(c.wglGetProcAddress("glFramebufferTexture1D"));
+            gl.framebufferTexture2D = @ptrCast(c.wglGetProcAddress("glFramebufferTexture2D"));
+            gl.framebufferTexture3D = @ptrCast(c.wglGetProcAddress("glFramebufferTexture3D"));
+            gl.framebufferRenderbuffer = @ptrCast(c.wglGetProcAddress("glFramebufferRenderbuffer"));
+            gl.getFramebufferAttachmentParameteriv = @ptrCast(c.wglGetProcAddress("glGetFramebufferAttachmentParameteriv"));
+            gl.generateMipmap = @ptrCast(c.wglGetProcAddress("glGenerateMipmap"));
+            gl.blitFramebuffer = @ptrCast(c.wglGetProcAddress("glBlitFramebuffer"));
+            gl.renderbufferStorageMultisample = @ptrCast(c.wglGetProcAddress("glRenderbufferStorageMultisample"));
+            gl.framebufferTextureLayer = @ptrCast(c.wglGetProcAddress("glFramebufferTextureLayer"));
+            gl.mapBufferRange = @ptrCast(c.wglGetProcAddress("glMapBufferRange"));
+            gl.flushMappedBufferRange = @ptrCast(c.wglGetProcAddress("glFlushMappedBufferRange"));
+            gl.bindVertexArray = @ptrCast(c.wglGetProcAddress("glBindVertexArray"));
+            gl.deleteVertexArrays = @ptrCast(c.wglGetProcAddress("glDeleteVertexArrays"));
+            gl.genVertexArrays = @ptrCast(c.wglGetProcAddress("glGenVertexArrays"));
+            gl.isVertexArray = @ptrCast(c.wglGetProcAddress("glIsVertexArray"));
         }
 
         if (version >= 310) {
-            gl.DrawArraysInstanced = @ptrCast(c.wglGetProcAddress("glDrawArraysInstanced"));
-            gl.DrawElementsInstanced = @ptrCast(c.wglGetProcAddress("glDrawElementsInstanced"));
-            gl.TexBuffer = @ptrCast(c.wglGetProcAddress("glTexBuffer"));
-            gl.PrimitiveRestartIndex = @ptrCast(c.wglGetProcAddress("glPrimitiveRestartIndex"));
-            gl.CopyBufferSubData = @ptrCast(c.wglGetProcAddress("glCopyBufferSubData"));
-            gl.GetUniformIndices = @ptrCast(c.wglGetProcAddress("glGetUniformIndices"));
-            gl.GetActiveUniformsiv = @ptrCast(c.wglGetProcAddress("glGetActiveUniformsiv"));
-            gl.GetActiveUniformName = @ptrCast(c.wglGetProcAddress("glGetActiveUniformName"));
-            gl.GetUniformBlockIndex = @ptrCast(c.wglGetProcAddress("glGetUniformBlockIndex"));
-            gl.GetActiveUniformBlockiv = @ptrCast(c.wglGetProcAddress("glGetActiveUniformBlockiv"));
-            gl.GetActiveUniformBlockName = @ptrCast(c.wglGetProcAddress("glGetActiveUniformBlockName"));
-            gl.UniformBlockBinding = @ptrCast(c.wglGetProcAddress("glUniformBlockBinding"));
+            gl.drawArraysInstanced = @ptrCast(c.wglGetProcAddress("glDrawArraysInstanced"));
+            gl.drawElementsInstanced = @ptrCast(c.wglGetProcAddress("glDrawElementsInstanced"));
+            gl.texBuffer = @ptrCast(c.wglGetProcAddress("glTexBuffer"));
+            gl.primitiveRestartIndex = @ptrCast(c.wglGetProcAddress("glPrimitiveRestartIndex"));
+            gl.copyBufferSubData = @ptrCast(c.wglGetProcAddress("glCopyBufferSubData"));
+            gl.getUniformIndices = @ptrCast(c.wglGetProcAddress("glGetUniformIndices"));
+            gl.getActiveUniformsiv = @ptrCast(c.wglGetProcAddress("glGetActiveUniformsiv"));
+            gl.getActiveUniformName = @ptrCast(c.wglGetProcAddress("glGetActiveUniformName"));
+            gl.getUniformBlockIndex = @ptrCast(c.wglGetProcAddress("glGetUniformBlockIndex"));
+            gl.getActiveUniformBlockiv = @ptrCast(c.wglGetProcAddress("glGetActiveUniformBlockiv"));
+            gl.getActiveUniformBlockName = @ptrCast(c.wglGetProcAddress("glGetActiveUniformBlockName"));
+            gl.uniformBlockBinding = @ptrCast(c.wglGetProcAddress("glUniformBlockBinding"));
         }
 
         if (version >= 320) {
-            gl.DrawElementsBaseVertex = @ptrCast(c.wglGetProcAddress("glDrawElementsBaseVertex"));
-            gl.DrawRangeElementsBaseVertex = @ptrCast(c.wglGetProcAddress("glDrawRangeElementsBaseVertex"));
-            gl.DrawElementsInstancedBaseVertex = @ptrCast(c.wglGetProcAddress("glDrawElementsInstancedBaseVertex"));
-            gl.MultiDrawElementsBaseVertex = @ptrCast(c.wglGetProcAddress("glMultiDrawElementsBaseVertex"));
-            gl.ProvokingVertex = @ptrCast(c.wglGetProcAddress("glProvokingVertex"));
-            gl.FenceSync = @ptrCast(c.wglGetProcAddress("glFenceSync"));
-            gl.IsSync = @ptrCast(c.wglGetProcAddress("glIsSync"));
-            gl.DeleteSync = @ptrCast(c.wglGetProcAddress("glDeleteSync"));
-            gl.ClientWaitSync = @ptrCast(c.wglGetProcAddress("glClientWaitSync"));
-            gl.WaitSync = @ptrCast(c.wglGetProcAddress("glWaitSync"));
-            gl.GetInteger64v = @ptrCast(c.wglGetProcAddress("glGetInteger64v"));
-            gl.GetSynciv = @ptrCast(c.wglGetProcAddress("glGetSynciv"));
-            gl.GetInteger64i_v = @ptrCast(c.wglGetProcAddress("glGetInteger64i_v"));
-            gl.GetBufferParameteri64v = @ptrCast(c.wglGetProcAddress("glGetBufferParameteri64v"));
-            gl.FramebufferTexture = @ptrCast(c.wglGetProcAddress("glFramebufferTexture"));
-            gl.TexImage2DMultisample = @ptrCast(c.wglGetProcAddress("glTexImage2DMultisample"));
-            gl.TexImage3DMultisample = @ptrCast(c.wglGetProcAddress("glTexImage3DMultisample"));
-            gl.GetMultisamplefv = @ptrCast(c.wglGetProcAddress("glGetMultisamplefv"));
-            gl.SampleMaski = @ptrCast(c.wglGetProcAddress("glSampleMaski"));
+            gl.drawElementsBaseVertex = @ptrCast(c.wglGetProcAddress("glDrawElementsBaseVertex"));
+            gl.drawRangeElementsBaseVertex = @ptrCast(c.wglGetProcAddress("glDrawRangeElementsBaseVertex"));
+            gl.drawElementsInstancedBaseVertex = @ptrCast(c.wglGetProcAddress("glDrawElementsInstancedBaseVertex"));
+            gl.multiDrawElementsBaseVertex = @ptrCast(c.wglGetProcAddress("glMultiDrawElementsBaseVertex"));
+            gl.provokingVertex = @ptrCast(c.wglGetProcAddress("glProvokingVertex"));
+            gl.fenceSync = @ptrCast(c.wglGetProcAddress("glFenceSync"));
+            gl.isSync = @ptrCast(c.wglGetProcAddress("glIsSync"));
+            gl.deleteSync = @ptrCast(c.wglGetProcAddress("glDeleteSync"));
+            gl.clientWaitSync = @ptrCast(c.wglGetProcAddress("glClientWaitSync"));
+            gl.waitSync = @ptrCast(c.wglGetProcAddress("glWaitSync"));
+            gl.getInteger64v = @ptrCast(c.wglGetProcAddress("glGetInteger64v"));
+            gl.getSynciv = @ptrCast(c.wglGetProcAddress("glGetSynciv"));
+            gl.getInteger64i_v = @ptrCast(c.wglGetProcAddress("glGetInteger64i_v"));
+            gl.getBufferParameteri64v = @ptrCast(c.wglGetProcAddress("glGetBufferParameteri64v"));
+            gl.framebufferTexture = @ptrCast(c.wglGetProcAddress("glFramebufferTexture"));
+            gl.texImage2DMultisample = @ptrCast(c.wglGetProcAddress("glTexImage2DMultisample"));
+            gl.texImage3DMultisample = @ptrCast(c.wglGetProcAddress("glTexImage3DMultisample"));
+            gl.getMultisamplefv = @ptrCast(c.wglGetProcAddress("glGetMultisamplefv"));
+            gl.sampleMaski = @ptrCast(c.wglGetProcAddress("glSampleMaski"));
         }
 
         if (version >= 330) {
-            gl.BindFragDataLocationIndexed = @ptrCast(c.wglGetProcAddress("glBindFragDataLocationIndexed"));
-            gl.GetFragDataIndex = @ptrCast(c.wglGetProcAddress("glGetFragDataIndex"));
-            gl.GenSamplers = @ptrCast(c.wglGetProcAddress("glGenSamplers"));
-            gl.DeleteSamplers = @ptrCast(c.wglGetProcAddress("glDeleteSamplers"));
-            gl.IsSampler = @ptrCast(c.wglGetProcAddress("glIsSampler"));
-            gl.BindSampler = @ptrCast(c.wglGetProcAddress("glBindSampler"));
-            gl.SamplerParameteri = @ptrCast(c.wglGetProcAddress("glSamplerParameteri"));
-            gl.SamplerParameteriv = @ptrCast(c.wglGetProcAddress("glSamplerParameteriv"));
-            gl.SamplerParameterf = @ptrCast(c.wglGetProcAddress("glSamplerParameterf"));
-            gl.SamplerParameterfv = @ptrCast(c.wglGetProcAddress("glSamplerParameterfv"));
-            gl.SamplerParameterIiv = @ptrCast(c.wglGetProcAddress("glSamplerParameterIiv"));
-            gl.SamplerParameterIuiv = @ptrCast(c.wglGetProcAddress("glSamplerParameterIuiv"));
-            gl.GetSamplerParameteriv = @ptrCast(c.wglGetProcAddress("glGetSamplerParameteriv"));
-            gl.GetSamplerParameterIiv = @ptrCast(c.wglGetProcAddress("glGetSamplerParameterIiv"));
-            gl.GetSamplerParameterfv = @ptrCast(c.wglGetProcAddress("glGetSamplerParameterfv"));
-            gl.GetSamplerParameterIuiv = @ptrCast(c.wglGetProcAddress("glGetSamplerParameterIuiv"));
-            gl.QueryCounter = @ptrCast(c.wglGetProcAddress("glQueryCounter"));
-            gl.GetQueryObjecti64v = @ptrCast(c.wglGetProcAddress("glGetQueryObjecti64v"));
-            gl.GetQueryObjectui64v = @ptrCast(c.wglGetProcAddress("glGetQueryObjectui64v"));
-            gl.VertexAttribDivisor = @ptrCast(c.wglGetProcAddress("glVertexAttribDivisor"));
-            gl.VertexAttribP1ui = @ptrCast(c.wglGetProcAddress("glVertexAttribP1ui"));
-            gl.VertexAttribP1uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribP1uiv"));
-            gl.VertexAttribP2ui = @ptrCast(c.wglGetProcAddress("glVertexAttribP2ui"));
-            gl.VertexAttribP2uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribP2uiv"));
-            gl.VertexAttribP3ui = @ptrCast(c.wglGetProcAddress("glVertexAttribP3ui"));
-            gl.VertexAttribP3uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribP3uiv"));
-            gl.VertexAttribP4ui = @ptrCast(c.wglGetProcAddress("glVertexAttribP4ui"));
-            gl.VertexAttribP4uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribP4uiv"));
+            gl.bindFragDataLocationIndexed = @ptrCast(c.wglGetProcAddress("glBindFragDataLocationIndexed"));
+            gl.getFragDataIndex = @ptrCast(c.wglGetProcAddress("glGetFragDataIndex"));
+            gl.genSamplers = @ptrCast(c.wglGetProcAddress("glGenSamplers"));
+            gl.deleteSamplers = @ptrCast(c.wglGetProcAddress("glDeleteSamplers"));
+            gl.isSampler = @ptrCast(c.wglGetProcAddress("glIsSampler"));
+            gl.bindSampler = @ptrCast(c.wglGetProcAddress("glBindSampler"));
+            gl.samplerParameteri = @ptrCast(c.wglGetProcAddress("glSamplerParameteri"));
+            gl.samplerParameteriv = @ptrCast(c.wglGetProcAddress("glSamplerParameteriv"));
+            gl.samplerParameterf = @ptrCast(c.wglGetProcAddress("glSamplerParameterf"));
+            gl.samplerParameterfv = @ptrCast(c.wglGetProcAddress("glSamplerParameterfv"));
+            gl.samplerParameterIiv = @ptrCast(c.wglGetProcAddress("glSamplerParameterIiv"));
+            gl.samplerParameterIuiv = @ptrCast(c.wglGetProcAddress("glSamplerParameterIuiv"));
+            gl.getSamplerParameteriv = @ptrCast(c.wglGetProcAddress("glGetSamplerParameteriv"));
+            gl.getSamplerParameterIiv = @ptrCast(c.wglGetProcAddress("glGetSamplerParameterIiv"));
+            gl.getSamplerParameterfv = @ptrCast(c.wglGetProcAddress("glGetSamplerParameterfv"));
+            gl.getSamplerParameterIuiv = @ptrCast(c.wglGetProcAddress("glGetSamplerParameterIuiv"));
+            gl.queryCounter = @ptrCast(c.wglGetProcAddress("glQueryCounter"));
+            gl.getQueryObjecti64v = @ptrCast(c.wglGetProcAddress("glGetQueryObjecti64v"));
+            gl.getQueryObjectui64v = @ptrCast(c.wglGetProcAddress("glGetQueryObjectui64v"));
+            gl.vertexAttribDivisor = @ptrCast(c.wglGetProcAddress("glVertexAttribDivisor"));
+            gl.vertexAttribP1ui = @ptrCast(c.wglGetProcAddress("glVertexAttribP1ui"));
+            gl.vertexAttribP1uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribP1uiv"));
+            gl.vertexAttribP2ui = @ptrCast(c.wglGetProcAddress("glVertexAttribP2ui"));
+            gl.vertexAttribP2uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribP2uiv"));
+            gl.vertexAttribP3ui = @ptrCast(c.wglGetProcAddress("glVertexAttribP3ui"));
+            gl.vertexAttribP3uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribP3uiv"));
+            gl.vertexAttribP4ui = @ptrCast(c.wglGetProcAddress("glVertexAttribP4ui"));
+            gl.vertexAttribP4uiv = @ptrCast(c.wglGetProcAddress("glVertexAttribP4uiv"));
         }
 
         if (version >= 400) {
-            gl.MinSampleShading = @ptrCast(c.wglGetProcAddress("glMinSampleShading"));
-            gl.BlendEquationi = @ptrCast(c.wglGetProcAddress("glBlendEquationi"));
-            gl.BlendEquationSeparatei = @ptrCast(c.wglGetProcAddress("glBlendEquationSeparatei"));
-            gl.BlendFunci = @ptrCast(c.wglGetProcAddress("glBlendFunci"));
-            gl.BlendFuncSeparatei = @ptrCast(c.wglGetProcAddress("glBlendFuncSeparatei"));
-            gl.DrawArraysIndirect = @ptrCast(c.wglGetProcAddress("glDrawArraysIndirect"));
-            gl.DrawElementsIndirect = @ptrCast(c.wglGetProcAddress("glDrawElementsIndirect"));
-            gl.Uniform1d = @ptrCast(c.wglGetProcAddress("glUniform1d"));
-            gl.Uniform2d = @ptrCast(c.wglGetProcAddress("glUniform2d"));
-            gl.Uniform3d = @ptrCast(c.wglGetProcAddress("glUniform3d"));
-            gl.Uniform4d = @ptrCast(c.wglGetProcAddress("glUniform4d"));
-            gl.Uniform1dv = @ptrCast(c.wglGetProcAddress("glUniform1dv"));
-            gl.Uniform2dv = @ptrCast(c.wglGetProcAddress("glUniform2dv"));
-            gl.Uniform3dv = @ptrCast(c.wglGetProcAddress("glUniform3dv"));
-            gl.Uniform4dv = @ptrCast(c.wglGetProcAddress("glUniform4dv"));
-            gl.UniformMatrix2dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2dv"));
-            gl.UniformMatrix3dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3dv"));
-            gl.UniformMatrix4dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4dv"));
-            gl.UniformMatrix2x3dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2x3dv"));
-            gl.UniformMatrix2x4dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2x4dv"));
-            gl.UniformMatrix3x2dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3x2dv"));
-            gl.UniformMatrix3x4dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3x4dv"));
-            gl.UniformMatrix4x2dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4x2dv"));
-            gl.UniformMatrix4x3dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4x3dv"));
-            gl.GetUniformdv = @ptrCast(c.wglGetProcAddress("glGetUniformdv"));
-            gl.GetSubroutineUniformLocation = @ptrCast(c.wglGetProcAddress("glGetSubroutineUniformLocation"));
-            gl.GetSubroutineIndex = @ptrCast(c.wglGetProcAddress("glGetSubroutineIndex"));
-            gl.GetActiveSubroutineUniformiv = @ptrCast(c.wglGetProcAddress("glGetActiveSubroutineUniformiv"));
-            gl.GetActiveSubroutineUniformName = @ptrCast(c.wglGetProcAddress("glGetActiveSubroutineUniformName"));
-            gl.GetActiveSubroutineName = @ptrCast(c.wglGetProcAddress("glGetActiveSubroutineName"));
-            gl.UniformSubroutinesuiv = @ptrCast(c.wglGetProcAddress("glUniformSubroutinesuiv"));
-            gl.GetUniformSubroutineuiv = @ptrCast(c.wglGetProcAddress("glGetUniformSubroutineuiv"));
-            gl.GetProgramStageiv = @ptrCast(c.wglGetProcAddress("glGetProgramStageiv"));
-            gl.PatchParameteri = @ptrCast(c.wglGetProcAddress("glPatchParameteri"));
-            gl.PatchParameterfv = @ptrCast(c.wglGetProcAddress("glPatchParameterfv"));
-            gl.BindTransformFeedback = @ptrCast(c.wglGetProcAddress("glBindTransformFeedback"));
-            gl.DeleteTransformFeedbacks = @ptrCast(c.wglGetProcAddress("glDeleteTransformFeedbacks"));
-            gl.GenTransformFeedbacks = @ptrCast(c.wglGetProcAddress("glGenTransformFeedbacks"));
-            gl.IsTransformFeedback = @ptrCast(c.wglGetProcAddress("glIsTransformFeedback"));
-            gl.PauseTransformFeedback = @ptrCast(c.wglGetProcAddress("glPauseTransformFeedback"));
-            gl.ResumeTransformFeedback = @ptrCast(c.wglGetProcAddress("glResumeTransformFeedback"));
-            gl.DrawTransformFeedback = @ptrCast(c.wglGetProcAddress("glDrawTransformFeedback"));
-            gl.DrawTransformFeedbackStream = @ptrCast(c.wglGetProcAddress("glDrawTransformFeedbackStream"));
-            gl.BeginQueryIndexed = @ptrCast(c.wglGetProcAddress("glBeginQueryIndexed"));
-            gl.EndQueryIndexed = @ptrCast(c.wglGetProcAddress("glEndQueryIndexed"));
-            gl.GetQueryIndexediv = @ptrCast(c.wglGetProcAddress("glGetQueryIndexediv"));
+            gl.minSampleShading = @ptrCast(c.wglGetProcAddress("glMinSampleShading"));
+            gl.blendEquationi = @ptrCast(c.wglGetProcAddress("glBlendEquationi"));
+            gl.blendEquationSeparatei = @ptrCast(c.wglGetProcAddress("glBlendEquationSeparatei"));
+            gl.blendFunci = @ptrCast(c.wglGetProcAddress("glBlendFunci"));
+            gl.blendFuncSeparatei = @ptrCast(c.wglGetProcAddress("glBlendFuncSeparatei"));
+            gl.drawArraysIndirect = @ptrCast(c.wglGetProcAddress("glDrawArraysIndirect"));
+            gl.drawElementsIndirect = @ptrCast(c.wglGetProcAddress("glDrawElementsIndirect"));
+            gl.uniform1d = @ptrCast(c.wglGetProcAddress("glUniform1d"));
+            gl.uniform2d = @ptrCast(c.wglGetProcAddress("glUniform2d"));
+            gl.uniform3d = @ptrCast(c.wglGetProcAddress("glUniform3d"));
+            gl.uniform4d = @ptrCast(c.wglGetProcAddress("glUniform4d"));
+            gl.uniform1dv = @ptrCast(c.wglGetProcAddress("glUniform1dv"));
+            gl.uniform2dv = @ptrCast(c.wglGetProcAddress("glUniform2dv"));
+            gl.uniform3dv = @ptrCast(c.wglGetProcAddress("glUniform3dv"));
+            gl.uniform4dv = @ptrCast(c.wglGetProcAddress("glUniform4dv"));
+            gl.uniformMatrix2dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2dv"));
+            gl.uniformMatrix3dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3dv"));
+            gl.uniformMatrix4dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4dv"));
+            gl.uniformMatrix2x3dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2x3dv"));
+            gl.uniformMatrix2x4dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix2x4dv"));
+            gl.uniformMatrix3x2dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3x2dv"));
+            gl.uniformMatrix3x4dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix3x4dv"));
+            gl.uniformMatrix4x2dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4x2dv"));
+            gl.uniformMatrix4x3dv = @ptrCast(c.wglGetProcAddress("glUniformMatrix4x3dv"));
+            gl.getUniformdv = @ptrCast(c.wglGetProcAddress("glGetUniformdv"));
+            gl.getSubroutineUniformLocation = @ptrCast(c.wglGetProcAddress("glGetSubroutineUniformLocation"));
+            gl.getSubroutineIndex = @ptrCast(c.wglGetProcAddress("glGetSubroutineIndex"));
+            gl.getActiveSubroutineUniformiv = @ptrCast(c.wglGetProcAddress("glGetActiveSubroutineUniformiv"));
+            gl.getActiveSubroutineUniformName = @ptrCast(c.wglGetProcAddress("glGetActiveSubroutineUniformName"));
+            gl.getActiveSubroutineName = @ptrCast(c.wglGetProcAddress("glGetActiveSubroutineName"));
+            gl.uniformSubroutinesuiv = @ptrCast(c.wglGetProcAddress("glUniformSubroutinesuiv"));
+            gl.getUniformSubroutineuiv = @ptrCast(c.wglGetProcAddress("glGetUniformSubroutineuiv"));
+            gl.getProgramStageiv = @ptrCast(c.wglGetProcAddress("glGetProgramStageiv"));
+            gl.patchParameteri = @ptrCast(c.wglGetProcAddress("glPatchParameteri"));
+            gl.patchParameterfv = @ptrCast(c.wglGetProcAddress("glPatchParameterfv"));
+            gl.bindTransformFeedback = @ptrCast(c.wglGetProcAddress("glBindTransformFeedback"));
+            gl.deleteTransformFeedbacks = @ptrCast(c.wglGetProcAddress("glDeleteTransformFeedbacks"));
+            gl.genTransformFeedbacks = @ptrCast(c.wglGetProcAddress("glGenTransformFeedbacks"));
+            gl.isTransformFeedback = @ptrCast(c.wglGetProcAddress("glIsTransformFeedback"));
+            gl.pauseTransformFeedback = @ptrCast(c.wglGetProcAddress("glPauseTransformFeedback"));
+            gl.resumeTransformFeedback = @ptrCast(c.wglGetProcAddress("glResumeTransformFeedback"));
+            gl.drawTransformFeedback = @ptrCast(c.wglGetProcAddress("glDrawTransformFeedback"));
+            gl.drawTransformFeedbackStream = @ptrCast(c.wglGetProcAddress("glDrawTransformFeedbackStream"));
+            gl.beginQueryIndexed = @ptrCast(c.wglGetProcAddress("glBeginQueryIndexed"));
+            gl.endQueryIndexed = @ptrCast(c.wglGetProcAddress("glEndQueryIndexed"));
+            gl.getQueryIndexediv = @ptrCast(c.wglGetProcAddress("glGetQueryIndexediv"));
         }
 
         if (version >= 410) {
-            gl.ReleaseShaderCompiler = @ptrCast(c.wglGetProcAddress("glReleaseShaderCompiler"));
-            gl.ShaderBinary = @ptrCast(c.wglGetProcAddress("glShaderBinary"));
-            gl.GetShaderPrecisionFormat = @ptrCast(c.wglGetProcAddress("glGetShaderPrecisionFormat"));
-            gl.DepthRangef = @ptrCast(c.wglGetProcAddress("glDepthRangef"));
-            gl.ClearDepthf = @ptrCast(c.wglGetProcAddress("glClearDepthf"));
-            gl.GetProgramBinary = @ptrCast(c.wglGetProcAddress("glGetProgramBinary"));
-            gl.ProgramBinary = @ptrCast(c.wglGetProcAddress("glProgramBinary"));
-            gl.ProgramParameteri = @ptrCast(c.wglGetProcAddress("glProgramParameteri"));
-            gl.UseProgramStages = @ptrCast(c.wglGetProcAddress("glUseProgramStages"));
-            gl.ActiveShaderProgram = @ptrCast(c.wglGetProcAddress("glActiveShaderProgram"));
-            gl.CreateShaderProgramv = @ptrCast(c.wglGetProcAddress("glCreateShaderProgramv"));
-            gl.BindProgramPipeline = @ptrCast(c.wglGetProcAddress("glBindProgramPipeline"));
-            gl.DeleteProgramPipelines = @ptrCast(c.wglGetProcAddress("glDeleteProgramPipelines"));
-            gl.GenProgramPipelines = @ptrCast(c.wglGetProcAddress("glGenProgramPipelines"));
-            gl.IsProgramPipeline = @ptrCast(c.wglGetProcAddress("glIsProgramPipeline"));
-            gl.GetProgramPipelineiv = @ptrCast(c.wglGetProcAddress("glGetProgramPipelineiv"));
-            gl.ProgramUniform1i = @ptrCast(c.wglGetProcAddress("glProgramUniform1i"));
-            gl.ProgramUniform1iv = @ptrCast(c.wglGetProcAddress("glProgramUniform1iv"));
-            gl.ProgramUniform1f = @ptrCast(c.wglGetProcAddress("glProgramUniform1f"));
-            gl.ProgramUniform1fv = @ptrCast(c.wglGetProcAddress("glProgramUniform1fv"));
-            gl.ProgramUniform1d = @ptrCast(c.wglGetProcAddress("glProgramUniform1d"));
-            gl.ProgramUniform1dv = @ptrCast(c.wglGetProcAddress("glProgramUniform1dv"));
-            gl.ProgramUniform1ui = @ptrCast(c.wglGetProcAddress("glProgramUniform1ui"));
-            gl.ProgramUniform1uiv = @ptrCast(c.wglGetProcAddress("glProgramUniform1uiv"));
-            gl.ProgramUniform2i = @ptrCast(c.wglGetProcAddress("glProgramUniform2i"));
-            gl.ProgramUniform2iv = @ptrCast(c.wglGetProcAddress("glProgramUniform2iv"));
-            gl.ProgramUniform2f = @ptrCast(c.wglGetProcAddress("glProgramUniform2f"));
-            gl.ProgramUniform2fv = @ptrCast(c.wglGetProcAddress("glProgramUniform2fv"));
-            gl.ProgramUniform2d = @ptrCast(c.wglGetProcAddress("glProgramUniform2d"));
-            gl.ProgramUniform2dv = @ptrCast(c.wglGetProcAddress("glProgramUniform2dv"));
-            gl.ProgramUniform2ui = @ptrCast(c.wglGetProcAddress("glProgramUniform2ui"));
-            gl.ProgramUniform2uiv = @ptrCast(c.wglGetProcAddress("glProgramUniform2uiv"));
-            gl.ProgramUniform3i = @ptrCast(c.wglGetProcAddress("glProgramUniform3i"));
-            gl.ProgramUniform3iv = @ptrCast(c.wglGetProcAddress("glProgramUniform3iv"));
-            gl.ProgramUniform3f = @ptrCast(c.wglGetProcAddress("glProgramUniform3f"));
-            gl.ProgramUniform3fv = @ptrCast(c.wglGetProcAddress("glProgramUniform3fv"));
-            gl.ProgramUniform3d = @ptrCast(c.wglGetProcAddress("glProgramUniform3d"));
-            gl.ProgramUniform3dv = @ptrCast(c.wglGetProcAddress("glProgramUniform3dv"));
-            gl.ProgramUniform3ui = @ptrCast(c.wglGetProcAddress("glProgramUniform3ui"));
-            gl.ProgramUniform3uiv = @ptrCast(c.wglGetProcAddress("glProgramUniform3uiv"));
-            gl.ProgramUniform4i = @ptrCast(c.wglGetProcAddress("glProgramUniform4i"));
-            gl.ProgramUniform4iv = @ptrCast(c.wglGetProcAddress("glProgramUniform4iv"));
-            gl.ProgramUniform4f = @ptrCast(c.wglGetProcAddress("glProgramUniform4f"));
-            gl.ProgramUniform4fv = @ptrCast(c.wglGetProcAddress("glProgramUniform4fv"));
-            gl.ProgramUniform4d = @ptrCast(c.wglGetProcAddress("glProgramUniform4d"));
-            gl.ProgramUniform4dv = @ptrCast(c.wglGetProcAddress("glProgramUniform4dv"));
-            gl.ProgramUniform4ui = @ptrCast(c.wglGetProcAddress("glProgramUniform4ui"));
-            gl.ProgramUniform4uiv = @ptrCast(c.wglGetProcAddress("glProgramUniform4uiv"));
-            gl.ProgramUniformMatrix2fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2fv"));
-            gl.ProgramUniformMatrix3fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3fv"));
-            gl.ProgramUniformMatrix4fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4fv"));
-            gl.ProgramUniformMatrix2dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2dv"));
-            gl.ProgramUniformMatrix3dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3dv"));
-            gl.ProgramUniformMatrix4dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4dv"));
-            gl.ProgramUniformMatrix2x3fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2x3fv"));
-            gl.ProgramUniformMatrix3x2fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3x2fv"));
-            gl.ProgramUniformMatrix2x4fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2x4fv"));
-            gl.ProgramUniformMatrix4x2fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4x2fv"));
-            gl.ProgramUniformMatrix3x4fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3x4fv"));
-            gl.ProgramUniformMatrix4x3fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4x3fv"));
-            gl.ProgramUniformMatrix2x3dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2x3dv"));
-            gl.ProgramUniformMatrix3x2dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3x2dv"));
-            gl.ProgramUniformMatrix2x4dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2x4dv"));
-            gl.ProgramUniformMatrix4x2dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4x2dv"));
-            gl.ProgramUniformMatrix3x4dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3x4dv"));
-            gl.ProgramUniformMatrix4x3dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4x3dv"));
-            gl.ValidateProgramPipeline = @ptrCast(c.wglGetProcAddress("glValidateProgramPipeline"));
-            gl.GetProgramPipelineInfoLog = @ptrCast(c.wglGetProcAddress("glGetProgramPipelineInfoLog"));
-            gl.VertexAttribL1d = @ptrCast(c.wglGetProcAddress("glVertexAttribL1d"));
-            gl.VertexAttribL2d = @ptrCast(c.wglGetProcAddress("glVertexAttribL2d"));
-            gl.VertexAttribL3d = @ptrCast(c.wglGetProcAddress("glVertexAttribL3d"));
-            gl.VertexAttribL4d = @ptrCast(c.wglGetProcAddress("glVertexAttribL4d"));
-            gl.VertexAttribL1dv = @ptrCast(c.wglGetProcAddress("glVertexAttribL1dv"));
-            gl.VertexAttribL2dv = @ptrCast(c.wglGetProcAddress("glVertexAttribL2dv"));
-            gl.VertexAttribL3dv = @ptrCast(c.wglGetProcAddress("glVertexAttribL3dv"));
-            gl.VertexAttribL4dv = @ptrCast(c.wglGetProcAddress("glVertexAttribL4dv"));
-            gl.VertexAttribLPointer = @ptrCast(c.wglGetProcAddress("glVertexAttribLPointer"));
-            gl.GetVertexAttribLdv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribLdv"));
-            gl.ViewportArrayv = @ptrCast(c.wglGetProcAddress("glViewportArrayv"));
-            gl.ViewportIndexedf = @ptrCast(c.wglGetProcAddress("glViewportIndexedf"));
-            gl.ViewportIndexedfv = @ptrCast(c.wglGetProcAddress("glViewportIndexedfv"));
-            gl.ScissorArrayv = @ptrCast(c.wglGetProcAddress("glScissorArrayv"));
-            gl.ScissorIndexed = @ptrCast(c.wglGetProcAddress("glScissorIndexed"));
-            gl.ScissorIndexedv = @ptrCast(c.wglGetProcAddress("glScissorIndexedv"));
-            gl.DepthRangeArrayv = @ptrCast(c.wglGetProcAddress("glDepthRangeArrayv"));
-            gl.DepthRangeIndexed = @ptrCast(c.wglGetProcAddress("glDepthRangeIndexed"));
-            gl.GetFloati_v = @ptrCast(c.wglGetProcAddress("glGetFloati_v"));
-            gl.GetDoublei_v = @ptrCast(c.wglGetProcAddress("glGetDoublei_v"));
+            gl.releaseShaderCompiler = @ptrCast(c.wglGetProcAddress("glReleaseShaderCompiler"));
+            gl.shaderBinary = @ptrCast(c.wglGetProcAddress("glShaderBinary"));
+            gl.getShaderPrecisionFormat = @ptrCast(c.wglGetProcAddress("glGetShaderPrecisionFormat"));
+            gl.depthRangef = @ptrCast(c.wglGetProcAddress("glDepthRangef"));
+            gl.clearDepthf = @ptrCast(c.wglGetProcAddress("glClearDepthf"));
+            gl.getProgramBinary = @ptrCast(c.wglGetProcAddress("glGetProgramBinary"));
+            gl.programBinary = @ptrCast(c.wglGetProcAddress("glProgramBinary"));
+            gl.programParameteri = @ptrCast(c.wglGetProcAddress("glProgramParameteri"));
+            gl.useProgramStages = @ptrCast(c.wglGetProcAddress("glUseProgramStages"));
+            gl.activeShaderProgram = @ptrCast(c.wglGetProcAddress("glActiveShaderProgram"));
+            gl.createShaderProgramv = @ptrCast(c.wglGetProcAddress("glCreateShaderProgramv"));
+            gl.bindProgramPipeline = @ptrCast(c.wglGetProcAddress("glBindProgramPipeline"));
+            gl.deleteProgramPipelines = @ptrCast(c.wglGetProcAddress("glDeleteProgramPipelines"));
+            gl.genProgramPipelines = @ptrCast(c.wglGetProcAddress("glGenProgramPipelines"));
+            gl.isProgramPipeline = @ptrCast(c.wglGetProcAddress("glIsProgramPipeline"));
+            gl.getProgramPipelineiv = @ptrCast(c.wglGetProcAddress("glGetProgramPipelineiv"));
+            gl.programUniform1i = @ptrCast(c.wglGetProcAddress("glProgramUniform1i"));
+            gl.programUniform1iv = @ptrCast(c.wglGetProcAddress("glProgramUniform1iv"));
+            gl.programUniform1f = @ptrCast(c.wglGetProcAddress("glProgramUniform1f"));
+            gl.programUniform1fv = @ptrCast(c.wglGetProcAddress("glProgramUniform1fv"));
+            gl.programUniform1d = @ptrCast(c.wglGetProcAddress("glProgramUniform1d"));
+            gl.programUniform1dv = @ptrCast(c.wglGetProcAddress("glProgramUniform1dv"));
+            gl.programUniform1ui = @ptrCast(c.wglGetProcAddress("glProgramUniform1ui"));
+            gl.programUniform1uiv = @ptrCast(c.wglGetProcAddress("glProgramUniform1uiv"));
+            gl.programUniform2i = @ptrCast(c.wglGetProcAddress("glProgramUniform2i"));
+            gl.programUniform2iv = @ptrCast(c.wglGetProcAddress("glProgramUniform2iv"));
+            gl.programUniform2f = @ptrCast(c.wglGetProcAddress("glProgramUniform2f"));
+            gl.programUniform2fv = @ptrCast(c.wglGetProcAddress("glProgramUniform2fv"));
+            gl.programUniform2d = @ptrCast(c.wglGetProcAddress("glProgramUniform2d"));
+            gl.programUniform2dv = @ptrCast(c.wglGetProcAddress("glProgramUniform2dv"));
+            gl.programUniform2ui = @ptrCast(c.wglGetProcAddress("glProgramUniform2ui"));
+            gl.programUniform2uiv = @ptrCast(c.wglGetProcAddress("glProgramUniform2uiv"));
+            gl.programUniform3i = @ptrCast(c.wglGetProcAddress("glProgramUniform3i"));
+            gl.programUniform3iv = @ptrCast(c.wglGetProcAddress("glProgramUniform3iv"));
+            gl.programUniform3f = @ptrCast(c.wglGetProcAddress("glProgramUniform3f"));
+            gl.programUniform3fv = @ptrCast(c.wglGetProcAddress("glProgramUniform3fv"));
+            gl.programUniform3d = @ptrCast(c.wglGetProcAddress("glProgramUniform3d"));
+            gl.programUniform3dv = @ptrCast(c.wglGetProcAddress("glProgramUniform3dv"));
+            gl.programUniform3ui = @ptrCast(c.wglGetProcAddress("glProgramUniform3ui"));
+            gl.programUniform3uiv = @ptrCast(c.wglGetProcAddress("glProgramUniform3uiv"));
+            gl.programUniform4i = @ptrCast(c.wglGetProcAddress("glProgramUniform4i"));
+            gl.programUniform4iv = @ptrCast(c.wglGetProcAddress("glProgramUniform4iv"));
+            gl.programUniform4f = @ptrCast(c.wglGetProcAddress("glProgramUniform4f"));
+            gl.programUniform4fv = @ptrCast(c.wglGetProcAddress("glProgramUniform4fv"));
+            gl.programUniform4d = @ptrCast(c.wglGetProcAddress("glProgramUniform4d"));
+            gl.programUniform4dv = @ptrCast(c.wglGetProcAddress("glProgramUniform4dv"));
+            gl.programUniform4ui = @ptrCast(c.wglGetProcAddress("glProgramUniform4ui"));
+            gl.programUniform4uiv = @ptrCast(c.wglGetProcAddress("glProgramUniform4uiv"));
+            gl.programUniformMatrix2fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2fv"));
+            gl.programUniformMatrix3fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3fv"));
+            gl.programUniformMatrix4fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4fv"));
+            gl.programUniformMatrix2dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2dv"));
+            gl.programUniformMatrix3dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3dv"));
+            gl.programUniformMatrix4dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4dv"));
+            gl.programUniformMatrix2x3fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2x3fv"));
+            gl.programUniformMatrix3x2fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3x2fv"));
+            gl.programUniformMatrix2x4fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2x4fv"));
+            gl.programUniformMatrix4x2fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4x2fv"));
+            gl.programUniformMatrix3x4fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3x4fv"));
+            gl.programUniformMatrix4x3fv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4x3fv"));
+            gl.programUniformMatrix2x3dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2x3dv"));
+            gl.programUniformMatrix3x2dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3x2dv"));
+            gl.programUniformMatrix2x4dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix2x4dv"));
+            gl.programUniformMatrix4x2dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4x2dv"));
+            gl.programUniformMatrix3x4dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix3x4dv"));
+            gl.programUniformMatrix4x3dv = @ptrCast(c.wglGetProcAddress("glProgramUniformMatrix4x3dv"));
+            gl.validateProgramPipeline = @ptrCast(c.wglGetProcAddress("glValidateProgramPipeline"));
+            gl.getProgramPipelineInfoLog = @ptrCast(c.wglGetProcAddress("glGetProgramPipelineInfoLog"));
+            gl.vertexAttribL1d = @ptrCast(c.wglGetProcAddress("glVertexAttribL1d"));
+            gl.vertexAttribL2d = @ptrCast(c.wglGetProcAddress("glVertexAttribL2d"));
+            gl.vertexAttribL3d = @ptrCast(c.wglGetProcAddress("glVertexAttribL3d"));
+            gl.vertexAttribL4d = @ptrCast(c.wglGetProcAddress("glVertexAttribL4d"));
+            gl.vertexAttribL1dv = @ptrCast(c.wglGetProcAddress("glVertexAttribL1dv"));
+            gl.vertexAttribL2dv = @ptrCast(c.wglGetProcAddress("glVertexAttribL2dv"));
+            gl.vertexAttribL3dv = @ptrCast(c.wglGetProcAddress("glVertexAttribL3dv"));
+            gl.vertexAttribL4dv = @ptrCast(c.wglGetProcAddress("glVertexAttribL4dv"));
+            gl.vertexAttribLPointer = @ptrCast(c.wglGetProcAddress("glVertexAttribLPointer"));
+            gl.getVertexAttribLdv = @ptrCast(c.wglGetProcAddress("glGetVertexAttribLdv"));
+            gl.viewportArrayv = @ptrCast(c.wglGetProcAddress("glViewportArrayv"));
+            gl.viewportIndexedf = @ptrCast(c.wglGetProcAddress("glViewportIndexedf"));
+            gl.viewportIndexedfv = @ptrCast(c.wglGetProcAddress("glViewportIndexedfv"));
+            gl.scissorArrayv = @ptrCast(c.wglGetProcAddress("glScissorArrayv"));
+            gl.scissorIndexed = @ptrCast(c.wglGetProcAddress("glScissorIndexed"));
+            gl.scissorIndexedv = @ptrCast(c.wglGetProcAddress("glScissorIndexedv"));
+            gl.depthRangeArrayv = @ptrCast(c.wglGetProcAddress("glDepthRangeArrayv"));
+            gl.depthRangeIndexed = @ptrCast(c.wglGetProcAddress("glDepthRangeIndexed"));
+            gl.getFloati_v = @ptrCast(c.wglGetProcAddress("glGetFloati_v"));
+            gl.getDoublei_v = @ptrCast(c.wglGetProcAddress("glGetDoublei_v"));
         }
 
         if (version >= 420) {
-            gl.DrawArraysInstancedBaseInstance = @ptrCast(c.wglGetProcAddress("glDrawArraysInstancedBaseInstance"));
-            gl.DrawElementsInstancedBaseInstance = @ptrCast(c.wglGetProcAddress("glDrawElementsInstancedBaseInstance"));
-            gl.DrawElementsInstancedBaseVertexBaseInstance = @ptrCast(c.wglGetProcAddress("glDrawElementsInstancedBaseVertexBaseInstance"));
-            gl.GetInternalformativ = @ptrCast(c.wglGetProcAddress("glGetInternalformativ"));
-            gl.GetActiveAtomicCounterBufferiv = @ptrCast(c.wglGetProcAddress("glGetActiveAtomicCounterBufferiv"));
-            gl.BindImageTexture = @ptrCast(c.wglGetProcAddress("glBindImageTexture"));
-            gl.MemoryBarrier = @ptrCast(c.wglGetProcAddress("glMemoryBarrier"));
-            gl.TexStorage1D = @ptrCast(c.wglGetProcAddress("glTexStorage1D"));
-            gl.TexStorage2D = @ptrCast(c.wglGetProcAddress("glTexStorage2D"));
-            gl.TexStorage3D = @ptrCast(c.wglGetProcAddress("glTexStorage3D"));
-            gl.DrawTransformFeedbackInstanced = @ptrCast(c.wglGetProcAddress("glDrawTransformFeedbackInstanced"));
-            gl.DrawTransformFeedbackStreamInstanced = @ptrCast(c.wglGetProcAddress("glDrawTransformFeedbackStreamInstanced"));
+            gl.drawArraysInstancedBaseInstance = @ptrCast(c.wglGetProcAddress("glDrawArraysInstancedBaseInstance"));
+            gl.drawElementsInstancedBaseInstance = @ptrCast(c.wglGetProcAddress("glDrawElementsInstancedBaseInstance"));
+            gl.drawElementsInstancedBaseVertexBaseInstance = @ptrCast(c.wglGetProcAddress("glDrawElementsInstancedBaseVertexBaseInstance"));
+            gl.getInternalformativ = @ptrCast(c.wglGetProcAddress("glGetInternalformativ"));
+            gl.getActiveAtomicCounterBufferiv = @ptrCast(c.wglGetProcAddress("glGetActiveAtomicCounterBufferiv"));
+            gl.bindImageTexture = @ptrCast(c.wglGetProcAddress("glBindImageTexture"));
+            gl.memoryBarrier = @ptrCast(c.wglGetProcAddress("glMemoryBarrier"));
+            gl.texStorage1D = @ptrCast(c.wglGetProcAddress("glTexStorage1D"));
+            gl.texStorage2D = @ptrCast(c.wglGetProcAddress("glTexStorage2D"));
+            gl.texStorage3D = @ptrCast(c.wglGetProcAddress("glTexStorage3D"));
+            gl.drawTransformFeedbackInstanced = @ptrCast(c.wglGetProcAddress("glDrawTransformFeedbackInstanced"));
+            gl.drawTransformFeedbackStreamInstanced = @ptrCast(c.wglGetProcAddress("glDrawTransformFeedbackStreamInstanced"));
         }
 
         if (version >= 430) {
-            gl.ClearBufferData = @ptrCast(c.wglGetProcAddress("glClearBufferData"));
-            gl.ClearBufferSubData = @ptrCast(c.wglGetProcAddress("glClearBufferSubData"));
-            gl.DispatchCompute = @ptrCast(c.wglGetProcAddress("glDispatchCompute"));
-            gl.DispatchComputeIndirect = @ptrCast(c.wglGetProcAddress("glDispatchComputeIndirect"));
-            gl.CopyImageSubData = @ptrCast(c.wglGetProcAddress("glCopyImageSubData"));
-            gl.FramebufferParameteri = @ptrCast(c.wglGetProcAddress("glFramebufferParameteri"));
-            gl.GetFramebufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetFramebufferParameteriv"));
-            gl.GetInternalformati64v = @ptrCast(c.wglGetProcAddress("glGetInternalformati64v"));
-            gl.InvalidateTexSubImage = @ptrCast(c.wglGetProcAddress("glInvalidateTexSubImage"));
-            gl.InvalidateTexImage = @ptrCast(c.wglGetProcAddress("glInvalidateTexImage"));
-            gl.InvalidateBufferSubData = @ptrCast(c.wglGetProcAddress("glInvalidateBufferSubData"));
-            gl.InvalidateBufferData = @ptrCast(c.wglGetProcAddress("glInvalidateBufferData"));
-            gl.InvalidateFramebuffer = @ptrCast(c.wglGetProcAddress("glInvalidateFramebuffer"));
-            gl.InvalidateSubFramebuffer = @ptrCast(c.wglGetProcAddress("glInvalidateSubFramebuffer"));
-            gl.MultiDrawArraysIndirect = @ptrCast(c.wglGetProcAddress("glMultiDrawArraysIndirect"));
-            gl.MultiDrawElementsIndirect = @ptrCast(c.wglGetProcAddress("glMultiDrawElementsIndirect"));
-            gl.GetProgramInterfaceiv = @ptrCast(c.wglGetProcAddress("glGetProgramInterfaceiv"));
-            gl.GetProgramResourceIndex = @ptrCast(c.wglGetProcAddress("glGetProgramResourceIndex"));
-            gl.GetProgramResourceName = @ptrCast(c.wglGetProcAddress("glGetProgramResourceName"));
-            gl.GetProgramResourceiv = @ptrCast(c.wglGetProcAddress("glGetProgramResourceiv"));
-            gl.GetProgramResourceLocation = @ptrCast(c.wglGetProcAddress("glGetProgramResourceLocation"));
-            gl.GetProgramResourceLocationIndex = @ptrCast(c.wglGetProcAddress("glGetProgramResourceLocationIndex"));
-            gl.ShaderStorageBlockBinding = @ptrCast(c.wglGetProcAddress("glShaderStorageBlockBinding"));
-            gl.TexBufferRange = @ptrCast(c.wglGetProcAddress("glTexBufferRange"));
-            gl.TexStorage2DMultisample = @ptrCast(c.wglGetProcAddress("glTexStorage2DMultisample"));
-            gl.TexStorage3DMultisample = @ptrCast(c.wglGetProcAddress("glTexStorage3DMultisample"));
-            gl.TextureView = @ptrCast(c.wglGetProcAddress("glTextureView"));
-            gl.BindVertexBuffer = @ptrCast(c.wglGetProcAddress("glBindVertexBuffer"));
-            gl.VertexAttribFormat = @ptrCast(c.wglGetProcAddress("glVertexAttribFormat"));
-            gl.VertexAttribIFormat = @ptrCast(c.wglGetProcAddress("glVertexAttribIFormat"));
-            gl.VertexAttribLFormat = @ptrCast(c.wglGetProcAddress("glVertexAttribLFormat"));
-            gl.VertexAttribBinding = @ptrCast(c.wglGetProcAddress("glVertexAttribBinding"));
-            gl.VertexBindingDivisor = @ptrCast(c.wglGetProcAddress("glVertexBindingDivisor"));
-            gl.DebugMessageControl = @ptrCast(c.wglGetProcAddress("glDebugMessageControl"));
-            gl.DebugMessageInsert = @ptrCast(c.wglGetProcAddress("glDebugMessageInsert"));
-            gl.DebugMessageCallback = @ptrCast(c.wglGetProcAddress("glDebugMessageCallback"));
-            gl.GetDebugMessageLog = @ptrCast(c.wglGetProcAddress("glGetDebugMessageLog"));
-            gl.PushDebugGroup = @ptrCast(c.wglGetProcAddress("glPushDebugGroup"));
-            gl.PopDebugGroup = @ptrCast(c.wglGetProcAddress("glPopDebugGroup"));
-            gl.ObjectLabel = @ptrCast(c.wglGetProcAddress("glObjectLabel"));
-            gl.GetObjectLabel = @ptrCast(c.wglGetProcAddress("glGetObjectLabel"));
-            gl.ObjectPtrLabel = @ptrCast(c.wglGetProcAddress("glObjectPtrLabel"));
-            gl.GetObjectPtrLabel = @ptrCast(c.wglGetProcAddress("glGetObjectPtrLabel"));
+            gl.clearBufferData = @ptrCast(c.wglGetProcAddress("glClearBufferData"));
+            gl.clearBufferSubData = @ptrCast(c.wglGetProcAddress("glClearBufferSubData"));
+            gl.dispatchCompute = @ptrCast(c.wglGetProcAddress("glDispatchCompute"));
+            gl.dispatchComputeIndirect = @ptrCast(c.wglGetProcAddress("glDispatchComputeIndirect"));
+            gl.copyImageSubData = @ptrCast(c.wglGetProcAddress("glCopyImageSubData"));
+            gl.framebufferParameteri = @ptrCast(c.wglGetProcAddress("glFramebufferParameteri"));
+            gl.getFramebufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetFramebufferParameteriv"));
+            gl.getInternalformati64v = @ptrCast(c.wglGetProcAddress("glGetInternalformati64v"));
+            gl.invalidateTexSubImage = @ptrCast(c.wglGetProcAddress("glInvalidateTexSubImage"));
+            gl.invalidateTexImage = @ptrCast(c.wglGetProcAddress("glInvalidateTexImage"));
+            gl.invalidateBufferSubData = @ptrCast(c.wglGetProcAddress("glInvalidateBufferSubData"));
+            gl.invalidateBufferData = @ptrCast(c.wglGetProcAddress("glInvalidateBufferData"));
+            gl.invalidateFramebuffer = @ptrCast(c.wglGetProcAddress("glInvalidateFramebuffer"));
+            gl.invalidateSubFramebuffer = @ptrCast(c.wglGetProcAddress("glInvalidateSubFramebuffer"));
+            gl.multiDrawArraysIndirect = @ptrCast(c.wglGetProcAddress("glMultiDrawArraysIndirect"));
+            gl.multiDrawElementsIndirect = @ptrCast(c.wglGetProcAddress("glMultiDrawElementsIndirect"));
+            gl.getProgramInterfaceiv = @ptrCast(c.wglGetProcAddress("glGetProgramInterfaceiv"));
+            gl.getProgramResourceIndex = @ptrCast(c.wglGetProcAddress("glGetProgramResourceIndex"));
+            gl.getProgramResourceName = @ptrCast(c.wglGetProcAddress("glGetProgramResourceName"));
+            gl.getProgramResourceiv = @ptrCast(c.wglGetProcAddress("glGetProgramResourceiv"));
+            gl.getProgramResourceLocation = @ptrCast(c.wglGetProcAddress("glGetProgramResourceLocation"));
+            gl.getProgramResourceLocationIndex = @ptrCast(c.wglGetProcAddress("glGetProgramResourceLocationIndex"));
+            gl.shaderStorageBlockBinding = @ptrCast(c.wglGetProcAddress("glShaderStorageBlockBinding"));
+            gl.texBufferRange = @ptrCast(c.wglGetProcAddress("glTexBufferRange"));
+            gl.texStorage2DMultisample = @ptrCast(c.wglGetProcAddress("glTexStorage2DMultisample"));
+            gl.texStorage3DMultisample = @ptrCast(c.wglGetProcAddress("glTexStorage3DMultisample"));
+            gl.textureView = @ptrCast(c.wglGetProcAddress("glTextureView"));
+            gl.bindVertexBuffer = @ptrCast(c.wglGetProcAddress("glBindVertexBuffer"));
+            gl.vertexAttribFormat = @ptrCast(c.wglGetProcAddress("glVertexAttribFormat"));
+            gl.vertexAttribIFormat = @ptrCast(c.wglGetProcAddress("glVertexAttribIFormat"));
+            gl.vertexAttribLFormat = @ptrCast(c.wglGetProcAddress("glVertexAttribLFormat"));
+            gl.vertexAttribBinding = @ptrCast(c.wglGetProcAddress("glVertexAttribBinding"));
+            gl.vertexBindingDivisor = @ptrCast(c.wglGetProcAddress("glVertexBindingDivisor"));
+            gl.debugMessageControl = @ptrCast(c.wglGetProcAddress("glDebugMessageControl"));
+            gl.debugMessageInsert = @ptrCast(c.wglGetProcAddress("glDebugMessageInsert"));
+            gl.debugMessageCallback = @ptrCast(c.wglGetProcAddress("glDebugMessageCallback"));
+            gl.getDebugMessageLog = @ptrCast(c.wglGetProcAddress("glGetDebugMessageLog"));
+            gl.pushDebugGroup = @ptrCast(c.wglGetProcAddress("glPushDebugGroup"));
+            gl.popDebugGroup = @ptrCast(c.wglGetProcAddress("glPopDebugGroup"));
+            gl.objectLabel = @ptrCast(c.wglGetProcAddress("glObjectLabel"));
+            gl.getObjectLabel = @ptrCast(c.wglGetProcAddress("glGetObjectLabel"));
+            gl.objectPtrLabel = @ptrCast(c.wglGetProcAddress("glObjectPtrLabel"));
+            gl.getObjectPtrLabel = @ptrCast(c.wglGetProcAddress("glGetObjectPtrLabel"));
         }
 
         if (version >= 440) {
-            gl.BufferStorage = @ptrCast(c.wglGetProcAddress("glBufferStorage"));
-            gl.ClearTexImage = @ptrCast(c.wglGetProcAddress("glClearTexImage"));
-            gl.ClearTexSubImage = @ptrCast(c.wglGetProcAddress("glClearTexSubImage"));
-            gl.BindBuffersBase = @ptrCast(c.wglGetProcAddress("glBindBuffersBase"));
-            gl.BindBuffersRange = @ptrCast(c.wglGetProcAddress("glBindBuffersRange"));
-            gl.BindTextures = @ptrCast(c.wglGetProcAddress("glBindTextures"));
-            gl.BindSamplers = @ptrCast(c.wglGetProcAddress("glBindSamplers"));
-            gl.BindImageTextures = @ptrCast(c.wglGetProcAddress("glBindImageTextures"));
-            gl.BindVertexBuffers = @ptrCast(c.wglGetProcAddress("glBindVertexBuffers"));
+            gl.bufferStorage = @ptrCast(c.wglGetProcAddress("glBufferStorage"));
+            gl.clearTexImage = @ptrCast(c.wglGetProcAddress("glClearTexImage"));
+            gl.clearTexSubImage = @ptrCast(c.wglGetProcAddress("glClearTexSubImage"));
+            gl.bindBuffersBase = @ptrCast(c.wglGetProcAddress("glBindBuffersBase"));
+            gl.bindBuffersRange = @ptrCast(c.wglGetProcAddress("glBindBuffersRange"));
+            gl.bindTextures = @ptrCast(c.wglGetProcAddress("glBindTextures"));
+            gl.bindSamplers = @ptrCast(c.wglGetProcAddress("glBindSamplers"));
+            gl.bindImageTextures = @ptrCast(c.wglGetProcAddress("glBindImageTextures"));
+            gl.bindVertexBuffers = @ptrCast(c.wglGetProcAddress("glBindVertexBuffers"));
         }
 
         if (version >= 450) {
-            gl.ClipControl = @ptrCast(c.wglGetProcAddress("glClipControl"));
-            gl.CreateTransformFeedbacks = @ptrCast(c.wglGetProcAddress("glCreateTransformFeedbacks"));
-            gl.TransformFeedbackBufferBase = @ptrCast(c.wglGetProcAddress("glTransformFeedbackBufferBase"));
-            gl.TransformFeedbackBufferRange = @ptrCast(c.wglGetProcAddress("glTransformFeedbackBufferRange"));
-            gl.GetTransformFeedbackiv = @ptrCast(c.wglGetProcAddress("glGetTransformFeedbackiv"));
-            gl.GetTransformFeedbacki_v = @ptrCast(c.wglGetProcAddress("glGetTransformFeedbacki_v"));
-            gl.GetTransformFeedbacki64_v = @ptrCast(c.wglGetProcAddress("glGetTransformFeedbacki64_v"));
-            gl.CreateBuffers = @ptrCast(c.wglGetProcAddress("glCreateBuffers"));
-            gl.NamedBufferStorage = @ptrCast(c.wglGetProcAddress("glNamedBufferStorage"));
-            gl.NamedBufferData = @ptrCast(c.wglGetProcAddress("glNamedBufferData"));
-            gl.NamedBufferSubData = @ptrCast(c.wglGetProcAddress("glNamedBufferSubData"));
-            gl.CopyNamedBufferSubData = @ptrCast(c.wglGetProcAddress("glCopyNamedBufferSubData"));
-            gl.ClearNamedBufferData = @ptrCast(c.wglGetProcAddress("glClearNamedBufferData"));
-            gl.ClearNamedBufferSubData = @ptrCast(c.wglGetProcAddress("glClearNamedBufferSubData"));
-            gl.MapNamedBuffer = @ptrCast(c.wglGetProcAddress("glMapNamedBuffer"));
-            gl.MapNamedBufferRange = @ptrCast(c.wglGetProcAddress("glMapNamedBufferRange"));
-            gl.UnmapNamedBuffer = @ptrCast(c.wglGetProcAddress("glUnmapNamedBuffer"));
-            gl.FlushMappedNamedBufferRange = @ptrCast(c.wglGetProcAddress("glFlushMappedNamedBufferRange"));
-            gl.GetNamedBufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetNamedBufferParameteriv"));
-            gl.GetNamedBufferParameteri64v = @ptrCast(c.wglGetProcAddress("glGetNamedBufferParameteri64v"));
-            gl.GetNamedBufferPointerv = @ptrCast(c.wglGetProcAddress("glGetNamedBufferPointerv"));
-            gl.GetNamedBufferSubData = @ptrCast(c.wglGetProcAddress("glGetNamedBufferSubData"));
-            gl.CreateFramebuffers = @ptrCast(c.wglGetProcAddress("glCreateFramebuffers"));
-            gl.NamedFramebufferRenderbuffer = @ptrCast(c.wglGetProcAddress("glNamedFramebufferRenderbuffer"));
-            gl.NamedFramebufferParameteri = @ptrCast(c.wglGetProcAddress("glNamedFramebufferParameteri"));
-            gl.NamedFramebufferTexture = @ptrCast(c.wglGetProcAddress("glNamedFramebufferTexture"));
-            gl.NamedFramebufferTextureLayer = @ptrCast(c.wglGetProcAddress("glNamedFramebufferTextureLayer"));
-            gl.NamedFramebufferDrawBuffer = @ptrCast(c.wglGetProcAddress("glNamedFramebufferDrawBuffer"));
-            gl.NamedFramebufferDrawBuffers = @ptrCast(c.wglGetProcAddress("glNamedFramebufferDrawBuffers"));
-            gl.NamedFramebufferReadBuffer = @ptrCast(c.wglGetProcAddress("glNamedFramebufferReadBuffer"));
-            gl.InvalidateNamedFramebufferData = @ptrCast(c.wglGetProcAddress("glInvalidateNamedFramebufferData"));
-            gl.InvalidateNamedFramebufferSubData = @ptrCast(c.wglGetProcAddress("glInvalidateNamedFramebufferSubData"));
-            gl.ClearNamedFramebufferiv = @ptrCast(c.wglGetProcAddress("glClearNamedFramebufferiv"));
-            gl.ClearNamedFramebufferuiv = @ptrCast(c.wglGetProcAddress("glClearNamedFramebufferuiv"));
-            gl.ClearNamedFramebufferfv = @ptrCast(c.wglGetProcAddress("glClearNamedFramebufferfv"));
-            gl.ClearNamedFramebufferfi = @ptrCast(c.wglGetProcAddress("glClearNamedFramebufferfi"));
-            gl.BlitNamedFramebuffer = @ptrCast(c.wglGetProcAddress("glBlitNamedFramebuffer"));
-            gl.CheckNamedFramebufferStatus = @ptrCast(c.wglGetProcAddress("glCheckNamedFramebufferStatus"));
-            gl.GetNamedFramebufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetNamedFramebufferParameteriv"));
-            gl.GetNamedFramebufferAttachmentParameteriv = @ptrCast(c.wglGetProcAddress("glGetNamedFramebufferAttachmentParameteriv"));
-            gl.CreateRenderbuffers = @ptrCast(c.wglGetProcAddress("glCreateRenderbuffers"));
-            gl.NamedRenderbufferStorage = @ptrCast(c.wglGetProcAddress("glNamedRenderbufferStorage"));
-            gl.NamedRenderbufferStorageMultisample = @ptrCast(c.wglGetProcAddress("glNamedRenderbufferStorageMultisample"));
-            gl.GetNamedRenderbufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetNamedRenderbufferParameteriv"));
-            gl.CreateTextures = @ptrCast(c.wglGetProcAddress("glCreateTextures"));
-            gl.TextureBuffer = @ptrCast(c.wglGetProcAddress("glTextureBuffer"));
-            gl.TextureBufferRange = @ptrCast(c.wglGetProcAddress("glTextureBufferRange"));
-            gl.TextureStorage1D = @ptrCast(c.wglGetProcAddress("glTextureStorage1D"));
-            gl.TextureStorage2D = @ptrCast(c.wglGetProcAddress("glTextureStorage2D"));
-            gl.TextureStorage3D = @ptrCast(c.wglGetProcAddress("glTextureStorage3D"));
-            gl.TextureStorage2DMultisample = @ptrCast(c.wglGetProcAddress("glTextureStorage2DMultisample"));
-            gl.TextureStorage3DMultisample = @ptrCast(c.wglGetProcAddress("glTextureStorage3DMultisample"));
-            gl.TextureSubImage1D = @ptrCast(c.wglGetProcAddress("glTextureSubImage1D"));
-            gl.TextureSubImage2D = @ptrCast(c.wglGetProcAddress("glTextureSubImage2D"));
-            gl.TextureSubImage3D = @ptrCast(c.wglGetProcAddress("glTextureSubImage3D"));
-            gl.CompressedTextureSubImage1D = @ptrCast(c.wglGetProcAddress("glCompressedTextureSubImage1D"));
-            gl.CompressedTextureSubImage2D = @ptrCast(c.wglGetProcAddress("glCompressedTextureSubImage2D"));
-            gl.CompressedTextureSubImage3D = @ptrCast(c.wglGetProcAddress("glCompressedTextureSubImage3D"));
-            gl.CopyTextureSubImage1D = @ptrCast(c.wglGetProcAddress("glCopyTextureSubImage1D"));
-            gl.CopyTextureSubImage2D = @ptrCast(c.wglGetProcAddress("glCopyTextureSubImage2D"));
-            gl.CopyTextureSubImage3D = @ptrCast(c.wglGetProcAddress("glCopyTextureSubImage3D"));
-            gl.TextureParameterf = @ptrCast(c.wglGetProcAddress("glTextureParameterf"));
-            gl.TextureParameterfv = @ptrCast(c.wglGetProcAddress("glTextureParameterfv"));
-            gl.TextureParameteri = @ptrCast(c.wglGetProcAddress("glTextureParameteri"));
-            gl.TextureParameterIiv = @ptrCast(c.wglGetProcAddress("glTextureParameterIiv"));
-            gl.TextureParameterIuiv = @ptrCast(c.wglGetProcAddress("glTextureParameterIuiv"));
-            gl.TextureParameteriv = @ptrCast(c.wglGetProcAddress("glTextureParameteriv"));
-            gl.GenerateTextureMipmap = @ptrCast(c.wglGetProcAddress("glGenerateTextureMipmap"));
-            gl.BindTextureUnit = @ptrCast(c.wglGetProcAddress("glBindTextureUnit"));
-            gl.GetTextureImage = @ptrCast(c.wglGetProcAddress("glGetTextureImage"));
-            gl.GetCompressedTextureImage = @ptrCast(c.wglGetProcAddress("glGetCompressedTextureImage"));
-            gl.GetTextureLevelParameterfv = @ptrCast(c.wglGetProcAddress("glGetTextureLevelParameterfv"));
-            gl.GetTextureLevelParameteriv = @ptrCast(c.wglGetProcAddress("glGetTextureLevelParameteriv"));
-            gl.GetTextureParameterfv = @ptrCast(c.wglGetProcAddress("glGetTextureParameterfv"));
-            gl.GetTextureParameterIiv = @ptrCast(c.wglGetProcAddress("glGetTextureParameterIiv"));
-            gl.GetTextureParameterIuiv = @ptrCast(c.wglGetProcAddress("glGetTextureParameterIuiv"));
-            gl.GetTextureParameteriv = @ptrCast(c.wglGetProcAddress("glGetTextureParameteriv"));
-            gl.CreateVertexArrays = @ptrCast(c.wglGetProcAddress("glCreateVertexArrays"));
-            gl.DisableVertexArrayAttrib = @ptrCast(c.wglGetProcAddress("glDisableVertexArrayAttrib"));
-            gl.EnableVertexArrayAttrib = @ptrCast(c.wglGetProcAddress("glEnableVertexArrayAttrib"));
-            gl.VertexArrayElementBuffer = @ptrCast(c.wglGetProcAddress("glVertexArrayElementBuffer"));
-            gl.VertexArrayVertexBuffer = @ptrCast(c.wglGetProcAddress("glVertexArrayVertexBuffer"));
-            gl.VertexArrayVertexBuffers = @ptrCast(c.wglGetProcAddress("glVertexArrayVertexBuffers"));
-            gl.VertexArrayAttribBinding = @ptrCast(c.wglGetProcAddress("glVertexArrayAttribBinding"));
-            gl.VertexArrayAttribFormat = @ptrCast(c.wglGetProcAddress("glVertexArrayAttribFormat"));
-            gl.VertexArrayAttribIFormat = @ptrCast(c.wglGetProcAddress("glVertexArrayAttribIFormat"));
-            gl.VertexArrayAttribLFormat = @ptrCast(c.wglGetProcAddress("glVertexArrayAttribLFormat"));
-            gl.VertexArrayBindingDivisor = @ptrCast(c.wglGetProcAddress("glVertexArrayBindingDivisor"));
-            gl.GetVertexArrayiv = @ptrCast(c.wglGetProcAddress("glGetVertexArrayiv"));
-            gl.GetVertexArrayIndexediv = @ptrCast(c.wglGetProcAddress("glGetVertexArrayIndexediv"));
-            gl.GetVertexArrayIndexed64iv = @ptrCast(c.wglGetProcAddress("glGetVertexArrayIndexed64iv"));
-            gl.CreateSamplers = @ptrCast(c.wglGetProcAddress("glCreateSamplers"));
-            gl.CreateProgramPipelines = @ptrCast(c.wglGetProcAddress("glCreateProgramPipelines"));
-            gl.CreateQueries = @ptrCast(c.wglGetProcAddress("glCreateQueries"));
-            gl.GetQueryBufferObjecti64v = @ptrCast(c.wglGetProcAddress("glGetQueryBufferObjecti64v"));
-            gl.GetQueryBufferObjectiv = @ptrCast(c.wglGetProcAddress("glGetQueryBufferObjectiv"));
-            gl.GetQueryBufferObjectui64v = @ptrCast(c.wglGetProcAddress("glGetQueryBufferObjectui64v"));
-            gl.GetQueryBufferObjectuiv = @ptrCast(c.wglGetProcAddress("glGetQueryBufferObjectuiv"));
-            gl.MemoryBarrierByRegion = @ptrCast(c.wglGetProcAddress("glMemoryBarrierByRegion"));
-            gl.GetTextureSubImage = @ptrCast(c.wglGetProcAddress("glGetTextureSubImage"));
-            gl.GetCompressedTextureSubImage = @ptrCast(c.wglGetProcAddress("glGetCompressedTextureSubImage"));
-            gl.GetGraphicsResetStatus = @ptrCast(c.wglGetProcAddress("glGetGraphicsResetStatus"));
-            gl.GetnCompressedTexImage = @ptrCast(c.wglGetProcAddress("glGetnCompressedTexImage"));
-            gl.GetnTexImage = @ptrCast(c.wglGetProcAddress("glGetnTexImage"));
-            gl.GetnUniformdv = @ptrCast(c.wglGetProcAddress("glGetnUniformdv"));
-            gl.GetnUniformfv = @ptrCast(c.wglGetProcAddress("glGetnUniformfv"));
-            gl.GetnUniformiv = @ptrCast(c.wglGetProcAddress("glGetnUniformiv"));
-            gl.GetnUniformuiv = @ptrCast(c.wglGetProcAddress("glGetnUniformuiv"));
-            gl.ReadnPixels = @ptrCast(c.wglGetProcAddress("glReadnPixels"));
-            gl.TextureBarrier = @ptrCast(c.wglGetProcAddress("glTextureBarrier"));
+            gl.clipControl = @ptrCast(c.wglGetProcAddress("glClipControl"));
+            gl.createTransformFeedbacks = @ptrCast(c.wglGetProcAddress("glCreateTransformFeedbacks"));
+            gl.transformFeedbackBufferBase = @ptrCast(c.wglGetProcAddress("glTransformFeedbackBufferBase"));
+            gl.transformFeedbackBufferRange = @ptrCast(c.wglGetProcAddress("glTransformFeedbackBufferRange"));
+            gl.getTransformFeedbackiv = @ptrCast(c.wglGetProcAddress("glGetTransformFeedbackiv"));
+            gl.getTransformFeedbacki_v = @ptrCast(c.wglGetProcAddress("glGetTransformFeedbacki_v"));
+            gl.getTransformFeedbacki64_v = @ptrCast(c.wglGetProcAddress("glGetTransformFeedbacki64_v"));
+            gl.createBuffers = @ptrCast(c.wglGetProcAddress("glCreateBuffers"));
+            gl.namedBufferStorage = @ptrCast(c.wglGetProcAddress("glNamedBufferStorage"));
+            gl.namedBufferData = @ptrCast(c.wglGetProcAddress("glNamedBufferData"));
+            gl.namedBufferSubData = @ptrCast(c.wglGetProcAddress("glNamedBufferSubData"));
+            gl.copyNamedBufferSubData = @ptrCast(c.wglGetProcAddress("glCopyNamedBufferSubData"));
+            gl.clearNamedBufferData = @ptrCast(c.wglGetProcAddress("glClearNamedBufferData"));
+            gl.clearNamedBufferSubData = @ptrCast(c.wglGetProcAddress("glClearNamedBufferSubData"));
+            gl.mapNamedBuffer = @ptrCast(c.wglGetProcAddress("glMapNamedBuffer"));
+            gl.mapNamedBufferRange = @ptrCast(c.wglGetProcAddress("glMapNamedBufferRange"));
+            gl.unmapNamedBuffer = @ptrCast(c.wglGetProcAddress("glUnmapNamedBuffer"));
+            gl.flushMappedNamedBufferRange = @ptrCast(c.wglGetProcAddress("glFlushMappedNamedBufferRange"));
+            gl.getNamedBufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetNamedBufferParameteriv"));
+            gl.getNamedBufferParameteri64v = @ptrCast(c.wglGetProcAddress("glGetNamedBufferParameteri64v"));
+            gl.getNamedBufferPointerv = @ptrCast(c.wglGetProcAddress("glGetNamedBufferPointerv"));
+            gl.getNamedBufferSubData = @ptrCast(c.wglGetProcAddress("glGetNamedBufferSubData"));
+            gl.createFramebuffers = @ptrCast(c.wglGetProcAddress("glCreateFramebuffers"));
+            gl.namedFramebufferRenderbuffer = @ptrCast(c.wglGetProcAddress("glNamedFramebufferRenderbuffer"));
+            gl.namedFramebufferParameteri = @ptrCast(c.wglGetProcAddress("glNamedFramebufferParameteri"));
+            gl.namedFramebufferTexture = @ptrCast(c.wglGetProcAddress("glNamedFramebufferTexture"));
+            gl.namedFramebufferTextureLayer = @ptrCast(c.wglGetProcAddress("glNamedFramebufferTextureLayer"));
+            gl.namedFramebufferDrawBuffer = @ptrCast(c.wglGetProcAddress("glNamedFramebufferDrawBuffer"));
+            gl.namedFramebufferDrawBuffers = @ptrCast(c.wglGetProcAddress("glNamedFramebufferDrawBuffers"));
+            gl.namedFramebufferReadBuffer = @ptrCast(c.wglGetProcAddress("glNamedFramebufferReadBuffer"));
+            gl.invalidateNamedFramebufferData = @ptrCast(c.wglGetProcAddress("glInvalidateNamedFramebufferData"));
+            gl.invalidateNamedFramebufferSubData = @ptrCast(c.wglGetProcAddress("glInvalidateNamedFramebufferSubData"));
+            gl.clearNamedFramebufferiv = @ptrCast(c.wglGetProcAddress("glClearNamedFramebufferiv"));
+            gl.clearNamedFramebufferuiv = @ptrCast(c.wglGetProcAddress("glClearNamedFramebufferuiv"));
+            gl.clearNamedFramebufferfv = @ptrCast(c.wglGetProcAddress("glClearNamedFramebufferfv"));
+            gl.clearNamedFramebufferfi = @ptrCast(c.wglGetProcAddress("glClearNamedFramebufferfi"));
+            gl.blitNamedFramebuffer = @ptrCast(c.wglGetProcAddress("glBlitNamedFramebuffer"));
+            gl.checkNamedFramebufferStatus = @ptrCast(c.wglGetProcAddress("glCheckNamedFramebufferStatus"));
+            gl.getNamedFramebufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetNamedFramebufferParameteriv"));
+            gl.getNamedFramebufferAttachmentParameteriv = @ptrCast(c.wglGetProcAddress("glGetNamedFramebufferAttachmentParameteriv"));
+            gl.createRenderbuffers = @ptrCast(c.wglGetProcAddress("glCreateRenderbuffers"));
+            gl.namedRenderbufferStorage = @ptrCast(c.wglGetProcAddress("glNamedRenderbufferStorage"));
+            gl.namedRenderbufferStorageMultisample = @ptrCast(c.wglGetProcAddress("glNamedRenderbufferStorageMultisample"));
+            gl.getNamedRenderbufferParameteriv = @ptrCast(c.wglGetProcAddress("glGetNamedRenderbufferParameteriv"));
+            gl.createTextures = @ptrCast(c.wglGetProcAddress("glCreateTextures"));
+            gl.textureBuffer = @ptrCast(c.wglGetProcAddress("glTextureBuffer"));
+            gl.textureBufferRange = @ptrCast(c.wglGetProcAddress("glTextureBufferRange"));
+            gl.textureStorage1D = @ptrCast(c.wglGetProcAddress("glTextureStorage1D"));
+            gl.textureStorage2D = @ptrCast(c.wglGetProcAddress("glTextureStorage2D"));
+            gl.textureStorage3D = @ptrCast(c.wglGetProcAddress("glTextureStorage3D"));
+            gl.textureStorage2DMultisample = @ptrCast(c.wglGetProcAddress("glTextureStorage2DMultisample"));
+            gl.textureStorage3DMultisample = @ptrCast(c.wglGetProcAddress("glTextureStorage3DMultisample"));
+            gl.textureSubImage1D = @ptrCast(c.wglGetProcAddress("glTextureSubImage1D"));
+            gl.textureSubImage2D = @ptrCast(c.wglGetProcAddress("glTextureSubImage2D"));
+            gl.textureSubImage3D = @ptrCast(c.wglGetProcAddress("glTextureSubImage3D"));
+            gl.compressedTextureSubImage1D = @ptrCast(c.wglGetProcAddress("glCompressedTextureSubImage1D"));
+            gl.compressedTextureSubImage2D = @ptrCast(c.wglGetProcAddress("glCompressedTextureSubImage2D"));
+            gl.compressedTextureSubImage3D = @ptrCast(c.wglGetProcAddress("glCompressedTextureSubImage3D"));
+            gl.copyTextureSubImage1D = @ptrCast(c.wglGetProcAddress("glCopyTextureSubImage1D"));
+            gl.copyTextureSubImage2D = @ptrCast(c.wglGetProcAddress("glCopyTextureSubImage2D"));
+            gl.copyTextureSubImage3D = @ptrCast(c.wglGetProcAddress("glCopyTextureSubImage3D"));
+            gl.textureParameterf = @ptrCast(c.wglGetProcAddress("glTextureParameterf"));
+            gl.textureParameterfv = @ptrCast(c.wglGetProcAddress("glTextureParameterfv"));
+            gl.textureParameteri = @ptrCast(c.wglGetProcAddress("glTextureParameteri"));
+            gl.textureParameterIiv = @ptrCast(c.wglGetProcAddress("glTextureParameterIiv"));
+            gl.textureParameterIuiv = @ptrCast(c.wglGetProcAddress("glTextureParameterIuiv"));
+            gl.textureParameteriv = @ptrCast(c.wglGetProcAddress("glTextureParameteriv"));
+            gl.generateTextureMipmap = @ptrCast(c.wglGetProcAddress("glGenerateTextureMipmap"));
+            gl.bindTextureUnit = @ptrCast(c.wglGetProcAddress("glBindTextureUnit"));
+            gl.getTextureImage = @ptrCast(c.wglGetProcAddress("glGetTextureImage"));
+            gl.getCompressedTextureImage = @ptrCast(c.wglGetProcAddress("glGetCompressedTextureImage"));
+            gl.getTextureLevelParameterfv = @ptrCast(c.wglGetProcAddress("glGetTextureLevelParameterfv"));
+            gl.getTextureLevelParameteriv = @ptrCast(c.wglGetProcAddress("glGetTextureLevelParameteriv"));
+            gl.getTextureParameterfv = @ptrCast(c.wglGetProcAddress("glGetTextureParameterfv"));
+            gl.getTextureParameterIiv = @ptrCast(c.wglGetProcAddress("glGetTextureParameterIiv"));
+            gl.getTextureParameterIuiv = @ptrCast(c.wglGetProcAddress("glGetTextureParameterIuiv"));
+            gl.getTextureParameteriv = @ptrCast(c.wglGetProcAddress("glGetTextureParameteriv"));
+            gl.createVertexArrays = @ptrCast(c.wglGetProcAddress("glCreateVertexArrays"));
+            gl.disableVertexArrayAttrib = @ptrCast(c.wglGetProcAddress("glDisableVertexArrayAttrib"));
+            gl.enableVertexArrayAttrib = @ptrCast(c.wglGetProcAddress("glEnableVertexArrayAttrib"));
+            gl.vertexArrayElementBuffer = @ptrCast(c.wglGetProcAddress("glVertexArrayElementBuffer"));
+            gl.vertexArrayVertexBuffer = @ptrCast(c.wglGetProcAddress("glVertexArrayVertexBuffer"));
+            gl.vertexArrayVertexBuffers = @ptrCast(c.wglGetProcAddress("glVertexArrayVertexBuffers"));
+            gl.vertexArrayAttribBinding = @ptrCast(c.wglGetProcAddress("glVertexArrayAttribBinding"));
+            gl.vertexArrayAttribFormat = @ptrCast(c.wglGetProcAddress("glVertexArrayAttribFormat"));
+            gl.vertexArrayAttribIFormat = @ptrCast(c.wglGetProcAddress("glVertexArrayAttribIFormat"));
+            gl.vertexArrayAttribLFormat = @ptrCast(c.wglGetProcAddress("glVertexArrayAttribLFormat"));
+            gl.vertexArrayBindingDivisor = @ptrCast(c.wglGetProcAddress("glVertexArrayBindingDivisor"));
+            gl.getVertexArrayiv = @ptrCast(c.wglGetProcAddress("glGetVertexArrayiv"));
+            gl.getVertexArrayIndexediv = @ptrCast(c.wglGetProcAddress("glGetVertexArrayIndexediv"));
+            gl.getVertexArrayIndexed64iv = @ptrCast(c.wglGetProcAddress("glGetVertexArrayIndexed64iv"));
+            gl.createSamplers = @ptrCast(c.wglGetProcAddress("glCreateSamplers"));
+            gl.createProgramPipelines = @ptrCast(c.wglGetProcAddress("glCreateProgramPipelines"));
+            gl.createQueries = @ptrCast(c.wglGetProcAddress("glCreateQueries"));
+            gl.getQueryBufferObjecti64v = @ptrCast(c.wglGetProcAddress("glGetQueryBufferObjecti64v"));
+            gl.getQueryBufferObjectiv = @ptrCast(c.wglGetProcAddress("glGetQueryBufferObjectiv"));
+            gl.getQueryBufferObjectui64v = @ptrCast(c.wglGetProcAddress("glGetQueryBufferObjectui64v"));
+            gl.getQueryBufferObjectuiv = @ptrCast(c.wglGetProcAddress("glGetQueryBufferObjectuiv"));
+            gl.memoryBarrierByRegion = @ptrCast(c.wglGetProcAddress("glMemoryBarrierByRegion"));
+            gl.getTextureSubImage = @ptrCast(c.wglGetProcAddress("glGetTextureSubImage"));
+            gl.getCompressedTextureSubImage = @ptrCast(c.wglGetProcAddress("glGetCompressedTextureSubImage"));
+            gl.getGraphicsResetStatus = @ptrCast(c.wglGetProcAddress("glGetGraphicsResetStatus"));
+            gl.getnCompressedTexImage = @ptrCast(c.wglGetProcAddress("glGetnCompressedTexImage"));
+            gl.getnTexImage = @ptrCast(c.wglGetProcAddress("glGetnTexImage"));
+            gl.getnUniformdv = @ptrCast(c.wglGetProcAddress("glGetnUniformdv"));
+            gl.getnUniformfv = @ptrCast(c.wglGetProcAddress("glGetnUniformfv"));
+            gl.getnUniformiv = @ptrCast(c.wglGetProcAddress("glGetnUniformiv"));
+            gl.getnUniformuiv = @ptrCast(c.wglGetProcAddress("glGetnUniformuiv"));
+            gl.readnPixels = @ptrCast(c.wglGetProcAddress("glReadnPixels"));
+            gl.textureBarrier = @ptrCast(c.wglGetProcAddress("glTextureBarrier"));
         }
 
         if (version >= 460) {
-            gl.SpecializeShader = @ptrCast(c.wglGetProcAddress("glSpecializeShader"));
-            gl.MultiDrawArraysIndirectCount = @ptrCast(c.wglGetProcAddress("glMultiDrawArraysIndirectCount"));
-            gl.MultiDrawElementsIndirectCount = @ptrCast(c.wglGetProcAddress("glMultiDrawElementsIndirectCount"));
-            gl.PolygonOffsetClamp = @ptrCast(c.wglGetProcAddress("glPolygonOffsetClamp"));
+            gl.specializeShader = @ptrCast(c.wglGetProcAddress("glSpecializeShader"));
+            gl.multiDrawArraysIndirectCount = @ptrCast(c.wglGetProcAddress("glMultiDrawArraysIndirectCount"));
+            gl.multiDrawElementsIndirectCount = @ptrCast(c.wglGetProcAddress("glMultiDrawElementsIndirectCount"));
+            gl.polygonOffsetClamp = @ptrCast(c.wglGetProcAddress("glPolygonOffsetClamp"));
         }
     }
 };

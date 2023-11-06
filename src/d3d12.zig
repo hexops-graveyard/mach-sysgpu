@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const dgpu = @import("dgpu/main.zig");
 const limits = @import("limits.zig");
 const shader = @import("shader.zig");
@@ -28,8 +29,8 @@ var gpu_validation_enabled: bool = undefined;
 const DXGI_PRESENT_ALLOW_TEARING: c.UINT = 0x00000200;
 
 pub const InitOptions = struct {
-    debug_enabled: bool = true,
-    gpu_validation_enabled: bool = true,
+    debug_enabled: bool = builtin.mode == .Debug,
+    gpu_validation_enabled: bool = builtin.mode == .Debug,
 };
 
 pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
@@ -348,18 +349,21 @@ pub const Device = struct {
             }
         }
 
-        // Result
         const queue = try allocator.create(Queue);
         errdefer allocator.destroy(queue);
 
+        // Object
         var device = try allocator.create(Device);
         device.* = .{
             .adapter = adapter,
             .d3d_device = d3d_device,
             .queue = queue,
         };
-        // TODO - how to deal with errors?
+
+        // Initialize
         device.queue.* = try Queue.init(device);
+        errdefer queue.deinit();
+
         device.general_heap = try DescriptorHeap.init(
             device,
             c.D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
@@ -367,6 +371,8 @@ pub const Device = struct {
             general_heap_size,
             general_block_size,
         );
+        errdefer device.general_heap.deinit();
+
         device.sampler_heap = try DescriptorHeap.init(
             device,
             c.D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
@@ -374,6 +380,8 @@ pub const Device = struct {
             sampler_heap_size,
             sampler_block_size,
         );
+        errdefer device.sampler_heap.deinit();
+
         device.rtv_heap = try DescriptorHeap.init(
             device,
             c.D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
@@ -381,6 +389,8 @@ pub const Device = struct {
             rtv_heap_size,
             rtv_block_size,
         );
+        errdefer device.rtv_heap.deinit();
+
         device.dsv_heap = try DescriptorHeap.init(
             device,
             c.D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
@@ -388,8 +398,13 @@ pub const Device = struct {
             dsv_heap_size,
             dsv_block_size,
         );
+        errdefer device.dsv_heap.deinit();
+
         device.command_manager = CommandManager.init(device);
+
         device.streaming_manager = try StreamingManager.init(device);
+        errdefer device.streaming_manager.deinit();
+
         return device;
     }
 
@@ -1414,7 +1429,7 @@ pub const BindGroupLayout = struct {
     general_table_size: u32,
     sampler_table_size: u32,
 
-    pub fn init(device: *Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn init(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         _ = device;
 
         var entries = std.ArrayListUnmanaged(Entry){};
@@ -1425,8 +1440,8 @@ pub const BindGroupLayout = struct {
 
         var general_table_size: u32 = 0;
         var sampler_table_size: u32 = 0;
-        for (0..descriptor.entry_count) |entry_index| {
-            const entry = descriptor.entries.?[entry_index];
+        for (0..desc.entry_count) |entry_index| {
+            const entry = desc.entries.?[entry_index];
 
             var table_index: ?u32 = null;
             var dynamic_index: ?u32 = null;
@@ -2030,8 +2045,8 @@ pub const ComputePipeline = struct {
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
-        if (desc.layout) |l| {
-            layout = @ptrCast(@alignCast(l));
+        if (desc.layout) |layout_raw| {
+            layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
         } else {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
@@ -2040,6 +2055,7 @@ pub const ComputePipeline = struct {
             try layout_desc.addFunction(compute_module.air, .{ .compute = true }, desc.compute.entry_point);
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
+        errdefer layout.manager.release();
 
         // PSO
         var d3d_pipeline: *c.ID3D12PipelineState = undefined;
@@ -2114,8 +2130,8 @@ pub const RenderPipeline = struct {
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
-        if (desc.layout) |l| {
-            layout = @ptrCast(@alignCast(l));
+        if (desc.layout) |layout_raw| {
+            layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
         } else {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
@@ -2128,6 +2144,7 @@ pub const RenderPipeline = struct {
             }
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
+        errdefer layout.manager.release();
 
         // PSO
         var input_elements = std.BoundedArray(c.D3D12_INPUT_ELEMENT_DESC, limits.max_vertex_buffers){};
@@ -2962,23 +2979,36 @@ pub const RenderPassEncoder = struct {
         var rtv_handle = rtv_handles;
         for (0..desc.color_attachment_count) |i| {
             const attach = desc.color_attachments.?[i];
-            const view: *TextureView = @ptrCast(@alignCast(attach.view.?));
-            const texture = view.texture;
+            if (attach.view) |view_raw| {
+                const view: *TextureView = @ptrCast(@alignCast(view_raw));
+                const texture = view.texture;
 
-            try cmd_encoder.reference_tracker.referenceTexture(texture);
-            try cmd_encoder.state_tracker.transition(&texture.resource, c.D3D12_RESOURCE_STATE_RENDER_TARGET);
+                try cmd_encoder.reference_tracker.referenceTexture(texture);
+                try cmd_encoder.state_tracker.transition(&texture.resource, c.D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-            width = view.width();
-            height = view.height();
-            color_attachments.appendAssumeCapacity(attach);
+                width = view.width();
+                height = view.height();
+                color_attachments.appendAssumeCapacity(attach);
 
-            d3d_device.lpVtbl.*.CreateRenderTargetView.?(
-                d3d_device,
-                texture.resource.d3d_resource,
-                null,
-                rtv_handle,
-            );
-
+                // TODO - rtvDesc()
+                d3d_device.lpVtbl.*.CreateRenderTargetView.?(
+                    d3d_device,
+                    texture.resource.d3d_resource,
+                    null,
+                    rtv_handle,
+                );
+            } else {
+                d3d_device.lpVtbl.*.CreateRenderTargetView.?(
+                    d3d_device,
+                    null,
+                    &.{
+                        .Format = c.DXGI_FORMAT_R8G8B8A8_UNORM,
+                        .ViewDimension = c.D3D12_RTV_DIMENSION_TEXTURE2D,
+                        .unnamed_0 = .{ .Texture2D = .{ .MipSlice = 0, .PlaneSlice = 0 } },
+                    },
+                    rtv_handle,
+                );
+            }
             rtv_handle.ptr += descriptor_size;
         }
 
@@ -3101,7 +3131,7 @@ pub const RenderPassEncoder = struct {
         instance_count: u32,
         first_vertex: u32,
         first_instance: u32,
-    ) void {
+    ) !void {
         const command_list = encoder.command_list;
 
         encoder.applyVertexBuffers();
@@ -3122,7 +3152,7 @@ pub const RenderPassEncoder = struct {
         first_index: u32,
         base_vertex: i32,
         first_instance: u32,
-    ) void {
+    ) !void {
         const command_list = encoder.command_list;
 
         encoder.applyVertexBuffers();
@@ -3296,7 +3326,7 @@ pub const RenderPassEncoder = struct {
         );
     }
 
-    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
+    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) !void {
         const command_list = encoder.command_list;
 
         const scissor_rect = c.D3D12_RECT{
@@ -3329,7 +3359,7 @@ pub const RenderPassEncoder = struct {
         height: f32,
         min_depth: f32,
         max_depth: f32,
-    ) void {
+    ) !void {
         const command_list = encoder.command_list;
 
         const viewport = c.D3D12_VIEWPORT{
