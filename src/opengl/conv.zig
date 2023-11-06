@@ -1,12 +1,12 @@
-const dgpu = @import("../dgpu/main.zig");
+const sysgpu = @import("../sysgpu/main.zig");
 const utils = @import("../utils.zig");
 const c = @import("c.zig");
 
-fn stencilEnable(stencil: dgpu.StencilFaceState) bool {
+fn stencilEnable(stencil: sysgpu.StencilFaceState) bool {
     return stencil.compare != .always or stencil.fail_op != .keep or stencil.depth_fail_op != .keep or stencil.pass_op != .keep;
 }
 
-pub fn glAttributeCount(format: dgpu.VertexFormat) c.GLint {
+pub fn glAttributeCount(format: sysgpu.VertexFormat) c.GLint {
     return switch (format) {
         .undefined => unreachable,
         .uint8x2 => 2,
@@ -56,7 +56,7 @@ pub fn glAttributeIsInt(format_type: utils.FormatType) bool {
     };
 }
 
-pub fn glAttributeType(format: dgpu.VertexFormat) c.GLenum {
+pub fn glAttributeType(format: sysgpu.VertexFormat) c.GLenum {
     return switch (format) {
         .undefined => unreachable,
         .uint8x2 => c.GL_UNSIGNED_BYTE,
@@ -92,7 +92,7 @@ pub fn glAttributeType(format: dgpu.VertexFormat) c.GLenum {
     };
 }
 
-pub fn glBlendFactor(factor: dgpu.BlendFactor, color: bool) c.GLenum {
+pub fn glBlendFactor(factor: sysgpu.BlendFactor, color: bool) c.GLenum {
     return switch (factor) {
         .zero => c.GL_ZERO,
         .one => c.GL_ONE,
@@ -114,7 +114,7 @@ pub fn glBlendFactor(factor: dgpu.BlendFactor, color: bool) c.GLenum {
     };
 }
 
-pub fn glBlendOp(op: dgpu.BlendOperation) c.GLenum {
+pub fn glBlendOp(op: sysgpu.BlendOperation) c.GLenum {
     return switch (op) {
         .add => c.GL_FUNC_ADD,
         .subtract => c.GL_FUNC_SUBTRACT,
@@ -124,9 +124,9 @@ pub fn glBlendOp(op: dgpu.BlendOperation) c.GLenum {
     };
 }
 
-//pub fn glBufferDataUsage(usage: dgpu.Buffer.UsageFlags, mapped_at_creation: dgpu.Bool32) c.GLenum {}
+//pub fn glBufferDataUsage(usage: sysgpu.Buffer.UsageFlags, mapped_at_creation: sysgpu.Bool32) c.GLenum {}
 
-pub fn glBufferStorageFlags(usage: dgpu.Buffer.UsageFlags, mapped_at_creation: dgpu.Bool32) c.GLbitfield {
+pub fn glBufferStorageFlags(usage: sysgpu.Buffer.UsageFlags, mapped_at_creation: sysgpu.Bool32) c.GLbitfield {
     var flags: c.GLbitfield = 0;
     if (mapped_at_creation == .true)
         flags |= c.GL_MAP_WRITE_BIT;
@@ -137,7 +137,7 @@ pub fn glBufferStorageFlags(usage: dgpu.Buffer.UsageFlags, mapped_at_creation: d
     return flags;
 }
 
-pub fn glCompareFunc(func: dgpu.CompareFunction) c.GLenum {
+pub fn glCompareFunc(func: sysgpu.CompareFunction) c.GLenum {
     return switch (func) {
         .undefined => unreachable,
         .never => c.GL_NEVER,
@@ -151,14 +151,14 @@ pub fn glCompareFunc(func: dgpu.CompareFunction) c.GLenum {
     };
 }
 
-pub fn glCullEnabled(cull_mode: dgpu.CullMode) bool {
+pub fn glCullEnabled(cull_mode: sysgpu.CullMode) bool {
     return switch (cull_mode) {
         .none => false,
         else => true,
     };
 }
 
-pub fn glCullFace(cull_mode: dgpu.CullMode) c.GLenum {
+pub fn glCullFace(cull_mode: sysgpu.CullMode) c.GLenum {
     return switch (cull_mode) {
         .none => c.GL_BACK,
         .front => c.GL_FRONT,
@@ -166,22 +166,22 @@ pub fn glCullFace(cull_mode: dgpu.CullMode) c.GLenum {
     };
 }
 
-pub fn glDepthMask(ds: *const dgpu.DepthStencilState) c.GLboolean {
+pub fn glDepthMask(ds: *const sysgpu.DepthStencilState) c.GLboolean {
     return if (ds.depth_write_enabled == .true) c.GL_TRUE else c.GL_FALSE;
 }
 
-pub fn glDepthTestEnabled(ds: *const dgpu.DepthStencilState) bool {
+pub fn glDepthTestEnabled(ds: *const sysgpu.DepthStencilState) bool {
     return ds.depth_compare != .always or ds.depth_write_enabled == .true;
 }
 
-pub fn glFrontFace(front_face: dgpu.FrontFace) c.GLenum {
+pub fn glFrontFace(front_face: sysgpu.FrontFace) c.GLenum {
     return switch (front_face) {
         .ccw => c.GL_CCW,
         .cw => c.GL_CW,
     };
 }
 
-pub fn glIndexType(format: dgpu.IndexFormat) c.GLenum {
+pub fn glIndexType(format: sysgpu.IndexFormat) c.GLenum {
     return switch (format) {
         .undefined => unreachable,
         .uint16 => c.GL_UNSIGNED_SHORT,
@@ -189,7 +189,7 @@ pub fn glIndexType(format: dgpu.IndexFormat) c.GLenum {
     };
 }
 
-pub fn glIndexElementSize(format: dgpu.IndexFormat) usize {
+pub fn glIndexElementSize(format: sysgpu.IndexFormat) usize {
     return switch (format) {
         .undefined => unreachable,
         .uint16 => 2,
@@ -197,7 +197,7 @@ pub fn glIndexElementSize(format: dgpu.IndexFormat) usize {
     };
 }
 
-pub fn glMapAccess(usage: dgpu.Buffer.UsageFlags, mapped_at_creation: dgpu.Bool32) c.GLbitfield {
+pub fn glMapAccess(usage: sysgpu.Buffer.UsageFlags, mapped_at_creation: sysgpu.Bool32) c.GLbitfield {
     var flags: c.GLbitfield = 0;
     if (mapped_at_creation == .true)
         flags |= c.GL_MAP_WRITE_BIT;
@@ -208,7 +208,7 @@ pub fn glMapAccess(usage: dgpu.Buffer.UsageFlags, mapped_at_creation: dgpu.Bool3
     return flags;
 }
 
-pub fn glPrimitiveMode(topology: dgpu.PrimitiveTopology) c.GLenum {
+pub fn glPrimitiveMode(topology: sysgpu.PrimitiveTopology) c.GLenum {
     return switch (topology) {
         .point_list => c.GL_POINTS,
         .line_list => c.GL_LINES,
@@ -218,7 +218,7 @@ pub fn glPrimitiveMode(topology: dgpu.PrimitiveTopology) c.GLenum {
     };
 }
 
-pub fn glStencilOp(op: dgpu.StencilOperation) c.GLenum {
+pub fn glStencilOp(op: sysgpu.StencilOperation) c.GLenum {
     return switch (op) {
         .keep => c.GL_KEEP,
         .zero => c.GL_ZERO,
@@ -231,11 +231,11 @@ pub fn glStencilOp(op: dgpu.StencilOperation) c.GLenum {
     };
 }
 
-pub fn glStencilTestEnabled(ds: *const dgpu.DepthStencilState) bool {
+pub fn glStencilTestEnabled(ds: *const sysgpu.DepthStencilState) bool {
     return stencilEnable(ds.stencil_front) or stencilEnable(ds.stencil_back);
 }
 
-pub fn glTargetForBuffer(usage: dgpu.Buffer.UsageFlags) c.GLenum {
+pub fn glTargetForBuffer(usage: sysgpu.Buffer.UsageFlags) c.GLenum {
     // Not sure if this matters anymore - only get to pick one anyway
     if (usage.index)
         return c.GL_ELEMENT_ARRAY_BUFFER;
@@ -253,7 +253,7 @@ pub fn glTargetForBuffer(usage: dgpu.Buffer.UsageFlags) c.GLenum {
     return c.GL_ARRAY_BUFFER;
 }
 
-pub fn glTargetForBufferBinding(binding_type: dgpu.Buffer.BindingType) c.GLenum {
+pub fn glTargetForBufferBinding(binding_type: sysgpu.Buffer.BindingType) c.GLenum {
     return switch (binding_type) {
         .undefined => unreachable,
         .uniform => c.GL_UNIFORM_BUFFER,

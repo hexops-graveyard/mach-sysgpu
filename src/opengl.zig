@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const dgpu = @import("dgpu/main.zig");
+const sysgpu = @import("sysgpu/main.zig");
 const limits = @import("limits.zig");
 const utils = @import("utils.zig");
 const shader = @import("shader.zig");
@@ -34,7 +34,7 @@ const BindingTable = std.AutoHashMapUnmanaged(BindingPoint, u32);
 
 const MapCallback = struct {
     buffer: *Buffer,
-    callback: dgpu.Buffer.MapCallback,
+    callback: sysgpu.Buffer.MapCallback,
     userdata: ?*anyopaque,
 };
 
@@ -143,7 +143,7 @@ pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
     wgl: proc.InstanceWGL,
 
-    pub fn init(desc: *const dgpu.Instance.Descriptor) !*Instance {
+    pub fn init(desc: *const sysgpu.Instance.Descriptor) !*Instance {
         // TODO
         _ = desc;
 
@@ -205,7 +205,7 @@ pub const Instance = struct {
         allocator.destroy(instance);
     }
 
-    pub fn createSurface(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
+    pub fn createSurface(instance: *Instance, desc: *const sysgpu.Surface.Descriptor) !*Surface {
         return Surface.init(instance, desc);
     }
 };
@@ -220,7 +220,7 @@ pub const Adapter = struct {
     renderer: [*c]const c.GLubyte,
     version: [*c]const c.GLubyte,
 
-    pub fn init(instance: *Instance, options: *const dgpu.RequestAdapterOptions) !*Adapter {
+    pub fn init(instance: *Instance, options: *const sysgpu.RequestAdapterOptions) !*Adapter {
         const wgl = &instance.wgl;
 
         // Use hwnd from surface is provided
@@ -283,11 +283,11 @@ pub const Adapter = struct {
         allocator.destroy(adapter);
     }
 
-    pub fn createDevice(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
+    pub fn createDevice(adapter: *Adapter, desc: ?*const sysgpu.Device.Descriptor) !*Device {
         return Device.init(adapter, desc);
     }
 
-    pub fn getProperties(adapter: *Adapter) dgpu.Adapter.Properties {
+    pub fn getProperties(adapter: *Adapter) sysgpu.Adapter.Properties {
         return .{
             .vendor_id = 0, // TODO
             .vendor_name = adapter.vendor,
@@ -307,10 +307,10 @@ pub const Surface = struct {
     hwnd: c.HWND,
     pixel_format: c_int,
 
-    pub fn init(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
+    pub fn init(instance: *Instance, desc: *const sysgpu.Surface.Descriptor) !*Surface {
         const wgl = &instance.wgl;
 
-        if (utils.findChained(dgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
+        if (utils.findChained(sysgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
             // workaround issues with @alignCast panicking as HWND is not a real pointer
             var hwnd: c.HWND = undefined;
             @memcpy(std.mem.asBytes(&hwnd), std.mem.asBytes(&win_desc.hwnd));
@@ -344,14 +344,14 @@ pub const Device = struct {
     reference_trackers: std.ArrayListUnmanaged(*ReferenceTracker) = .{},
     map_callbacks: std.ArrayListUnmanaged(MapCallback) = .{},
 
-    lost_cb: ?dgpu.Device.LostCallback = null,
+    lost_cb: ?sysgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
-    log_cb: ?dgpu.LoggingCallback = null,
+    log_cb: ?sysgpu.LoggingCallback = null,
     log_cb_userdata: ?*anyopaque = null,
-    err_cb: ?dgpu.ErrorCallback = null,
+    err_cb: ?sysgpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
 
-    pub fn init(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
+    pub fn init(adapter: *Adapter, desc: ?*const sysgpu.Device.Descriptor) !*Device {
         // TODO
         _ = desc;
 
@@ -412,35 +412,35 @@ pub const Device = struct {
         allocator.destroy(device);
     }
 
-    pub fn createBindGroup(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn createBindGroup(device: *Device, desc: *const sysgpu.BindGroup.Descriptor) !*BindGroup {
         return BindGroup.init(device, desc);
     }
 
-    pub fn createBindGroupLayout(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn createBindGroupLayout(device: *Device, desc: *const sysgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         return BindGroupLayout.init(device, desc);
     }
 
-    pub fn createBuffer(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
+    pub fn createBuffer(device: *Device, desc: *const sysgpu.Buffer.Descriptor) !*Buffer {
         return Buffer.init(device, desc);
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn createCommandEncoder(device: *Device, desc: *const sysgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
     }
 
-    pub fn createComputePipeline(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn createComputePipeline(device: *Device, desc: *const sysgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         return ComputePipeline.init(device, desc);
     }
 
-    pub fn createPipelineLayout(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn createPipelineLayout(device: *Device, desc: *const sysgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         return PipelineLayout.init(device, desc);
     }
 
-    pub fn createRenderPipeline(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn createRenderPipeline(device: *Device, desc: *const sysgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
-    pub fn createSampler(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+    pub fn createSampler(device: *Device, desc: *const sysgpu.Sampler.Descriptor) !*Sampler {
         return Sampler.init(device, desc);
     }
 
@@ -454,11 +454,11 @@ pub const Device = struct {
         return error.unsupported;
     }
 
-    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createTexture(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
+    pub fn createTexture(device: *Device, desc: *const sysgpu.Texture.Descriptor) !*Texture {
         return Texture.init(device, desc);
     }
 
@@ -583,7 +583,7 @@ pub const SwapChain = struct {
     textures: [max_back_buffer_count]*Texture,
     views: [max_back_buffer_count]*TextureView,
 
-    pub fn init(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn init(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {
         var swapchain = try allocator.create(SwapChain);
 
         const back_buffer_count: u32 = if (desc.present_mode == .mailbox) 3 else 2;
@@ -597,7 +597,7 @@ pub const SwapChain = struct {
 
         for (0..back_buffer_count) |_| {
             const texture = try Texture.initForSwapChain(device, desc, swapchain);
-            const view = try texture.createView(&dgpu.TextureView.Descriptor{});
+            const view = try texture.createView(&sysgpu.TextureView.Descriptor{});
 
             textures.appendAssumeCapacity(texture);
             views.appendAssumeCapacity(view);
@@ -647,9 +647,9 @@ pub const Buffer = struct {
     mapped_at_creation: bool,
     // TODO - packed buffer descriptor struct
     size: u64,
-    usage: dgpu.Buffer.UsageFlags,
+    usage: sysgpu.Buffer.UsageFlags,
 
-    pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
+    pub fn init(device: *Device, desc: *const sysgpu.Buffer.Descriptor) !*Buffer {
         const gl = &device.gl;
         var ctx = ActiveContext.init(device.hdc, device.hglrc);
         defer ctx.deinit();
@@ -707,16 +707,16 @@ pub const Buffer = struct {
         return buffer.size;
     }
 
-    pub fn getUsage(buffer: *Buffer) dgpu.Buffer.UsageFlags {
+    pub fn getUsage(buffer: *Buffer) sysgpu.Buffer.UsageFlags {
         return buffer.usage;
     }
 
     pub fn mapAsync(
         buffer: *Buffer,
-        mode: dgpu.MapModeFlags,
+        mode: sysgpu.MapModeFlags,
         offset: usize,
         size: usize,
-        callback: dgpu.Buffer.MapCallback,
+        callback: sysgpu.Buffer.MapCallback,
         userdata: ?*anyopaque,
     ) !void {
         _ = mode;
@@ -762,14 +762,14 @@ pub const Texture = struct {
     handle: c.GLuint,
     swapchain: ?*SwapChain = null,
     // TODO - packed texture descriptor struct
-    usage: dgpu.Texture.UsageFlags,
-    dimension: dgpu.Texture.Dimension,
-    size: dgpu.Extent3D,
-    format: dgpu.Texture.Format,
+    usage: sysgpu.Texture.UsageFlags,
+    dimension: sysgpu.Texture.Dimension,
+    size: sysgpu.Extent3D,
+    format: sysgpu.Texture.Format,
     mip_level_count: u32,
     sample_count: u32,
 
-    pub fn init(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
+    pub fn init(device: *Device, desc: *const sysgpu.Texture.Descriptor) !*Texture {
         _ = device;
 
         var texture = try allocator.create(Texture);
@@ -786,7 +786,7 @@ pub const Texture = struct {
         return texture;
     }
 
-    pub fn initForSwapChain(device: *Device, desc: *const dgpu.SwapChain.Descriptor, swapchain: *SwapChain) !*Texture {
+    pub fn initForSwapChain(device: *Device, desc: *const sysgpu.SwapChain.Descriptor, swapchain: *SwapChain) !*Texture {
         _ = device;
 
         var texture = try allocator.create(Texture);
@@ -807,7 +807,7 @@ pub const Texture = struct {
         allocator.destroy(texture);
     }
 
-    pub fn createView(texture: *Texture, desc: *const dgpu.TextureView.Descriptor) !*TextureView {
+    pub fn createView(texture: *Texture, desc: *const sysgpu.TextureView.Descriptor) !*TextureView {
         return TextureView.init(texture, desc);
     }
 };
@@ -815,18 +815,18 @@ pub const Texture = struct {
 pub const TextureView = struct {
     manager: utils.Manager(TextureView) = .{},
     texture: *Texture,
-    format: dgpu.Texture.Format,
-    dimension: dgpu.TextureView.Dimension,
+    format: sysgpu.Texture.Format,
+    dimension: sysgpu.TextureView.Dimension,
     base_mip_level: u32,
     mip_level_count: u32,
     base_array_layer: u32,
     array_layer_count: u32,
-    aspect: dgpu.Texture.Aspect,
+    aspect: sysgpu.Texture.Aspect,
 
-    pub fn init(texture: *Texture, desc: *const dgpu.TextureView.Descriptor) !*TextureView {
+    pub fn init(texture: *Texture, desc: *const sysgpu.TextureView.Descriptor) !*TextureView {
         texture.manager.reference();
 
-        const texture_dimension: dgpu.TextureView.Dimension = switch (texture.dimension) {
+        const texture_dimension: sysgpu.TextureView.Dimension = switch (texture.dimension) {
             .dimension_1d => .dimension_1d,
             .dimension_2d => .dimension_2d,
             .dimension_3d => .dimension_3d,
@@ -864,7 +864,7 @@ pub const TextureView = struct {
 pub const Sampler = struct {
     manager: utils.Manager(TextureView) = .{},
 
-    pub fn init(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+    pub fn init(device: *Device, desc: *const sysgpu.Sampler.Descriptor) !*Sampler {
         _ = desc;
         _ = device;
 
@@ -880,16 +880,16 @@ pub const Sampler = struct {
 
 pub const BindGroupLayout = struct {
     manager: utils.Manager(BindGroupLayout) = .{},
-    entries: []const dgpu.BindGroupLayout.Entry,
+    entries: []const sysgpu.BindGroupLayout.Entry,
 
-    pub fn init(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn init(device: *Device, desc: *const sysgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         _ = device;
 
-        var entries: []const dgpu.BindGroupLayout.Entry = undefined;
+        var entries: []const sysgpu.BindGroupLayout.Entry = undefined;
         if (desc.entry_count > 0) {
-            entries = try allocator.dupe(dgpu.BindGroupLayout.Entry, desc.entries.?[0..desc.entry_count]);
+            entries = try allocator.dupe(sysgpu.BindGroupLayout.Entry, desc.entries.?[0..desc.entry_count]);
         } else {
-            entries = &[_]dgpu.BindGroupLayout.Entry{};
+            entries = &[_]sysgpu.BindGroupLayout.Entry{};
         }
 
         var layout = try allocator.create(BindGroupLayout);
@@ -906,7 +906,7 @@ pub const BindGroupLayout = struct {
     }
 
     // Internal
-    pub fn getEntry(layout: *BindGroupLayout, binding: u32) ?*const dgpu.BindGroupLayout.Entry {
+    pub fn getEntry(layout: *BindGroupLayout, binding: u32) ?*const sysgpu.BindGroupLayout.Entry {
         for (layout.entries) |*entry| {
             if (entry.binding == binding)
                 return entry;
@@ -950,7 +950,7 @@ pub const BindGroup = struct {
     manager: utils.Manager(BindGroup) = .{},
     entries: []const Entry,
 
-    pub fn init(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn init(device: *Device, desc: *const sysgpu.BindGroup.Descriptor) !*BindGroup {
         _ = device;
 
         const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.layout));
@@ -998,7 +998,7 @@ pub const PipelineLayout = struct {
     manager: utils.Manager(PipelineLayout) = .{},
     group_layouts: []*BindGroupLayout,
 
-    pub fn init(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn init(device: *Device, desc: *const sysgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         _ = device;
 
         var group_layouts = try allocator.alloc(*BindGroupLayout, desc.bind_group_layout_count);
@@ -1019,7 +1019,7 @@ pub const PipelineLayout = struct {
 
     pub fn initDefault(device: *Device, default_pipeline_layout: utils.DefaultPipelineLayoutDescriptor) !*PipelineLayout {
         const groups = default_pipeline_layout.groups;
-        var bind_group_layouts = std.BoundedArray(*dgpu.BindGroupLayout, limits.max_bind_groups){};
+        var bind_group_layouts = std.BoundedArray(*sysgpu.BindGroupLayout, limits.max_bind_groups){};
         defer {
             for (bind_group_layouts.slice()) |bind_group_layout_raw| {
                 const bind_group_layout: *BindGroupLayout = @ptrCast(@alignCast(bind_group_layout_raw));
@@ -1029,13 +1029,13 @@ pub const PipelineLayout = struct {
 
         for (groups.slice()) |entries| {
             const bind_group_layout = try device.createBindGroupLayout(
-                &dgpu.BindGroupLayout.Descriptor.init(.{ .entries = entries.items }),
+                &sysgpu.BindGroupLayout.Descriptor.init(.{ .entries = entries.items }),
             );
             bind_group_layouts.appendAssumeCapacity(@ptrCast(bind_group_layout));
         }
 
         return device.createPipelineLayout(
-            &dgpu.PipelineLayout.Descriptor.init(.{ .bind_group_layouts = bind_group_layouts.slice() }),
+            &sysgpu.PipelineLayout.Descriptor.init(.{ .bind_group_layouts = bind_group_layouts.slice() }),
         );
     }
 
@@ -1145,7 +1145,7 @@ pub const ComputePipeline = struct {
     program: c.GLuint,
     bindings: BindingTable,
 
-    pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn init(device: *Device, desc: *const sysgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         const gl = &device.gl;
         var ctx = ActiveContext.init(device.hdc, device.hglrc);
         defer ctx.deinit();
@@ -1278,7 +1278,7 @@ pub const RenderPipeline = struct {
     alpha_to_coverage_enabled: bool,
     color_targets: []ColorTarget,
 
-    pub fn init(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn init(device: *Device, desc: *const sysgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         const gl = &device.gl;
         var ctx = ActiveContext.init(device.hdc, device.hglrc);
         defer ctx.deinit();
@@ -1648,8 +1648,8 @@ pub const RenderPipeline = struct {
 
 const Command = union(enum) {
     begin_render_pass: struct {
-        color_attachments: std.BoundedArray(dgpu.RenderPassColorAttachment, limits.max_color_attachments),
-        depth_stencil_attachment: ?dgpu.RenderPassDepthStencilAttachment,
+        color_attachments: std.BoundedArray(sysgpu.RenderPassColorAttachment, limits.max_color_attachments),
+        depth_stencil_attachment: ?sysgpu.RenderPassDepthStencilAttachment,
     },
     end_render_pass,
     copy_buffer_to_buffer: struct {
@@ -1692,7 +1692,7 @@ const Command = union(enum) {
     },
     set_index_buffer: struct {
         buffer: *Buffer,
-        format: dgpu.IndexFormat,
+        format: sysgpu.IndexFormat,
         offset: u64,
     },
     set_render_pipeline: struct {
@@ -2207,7 +2207,7 @@ pub const CommandEncoder = struct {
     upload_map: ?[*]u8 = null,
     upload_next_offset: u32 = upload_page_size,
 
-    pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn init(device: *Device, desc: ?*const sysgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         _ = desc;
 
         const command_buffer = try CommandBuffer.init(device);
@@ -2227,11 +2227,11 @@ pub const CommandEncoder = struct {
         allocator.destroy(encoder);
     }
 
-    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const sysgpu.ComputePassDescriptor) !*ComputePassEncoder {
         return ComputePassEncoder.init(encoder, desc);
     }
 
-    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const sysgpu.RenderPassDescriptor) !*RenderPassEncoder {
         return RenderPassEncoder.init(encoder, desc);
     }
 
@@ -2257,9 +2257,9 @@ pub const CommandEncoder = struct {
 
     pub fn copyBufferToTexture(
         encoder: *CommandEncoder,
-        source: *const dgpu.ImageCopyBuffer,
-        destination: *const dgpu.ImageCopyTexture,
-        copy_size: *const dgpu.Extent3D,
+        source: *const sysgpu.ImageCopyBuffer,
+        destination: *const sysgpu.ImageCopyTexture,
+        copy_size: *const sysgpu.Extent3D,
     ) !void {
         _ = copy_size;
         _ = destination;
@@ -2270,9 +2270,9 @@ pub const CommandEncoder = struct {
 
     pub fn copyTextureToTexture(
         encoder: *CommandEncoder,
-        source: *const dgpu.ImageCopyTexture,
-        destination: *const dgpu.ImageCopyTexture,
-        copy_size: *const dgpu.Extent3D,
+        source: *const sysgpu.ImageCopyTexture,
+        destination: *const sysgpu.ImageCopyTexture,
+        copy_size: *const sysgpu.Extent3D,
     ) !void {
         _ = copy_size;
         _ = destination;
@@ -2280,7 +2280,7 @@ pub const CommandEncoder = struct {
         _ = encoder;
     }
 
-    pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
+    pub fn finish(encoder: *CommandEncoder, desc: *const sysgpu.CommandBuffer.Descriptor) !*CommandBuffer {
         _ = desc;
         const command_buffer = encoder.command_buffer;
 
@@ -2296,11 +2296,11 @@ pub const CommandEncoder = struct {
 
     pub fn writeTexture(
         encoder: *CommandEncoder,
-        destination: *const dgpu.ImageCopyTexture,
+        destination: *const sysgpu.ImageCopyTexture,
         data: [*]const u8,
         data_size: usize,
-        data_layout: *const dgpu.Texture.DataLayout,
-        write_size: *const dgpu.Extent3D,
+        data_layout: *const sysgpu.Texture.DataLayout,
+        write_size: *const sysgpu.Extent3D,
     ) !void {
         const stream = try encoder.upload(data_size);
         @memcpy(stream.map[0..data_size], data[0..data_size]);
@@ -2347,7 +2347,7 @@ pub const ComputePassEncoder = struct {
     commands: *std.ArrayListUnmanaged(Command),
     reference_tracker: *ReferenceTracker,
 
-    pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const sysgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
 
         var encoder = try allocator.create(ComputePassEncoder);
@@ -2411,14 +2411,14 @@ pub const RenderPassEncoder = struct {
     commands: *std.ArrayListUnmanaged(Command),
     reference_tracker: *ReferenceTracker,
 
-    pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const sysgpu.RenderPassDescriptor) !*RenderPassEncoder {
         var encoder = try allocator.create(RenderPassEncoder);
         encoder.* = .{
             .commands = &cmd_encoder.command_buffer.commands,
             .reference_tracker = cmd_encoder.reference_tracker,
         };
 
-        var color_attachments: std.BoundedArray(dgpu.RenderPassColorAttachment, limits.max_color_attachments) = .{};
+        var color_attachments: std.BoundedArray(sysgpu.RenderPassColorAttachment, limits.max_color_attachments) = .{};
         for (0..desc.color_attachment_count) |i| {
             const attach = &desc.color_attachments.?[i];
             if (attach.view) |view_raw| {
@@ -2503,7 +2503,7 @@ pub const RenderPassEncoder = struct {
     pub fn setIndexBuffer(
         encoder: *RenderPassEncoder,
         buffer: *Buffer,
-        format: dgpu.IndexFormat,
+        format: sysgpu.IndexFormat,
         offset: u64,
         size: u64,
     ) !void {
@@ -2606,11 +2606,11 @@ pub const Queue = struct {
 
     pub fn writeTexture(
         queue: *Queue,
-        destination: *const dgpu.ImageCopyTexture,
+        destination: *const sysgpu.ImageCopyTexture,
         data: [*]const u8,
         data_size: usize,
-        data_layout: *const dgpu.Texture.DataLayout,
-        write_size: *const dgpu.Extent3D,
+        data_layout: *const sysgpu.Texture.DataLayout,
+        write_size: *const sysgpu.Extent3D,
     ) !void {
         const encoder = try queue.getCommandEncoder();
         try encoder.writeTexture(destination, data, data_size, data_layout, write_size);

@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const vk = @import("vulkan");
-const dgpu = @import("dgpu/main.zig");
+const sysgpu = @import("sysgpu/main.zig");
 const limits = @import("limits.zig");
 const shader = @import("shader.zig");
 const utils = @import("utils.zig");
@@ -45,7 +45,7 @@ pub fn libVulkanBaseLoader(_: vk.Instance, name_ptr: [*:0]const u8) vk.PfnVoidFu
 
 const MapCallback = struct {
     buffer: *Buffer,
-    callback: dgpu.Buffer.MapCallback,
+    callback: sysgpu.Buffer.MapCallback,
     userdata: ?*anyopaque,
 };
 
@@ -53,7 +53,7 @@ pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
     vk_instance: vk.Instance,
 
-    pub fn init(desc: *const dgpu.Instance.Descriptor) !*Instance {
+    pub fn init(desc: *const sysgpu.Instance.Descriptor) !*Instance {
         _ = desc;
 
         // Query layers
@@ -165,17 +165,17 @@ pub const Instance = struct {
 
     pub fn requestAdapter(
         instance: *Instance,
-        options: ?*const dgpu.RequestAdapterOptions,
-        callback: dgpu.RequestAdapterCallback,
+        options: ?*const sysgpu.RequestAdapterOptions,
+        callback: sysgpu.RequestAdapterCallback,
         userdata: ?*anyopaque,
     ) !*Adapter {
-        return Adapter.init(instance, options orelse &dgpu.RequestAdapterOptions{}) catch |err| {
+        return Adapter.init(instance, options orelse &sysgpu.RequestAdapterOptions{}) catch |err| {
             callback(.err, undefined, @errorName(err), userdata);
             @panic("unimplemented"); // TODO - return dummy adapter
         };
     }
 
-    pub fn createSurface(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
+    pub fn createSurface(instance: *Instance, desc: *const sysgpu.Surface.Descriptor) !*Surface {
         return Surface.init(instance, desc);
     }
 };
@@ -190,7 +190,7 @@ pub const Adapter = struct {
     driver_desc: [:0]const u8,
     vendor_id: VendorID,
 
-    pub fn init(instance: *Instance, options: *const dgpu.RequestAdapterOptions) !*Adapter {
+    pub fn init(instance: *Instance, options: *const sysgpu.RequestAdapterOptions) !*Adapter {
         const vk_instance = instance.vk_instance;
 
         var count: u32 = 0;
@@ -265,11 +265,11 @@ pub const Adapter = struct {
         allocator.destroy(adapter);
     }
 
-    pub fn createDevice(adapter: *Adapter, desc: ?*const dgpu.Device.Descriptor) !*Device {
+    pub fn createDevice(adapter: *Adapter, desc: ?*const sysgpu.Device.Descriptor) !*Device {
         return Device.init(adapter, desc);
     }
 
-    pub fn getProperties(adapter: *Adapter) dgpu.Adapter.Properties {
+    pub fn getProperties(adapter: *Adapter) sysgpu.Adapter.Properties {
         return .{
             .vendor_id = @intFromEnum(adapter.vendor_id),
             .vendor_name = adapter.vendor_id.name(),
@@ -277,7 +277,7 @@ pub const Adapter = struct {
             .device_id = adapter.props.device_id,
             .name = @ptrCast(&adapter.props.device_name),
             .driver_description = adapter.driver_desc,
-            .adapter_type = conv.dgpuAdapterType(adapter.props.device_type),
+            .adapter_type = conv.sysgpuAdapterType(adapter.props.device_type),
             .backend_type = .vulkan,
             .compatibility_mode = .false, // TODO
         };
@@ -310,7 +310,7 @@ pub const Adapter = struct {
     fn rateDevice(
         props: vk.PhysicalDeviceProperties,
         features: vk.PhysicalDeviceFeatures,
-        power_preference: dgpu.PowerPreference,
+        power_preference: sysgpu.PowerPreference,
     ) u32 {
         _ = features;
 
@@ -385,12 +385,12 @@ pub const Surface = struct {
     instance: *Instance,
     vk_surface: vk.SurfaceKHR,
 
-    pub fn init(instance: *Instance, desc: *const dgpu.Surface.Descriptor) !*Surface {
+    pub fn init(instance: *Instance, desc: *const sysgpu.Surface.Descriptor) !*Surface {
         const vk_instance = instance.vk_instance;
 
         const vk_surface = switch (builtin.target.os.tag) {
             .linux => blk: {
-                if (utils.findChained(dgpu.Surface.DescriptorFromXlibWindow, desc.next_in_chain.generic)) |x_desc| {
+                if (utils.findChained(sysgpu.Surface.DescriptorFromXlibWindow, desc.next_in_chain.generic)) |x_desc| {
                     break :blk try vki.createXlibSurfaceKHR(
                         vk_instance,
                         &vk.XlibSurfaceCreateInfoKHR{
@@ -399,7 +399,7 @@ pub const Surface = struct {
                         },
                         null,
                     );
-                } else if (utils.findChained(dgpu.Surface.DescriptorFromWaylandSurface, desc.next_in_chain.generic)) |wayland_desc| {
+                } else if (utils.findChained(sysgpu.Surface.DescriptorFromWaylandSurface, desc.next_in_chain.generic)) |wayland_desc| {
                     _ = wayland_desc;
                     @panic("unimplemented");
                     // TODO: renderdoc will not work with wayland
@@ -416,7 +416,7 @@ pub const Surface = struct {
                 return error.InvalidDescriptor;
             },
             .windows => blk: {
-                if (utils.findChained(dgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
+                if (utils.findChained(sysgpu.Surface.DescriptorFromWindowsHWND, desc.next_in_chain.generic)) |win_desc| {
                     break :blk try vki.createWin32SurfaceKHR(
                         vk_instance,
                         &vk.Win32SurfaceCreateInfoKHR{
@@ -460,14 +460,14 @@ pub const Device = struct {
     submit_objects: std.ArrayListUnmanaged(SubmitObject) = .{},
     map_callbacks: std.ArrayListUnmanaged(MapCallback) = .{},
 
-    lost_cb: ?dgpu.Device.LostCallback = null,
+    lost_cb: ?sysgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
-    log_cb: ?dgpu.LoggingCallback = null,
+    log_cb: ?sysgpu.LoggingCallback = null,
     log_cb_userdata: ?*anyopaque = null,
-    err_cb: ?dgpu.ErrorCallback = null,
+    err_cb: ?sysgpu.ErrorCallback = null,
     err_cb_userdata: ?*anyopaque = null,
 
-    pub fn init(adapter: *Adapter, descriptor: ?*const dgpu.Device.Descriptor) !*Device {
+    pub fn init(adapter: *Adapter, descriptor: ?*const sysgpu.Device.Descriptor) !*Device {
         const queue_infos = &[_]vk.DeviceQueueCreateInfo{.{
             .queue_family_index = adapter.queue_family,
             .queue_count = 1,
@@ -610,35 +610,35 @@ pub const Device = struct {
         for (device.submit_objects.items) |*submit_object| try submit_object.wait();
     }
 
-    pub fn createBindGroup(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn createBindGroup(device: *Device, desc: *const sysgpu.BindGroup.Descriptor) !*BindGroup {
         return BindGroup.init(device, desc);
     }
 
-    pub fn createBindGroupLayout(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn createBindGroupLayout(device: *Device, desc: *const sysgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         return BindGroupLayout.init(device, desc);
     }
 
-    pub fn createBuffer(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
+    pub fn createBuffer(device: *Device, desc: *const sysgpu.Buffer.Descriptor) !*Buffer {
         return Buffer.init(device, desc);
     }
 
-    pub fn createCommandEncoder(device: *Device, desc: *const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn createCommandEncoder(device: *Device, desc: *const sysgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         return CommandEncoder.init(device, desc);
     }
 
-    pub fn createComputePipeline(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn createComputePipeline(device: *Device, desc: *const sysgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         return ComputePipeline.init(device, desc);
     }
 
-    pub fn createPipelineLayout(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn createPipelineLayout(device: *Device, desc: *const sysgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         return PipelineLayout.init(device, desc);
     }
 
-    pub fn createRenderPipeline(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn createRenderPipeline(device: *Device, desc: *const sysgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         return RenderPipeline.init(device, desc);
     }
 
-    pub fn createSampler(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+    pub fn createSampler(device: *Device, desc: *const sysgpu.Sampler.Descriptor) !*Sampler {
         return Sampler.init(device, desc);
     }
 
@@ -653,11 +653,11 @@ pub const Device = struct {
         return error.unsupported;
     }
 
-    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {
         return SwapChain.init(device, surface, desc);
     }
 
-    pub fn createTexture(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
+    pub fn createTexture(device: *Device, desc: *const sysgpu.Texture.Descriptor) !*Texture {
         return Texture.init(device, desc);
     }
 
@@ -687,8 +687,8 @@ pub const Device = struct {
     pub const ColorAttachmentKey = struct {
         format: vk.Format,
         samples: u32,
-        load_op: dgpu.LoadOp,
-        store_op: dgpu.StoreOp,
+        load_op: sysgpu.LoadOp,
+        store_op: sysgpu.StoreOp,
         layout: vk.ImageLayout,
         resolve: ?ResolveKey,
     };
@@ -696,10 +696,10 @@ pub const Device = struct {
     pub const DepthStencilAttachmentKey = struct {
         format: vk.Format,
         samples: u32,
-        depth_load_op: dgpu.LoadOp,
-        depth_store_op: dgpu.StoreOp,
-        stencil_load_op: dgpu.LoadOp,
-        stencil_store_op: dgpu.StoreOp,
+        depth_load_op: sysgpu.LoadOp,
+        depth_store_op: sysgpu.StoreOp,
+        stencil_load_op: sysgpu.LoadOp,
+        stencil_store_op: sysgpu.StoreOp,
         layout: vk.ImageLayout,
         read_only: bool,
     };
@@ -942,9 +942,9 @@ pub const SwapChain = struct {
     texture_views: []*TextureView,
     texture_index: u32 = 0,
     current_texture_view: ?*TextureView = null,
-    format: dgpu.Texture.Format,
+    format: sysgpu.Texture.Format,
 
-    pub fn init(device: *Device, surface: *Surface, desc: *const dgpu.SwapChain.Descriptor) !*SwapChain {
+    pub fn init(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {
         const vk_device = device.vk_device;
 
         var sc = try allocator.create(SwapChain);
@@ -1126,9 +1126,9 @@ pub const Buffer = struct {
     map: ?[*]u8,
     // TODO - packed buffer descriptor struct
     size: u64,
-    usage: dgpu.Buffer.UsageFlags,
+    usage: sysgpu.Buffer.UsageFlags,
 
-    pub fn init(device: *Device, desc: *const dgpu.Buffer.Descriptor) !*Buffer {
+    pub fn init(device: *Device, desc: *const sysgpu.Buffer.Descriptor) !*Buffer {
         const vk_device = device.vk_device;
 
         // Buffer
@@ -1213,16 +1213,16 @@ pub const Buffer = struct {
         return buffer.size;
     }
 
-    pub fn getUsage(buffer: *Buffer) dgpu.Buffer.UsageFlags {
+    pub fn getUsage(buffer: *Buffer) sysgpu.Buffer.UsageFlags {
         return buffer.usage;
     }
 
     pub fn mapAsync(
         buffer: *Buffer,
-        mode: dgpu.MapModeFlags,
+        mode: sysgpu.MapModeFlags,
         offset: usize,
         size: usize,
-        callback: dgpu.Buffer.MapCallback,
+        callback: sysgpu.Buffer.MapCallback,
         userdata: ?*anyopaque,
     ) !void {
         _ = size;
@@ -1286,14 +1286,14 @@ pub const Texture = struct {
     read_access_mask: vk.AccessFlags,
     read_image_layout: vk.ImageLayout,
     // TODO - packed texture descriptor struct
-    usage: dgpu.Texture.UsageFlags,
-    dimension: dgpu.Texture.Dimension,
-    size: dgpu.Extent3D,
-    format: dgpu.Texture.Format,
+    usage: sysgpu.Texture.UsageFlags,
+    dimension: sysgpu.Texture.Dimension,
+    size: sysgpu.Extent3D,
+    format: sysgpu.Texture.Format,
     mip_level_count: u32,
     sample_count: u32,
 
-    pub fn init(device: *Device, desc: *const dgpu.Texture.Descriptor) !*Texture {
+    pub fn init(device: *Device, desc: *const sysgpu.Texture.Descriptor) !*Texture {
         const vk_device = device.vk_device;
 
         // Image
@@ -1360,7 +1360,7 @@ pub const Texture = struct {
 
     pub fn initForSwapChain(
         device: *Device,
-        desc: *const dgpu.SwapChain.Descriptor,
+        desc: *const sysgpu.SwapChain.Descriptor,
         image: vk.Image,
         swapchain: *SwapChain,
     ) !*Texture {
@@ -1401,7 +1401,7 @@ pub const Texture = struct {
         allocator.destroy(texture);
     }
 
-    pub fn createView(texture: *Texture, desc: *const dgpu.TextureView.Descriptor) !*TextureView {
+    pub fn createView(texture: *Texture, desc: *const sysgpu.TextureView.Descriptor) !*TextureView {
         return TextureView.init(texture, desc, texture.extent);
     }
 };
@@ -1414,12 +1414,12 @@ pub const TextureView = struct {
     vk_format: vk.Format,
     extent: vk.Extent2D,
 
-    pub fn init(texture: *Texture, desc: *const dgpu.TextureView.Descriptor, extent: vk.Extent2D) !*TextureView {
+    pub fn init(texture: *Texture, desc: *const sysgpu.TextureView.Descriptor, extent: vk.Extent2D) !*TextureView {
         const vk_device = texture.device.vk_device;
 
         texture.manager.reference();
 
-        const texture_dimension: dgpu.TextureView.Dimension = switch (texture.dimension) {
+        const texture_dimension: sysgpu.TextureView.Dimension = switch (texture.dimension) {
             .dimension_1d => .dimension_1d,
             .dimension_2d => .dimension_2d,
             .dimension_3d => .dimension_3d,
@@ -1474,7 +1474,7 @@ pub const Sampler = struct {
     device: *Device,
     vk_sampler: vk.Sampler,
 
-    pub fn init(device: *Device, desc: *const dgpu.Sampler.Descriptor) !*Sampler {
+    pub fn init(device: *Device, desc: *const sysgpu.Sampler.Descriptor) !*Sampler {
         const vk_device = device.vk_device;
 
         const vk_sampler = try vkd.createSampler(vk_device, &.{
@@ -1528,7 +1528,7 @@ pub const BindGroupLayout = struct {
 
     const max_sets = 512;
 
-    pub fn init(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn init(device: *Device, desc: *const sysgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         const vk_device = device.vk_device;
 
         var bindings = try std.ArrayListUnmanaged(vk.DescriptorSetLayoutBinding).initCapacity(allocator, desc.entry_count);
@@ -1636,7 +1636,7 @@ pub const BindGroup = struct {
     texture_views: std.ArrayListUnmanaged(TextureViewAccess),
     samplers: std.ArrayListUnmanaged(*Sampler),
 
-    pub fn init(device: *Device, desc: *const dgpu.BindGroup.Descriptor) !*BindGroup {
+    pub fn init(device: *Device, desc: *const sysgpu.BindGroup.Descriptor) !*BindGroup {
         const vk_device = device.vk_device;
 
         const layout: *BindGroupLayout = @ptrCast(@alignCast(desc.layout));
@@ -1792,7 +1792,7 @@ pub const PipelineLayout = struct {
     vk_layout: vk.PipelineLayout,
     group_layouts: []*BindGroupLayout,
 
-    pub fn init(device: *Device, desc: *const dgpu.PipelineLayout.Descriptor) !*PipelineLayout {
+    pub fn init(device: *Device, desc: *const sysgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         const vk_device = device.vk_device;
 
         var group_layouts = try allocator.alloc(*BindGroupLayout, desc.bind_group_layout_count);
@@ -1823,20 +1823,20 @@ pub const PipelineLayout = struct {
 
     pub fn initDefault(device: *Device, default_pipeline_layout: utils.DefaultPipelineLayoutDescriptor) !*PipelineLayout {
         const groups = default_pipeline_layout.groups;
-        var bind_group_layouts = std.BoundedArray(*dgpu.BindGroupLayout, limits.max_bind_groups){};
+        var bind_group_layouts = std.BoundedArray(*sysgpu.BindGroupLayout, limits.max_bind_groups){};
         defer {
             for (bind_group_layouts.slice()) |bind_group_layout| bind_group_layout.release();
         }
 
         for (groups.slice()) |entries| {
             const bind_group_layout = try device.createBindGroupLayout(
-                &dgpu.BindGroupLayout.Descriptor.init(.{ .entries = entries.items }),
+                &sysgpu.BindGroupLayout.Descriptor.init(.{ .entries = entries.items }),
             );
             bind_group_layouts.appendAssumeCapacity(@ptrCast(bind_group_layout));
         }
 
         return device.createPipelineLayout(
-            &dgpu.PipelineLayout.Descriptor.init(.{ .bind_group_layouts = bind_group_layouts.slice() }),
+            &sysgpu.PipelineLayout.Descriptor.init(.{ .bind_group_layouts = bind_group_layouts.slice() }),
         );
     }
 
@@ -1893,7 +1893,7 @@ pub const ComputePipeline = struct {
     layout: *PipelineLayout,
     vk_pipeline: vk.Pipeline,
 
-    pub fn init(device: *Device, desc: *const dgpu.ComputePipeline.Descriptor) !*ComputePipeline {
+    pub fn init(device: *Device, desc: *const sysgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         const vk_device = device.vk_device;
 
         // Shaders
@@ -1956,7 +1956,7 @@ pub const RenderPipeline = struct {
     vk_pipeline: vk.Pipeline,
     layout: *PipelineLayout,
 
-    pub fn init(device: *Device, desc: *const dgpu.RenderPipeline.Descriptor) !*RenderPipeline {
+    pub fn init(device: *Device, desc: *const sysgpu.RenderPipeline.Descriptor) !*RenderPipeline {
         const vk_device = device.vk_device;
 
         var stages = std.BoundedArray(vk.PipelineShaderStageCreateInfo, 2){};
@@ -2076,7 +2076,7 @@ pub const RenderPipeline = struct {
 
             for (0..frag.target_count) |i| {
                 const target = frag.targets.?[i];
-                const blend = target.blend orelse &dgpu.BlendState{};
+                const blend = target.blend orelse &sysgpu.BlendState{};
                 blend_attachments[i] = .{
                     .blend_enable = if (target.blend != null) vk.TRUE else vk.FALSE,
                     .src_color_blend_factor = conv.vulkanBlendFactor(blend.color.src_factor, true),
@@ -2226,7 +2226,7 @@ pub const RenderPipeline = struct {
         return @ptrCast(pipeline.layout.group_layouts[group_index]);
     }
 
-    fn isDepthBiasEnabled(ds: ?*const dgpu.DepthStencilState) vk.Bool32 {
+    fn isDepthBiasEnabled(ds: ?*const sysgpu.DepthStencilState) vk.Bool32 {
         if (ds == null) return vk.FALSE;
         return @intFromBool(ds.?.depth_bias != 0 or ds.?.depth_bias_slope_scale != 0);
     }
@@ -2426,7 +2426,7 @@ pub const CommandEncoder = struct {
     reference_tracker: *ReferenceTracker,
     state_tracker: StateTracker = .{},
 
-    pub fn init(device: *Device, desc: ?*const dgpu.CommandEncoder.Descriptor) !*CommandEncoder {
+    pub fn init(device: *Device, desc: ?*const sysgpu.CommandEncoder.Descriptor) !*CommandEncoder {
         _ = desc;
 
         const command_buffer = try CommandBuffer.init(device);
@@ -2446,11 +2446,11 @@ pub const CommandEncoder = struct {
         allocator.destroy(cmd_encoder);
     }
 
-    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn beginComputePass(encoder: *CommandEncoder, desc: *const sysgpu.ComputePassDescriptor) !*ComputePassEncoder {
         return ComputePassEncoder.init(encoder, desc);
     }
 
-    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn beginRenderPass(encoder: *CommandEncoder, desc: *const sysgpu.RenderPassDescriptor) !*RenderPassEncoder {
         try encoder.state_tracker.endPass();
         return RenderPassEncoder.init(encoder, desc);
     }
@@ -2481,9 +2481,9 @@ pub const CommandEncoder = struct {
 
     pub fn copyBufferToTexture(
         encoder: *CommandEncoder,
-        source: *const dgpu.ImageCopyBuffer,
-        destination: *const dgpu.ImageCopyTexture,
-        copy_size_raw: *const dgpu.Extent3D,
+        source: *const sysgpu.ImageCopyBuffer,
+        destination: *const sysgpu.ImageCopyTexture,
+        copy_size_raw: *const sysgpu.Extent3D,
     ) !void {
         const vk_command_buffer = encoder.command_buffer.vk_command_buffer;
         const source_buffer: *Buffer = @ptrCast(@alignCast(source.buffer));
@@ -2533,9 +2533,9 @@ pub const CommandEncoder = struct {
 
     pub fn copyTextureToTexture(
         encoder: *CommandEncoder,
-        source: *const dgpu.ImageCopyTexture,
-        destination: *const dgpu.ImageCopyTexture,
-        copy_size_raw: *const dgpu.Extent3D,
+        source: *const sysgpu.ImageCopyTexture,
+        destination: *const sysgpu.ImageCopyTexture,
+        copy_size_raw: *const sysgpu.Extent3D,
     ) !void {
         const vk_command_buffer = encoder.command_buffer.vk_command_buffer;
         const source_texture: *Texture = @ptrCast(@alignCast(source.texture));
@@ -2593,7 +2593,7 @@ pub const CommandEncoder = struct {
         );
     }
 
-    pub fn finish(encoder: *CommandEncoder, desc: *const dgpu.CommandBuffer.Descriptor) !*CommandBuffer {
+    pub fn finish(encoder: *CommandEncoder, desc: *const sysgpu.CommandBuffer.Descriptor) !*CommandBuffer {
         _ = desc;
         const vk_command_buffer = encoder.command_buffer.vk_command_buffer;
 
@@ -2613,11 +2613,11 @@ pub const CommandEncoder = struct {
 
     pub fn writeTexture(
         encoder: *CommandEncoder,
-        destination: *const dgpu.ImageCopyTexture,
+        destination: *const sysgpu.ImageCopyTexture,
         data: [*]const u8,
         data_size: usize,
-        data_layout: *const dgpu.Texture.DataLayout,
-        write_size: *const dgpu.Extent3D,
+        data_layout: *const sysgpu.Texture.DataLayout,
+        write_size: *const sysgpu.Extent3D,
     ) !void {
         const stream = try encoder.command_buffer.upload(data_size);
         @memcpy(stream.map[0..data_size], data[0..data_size]);
@@ -2982,7 +2982,7 @@ pub const ComputePassEncoder = struct {
     pipeline: ?*ComputePipeline = null,
     bind_groups: [limits.max_bind_groups]*BindGroup = undefined,
 
-    pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.ComputePassDescriptor) !*ComputePassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const sysgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
         const vk_command_buffer = cmd_encoder.command_buffer.vk_command_buffer;
 
@@ -3075,7 +3075,7 @@ pub const RenderPassEncoder = struct {
     extent: vk.Extent2D,
     pipeline: ?*RenderPipeline = null,
 
-    pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const sysgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const device = cmd_encoder.device;
         const vk_device = device.vk_device;
         const vk_command_buffer = cmd_encoder.command_buffer.vk_command_buffer;
@@ -3287,7 +3287,7 @@ pub const RenderPassEncoder = struct {
     pub fn setIndexBuffer(
         encoder: *RenderPassEncoder,
         buffer: *Buffer,
-        format: dgpu.IndexFormat,
+        format: sysgpu.IndexFormat,
         offset: u64,
         size: u64,
     ) !void {
@@ -3451,11 +3451,11 @@ pub const Queue = struct {
 
     pub fn writeTexture(
         queue: *Queue,
-        destination: *const dgpu.ImageCopyTexture,
+        destination: *const sysgpu.ImageCopyTexture,
         data: [*]const u8,
         data_size: usize,
-        data_layout: *const dgpu.Texture.DataLayout,
-        write_size: *const dgpu.Extent3D,
+        data_layout: *const sysgpu.Texture.DataLayout,
+        write_size: *const sysgpu.Extent3D,
     ) !void {
         const encoder = try queue.getCommandEncoder();
         try encoder.writeTexture(destination, data, data_size, data_layout, write_size);

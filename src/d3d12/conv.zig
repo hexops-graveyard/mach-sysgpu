@@ -1,8 +1,8 @@
-const dgpu = @import("../dgpu/main.zig");
+const sysgpu = @import("../sysgpu/main.zig");
 const utils = @import("../utils.zig");
 const c = @import("c.zig");
 
-fn stencilEnable(stencil: dgpu.StencilFaceState) bool {
+fn stencilEnable(stencil: sysgpu.StencilFaceState) bool {
     return stencil.compare != .always or stencil.fail_op != .keep or stencil.depth_fail_op != .keep or stencil.pass_op != .keep;
 }
 
@@ -10,7 +10,7 @@ pub fn winBool(b: bool) c.BOOL {
     return if (b) c.TRUE else c.FALSE;
 }
 
-pub fn d3d12Blend(factor: dgpu.BlendFactor) c.D3D12_BLEND {
+pub fn d3d12Blend(factor: sysgpu.BlendFactor) c.D3D12_BLEND {
     return switch (factor) {
         .zero => c.D3D12_BLEND_ZERO,
         .one => c.D3D12_BLEND_ONE,
@@ -32,7 +32,7 @@ pub fn d3d12Blend(factor: dgpu.BlendFactor) c.D3D12_BLEND {
     };
 }
 
-pub fn d3d12BlendDesc(desc: *const dgpu.RenderPipeline.Descriptor) c.D3D12_BLEND_DESC {
+pub fn d3d12BlendDesc(desc: *const sysgpu.RenderPipeline.Descriptor) c.D3D12_BLEND_DESC {
     var d3d12_targets = [_]c.D3D12_RENDER_TARGET_BLEND_DESC{d3d12RenderTargetBlendDesc(null)} ** 8;
     if (desc.fragment) |frag| {
         for (0..frag.target_count) |i| {
@@ -48,7 +48,7 @@ pub fn d3d12BlendDesc(desc: *const dgpu.RenderPipeline.Descriptor) c.D3D12_BLEND
     };
 }
 
-pub fn d3d12BlendOp(op: dgpu.BlendOperation) c.D3D12_BLEND_OP {
+pub fn d3d12BlendOp(op: sysgpu.BlendOperation) c.D3D12_BLEND_OP {
     return switch (op) {
         .add => c.D3D12_BLEND_OP_ADD,
         .subtract => c.D3D12_BLEND_OP_SUBTRACT,
@@ -58,7 +58,7 @@ pub fn d3d12BlendOp(op: dgpu.BlendOperation) c.D3D12_BLEND_OP {
     };
 }
 
-pub fn d3d12ComparisonFunc(func: dgpu.CompareFunction) c.D3D12_COMPARISON_FUNC {
+pub fn d3d12ComparisonFunc(func: sysgpu.CompareFunction) c.D3D12_COMPARISON_FUNC {
     return switch (func) {
         .undefined => unreachable,
         .never => c.D3D12_COMPARISON_FUNC_NEVER,
@@ -72,7 +72,7 @@ pub fn d3d12ComparisonFunc(func: dgpu.CompareFunction) c.D3D12_COMPARISON_FUNC {
     };
 }
 
-pub fn d3d12CullMode(mode: dgpu.CullMode) c.D3D12_CULL_MODE {
+pub fn d3d12CullMode(mode: sysgpu.CullMode) c.D3D12_CULL_MODE {
     return switch (mode) {
         .none => c.D3D12_CULL_MODE_NONE,
         .front => c.D3D12_CULL_MODE_FRONT,
@@ -80,7 +80,7 @@ pub fn d3d12CullMode(mode: dgpu.CullMode) c.D3D12_CULL_MODE {
     };
 }
 
-pub fn d3d12DepthStencilDesc(depth_stencil: ?*const dgpu.DepthStencilState) c.D3D12_DEPTH_STENCIL_DESC {
+pub fn d3d12DepthStencilDesc(depth_stencil: ?*const sysgpu.DepthStencilState) c.D3D12_DEPTH_STENCIL_DESC {
     return if (depth_stencil) |ds| .{
         .DepthEnable = winBool(ds.depth_compare != .always or ds.depth_write_enabled == .true),
         .DepthWriteMask = if (ds.depth_write_enabled == .true) c.D3D12_DEPTH_WRITE_MASK_ALL else c.D3D12_DEPTH_WRITE_MASK_ZERO,
@@ -102,7 +102,7 @@ pub fn d3d12DepthStencilDesc(depth_stencil: ?*const dgpu.DepthStencilState) c.D3
     };
 }
 
-pub fn d3d12DepthStencilOpDesc(opt_stencil: ?dgpu.StencilFaceState) c.D3D12_DEPTH_STENCILOP_DESC {
+pub fn d3d12DepthStencilOpDesc(opt_stencil: ?sysgpu.StencilFaceState) c.D3D12_DEPTH_STENCILOP_DESC {
     return if (opt_stencil) |stencil| .{
         .StencilFailOp = d3d12StencilOp(stencil.fail_op),
         .StencilDepthFailOp = d3d12StencilOp(stencil.depth_fail_op),
@@ -116,7 +116,7 @@ pub fn d3d12DepthStencilOpDesc(opt_stencil: ?dgpu.StencilFaceState) c.D3D12_DEPT
     };
 }
 
-pub fn d3d12DescriptorRangeType(entry: dgpu.BindGroupLayout.Entry) c.D3D12_DESCRIPTOR_RANGE_TYPE {
+pub fn d3d12DescriptorRangeType(entry: sysgpu.BindGroupLayout.Entry) c.D3D12_DESCRIPTOR_RANGE_TYPE {
     if (entry.buffer.type != .undefined) {
         return switch (entry.buffer.type) {
             .undefined => unreachable,
@@ -136,14 +136,14 @@ pub fn d3d12DescriptorRangeType(entry: dgpu.BindGroupLayout.Entry) c.D3D12_DESCR
     unreachable;
 }
 
-pub fn d3d12FilterType(filter: dgpu.FilterMode) c.D3D12_FILTER_TYPE {
+pub fn d3d12FilterType(filter: sysgpu.FilterMode) c.D3D12_FILTER_TYPE {
     return switch (filter) {
         .nearest => c.D3D12_FILTER_TYPE_POINT,
         .linear => c.D3D12_FILTER_TYPE_LINEAR,
     };
 }
 
-pub fn d3d12FilterTypeForMipmap(filter: dgpu.MipmapFilterMode) c.D3D12_FILTER_TYPE {
+pub fn d3d12FilterTypeForMipmap(filter: sysgpu.MipmapFilterMode) c.D3D12_FILTER_TYPE {
     return switch (filter) {
         .nearest => c.D3D12_FILTER_TYPE_POINT,
         .linear => c.D3D12_FILTER_TYPE_LINEAR,
@@ -151,9 +151,9 @@ pub fn d3d12FilterTypeForMipmap(filter: dgpu.MipmapFilterMode) c.D3D12_FILTER_TY
 }
 
 pub fn d3d12Filter(
-    mag_filter: dgpu.FilterMode,
-    min_filter: dgpu.FilterMode,
-    mipmap_filter: dgpu.MipmapFilterMode,
+    mag_filter: sysgpu.FilterMode,
+    min_filter: sysgpu.FilterMode,
+    mipmap_filter: sysgpu.MipmapFilterMode,
     max_anisotropy: u16,
 ) c.D3D12_FILTER {
     var filter: c.D3D12_FILTER = 0;
@@ -166,14 +166,14 @@ pub fn d3d12Filter(
     return filter;
 }
 
-pub fn d3d12FrontCounterClockwise(face: dgpu.FrontFace) c.BOOL {
+pub fn d3d12FrontCounterClockwise(face: sysgpu.FrontFace) c.BOOL {
     return switch (face) {
         .ccw => c.TRUE,
         .cw => c.FALSE,
     };
 }
 
-pub fn d3d12HeapType(usage: dgpu.Buffer.UsageFlags) c.D3D12_HEAP_TYPE {
+pub fn d3d12HeapType(usage: sysgpu.Buffer.UsageFlags) c.D3D12_HEAP_TYPE {
     return if (usage.map_write)
         c.D3D12_HEAP_TYPE_UPLOAD
     else if (usage.map_read)
@@ -182,7 +182,7 @@ pub fn d3d12HeapType(usage: dgpu.Buffer.UsageFlags) c.D3D12_HEAP_TYPE {
         c.D3D12_HEAP_TYPE_DEFAULT;
 }
 
-pub fn d3d12IndexBufferStripCutValue(strip_index_format: dgpu.IndexFormat) c.D3D12_INDEX_BUFFER_STRIP_CUT_VALUE {
+pub fn d3d12IndexBufferStripCutValue(strip_index_format: sysgpu.IndexFormat) c.D3D12_INDEX_BUFFER_STRIP_CUT_VALUE {
     return switch (strip_index_format) {
         .undefined => c.D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_DISABLED,
         .uint16 => c.D3D12_INDEX_BUFFER_STRIP_CUT_VALUE_0xFFFF,
@@ -190,7 +190,7 @@ pub fn d3d12IndexBufferStripCutValue(strip_index_format: dgpu.IndexFormat) c.D3D
     };
 }
 
-pub fn d3d12InputClassification(mode: dgpu.VertexStepMode) c.D3D12_INPUT_CLASSIFICATION {
+pub fn d3d12InputClassification(mode: sysgpu.VertexStepMode) c.D3D12_INPUT_CLASSIFICATION {
     return switch (mode) {
         .vertex => c.D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
         .instance => c.D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA,
@@ -200,8 +200,8 @@ pub fn d3d12InputClassification(mode: dgpu.VertexStepMode) c.D3D12_INPUT_CLASSIF
 
 pub fn d3d12InputElementDesc(
     buffer_index: usize,
-    layout: dgpu.VertexBufferLayout,
-    attr: dgpu.VertexAttribute,
+    layout: sysgpu.VertexBufferLayout,
+    attr: sysgpu.VertexAttribute,
 ) c.D3D12_INPUT_ELEMENT_DESC {
     return .{
         .SemanticName = "ATTR",
@@ -214,7 +214,7 @@ pub fn d3d12InputElementDesc(
     };
 }
 
-pub fn d3d12PrimitiveTopology(topology: dgpu.PrimitiveTopology) c.D3D12_PRIMITIVE_TOPOLOGY {
+pub fn d3d12PrimitiveTopology(topology: sysgpu.PrimitiveTopology) c.D3D12_PRIMITIVE_TOPOLOGY {
     return switch (topology) {
         .point_list => c.D3D_PRIMITIVE_TOPOLOGY_POINTLIST,
         .line_list => c.D3D_PRIMITIVE_TOPOLOGY_LINELIST,
@@ -224,7 +224,7 @@ pub fn d3d12PrimitiveTopology(topology: dgpu.PrimitiveTopology) c.D3D12_PRIMITIV
     };
 }
 
-pub fn d3d12PrimitiveTopologyType(topology: dgpu.PrimitiveTopology) c.D3D12_PRIMITIVE_TOPOLOGY_TYPE {
+pub fn d3d12PrimitiveTopologyType(topology: sysgpu.PrimitiveTopology) c.D3D12_PRIMITIVE_TOPOLOGY_TYPE {
     return switch (topology) {
         .point_list => c.D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT,
         .line_list, .line_strip => c.D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE,
@@ -232,9 +232,9 @@ pub fn d3d12PrimitiveTopologyType(topology: dgpu.PrimitiveTopology) c.D3D12_PRIM
     };
 }
 
-pub fn d3d12RasterizerDesc(desc: *const dgpu.RenderPipeline.Descriptor) c.D3D12_RASTERIZER_DESC {
+pub fn d3d12RasterizerDesc(desc: *const sysgpu.RenderPipeline.Descriptor) c.D3D12_RASTERIZER_DESC {
     const primitive_depth_control = utils.findChained(
-        dgpu.PrimitiveDepthClipControl,
+        sysgpu.PrimitiveDepthClipControl,
         desc.primitive.next_in_chain.generic,
     );
 
@@ -253,7 +253,7 @@ pub fn d3d12RasterizerDesc(desc: *const dgpu.RenderPipeline.Descriptor) c.D3D12_
     };
 }
 
-pub fn d3d12RenderTargetBlendDesc(opt_target: ?dgpu.ColorTargetState) c.D3D12_RENDER_TARGET_BLEND_DESC {
+pub fn d3d12RenderTargetBlendDesc(opt_target: ?sysgpu.ColorTargetState) c.D3D12_RENDER_TARGET_BLEND_DESC {
     var desc = c.D3D12_RENDER_TARGET_BLEND_DESC{
         .BlendEnable = c.FALSE,
         .LogicOpEnable = c.FALSE,
@@ -282,7 +282,7 @@ pub fn d3d12RenderTargetBlendDesc(opt_target: ?dgpu.ColorTargetState) c.D3D12_RE
     return desc;
 }
 
-pub fn d3d12RenderTargetWriteMask(mask: dgpu.ColorWriteMaskFlags) c.UINT8 {
+pub fn d3d12RenderTargetWriteMask(mask: sysgpu.ColorWriteMaskFlags) c.UINT8 {
     var writeMask: c.INT = 0;
     if (mask.red)
         writeMask |= c.D3D12_COLOR_WRITE_ENABLE_RED;
@@ -295,7 +295,7 @@ pub fn d3d12RenderTargetWriteMask(mask: dgpu.ColorWriteMaskFlags) c.UINT8 {
     return @intCast(writeMask);
 }
 
-pub fn d3d12ResourceSizeForBuffer(size: u64, usage: dgpu.Buffer.UsageFlags) c.UINT64 {
+pub fn d3d12ResourceSizeForBuffer(size: u64, usage: sysgpu.Buffer.UsageFlags) c.UINT64 {
     var resource_size = size;
     if (usage.uniform)
         resource_size = utils.alignUp(resource_size, 256);
@@ -310,7 +310,7 @@ pub fn d3d12ResourceStatesInitial(heap_type: c.D3D12_HEAP_TYPE, read_state: c.D3
     };
 }
 
-pub fn d3d12ResourceStatesForBufferRead(usage: dgpu.Buffer.UsageFlags) c.D3D12_RESOURCE_STATES {
+pub fn d3d12ResourceStatesForBufferRead(usage: sysgpu.Buffer.UsageFlags) c.D3D12_RESOURCE_STATES {
     var states: c.D3D12_RESOURCE_STATES = c.D3D12_RESOURCE_STATE_COMMON;
     if (usage.copy_src)
         states |= c.D3D12_RESOURCE_STATE_COPY_SOURCE;
@@ -325,7 +325,7 @@ pub fn d3d12ResourceStatesForBufferRead(usage: dgpu.Buffer.UsageFlags) c.D3D12_R
     return states;
 }
 
-pub fn d3d12ResourceStatesForTextureRead(usage: dgpu.Texture.UsageFlags) c.D3D12_RESOURCE_STATES {
+pub fn d3d12ResourceStatesForTextureRead(usage: sysgpu.Texture.UsageFlags) c.D3D12_RESOURCE_STATES {
     var states: c.D3D12_RESOURCE_STATES = c.D3D12_RESOURCE_STATE_COMMON;
     if (usage.copy_src)
         states |= c.D3D12_RESOURCE_STATE_COPY_SOURCE;
@@ -334,7 +334,7 @@ pub fn d3d12ResourceStatesForTextureRead(usage: dgpu.Texture.UsageFlags) c.D3D12
     return states;
 }
 
-pub fn d3d12ResourceFlagsForBuffer(usage: dgpu.Buffer.UsageFlags) c.D3D12_RESOURCE_FLAGS {
+pub fn d3d12ResourceFlagsForBuffer(usage: sysgpu.Buffer.UsageFlags) c.D3D12_RESOURCE_FLAGS {
     var flags: c.D3D12_RESOURCE_FLAGS = c.D3D12_RESOURCE_FLAG_NONE;
     if (usage.storage)
         flags |= c.D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
@@ -342,8 +342,8 @@ pub fn d3d12ResourceFlagsForBuffer(usage: dgpu.Buffer.UsageFlags) c.D3D12_RESOUR
 }
 
 pub fn d3d12ResourceFlagsForTexture(
-    usage: dgpu.Texture.UsageFlags,
-    format: dgpu.Texture.Format,
+    usage: sysgpu.Texture.UsageFlags,
+    format: sysgpu.Texture.Format,
 ) c.D3D12_RESOURCE_FLAGS {
     var flags: c.D3D12_RESOURCE_FLAGS = c.D3D12_RESOURCE_FLAG_NONE;
     if (usage.render_attachment) {
@@ -360,7 +360,7 @@ pub fn d3d12ResourceFlagsForTexture(
     return flags;
 }
 
-pub fn d3d12ResourceDimension(dimension: dgpu.Texture.Dimension) c.D3D12_RESOURCE_DIMENSION {
+pub fn d3d12ResourceDimension(dimension: sysgpu.Texture.Dimension) c.D3D12_RESOURCE_DIMENSION {
     return switch (dimension) {
         .dimension_1d => c.D3D12_RESOURCE_DIMENSION_TEXTURE1D,
         .dimension_2d => c.D3D12_RESOURCE_DIMENSION_TEXTURE2D,
@@ -368,7 +368,7 @@ pub fn d3d12ResourceDimension(dimension: dgpu.Texture.Dimension) c.D3D12_RESOURC
     };
 }
 
-pub fn d3d12RootParameterType(entry: dgpu.BindGroupLayout.Entry) c.D3D12_ROOT_PARAMETER_TYPE {
+pub fn d3d12RootParameterType(entry: sysgpu.BindGroupLayout.Entry) c.D3D12_ROOT_PARAMETER_TYPE {
     return switch (entry.buffer.type) {
         .undefined => unreachable,
         .uniform => c.D3D12_ROOT_PARAMETER_TYPE_CBV,
@@ -384,7 +384,7 @@ pub fn d3d12ShaderBytecode(opt_blob: ?*c.ID3DBlob) c.D3D12_SHADER_BYTECODE {
     } else .{ .pShaderBytecode = null, .BytecodeLength = 0 };
 }
 
-pub fn d3d12SrvDimension(dimension: dgpu.TextureView.Dimension, sample_count: u32) c.D3D12_SRV_DIMENSION {
+pub fn d3d12SrvDimension(dimension: sysgpu.TextureView.Dimension, sample_count: u32) c.D3D12_SRV_DIMENSION {
     return switch (dimension) {
         .dimension_undefined => unreachable,
         .dimension_1d => c.D3D12_SRV_DIMENSION_TEXTURE1D,
@@ -396,7 +396,7 @@ pub fn d3d12SrvDimension(dimension: dgpu.TextureView.Dimension, sample_count: u3
     };
 }
 
-pub fn d3d12StencilOp(op: dgpu.StencilOperation) c.D3D12_STENCIL_OP {
+pub fn d3d12StencilOp(op: sysgpu.StencilOperation) c.D3D12_STENCIL_OP {
     return switch (op) {
         .keep => c.D3D12_STENCIL_OP_KEEP,
         .zero => c.D3D12_STENCIL_OP_ZERO,
@@ -419,7 +419,7 @@ pub fn d3d12StreamOutputDesc() c.D3D12_STREAM_OUTPUT_DESC {
     };
 }
 
-pub fn d3d12TextureAddressMode(address_mode: dgpu.Sampler.AddressMode) c.D3D12_TEXTURE_ADDRESS_MODE {
+pub fn d3d12TextureAddressMode(address_mode: sysgpu.Sampler.AddressMode) c.D3D12_TEXTURE_ADDRESS_MODE {
     return switch (address_mode) {
         .repeat => c.D3D12_TEXTURE_ADDRESS_MODE_WRAP,
         .mirror_repeat => c.D3D12_TEXTURE_ADDRESS_MODE_MIRROR,
@@ -427,7 +427,7 @@ pub fn d3d12TextureAddressMode(address_mode: dgpu.Sampler.AddressMode) c.D3D12_T
     };
 }
 
-pub fn d3d12UavDimension(dimension: dgpu.TextureView.Dimension) c.D3D12_UAV_DIMENSION {
+pub fn d3d12UavDimension(dimension: sysgpu.TextureView.Dimension) c.D3D12_UAV_DIMENSION {
     return switch (dimension) {
         .dimension_undefined => unreachable,
         .dimension_1d => c.D3D12_UAV_DIMENSION_TEXTURE1D,
@@ -438,7 +438,7 @@ pub fn d3d12UavDimension(dimension: dgpu.TextureView.Dimension) c.D3D12_UAV_DIME
     };
 }
 
-pub fn dxgiFormatForIndex(format: dgpu.IndexFormat) c.DXGI_FORMAT {
+pub fn dxgiFormatForIndex(format: sysgpu.IndexFormat) c.DXGI_FORMAT {
     return switch (format) {
         .undefined => unreachable,
         .uint16 => c.DXGI_FORMAT_R16_UINT,
@@ -446,7 +446,7 @@ pub fn dxgiFormatForIndex(format: dgpu.IndexFormat) c.DXGI_FORMAT {
     };
 }
 
-pub fn dxgiFormatForTexture(format: dgpu.Texture.Format) c.DXGI_FORMAT {
+pub fn dxgiFormatForTexture(format: sysgpu.Texture.Format) c.DXGI_FORMAT {
     return switch (format) {
         .undefined => unreachable,
         .r8_unorm => c.DXGI_FORMAT_R8_UNORM,
@@ -549,8 +549,8 @@ pub fn dxgiFormatForTexture(format: dgpu.Texture.Format) c.DXGI_FORMAT {
 }
 
 pub fn dxgiFormatForTextureResource(
-    format: dgpu.Texture.Format,
-    usage: dgpu.Texture.UsageFlags,
+    format: sysgpu.Texture.Format,
+    usage: sysgpu.Texture.UsageFlags,
     view_format_count: usize,
 ) c.DXGI_FORMAT {
     _ = usage;
@@ -560,7 +560,7 @@ pub fn dxgiFormatForTextureResource(
         dxgiFormatForTexture(format);
 }
 
-pub fn dxgiFormatForTextureView(format: dgpu.Texture.Format, aspect: dgpu.Texture.Aspect) c.DXGI_FORMAT {
+pub fn dxgiFormatForTextureView(format: sysgpu.Texture.Format, aspect: sysgpu.Texture.Aspect) c.DXGI_FORMAT {
     return switch (aspect) {
         .all => switch (format) {
             .stencil8 => c.DXGI_FORMAT_X24_TYPELESS_G8_UINT,
@@ -588,7 +588,7 @@ pub fn dxgiFormatForTextureView(format: dgpu.Texture.Format, aspect: dgpu.Textur
     };
 }
 
-pub fn dxgiFormatForVertex(format: dgpu.VertexFormat) c.DXGI_FORMAT {
+pub fn dxgiFormatForVertex(format: sysgpu.VertexFormat) c.DXGI_FORMAT {
     return switch (format) {
         .undefined => unreachable,
         .uint8x2 => c.DXGI_FORMAT_R8G8_UINT,
@@ -624,7 +624,7 @@ pub fn dxgiFormatForVertex(format: dgpu.VertexFormat) c.DXGI_FORMAT {
     };
 }
 
-pub fn dxgiFormatTypeless(format: dgpu.Texture.Format) c.DXGI_FORMAT {
+pub fn dxgiFormatTypeless(format: sysgpu.Texture.Format) c.DXGI_FORMAT {
     return switch (format) {
         .undefined => unreachable,
         .r8_unorm, .r8_snorm, .r8_uint, .r8_sint => c.DXGI_FORMAT_R8_TYPELESS,
@@ -725,7 +725,7 @@ pub fn dxgiFormatIsTypeless(format: c.DXGI_FORMAT) bool {
     };
 }
 
-pub fn dxgiUsage(usage: dgpu.Texture.UsageFlags) c.DXGI_USAGE {
+pub fn dxgiUsage(usage: sysgpu.Texture.UsageFlags) c.DXGI_USAGE {
     var dxgi_usage: c.DXGI_USAGE = 0;
     if (usage.texture_binding)
         dxgi_usage |= c.DXGI_USAGE_SHADER_INPUT;

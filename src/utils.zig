@@ -1,7 +1,7 @@
 const std = @import("std");
 const limits = @import("limits.zig");
 const shader = @import("shader.zig");
-const dgpu = @import("dgpu/main.zig");
+const sysgpu = @import("sysgpu/main.zig");
 
 pub fn Manager(comptime T: type) type {
     return struct {
@@ -21,8 +21,8 @@ pub fn Manager(comptime T: type) type {
     };
 }
 
-pub fn findChained(comptime T: type, next_in_chain: ?*const dgpu.ChainedStruct) ?*const T {
-    const search = @as(*align(1) const dgpu.ChainedStruct, @ptrCast(std.meta.fieldInfo(T, .chain).default_value.?));
+pub fn findChained(comptime T: type, next_in_chain: ?*const sysgpu.ChainedStruct) ?*const T {
+    const search = @as(*align(1) const sysgpu.ChainedStruct, @ptrCast(std.meta.fieldInfo(T, .chain).default_value.?));
     var chain = next_in_chain;
     while (chain) |c| {
         if (c.s_type == search.s_type) {
@@ -49,7 +49,7 @@ pub const FormatType = enum {
     depth_stencil,
 };
 
-pub fn vertexFormatType(format: dgpu.VertexFormat) FormatType {
+pub fn vertexFormatType(format: sysgpu.VertexFormat) FormatType {
     return switch (format) {
         .undefined => unreachable,
         .uint8x2 => .uint,
@@ -85,7 +85,7 @@ pub fn vertexFormatType(format: dgpu.VertexFormat) FormatType {
     };
 }
 
-pub fn textureFormatType(format: dgpu.Texture.Format) FormatType {
+pub fn textureFormatType(format: sysgpu.Texture.Format) FormatType {
     return switch (format) {
         .undefined => unreachable,
         .r8_unorm => .unorm,
@@ -186,14 +186,14 @@ pub fn textureFormatType(format: dgpu.Texture.Format) FormatType {
     };
 }
 
-pub fn formatHasDepthOrStencil(format: dgpu.Texture.Format) bool {
+pub fn formatHasDepthOrStencil(format: sysgpu.Texture.Format) bool {
     return switch (textureFormatType(format)) {
         .depth, .stencil, .depth_stencil => true,
         else => false,
     };
 }
 
-pub fn calcOrigin(dimension: dgpu.Texture.Dimension, origin: dgpu.Origin3D) struct {
+pub fn calcOrigin(dimension: sysgpu.Texture.Dimension, origin: sysgpu.Origin3D) struct {
     x: u32,
     y: u32,
     z: u32,
@@ -207,7 +207,7 @@ pub fn calcOrigin(dimension: dgpu.Texture.Dimension, origin: dgpu.Origin3D) stru
     };
 }
 
-pub fn calcExtent(dimension: dgpu.Texture.Dimension, extent: dgpu.Extent3D) struct {
+pub fn calcExtent(dimension: sysgpu.Texture.Dimension, extent: sysgpu.Extent3D) struct {
     width: u32,
     height: u32,
     depth: u32,
@@ -222,7 +222,7 @@ pub fn calcExtent(dimension: dgpu.Texture.Dimension, extent: dgpu.Extent3D) stru
 }
 
 pub const DefaultPipelineLayoutDescriptor = struct {
-    pub const Group = std.ArrayListUnmanaged(dgpu.BindGroupLayout.Entry);
+    pub const Group = std.ArrayListUnmanaged(sysgpu.BindGroupLayout.Entry);
 
     allocator: std.mem.Allocator,
     groups: std.BoundedArray(Group, limits.max_bind_groups) = .{},
@@ -240,7 +240,7 @@ pub const DefaultPipelineLayoutDescriptor = struct {
     pub fn addFunction(
         desc: *DefaultPipelineLayoutDescriptor,
         air: *const shader.Air,
-        stage: dgpu.ShaderStageFlags,
+        stage: sysgpu.ShaderStageFlags,
         entry_point: [*:0]const u8,
     ) !void {
         if (air.findFunction(std.mem.span(entry_point))) |fn_inst| {
@@ -254,7 +254,7 @@ pub const DefaultPipelineLayoutDescriptor = struct {
                 const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.constExpr);
                 const binding: u32 = @intCast(air.resolveInt(var_inst.binding) orelse return error.constExpr);
 
-                var entry: dgpu.BindGroupLayout.Entry = .{ .binding = binding, .visibility = stage };
+                var entry: sysgpu.BindGroupLayout.Entry = .{ .binding = binding, .visibility = stage };
                 switch (var_type) {
                     .sampler_type => entry.sampler.type = .filtering,
                     .comparison_sampler_type => entry.sampler.type = .comparison,

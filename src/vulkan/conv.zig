@@ -1,12 +1,12 @@
 const vk = @import("vulkan");
-const dgpu = @import("../dgpu/main.zig");
+const sysgpu = @import("../sysgpu/main.zig");
 const utils = @import("../utils.zig");
 
-pub fn stencilEnable(stencil: dgpu.StencilFaceState) bool {
+pub fn stencilEnable(stencil: sysgpu.StencilFaceState) bool {
     return stencil.compare != .always or stencil.fail_op != .keep or stencil.depth_fail_op != .keep or stencil.pass_op != .keep;
 }
 
-pub fn dgpuAdapterType(device_type: vk.PhysicalDeviceType) dgpu.Adapter.Type {
+pub fn sysgpuAdapterType(device_type: vk.PhysicalDeviceType) sysgpu.Adapter.Type {
     return switch (device_type) {
         .integrated_gpu => .integrated_gpu,
         .discrete_gpu => .discrete_gpu,
@@ -15,7 +15,7 @@ pub fn dgpuAdapterType(device_type: vk.PhysicalDeviceType) dgpu.Adapter.Type {
     };
 }
 
-pub fn vulkanAccessFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.AccessFlags {
+pub fn vulkanAccessFlagsForBufferRead(usage: sysgpu.Buffer.UsageFlags) vk.AccessFlags {
     return .{
         .indirect_command_read_bit = usage.indirect,
         .index_read_bit = usage.index,
@@ -26,7 +26,7 @@ pub fn vulkanAccessFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.AccessFl
     };
 }
 
-pub fn vulkanAccessFlagsForImageRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.AccessFlags {
+pub fn vulkanAccessFlagsForImageRead(usage: sysgpu.Texture.UsageFlags, format: sysgpu.Texture.Format) vk.AccessFlags {
     return .{
         .shader_read_bit = usage.texture_binding or usage.storage_binding,
         .color_attachment_read_bit = usage.render_attachment and !utils.formatHasDepthOrStencil(format),
@@ -34,7 +34,7 @@ pub fn vulkanAccessFlagsForImageRead(usage: dgpu.Texture.UsageFlags, format: dgp
     };
 }
 
-pub fn vulkanBlendOp(op: dgpu.BlendOperation) vk.BlendOp {
+pub fn vulkanBlendOp(op: sysgpu.BlendOperation) vk.BlendOp {
     return switch (op) {
         .add => .add,
         .subtract => .subtract,
@@ -44,7 +44,7 @@ pub fn vulkanBlendOp(op: dgpu.BlendOperation) vk.BlendOp {
     };
 }
 
-pub fn vulkanBlendFactor(op: dgpu.BlendFactor, color: bool) vk.BlendFactor {
+pub fn vulkanBlendFactor(op: sysgpu.BlendFactor, color: bool) vk.BlendFactor {
     return switch (op) {
         .zero => .zero,
         .one => .one,
@@ -66,7 +66,7 @@ pub fn vulkanBlendFactor(op: dgpu.BlendFactor, color: bool) vk.BlendFactor {
     };
 }
 
-pub fn vulkanBufferUsageFlags(flags: dgpu.Buffer.UsageFlags) vk.BufferUsageFlags {
+pub fn vulkanBufferUsageFlags(flags: sysgpu.Buffer.UsageFlags) vk.BufferUsageFlags {
     return .{
         .transfer_src_bit = flags.copy_src,
         .transfer_dst_bit = flags.copy_dst or flags.query_resolve,
@@ -78,7 +78,7 @@ pub fn vulkanBufferUsageFlags(flags: dgpu.Buffer.UsageFlags) vk.BufferUsageFlags
     };
 }
 
-pub fn vulkanCompareOp(op: dgpu.CompareFunction) vk.CompareOp {
+pub fn vulkanCompareOp(op: sysgpu.CompareFunction) vk.CompareOp {
     return switch (op) {
         .never => .never,
         .less => .less,
@@ -92,29 +92,29 @@ pub fn vulkanCompareOp(op: dgpu.CompareFunction) vk.CompareOp {
     };
 }
 
-pub fn vulkanCullMode(cull_mode: dgpu.CullMode) vk.CullModeFlags {
+pub fn vulkanCullMode(cull_mode: sysgpu.CullMode) vk.CullModeFlags {
     return .{
         .front_bit = cull_mode == .front,
         .back_bit = cull_mode == .back,
     };
 }
 
-pub fn vulkanDepthBias(ds: ?*const dgpu.DepthStencilState) f32 {
+pub fn vulkanDepthBias(ds: ?*const sysgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return @floatFromInt(ds.?.depth_bias);
 }
 
-pub fn vulkanDepthBiasClamp(ds: ?*const dgpu.DepthStencilState) f32 {
+pub fn vulkanDepthBiasClamp(ds: ?*const sysgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return ds.?.depth_bias_clamp;
 }
 
-pub fn vulkanDepthBiasSlopeScale(ds: ?*const dgpu.DepthStencilState) f32 {
+pub fn vulkanDepthBiasSlopeScale(ds: ?*const sysgpu.DepthStencilState) f32 {
     if (ds == null) return 0;
     return ds.?.depth_bias_slope_scale;
 }
 
-pub fn vulkanDescriptorType(entry: dgpu.BindGroupLayout.Entry) vk.DescriptorType {
+pub fn vulkanDescriptorType(entry: sysgpu.BindGroupLayout.Entry) vk.DescriptorType {
     switch (entry.buffer.type) {
         .undefined => {},
 
@@ -151,14 +151,14 @@ pub fn vulkanDescriptorType(entry: dgpu.BindGroupLayout.Entry) vk.DescriptorType
     unreachable;
 }
 
-pub fn vulkanFilter(filter: dgpu.FilterMode) vk.Filter {
+pub fn vulkanFilter(filter: sysgpu.FilterMode) vk.Filter {
     return switch (filter) {
         .nearest => .nearest,
         .linear => .linear,
     };
 }
 
-pub fn vulkanFormat(format: dgpu.Texture.Format) vk.Format {
+pub fn vulkanFormat(format: sysgpu.Texture.Format) vk.Format {
     return switch (format) {
         .r8_unorm => .r8_unorm,
         .r8_snorm => .r8_snorm,
@@ -259,14 +259,14 @@ pub fn vulkanFormat(format: dgpu.Texture.Format) vk.Format {
     };
 }
 
-pub fn vulkanFrontFace(front_face: dgpu.FrontFace) vk.FrontFace {
+pub fn vulkanFrontFace(front_face: sysgpu.FrontFace) vk.FrontFace {
     return switch (front_face) {
         .ccw => vk.FrontFace.counter_clockwise,
         .cw => vk.FrontFace.clockwise,
     };
 }
 
-pub fn vulkanImageAspectFlags(aspect: dgpu.Texture.Aspect, format: dgpu.Texture.Format) vk.ImageAspectFlags {
+pub fn vulkanImageAspectFlags(aspect: sysgpu.Texture.Aspect, format: sysgpu.Texture.Format) vk.ImageAspectFlags {
     return switch (aspect) {
         .all => vulkanImageAspectFlagsForFormat(format),
         .stencil_only => .{ .stencil_bit = true },
@@ -276,7 +276,7 @@ pub fn vulkanImageAspectFlags(aspect: dgpu.Texture.Aspect, format: dgpu.Texture.
     };
 }
 
-pub fn vulkanImageAspectFlagsForFormat(format: dgpu.Texture.Format) vk.ImageAspectFlags {
+pub fn vulkanImageAspectFlagsForFormat(format: sysgpu.Texture.Format) vk.ImageAspectFlags {
     return switch (format) {
         .stencil8 => .{ .stencil_bit = true },
         .depth16_unorm, .depth24_plus, .depth32_float => .{ .depth_bit = true },
@@ -293,7 +293,7 @@ pub fn vulkanImageCreateFlags(cube_compatible: bool, view_format_count: usize) v
     };
 }
 
-pub fn vulkanImageLayoutForRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.ImageLayout {
+pub fn vulkanImageLayoutForRead(usage: sysgpu.Texture.UsageFlags, format: sysgpu.Texture.Format) vk.ImageLayout {
     // In case where we do not read, use an appropriate write state to avoid unnecessary layout changes
     return if (usage.texture_binding)
         .shader_read_only_optimal
@@ -305,14 +305,14 @@ pub fn vulkanImageLayoutForRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Tex
         .general;
 }
 
-pub fn vulkanImageLayoutForTextureBinding(sample_type: dgpu.Texture.SampleType) vk.ImageLayout {
+pub fn vulkanImageLayoutForTextureBinding(sample_type: sysgpu.Texture.SampleType) vk.ImageLayout {
     return switch (sample_type) {
         .undefined => .general,
         else => .shader_read_only_optimal,
     };
 }
 
-pub fn vulkanImageType(dimension: dgpu.Texture.Dimension) vk.ImageType {
+pub fn vulkanImageType(dimension: sysgpu.Texture.Dimension) vk.ImageType {
     return switch (dimension) {
         .dimension_1d => .@"1d",
         .dimension_2d => .@"2d",
@@ -320,7 +320,7 @@ pub fn vulkanImageType(dimension: dgpu.Texture.Dimension) vk.ImageType {
     };
 }
 
-pub fn vulkanImageUsageFlags(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.ImageUsageFlags {
+pub fn vulkanImageUsageFlags(usage: sysgpu.Texture.UsageFlags, format: sysgpu.Texture.Format) vk.ImageUsageFlags {
     return .{
         .transfer_src_bit = usage.copy_src,
         .transfer_dst_bit = usage.copy_dst,
@@ -332,7 +332,7 @@ pub fn vulkanImageUsageFlags(usage: dgpu.Texture.UsageFlags, format: dgpu.Textur
     };
 }
 
-pub fn vulkanImageViewType(dimension: dgpu.TextureView.Dimension) vk.ImageViewType {
+pub fn vulkanImageViewType(dimension: sysgpu.TextureView.Dimension) vk.ImageViewType {
     return switch (dimension) {
         .dimension_undefined => unreachable,
         .dimension_1d => .@"1d",
@@ -344,7 +344,7 @@ pub fn vulkanImageViewType(dimension: dgpu.TextureView.Dimension) vk.ImageViewTy
     };
 }
 
-pub fn vulkanIndexType(format: dgpu.IndexFormat) vk.IndexType {
+pub fn vulkanIndexType(format: sysgpu.IndexFormat) vk.IndexType {
     return switch (format) {
         .undefined => unreachable,
         .uint16 => .uint16,
@@ -352,7 +352,7 @@ pub fn vulkanIndexType(format: dgpu.IndexFormat) vk.IndexType {
     };
 }
 
-pub fn vulkanLoadOp(op: dgpu.LoadOp) vk.AttachmentLoadOp {
+pub fn vulkanLoadOp(op: sysgpu.LoadOp) vk.AttachmentLoadOp {
     return switch (op) {
         .load => .load,
         .clear => .clear,
@@ -360,7 +360,7 @@ pub fn vulkanLoadOp(op: dgpu.LoadOp) vk.AttachmentLoadOp {
     };
 }
 
-pub fn vulkanPipelineStageFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.PipelineStageFlags {
+pub fn vulkanPipelineStageFlagsForBufferRead(usage: sysgpu.Buffer.UsageFlags) vk.PipelineStageFlags {
     return .{
         .draw_indirect_bit = usage.indirect,
         .vertex_input_bit = usage.index or usage.vertex,
@@ -371,7 +371,7 @@ pub fn vulkanPipelineStageFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.P
     };
 }
 
-pub fn vulkanPipelineStageFlagsForImageRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.PipelineStageFlags {
+pub fn vulkanPipelineStageFlagsForImageRead(usage: sysgpu.Texture.UsageFlags, format: sysgpu.Texture.Format) vk.PipelineStageFlags {
     return .{
         .vertex_shader_bit = usage.texture_binding or usage.storage_binding,
         .fragment_shader_bit = usage.texture_binding or usage.storage_binding,
@@ -382,7 +382,7 @@ pub fn vulkanPipelineStageFlagsForImageRead(usage: dgpu.Texture.UsageFlags, form
     };
 }
 
-pub fn vulkanPrimitiveTopology(topology: dgpu.PrimitiveTopology) vk.PrimitiveTopology {
+pub fn vulkanPrimitiveTopology(topology: sysgpu.PrimitiveTopology) vk.PrimitiveTopology {
     return switch (topology) {
         .point_list => .point_list,
         .line_list => .line_list,
@@ -392,7 +392,7 @@ pub fn vulkanPrimitiveTopology(topology: dgpu.PrimitiveTopology) vk.PrimitiveTop
     };
 }
 
-pub fn vulkanPresentMode(present_mode: dgpu.PresentMode) vk.PresentModeKHR {
+pub fn vulkanPresentMode(present_mode: sysgpu.PresentMode) vk.PresentModeKHR {
     return switch (present_mode) {
         .immediate => .immediate_khr,
         .fifo => .fifo_khr,
@@ -413,7 +413,7 @@ pub fn vulkanSampleCount(samples: u32) vk.SampleCountFlags {
     };
 }
 
-pub fn vulkanSamplerAddressMode(address_mode: dgpu.Sampler.AddressMode) vk.SamplerAddressMode {
+pub fn vulkanSamplerAddressMode(address_mode: sysgpu.Sampler.AddressMode) vk.SamplerAddressMode {
     return switch (address_mode) {
         .repeat => .repeat,
         .mirror_repeat => .mirrored_repeat,
@@ -421,14 +421,14 @@ pub fn vulkanSamplerAddressMode(address_mode: dgpu.Sampler.AddressMode) vk.Sampl
     };
 }
 
-pub fn vulkanSamplerMipmapMode(filter: dgpu.MipmapFilterMode) vk.SamplerMipmapMode {
+pub fn vulkanSamplerMipmapMode(filter: sysgpu.MipmapFilterMode) vk.SamplerMipmapMode {
     return switch (filter) {
         .nearest => .nearest,
         .linear => .linear,
     };
 }
 
-pub fn vulkanShaderStageFlags(flags: dgpu.ShaderStageFlags) vk.ShaderStageFlags {
+pub fn vulkanShaderStageFlags(flags: sysgpu.ShaderStageFlags) vk.ShaderStageFlags {
     return .{
         .vertex_bit = flags.vertex,
         .fragment_bit = flags.fragment,
@@ -436,7 +436,7 @@ pub fn vulkanShaderStageFlags(flags: dgpu.ShaderStageFlags) vk.ShaderStageFlags 
     };
 }
 
-pub fn vulkanStencilOp(op: dgpu.StencilOperation) vk.StencilOp {
+pub fn vulkanStencilOp(op: sysgpu.StencilOperation) vk.StencilOp {
     return switch (op) {
         .keep => .keep,
         .zero => .zero,
@@ -449,7 +449,7 @@ pub fn vulkanStencilOp(op: dgpu.StencilOperation) vk.StencilOp {
     };
 }
 
-pub fn vulkanStoreOp(op: dgpu.StoreOp) vk.AttachmentStoreOp {
+pub fn vulkanStoreOp(op: sysgpu.StoreOp) vk.AttachmentStoreOp {
     return switch (op) {
         .store => .store,
         .discard => .dont_care,
@@ -457,7 +457,7 @@ pub fn vulkanStoreOp(op: dgpu.StoreOp) vk.AttachmentStoreOp {
     };
 }
 
-pub fn vulkanVertexFormat(format: dgpu.VertexFormat) vk.Format {
+pub fn vulkanVertexFormat(format: sysgpu.VertexFormat) vk.Format {
     return switch (format) {
         .uint8x2 => .r8g8_uint,
         .uint8x4 => .r8g8b8a8_uint,
@@ -493,7 +493,7 @@ pub fn vulkanVertexFormat(format: dgpu.VertexFormat) vk.Format {
     };
 }
 
-pub fn vulkanVertexInputRate(step_mode: dgpu.VertexStepMode) vk.VertexInputRate {
+pub fn vulkanVertexInputRate(step_mode: sysgpu.VertexStepMode) vk.VertexInputRate {
     return switch (step_mode) {
         .vertex => .vertex,
         .instance => .instance,

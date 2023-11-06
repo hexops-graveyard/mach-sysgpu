@@ -1,7 +1,7 @@
 const mtl = @import("objc").metal.mtl;
-const dgpu = @import("../dgpu/main.zig");
+const sysgpu = @import("../sysgpu/main.zig");
 
-pub fn metalBlendFactor(factor: dgpu.BlendFactor, color: bool) mtl.BlendFactor {
+pub fn metalBlendFactor(factor: sysgpu.BlendFactor, color: bool) mtl.BlendFactor {
     return switch (factor) {
         .zero => mtl.BlendFactorZero,
         .one => mtl.BlendFactorOne,
@@ -23,7 +23,7 @@ pub fn metalBlendFactor(factor: dgpu.BlendFactor, color: bool) mtl.BlendFactor {
     };
 }
 
-pub fn metalBlendOperation(op: dgpu.BlendOperation) mtl.BlendOperation {
+pub fn metalBlendOperation(op: sysgpu.BlendOperation) mtl.BlendOperation {
     return switch (op) {
         .add => mtl.BlendOperationAdd,
         .subtract => mtl.BlendOperationSubtract,
@@ -33,7 +33,7 @@ pub fn metalBlendOperation(op: dgpu.BlendOperation) mtl.BlendOperation {
     };
 }
 
-pub fn metalColorWriteMask(mask: dgpu.ColorWriteMaskFlags) mtl.ColorWriteMask {
+pub fn metalColorWriteMask(mask: sysgpu.ColorWriteMaskFlags) mtl.ColorWriteMask {
     var writeMask = mtl.ColorWriteMaskNone;
     if (mask.red)
         writeMask |= mtl.ColorWriteMaskRed;
@@ -46,7 +46,7 @@ pub fn metalColorWriteMask(mask: dgpu.ColorWriteMaskFlags) mtl.ColorWriteMask {
     return writeMask;
 }
 
-pub fn metalCommonCounter(name: dgpu.PipelineStatisticName) mtl.CommonCounter {
+pub fn metalCommonCounter(name: sysgpu.PipelineStatisticName) mtl.CommonCounter {
     return switch (name) {
         .vertex_shader_invocations => mtl.CommonCounterVertexInvocations,
         .cliiper_invocations => mtl.CommonCounterClipperInvocations,
@@ -56,7 +56,7 @@ pub fn metalCommonCounter(name: dgpu.PipelineStatisticName) mtl.CommonCounter {
     };
 }
 
-pub fn metalCompareFunction(func: dgpu.CompareFunction) mtl.CompareFunction {
+pub fn metalCompareFunction(func: sysgpu.CompareFunction) mtl.CompareFunction {
     return switch (func) {
         .undefined => unreachable,
         .never => mtl.CompareFunctionNever,
@@ -70,7 +70,7 @@ pub fn metalCompareFunction(func: dgpu.CompareFunction) mtl.CompareFunction {
     };
 }
 
-pub fn metalCullMode(mode: dgpu.CullMode) mtl.CullMode {
+pub fn metalCullMode(mode: sysgpu.CullMode) mtl.CullMode {
     return switch (mode) {
         .none => mtl.CullModeNone,
         .front => mtl.CullModeFront,
@@ -78,7 +78,7 @@ pub fn metalCullMode(mode: dgpu.CullMode) mtl.CullMode {
     };
 }
 
-pub fn metalIndexType(format: dgpu.IndexFormat) mtl.IndexType {
+pub fn metalIndexType(format: sysgpu.IndexFormat) mtl.IndexType {
     return switch (format) {
         .undefined => unreachable,
         .uint16 => mtl.IndexTypeUInt16,
@@ -86,7 +86,7 @@ pub fn metalIndexType(format: dgpu.IndexFormat) mtl.IndexType {
     };
 }
 
-pub fn metalIndexElementSize(format: dgpu.IndexFormat) usize {
+pub fn metalIndexElementSize(format: sysgpu.IndexFormat) usize {
     return switch (format) {
         .undefined => unreachable,
         .uint16 => 2,
@@ -94,7 +94,7 @@ pub fn metalIndexElementSize(format: dgpu.IndexFormat) usize {
     };
 }
 
-pub fn metalLoadAction(op: dgpu.LoadOp) mtl.LoadAction {
+pub fn metalLoadAction(op: sysgpu.LoadOp) mtl.LoadAction {
     return switch (op) {
         .undefined => unreachable,
         .load => mtl.LoadActionLoad,
@@ -102,7 +102,7 @@ pub fn metalLoadAction(op: dgpu.LoadOp) mtl.LoadAction {
     };
 }
 
-pub fn metalPixelFormat(format: dgpu.Texture.Format) mtl.PixelFormat {
+pub fn metalPixelFormat(format: sysgpu.Texture.Format) mtl.PixelFormat {
     return switch (format) {
         .undefined => mtl.PixelFormatInvalid,
         .r8_unorm => mtl.PixelFormatR8Unorm,
@@ -203,7 +203,7 @@ pub fn metalPixelFormat(format: dgpu.Texture.Format) mtl.PixelFormat {
     };
 }
 
-pub fn metalPixelFormatForView(viewFormat: dgpu.Texture.Format, textureFormat: mtl.PixelFormat, aspect: dgpu.Texture.Aspect) mtl.PixelFormat {
+pub fn metalPixelFormatForView(viewFormat: sysgpu.Texture.Format, textureFormat: mtl.PixelFormat, aspect: sysgpu.Texture.Aspect) mtl.PixelFormat {
     // TODO - depth/stencil only views
     _ = aspect;
     _ = textureFormat;
@@ -211,7 +211,7 @@ pub fn metalPixelFormatForView(viewFormat: dgpu.Texture.Format, textureFormat: m
     return metalPixelFormat(viewFormat);
 }
 
-pub fn metalPrimitiveTopologyClass(topology: dgpu.PrimitiveTopology) mtl.PrimitiveTopologyClass {
+pub fn metalPrimitiveTopologyClass(topology: sysgpu.PrimitiveTopology) mtl.PrimitiveTopologyClass {
     return switch (topology) {
         .point_list => mtl.PrimitiveTopologyClassPoint,
         .line_list => mtl.PrimitiveTopologyClassLine,
@@ -221,7 +221,7 @@ pub fn metalPrimitiveTopologyClass(topology: dgpu.PrimitiveTopology) mtl.Primiti
     };
 }
 
-pub fn metalPrimitiveType(topology: dgpu.PrimitiveTopology) mtl.PrimitiveType {
+pub fn metalPrimitiveType(topology: sysgpu.PrimitiveTopology) mtl.PrimitiveType {
     return switch (topology) {
         .point_list => mtl.PrimitiveTypePoint,
         .line_list => mtl.PrimitiveTypeLine,
@@ -231,14 +231,14 @@ pub fn metalPrimitiveType(topology: dgpu.PrimitiveTopology) mtl.PrimitiveType {
     };
 }
 
-pub fn metalResourceOptionsForBuffer(usage: dgpu.Buffer.UsageFlags) mtl.ResourceOptions {
+pub fn metalResourceOptionsForBuffer(usage: sysgpu.Buffer.UsageFlags) mtl.ResourceOptions {
     const cpu_cache_mode = if (usage.map_write and !usage.map_read) mtl.ResourceCPUCacheModeWriteCombined else mtl.ResourceCPUCacheModeDefaultCache;
     const storage_mode = mtl.ResourceStorageModeShared; // optimizing for UMA only
     const hazard_tracking_mode = mtl.ResourceHazardTrackingModeDefault;
     return cpu_cache_mode | storage_mode | hazard_tracking_mode;
 }
 
-pub fn metalSamplerAddressMode(mode: dgpu.Sampler.AddressMode) mtl.SamplerAddressMode {
+pub fn metalSamplerAddressMode(mode: sysgpu.Sampler.AddressMode) mtl.SamplerAddressMode {
     return switch (mode) {
         .repeat => mtl.SamplerAddressModeRepeat,
         .mirror_repeat => mtl.SamplerAddressModeMirrorRepeat,
@@ -246,21 +246,21 @@ pub fn metalSamplerAddressMode(mode: dgpu.Sampler.AddressMode) mtl.SamplerAddres
     };
 }
 
-pub fn metalSamplerMinMagFilter(mode: dgpu.FilterMode) mtl.SamplerMinMagFilter {
+pub fn metalSamplerMinMagFilter(mode: sysgpu.FilterMode) mtl.SamplerMinMagFilter {
     return switch (mode) {
         .nearest => mtl.SamplerMinMagFilterNearest,
         .linear => mtl.SamplerMinMagFilterLinear,
     };
 }
 
-pub fn metalSamplerMipFilter(mode: dgpu.MipmapFilterMode) mtl.SamplerMipFilter {
+pub fn metalSamplerMipFilter(mode: sysgpu.MipmapFilterMode) mtl.SamplerMipFilter {
     return switch (mode) {
         .nearest => mtl.SamplerMipFilterNearest,
         .linear => mtl.SamplerMipFilterLinear,
     };
 }
 
-pub fn metalStencilOperation(op: dgpu.StencilOperation) mtl.StencilOperation {
+pub fn metalStencilOperation(op: sysgpu.StencilOperation) mtl.StencilOperation {
     return switch (op) {
         .keep => mtl.StencilOperationKeep,
         .zero => mtl.StencilOperationZero,
@@ -273,7 +273,7 @@ pub fn metalStencilOperation(op: dgpu.StencilOperation) mtl.StencilOperation {
     };
 }
 
-pub fn metalStorageModeForTexture(usage: dgpu.Texture.UsageFlags) mtl.StorageMode {
+pub fn metalStorageModeForTexture(usage: sysgpu.Texture.UsageFlags) mtl.StorageMode {
     if (usage.transient_attachment) {
         return mtl.StorageModeMemoryless;
     } else {
@@ -281,7 +281,7 @@ pub fn metalStorageModeForTexture(usage: dgpu.Texture.UsageFlags) mtl.StorageMod
     }
 }
 
-pub fn metalStoreAction(op: dgpu.StoreOp, has_resolve_target: bool) mtl.StoreAction {
+pub fn metalStoreAction(op: sysgpu.StoreOp, has_resolve_target: bool) mtl.StoreAction {
     return switch (op) {
         .undefined => unreachable,
         .store => if (has_resolve_target) mtl.StoreActionStoreAndMultisampleResolve else mtl.StoreActionStore,
@@ -289,7 +289,7 @@ pub fn metalStoreAction(op: dgpu.StoreOp, has_resolve_target: bool) mtl.StoreAct
     };
 }
 
-pub fn metalTextureType(dimension: dgpu.Texture.Dimension, size: dgpu.Extent3D, sample_count: u32) mtl.TextureType {
+pub fn metalTextureType(dimension: sysgpu.Texture.Dimension, size: sysgpu.Extent3D, sample_count: u32) mtl.TextureType {
     return switch (dimension) {
         .dimension_1d => if (size.depth_or_array_layers > 1) mtl.TextureType1DArray else mtl.TextureType1D,
         .dimension_2d => if (sample_count > 1)
@@ -305,7 +305,7 @@ pub fn metalTextureType(dimension: dgpu.Texture.Dimension, size: dgpu.Extent3D, 
     };
 }
 
-pub fn metalTextureTypeForView(dimension: dgpu.TextureView.Dimension) mtl.TextureType {
+pub fn metalTextureTypeForView(dimension: sysgpu.TextureView.Dimension) mtl.TextureType {
     return switch (dimension) {
         .dimension_undefined => unreachable,
         .dimension_1d => mtl.TextureType1D,
@@ -317,7 +317,7 @@ pub fn metalTextureTypeForView(dimension: dgpu.TextureView.Dimension) mtl.Textur
     };
 }
 
-pub fn metalTextureUsage(usage: dgpu.Texture.UsageFlags, view_format_count: usize) mtl.TextureUsage {
+pub fn metalTextureUsage(usage: sysgpu.Texture.UsageFlags, view_format_count: usize) mtl.TextureUsage {
     var mtl_usage = mtl.TextureUsageUnknown;
     if (usage.texture_binding)
         mtl_usage |= mtl.TextureUsageShaderRead;
@@ -330,7 +330,7 @@ pub fn metalTextureUsage(usage: dgpu.Texture.UsageFlags, view_format_count: usiz
     return mtl_usage;
 }
 
-pub fn metalVertexFormat(format: dgpu.VertexFormat) mtl.VertexFormat {
+pub fn metalVertexFormat(format: sysgpu.VertexFormat) mtl.VertexFormat {
     return switch (format) {
         .undefined => mtl.VertexFormatInvalid,
         .uint8x2 => mtl.VertexFormatUChar2,
@@ -366,7 +366,7 @@ pub fn metalVertexFormat(format: dgpu.VertexFormat) mtl.VertexFormat {
     };
 }
 
-pub fn metalVertexStepFunction(mode: dgpu.VertexStepMode) mtl.VertexStepFunction {
+pub fn metalVertexStepFunction(mode: sysgpu.VertexStepMode) mtl.VertexStepFunction {
     return switch (mode) {
         .vertex => mtl.VertexStepFunctionPerVertex,
         .instance => mtl.VertexStepFunctionPerInstance,
@@ -374,7 +374,7 @@ pub fn metalVertexStepFunction(mode: dgpu.VertexStepMode) mtl.VertexStepFunction
     };
 }
 
-pub fn metalWinding(face: dgpu.FrontFace) mtl.Winding {
+pub fn metalWinding(face: sysgpu.FrontFace) mtl.Winding {
     return switch (face) {
         .ccw => mtl.WindingCounterClockwise,
         .cw => mtl.WindingClockwise,
