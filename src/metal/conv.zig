@@ -1,7 +1,7 @@
 const mtl = @import("objc").metal.mtl;
 const dgpu = @import("../dgpu/main.zig");
 
-pub fn metalBlendFactor(factor: dgpu.BlendFactor) mtl.BlendFactor {
+pub fn metalBlendFactor(factor: dgpu.BlendFactor, color: bool) mtl.BlendFactor {
     return switch (factor) {
         .zero => mtl.BlendFactorZero,
         .one => mtl.BlendFactorOne,
@@ -14,8 +14,8 @@ pub fn metalBlendFactor(factor: dgpu.BlendFactor) mtl.BlendFactor {
         .dst_alpha => mtl.BlendFactorDestinationAlpha,
         .one_minus_dst_alpha => mtl.BlendFactorOneMinusDestinationAlpha,
         .src_alpha_saturated => mtl.BlendFactorSourceAlphaSaturated,
-        .constant => mtl.BlendFactorBlendColor,
-        .one_minus_constant => mtl.BlendFactorOneMinusBlendColor,
+        .constant => if (color) mtl.BlendFactorBlendColor else mtl.BlendFactorBlendAlpha,
+        .one_minus_constant => if (color) mtl.BlendFactorOneMinusBlendColor else mtl.BlendFactorOneMinusBlendAlpha,
         .src1 => mtl.BlendFactorSource1Color,
         .one_minus_src1 => mtl.BlendFactorOneMinusSource1Color,
         .src1_alpha => mtl.BlendFactorSource1Alpha,
@@ -86,7 +86,7 @@ pub fn metalIndexType(format: dgpu.IndexFormat) mtl.IndexType {
     };
 }
 
-pub fn metalIndexElementSize(format: dgpu.IndexFormat) mtl.IndexType {
+pub fn metalIndexElementSize(format: dgpu.IndexFormat) usize {
     return switch (format) {
         .undefined => unreachable,
         .uint16 => 2,

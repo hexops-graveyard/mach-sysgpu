@@ -674,7 +674,6 @@ fn emitExpr(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .swizzle_access => |inst| try hlsl.emitSwizzleAccess(inst),
         .index_access => |inst| try hlsl.emitIndexAccess(inst),
         .call => |inst| try hlsl.emitCall(inst),
-        //.call => |inst| hlsl.emitCall(inst),
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
         .texture_sample => |inst| try hlsl.emitTextureSample(inst),
@@ -791,7 +790,7 @@ fn emitUnary(hlsl: *Hlsl, inst: Inst.Unary) !void {
         .not => "!",
         .negate => "-",
         .deref => "*",
-        .addr_of => "&",
+        .addr_of => @panic("unsupported"),
     });
     try hlsl.emitExpr(inst.expr);
 }

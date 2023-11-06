@@ -180,6 +180,7 @@ pub const Device = struct {
             .mtl_device = mtl_device,
         };
         device.streaming_manager = try StreamingManager.init(device);
+        errdefer device.streaming_manager.deinit();
         return device;
     }
 
@@ -527,7 +528,14 @@ pub const Buffer = struct {
         return buffer.usage;
     }
 
-    pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
+    pub fn mapAsync(
+        buffer: *Buffer,
+        mode: dgpu.MapModeFlags,
+        offset: usize,
+        size: usize,
+        callback: dgpu.Buffer.MapCallback,
+        userdata: ?*anyopaque,
+    ) !void {
         _ = size;
         _ = offset;
         _ = mode;
@@ -718,12 +726,12 @@ pub const BindGroupLayout = struct {
     manager: utils.Manager(BindGroupLayout) = .{},
     entries: []const dgpu.BindGroupLayout.Entry,
 
-    pub fn init(device: *Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn init(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         _ = device;
 
         var entries: []const dgpu.BindGroupLayout.Entry = undefined;
-        if (descriptor.entry_count > 0) {
-            entries = try allocator.dupe(dgpu.BindGroupLayout.Entry, descriptor.entries.?[0..descriptor.entry_count]);
+        if (desc.entry_count > 0) {
+            entries = try allocator.dupe(dgpu.BindGroupLayout.Entry, desc.entries.?[0..desc.entry_count]);
         } else {
             entries = &[_]dgpu.BindGroupLayout.Entry{};
         }
@@ -801,7 +809,6 @@ pub const BindGroup = struct {
 
             const bind_group_entry = layout.getEntry(entry.binding) orelse return error.UnknownBinding;
 
-            // TODO - need to remap user binding space [0, 1000) to API binding space
             mtl_entry.* = .{
                 .binding = entry.binding,
                 .visibility = bind_group_entry.visibility,
@@ -1023,13 +1030,15 @@ pub const ComputePipeline = struct {
         defer compute_fn.release();
         mtl_desc.setComputeFunction(compute_fn);
 
-        const bindings = try compute_module.buildBindingTable(desc.compute.entry_point);
+        var bindings = try compute_module.buildBindingTable(desc.compute.entry_point);
+        errdefer bindings.deinit(allocator);
+
         const threadgroup_size = try compute_module.getThreadgroupSize(desc.compute.entry_point);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
-        if (desc.layout) |l| {
-            layout = @ptrCast(@alignCast(l));
+        if (desc.layout) |layout_raw| {
+            layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
         } else {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
@@ -1038,6 +1047,7 @@ pub const ComputePipeline = struct {
             try layout_desc.addFunction(compute_module.air, .{ .compute = true }, desc.compute.entry_point);
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
+        errdefer layout.manager.release();
 
         // PSO
         var err: ?*ns.Error = undefined;
@@ -1112,7 +1122,8 @@ pub const RenderPipeline = struct {
         defer vertex_fn.release();
         mtl_desc.setVertexFunction(vertex_fn);
 
-        const vertex_bindings = try vertex_module.buildBindingTable(desc.vertex.entry_point);
+        var vertex_bindings = try vertex_module.buildBindingTable(desc.vertex.entry_point);
+        errdefer vertex_bindings.deinit(allocator);
 
         // vertex constants - TODO
         if (desc.vertex.buffer_count > 0) {
@@ -1196,7 +1207,9 @@ pub const RenderPipeline = struct {
         mtl_desc.setAlphaToCoverageEnabled(desc.multisample.alpha_to_coverage_enabled == .true);
 
         // fragment
-        var fragment_bindings: BindingTable = undefined;
+        var fragment_bindings: BindingTable = .{};
+        errdefer fragment_bindings.deinit(allocator);
+
         if (desc.fragment) |frag| {
             const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
             const frag_entry_point = entrypointString(frag.entry_point);
@@ -1207,8 +1220,6 @@ pub const RenderPipeline = struct {
             mtl_desc.setFragmentFunction(frag_fn);
 
             fragment_bindings = try frag_module.buildBindingTable(frag.entry_point);
-        } else {
-            fragment_bindings = .{};
         }
 
         // attachments
@@ -1220,11 +1231,11 @@ pub const RenderPipeline = struct {
                 attach.setWriteMask(conv.metalColorWriteMask(target.write_mask));
                 if (target.blend) |blend| {
                     attach.setBlendingEnabled(true);
-                    attach.setSourceRGBBlendFactor(conv.metalBlendFactor(blend.color.src_factor));
-                    attach.setDestinationRGBBlendFactor(conv.metalBlendFactor(blend.color.dst_factor));
+                    attach.setSourceRGBBlendFactor(conv.metalBlendFactor(blend.color.src_factor, true));
+                    attach.setDestinationRGBBlendFactor(conv.metalBlendFactor(blend.color.dst_factor, true));
                     attach.setRgbBlendOperation(conv.metalBlendOperation(blend.color.operation));
-                    attach.setSourceAlphaBlendFactor(conv.metalBlendFactor(blend.alpha.src_factor));
-                    attach.setDestinationAlphaBlendFactor(conv.metalBlendFactor(blend.alpha.dst_factor));
+                    attach.setSourceAlphaBlendFactor(conv.metalBlendFactor(blend.alpha.src_factor, false));
+                    attach.setDestinationAlphaBlendFactor(conv.metalBlendFactor(blend.alpha.dst_factor, false));
                     attach.setAlphaBlendOperation(conv.metalBlendOperation(blend.alpha.operation));
                 }
             }
@@ -1239,8 +1250,8 @@ pub const RenderPipeline = struct {
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
-        if (desc.layout) |l| {
-            layout = @ptrCast(@alignCast(l));
+        if (desc.layout) |layout_raw| {
+            layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
         } else {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
@@ -1253,6 +1264,7 @@ pub const RenderPipeline = struct {
             }
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
+        errdefer layout.manager.release();
 
         // PSO
         var err: ?*ns.Error = undefined;
@@ -1396,8 +1408,8 @@ pub const ReferenceTracker = struct {
             group.manager.release();
         }
 
-        for (tracker.upload_pages.items) |d3d_resource| {
-            device.streaming_manager.release(d3d_resource);
+        for (tracker.upload_pages.items) |buffer| {
+            device.streaming_manager.release(buffer);
         }
 
         tracker.buffers.deinit(allocator);
@@ -1862,7 +1874,13 @@ pub const RenderPassEncoder = struct {
         allocator.destroy(encoder);
     }
 
-    pub fn draw(encoder: *RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
+    pub fn draw(
+        encoder: *RenderPassEncoder,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) !void {
         const mtl_encoder = encoder.mtl_encoder;
 
         mtl_encoder.drawPrimitives_vertexStart_vertexCount_instanceCount_baseInstance(
@@ -1874,7 +1892,14 @@ pub const RenderPassEncoder = struct {
         );
     }
 
-    pub fn drawIndexed(encoder: *RenderPassEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) void {
+    pub fn drawIndexed(
+        encoder: *RenderPassEncoder,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        base_vertex: i32,
+        first_instance: u32,
+    ) !void {
         const mtl_encoder = encoder.mtl_encoder;
 
         mtl_encoder.drawIndexedPrimitives_indexCount_indexType_indexBuffer_indexBufferOffset_instanceCount_baseVertex_baseInstance(
@@ -1982,7 +2007,7 @@ pub const RenderPassEncoder = struct {
         pipeline.manager.reference();
     }
 
-    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
+    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) !void {
         const mtl_encoder = encoder.mtl_encoder;
 
         const scissor_rect = mtl.ScissorRect.init(x, y, width, height);
@@ -1997,7 +2022,15 @@ pub const RenderPassEncoder = struct {
         mtl_encoder.setVertexBuffer_offset_atIndex(buffer.mtl_buffer, offset, slot_vertex_buffers + slot);
     }
 
-    pub fn setViewport(encoder: *RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
+    pub fn setViewport(
+        encoder: *RenderPassEncoder,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
+    ) !void {
         const mtl_encoder = encoder.mtl_encoder;
 
         const viewport = mtl.Viewport.init(x, y, width, height, min_depth, max_depth);

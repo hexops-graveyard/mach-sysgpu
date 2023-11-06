@@ -29,8 +29,8 @@ pub fn vulkanAccessFlagsForBufferRead(usage: dgpu.Buffer.UsageFlags) vk.AccessFl
 pub fn vulkanAccessFlagsForImageRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Texture.Format) vk.AccessFlags {
     return .{
         .shader_read_bit = usage.texture_binding or usage.storage_binding,
-        .color_attachment_read_bit = usage.render_attachment and !utils.hasDepthStencil(format),
-        .depth_stencil_attachment_read_bit = usage.render_attachment and utils.hasDepthStencil(format),
+        .color_attachment_read_bit = usage.render_attachment and !utils.formatHasDepthOrStencil(format),
+        .depth_stencil_attachment_read_bit = usage.render_attachment and utils.formatHasDepthOrStencil(format),
     };
 }
 
@@ -44,7 +44,7 @@ pub fn vulkanBlendOp(op: dgpu.BlendOperation) vk.BlendOp {
     };
 }
 
-pub fn vulkanBlendFactor(op: dgpu.BlendFactor) vk.BlendFactor {
+pub fn vulkanBlendFactor(op: dgpu.BlendFactor, color: bool) vk.BlendFactor {
     return switch (op) {
         .zero => .zero,
         .one => .one,
@@ -57,8 +57,8 @@ pub fn vulkanBlendFactor(op: dgpu.BlendFactor) vk.BlendFactor {
         .dst_alpha => .dst_alpha,
         .one_minus_dst_alpha => .one_minus_dst_alpha,
         .src_alpha_saturated => .src_alpha_saturate,
-        .constant => .constant_color,
-        .one_minus_constant => .one_minus_constant_color,
+        .constant => if (color) .constant_color else .constant_alpha,
+        .one_minus_constant => if (color) .one_minus_constant_color else .one_minus_constant_alpha,
         .src1 => .src1_color,
         .one_minus_src1 => .one_minus_src1_color,
         .src1_alpha => .src1_alpha,
@@ -297,7 +297,7 @@ pub fn vulkanImageLayoutForRead(usage: dgpu.Texture.UsageFlags, format: dgpu.Tex
     // In case where we do not read, use an appropriate write state to avoid unnecessary layout changes
     return if (usage.texture_binding)
         .shader_read_only_optimal
-    else if (usage.render_attachment and utils.hasDepthStencil(format))
+    else if (usage.render_attachment and utils.formatHasDepthOrStencil(format))
         .depth_stencil_attachment_optimal
     else if (usage.render_attachment)
         .color_attachment_optimal
@@ -326,9 +326,9 @@ pub fn vulkanImageUsageFlags(usage: dgpu.Texture.UsageFlags, format: dgpu.Textur
         .transfer_dst_bit = usage.copy_dst,
         .sampled_bit = usage.texture_binding,
         .storage_bit = usage.storage_binding,
-        .color_attachment_bit = usage.render_attachment and !utils.hasDepthStencil(format),
+        .color_attachment_bit = usage.render_attachment and !utils.formatHasDepthOrStencil(format),
         .transient_attachment_bit = usage.transient_attachment,
-        .depth_stencil_attachment_bit = usage.render_attachment and utils.hasDepthStencil(format),
+        .depth_stencil_attachment_bit = usage.render_attachment and utils.formatHasDepthOrStencil(format),
     };
 }
 
@@ -375,9 +375,9 @@ pub fn vulkanPipelineStageFlagsForImageRead(usage: dgpu.Texture.UsageFlags, form
     return .{
         .vertex_shader_bit = usage.texture_binding or usage.storage_binding,
         .fragment_shader_bit = usage.texture_binding or usage.storage_binding,
-        .early_fragment_tests_bit = usage.render_attachment and utils.hasDepthStencil(format),
-        .late_fragment_tests_bit = usage.render_attachment and utils.hasDepthStencil(format),
-        .color_attachment_output_bit = usage.render_attachment and !utils.hasDepthStencil(format),
+        .early_fragment_tests_bit = usage.render_attachment and utils.formatHasDepthOrStencil(format),
+        .late_fragment_tests_bit = usage.render_attachment and utils.formatHasDepthOrStencil(format),
+        .color_attachment_output_bit = usage.render_attachment and !utils.formatHasDepthOrStencil(format),
         .compute_shader_bit = usage.texture_binding or usage.storage_binding,
     };
 }

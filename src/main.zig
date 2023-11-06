@@ -959,12 +959,12 @@ pub const Impl = dgpu.Interface(struct {
 
     pub inline fn renderPassEncoderDraw(render_pass_encoder_raw: *dgpu.RenderPassEncoder, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
         const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
-        render_pass_encoder.draw(vertex_count, instance_count, first_vertex, first_instance);
+        render_pass_encoder.draw(vertex_count, instance_count, first_vertex, first_instance) catch @panic("api error");
     }
 
     pub inline fn renderPassEncoderDrawIndexed(render_pass_encoder_raw: *dgpu.RenderPassEncoder, index_count: u32, instance_count: u32, first_index: u32, base_vertex: i32, first_instance: u32) void {
         const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
-        render_pass_encoder.drawIndexed(index_count, instance_count, first_index, base_vertex, first_instance);
+        render_pass_encoder.drawIndexed(index_count, instance_count, first_index, base_vertex, first_instance) catch @panic("api error");
     }
 
     pub inline fn renderPassEncoderDrawIndexedIndirect(render_pass_encoder: *dgpu.RenderPassEncoder, indirect_buffer: *dgpu.Buffer, indirect_offset: u64) void {
@@ -1053,7 +1053,7 @@ pub const Impl = dgpu.Interface(struct {
 
     pub inline fn renderPassEncoderSetScissorRect(render_pass_encoder_raw: *dgpu.RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
         const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
-        render_pass_encoder.setScissorRect(x, y, width, height);
+        render_pass_encoder.setScissorRect(x, y, width, height) catch @panic("api error");
     }
 
     pub inline fn renderPassEncoderSetStencilReference(render_pass_encoder: *dgpu.RenderPassEncoder, reference: u32) void {
@@ -1070,7 +1070,7 @@ pub const Impl = dgpu.Interface(struct {
 
     pub inline fn renderPassEncoderSetViewport(render_pass_encoder_raw: *dgpu.RenderPassEncoder, x: f32, y: f32, width: f32, height: f32, min_depth: f32, max_depth: f32) void {
         const render_pass_encoder: *impl.RenderPassEncoder = @ptrCast(@alignCast(render_pass_encoder_raw));
-        render_pass_encoder.setViewport(x, y, width, height, min_depth, max_depth);
+        render_pass_encoder.setViewport(x, y, width, height, min_depth, max_depth) catch @panic("api error");
     }
 
     pub inline fn renderPassEncoderWriteTimestamp(render_pass_encoder: *dgpu.RenderPassEncoder, query_set: *dgpu.QuerySet, query_index: u32) void {

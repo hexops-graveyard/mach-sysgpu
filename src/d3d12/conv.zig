@@ -347,7 +347,7 @@ pub fn d3d12ResourceFlagsForTexture(
 ) c.D3D12_RESOURCE_FLAGS {
     var flags: c.D3D12_RESOURCE_FLAGS = c.D3D12_RESOURCE_FLAG_NONE;
     if (usage.render_attachment) {
-        if (utils.hasDepthStencil(format)) {
+        if (utils.formatHasDepthOrStencil(format)) {
             flags |= c.D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
         } else {
             flags |= c.D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
@@ -355,7 +355,7 @@ pub fn d3d12ResourceFlagsForTexture(
     }
     if (usage.storage_binding)
         flags |= c.D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-    if (!usage.texture_binding and usage.render_attachment and utils.hasDepthStencil(format))
+    if (!usage.texture_binding and usage.render_attachment and utils.formatHasDepthOrStencil(format))
         flags |= c.D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE;
     return flags;
 }

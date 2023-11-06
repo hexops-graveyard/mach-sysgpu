@@ -576,6 +576,7 @@ pub const Device = struct {
             .memory_allocator = memory_allocator,
         };
         device.streaming_manager = try StreamingManager.init(device);
+        errdefer device.streaming_manager.deinit();
         return device;
     }
 
@@ -1216,7 +1217,14 @@ pub const Buffer = struct {
         return buffer.usage;
     }
 
-    pub fn mapAsync(buffer: *Buffer, mode: dgpu.MapModeFlags, offset: usize, size: usize, callback: dgpu.Buffer.MapCallback, userdata: ?*anyopaque) !void {
+    pub fn mapAsync(
+        buffer: *Buffer,
+        mode: dgpu.MapModeFlags,
+        offset: usize,
+        size: usize,
+        callback: dgpu.Buffer.MapCallback,
+        userdata: ?*anyopaque,
+    ) !void {
         _ = size;
         _ = offset;
         _ = mode;
@@ -1520,20 +1528,20 @@ pub const BindGroupLayout = struct {
 
     const max_sets = 512;
 
-    pub fn init(device: *Device, descriptor: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
+    pub fn init(device: *Device, desc: *const dgpu.BindGroupLayout.Descriptor) !*BindGroupLayout {
         const vk_device = device.vk_device;
 
-        var bindings = try std.ArrayListUnmanaged(vk.DescriptorSetLayoutBinding).initCapacity(allocator, descriptor.entry_count);
+        var bindings = try std.ArrayListUnmanaged(vk.DescriptorSetLayoutBinding).initCapacity(allocator, desc.entry_count);
         defer bindings.deinit(allocator);
 
         var desc_types = std.AutoArrayHashMap(vk.DescriptorType, u32).init(allocator);
         defer desc_types.deinit();
 
-        var entries = try std.ArrayListUnmanaged(Entry).initCapacity(allocator, descriptor.entry_count);
+        var entries = try std.ArrayListUnmanaged(Entry).initCapacity(allocator, desc.entry_count);
         errdefer entries.deinit(allocator);
 
-        for (0..descriptor.entry_count) |entry_index| {
-            const entry = descriptor.entries.?[entry_index];
+        for (0..desc.entry_count) |entry_index| {
+            const entry = desc.entries.?[entry_index];
             const descriptor_type = conv.vulkanDescriptorType(entry);
             if (desc_types.getPtr(descriptor_type)) |count| {
                 count.* += 1;
@@ -1903,6 +1911,7 @@ pub const ComputePipeline = struct {
             try layout_desc.addFunction(compute_module.air, .{ .compute = true }, desc.compute.entry_point);
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
+        errdefer layout.manager.release();
 
         // PSO
         const stage = vk.PipelineShaderStageCreateInfo{
@@ -2055,6 +2064,7 @@ pub const RenderPipeline = struct {
             }
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
+        errdefer layout.manager.release();
 
         var blend_attachments: []vk.PipelineColorBlendAttachmentState = &.{};
         defer if (desc.fragment != null) allocator.free(blend_attachments);
@@ -2069,11 +2079,11 @@ pub const RenderPipeline = struct {
                 const blend = target.blend orelse &dgpu.BlendState{};
                 blend_attachments[i] = .{
                     .blend_enable = if (target.blend != null) vk.TRUE else vk.FALSE,
-                    .src_color_blend_factor = conv.vulkanBlendFactor(blend.color.src_factor),
-                    .dst_color_blend_factor = conv.vulkanBlendFactor(blend.color.dst_factor),
+                    .src_color_blend_factor = conv.vulkanBlendFactor(blend.color.src_factor, true),
+                    .dst_color_blend_factor = conv.vulkanBlendFactor(blend.color.dst_factor, true),
                     .color_blend_op = conv.vulkanBlendOp(blend.color.operation),
-                    .src_alpha_blend_factor = conv.vulkanBlendFactor(blend.alpha.src_factor),
-                    .dst_alpha_blend_factor = conv.vulkanBlendFactor(blend.alpha.dst_factor),
+                    .src_alpha_blend_factor = conv.vulkanBlendFactor(blend.alpha.src_factor, false),
+                    .dst_alpha_blend_factor = conv.vulkanBlendFactor(blend.alpha.dst_factor, false),
                     .alpha_blend_op = conv.vulkanBlendOp(blend.alpha.operation),
                     .color_write_mask = .{
                         .r_bit = target.write_mask.red,
@@ -3065,13 +3075,13 @@ pub const RenderPassEncoder = struct {
     extent: vk.Extent2D,
     pipeline: ?*RenderPipeline = null,
 
-    pub fn init(cmd_encoder: *CommandEncoder, descriptor: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
+    pub fn init(cmd_encoder: *CommandEncoder, desc: *const dgpu.RenderPassDescriptor) !*RenderPassEncoder {
         const device = cmd_encoder.device;
         const vk_device = device.vk_device;
         const vk_command_buffer = cmd_encoder.command_buffer.vk_command_buffer;
 
-        const depth_stencil_attachment_count = @intFromBool(descriptor.depth_stencil_attachment != null);
-        const max_attachment_count = 2 * (descriptor.color_attachment_count + depth_stencil_attachment_count);
+        const depth_stencil_attachment_count = @intFromBool(desc.depth_stencil_attachment != null);
+        const max_attachment_count = 2 * (desc.color_attachment_count + depth_stencil_attachment_count);
 
         var image_views = try std.ArrayList(vk.ImageView).initCapacity(allocator, max_attachment_count);
         defer image_views.deinit();
@@ -3082,55 +3092,57 @@ pub const RenderPassEncoder = struct {
         var rp_key = Device.RenderPassKey.init();
         var extent: vk.Extent2D = .{ .width = 0, .height = 0 };
 
-        for (0..descriptor.color_attachment_count) |i| {
-            const attach = descriptor.color_attachments.?[i];
-            const view: *TextureView = @ptrCast(@alignCast(attach.view.?));
-            const resolve_view: ?*TextureView = @ptrCast(@alignCast(attach.resolve_target));
+        for (0..desc.color_attachment_count) |i| {
+            const attach = desc.color_attachments.?[i];
+            if (attach.view) |view_raw| {
+                const view: *TextureView = @ptrCast(@alignCast(view_raw));
+                const resolve_view: ?*TextureView = @ptrCast(@alignCast(attach.resolve_target));
 
-            try cmd_encoder.reference_tracker.referenceTextureView(view);
-            if (resolve_view) |v|
-                try cmd_encoder.reference_tracker.referenceTextureView(v);
+                try cmd_encoder.reference_tracker.referenceTextureView(view);
+                if (resolve_view) |v|
+                    try cmd_encoder.reference_tracker.referenceTextureView(v);
 
-            if (use_semaphore_wait) {
-                if (view.texture.swapchain) |sc| {
-                    try cmd_encoder.command_buffer.wait_semaphores.append(allocator, sc.wait_semaphore);
-                    try cmd_encoder.command_buffer.wait_dst_stage_masks.append(allocator, .{ .all_commands_bit = true });
+                if (use_semaphore_wait) {
+                    if (view.texture.swapchain) |sc| {
+                        try cmd_encoder.command_buffer.wait_semaphores.append(allocator, sc.wait_semaphore);
+                        try cmd_encoder.command_buffer.wait_dst_stage_masks.append(allocator, .{ .all_commands_bit = true });
+                    }
                 }
-            }
 
-            image_views.appendAssumeCapacity(view.vk_view);
-            if (resolve_view) |rv|
-                image_views.appendAssumeCapacity(rv.vk_view);
+                image_views.appendAssumeCapacity(view.vk_view);
+                if (resolve_view) |rv|
+                    image_views.appendAssumeCapacity(rv.vk_view);
 
-            rp_key.colors.appendAssumeCapacity(.{
-                .format = view.vk_format,
-                .samples = view.texture.sample_count,
-                .load_op = attach.load_op,
-                .store_op = attach.store_op,
-                .layout = view.texture.read_image_layout,
-                .resolve = if (resolve_view) |rv| .{
-                    .format = rv.vk_format,
-                    .layout = rv.texture.read_image_layout,
-                } else null,
-            });
-
-            if (attach.load_op == .clear) {
-                try clear_values.append(.{
-                    .color = .{
-                        .float_32 = [4]f32{
-                            @floatCast(attach.clear_value.r),
-                            @floatCast(attach.clear_value.g),
-                            @floatCast(attach.clear_value.b),
-                            @floatCast(attach.clear_value.a),
-                        },
-                    },
+                rp_key.colors.appendAssumeCapacity(.{
+                    .format = view.vk_format,
+                    .samples = view.texture.sample_count,
+                    .load_op = attach.load_op,
+                    .store_op = attach.store_op,
+                    .layout = view.texture.read_image_layout,
+                    .resolve = if (resolve_view) |rv| .{
+                        .format = rv.vk_format,
+                        .layout = rv.texture.read_image_layout,
+                    } else null,
                 });
-            }
 
-            extent = view.extent;
+                if (attach.load_op == .clear) {
+                    try clear_values.append(.{
+                        .color = .{
+                            .float_32 = [4]f32{
+                                @floatCast(attach.clear_value.r),
+                                @floatCast(attach.clear_value.g),
+                                @floatCast(attach.clear_value.b),
+                                @floatCast(attach.clear_value.a),
+                            },
+                        },
+                    });
+                }
+
+                extent = view.extent;
+            }
         }
 
-        if (descriptor.depth_stencil_attachment) |attach| {
+        if (desc.depth_stencil_attachment) |attach| {
             const view: *TextureView = @ptrCast(@alignCast(attach.view));
 
             try cmd_encoder.reference_tracker.referenceTextureView(view);
@@ -3224,7 +3236,7 @@ pub const RenderPassEncoder = struct {
         instance_count: u32,
         first_vertex: u32,
         first_instance: u32,
-    ) void {
+    ) !void {
         const vk_command_buffer = encoder.vk_command_buffer;
 
         vkd.cmdDraw(vk_command_buffer, vertex_count, instance_count, first_vertex, first_instance);
@@ -3237,7 +3249,7 @@ pub const RenderPassEncoder = struct {
         first_index: u32,
         base_vertex: i32,
         first_instance: u32,
-    ) void {
+    ) !void {
         const vk_command_buffer = encoder.vk_command_buffer;
 
         vkd.cmdDrawIndexed(vk_command_buffer, index_count, instance_count, first_index, base_vertex, first_instance);
@@ -3297,7 +3309,7 @@ pub const RenderPassEncoder = struct {
         encoder.pipeline = pipeline;
     }
 
-    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) void {
+    pub fn setScissorRect(encoder: *RenderPassEncoder, x: u32, y: u32, width: u32, height: u32) !void {
         const vk_command_buffer = encoder.vk_command_buffer;
 
         const rect = vk.Rect2D{
@@ -3325,7 +3337,7 @@ pub const RenderPassEncoder = struct {
         height: f32,
         min_depth: f32,
         max_depth: f32,
-    ) void {
+    ) !void {
         const vk_command_buffer = encoder.vk_command_buffer;
 
         vkd.cmdSetViewport(vk_command_buffer, 0, 1, @as(*const [1]vk.Viewport, &vk.Viewport{
