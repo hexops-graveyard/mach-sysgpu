@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const build_options = @import("build-options");
 pub const sysgpu = @import("sysgpu/main.zig");
-const shader = @import("shader.zig");
+pub const shader = @import("shader.zig");
 const utils = @import("utils.zig");
 
 const backend_type: sysgpu.BackendType =
