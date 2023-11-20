@@ -210,7 +210,7 @@ fn expectCodegen(source: [:0]const u8, comptime file_name: []const u8, lang: Cod
     };
     defer ir.deinit(allocator);
 
-    const out = try CodeGen.generate(allocator, &ir, lang, .{}, null);
+    const out = try CodeGen.generate(allocator, &ir, lang, .{}, null, null);
     defer allocator.free(out);
 
     try std.fs.cwd().makePath("zig-out/shader/");

@@ -1970,24 +1970,19 @@ pub const PipelineLayout = struct {
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     air: *shader.Air,
-    code: []const u8,
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         _ = device;
 
-        const code = try shader.CodeGen.generate(allocator, air, .hlsl, .{ .emit_source_file = "" }, null);
-
         var module = try allocator.create(ShaderModule);
         module.* = .{
             .air = air,
-            .code = code,
         };
         return module;
     }
 
     pub fn deinit(module: *ShaderModule) void {
         module.air.deinit(allocator);
-        allocator.free(module.code);
         allocator.destroy(module.air);
         allocator.destroy(module);
     }
@@ -1996,6 +1991,9 @@ pub const ShaderModule = struct {
     pub fn compile(module: *ShaderModule, entrypoint: [*:0]const u8, target: [*:0]const u8) !*c.ID3DBlob {
         var hr: c.HRESULT = undefined;
 
+        const code = try shader.CodeGen.generate(allocator, module.air, .hlsl, .{ .emit_source_file = "" }, null, null);
+        defer allocator.free(code);
+
         var flags: u32 = 0;
         if (debug_enabled)
             flags |= c.D3DCOMPILE_DEBUG | c.D3DCOMPILE_SKIP_OPTIMIZATION;
@@ -2003,8 +2001,8 @@ pub const ShaderModule = struct {
         var shader_blob: *c.ID3DBlob = undefined;
         var opt_errors: ?*c.ID3DBlob = null;
         hr = c.D3DCompile(
-            module.code.ptr,
-            module.code.len,
+            code.ptr,
+            code.len,
             null,
             null,
             null,
@@ -2038,10 +2036,7 @@ pub const ComputePipeline = struct {
         const d3d_device = device.d3d_device;
         var hr: c.HRESULT = undefined;
 
-        // Shaders
         const compute_module: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
-        const compute_shader = try compute_module.compile(desc.compute.entry_point, "cs_5_1");
-        defer _ = compute_shader.lpVtbl.*.Release.?(compute_shader);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
@@ -2056,6 +2051,10 @@ pub const ComputePipeline = struct {
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
         errdefer layout.manager.release();
+
+        // Shaders
+        const compute_shader = try compute_module.compile(desc.compute.entry_point, "cs_5_1");
+        defer _ = compute_shader.lpVtbl.*.Release.?(compute_shader);
 
         // PSO
         var d3d_pipeline: *c.ID3D12PipelineState = undefined;
@@ -2114,19 +2113,7 @@ pub const RenderPipeline = struct {
         const d3d_device = device.d3d_device;
         var hr: c.HRESULT = undefined;
 
-        // Shaders
         const vertex_module: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
-        const vertex_shader = try vertex_module.compile(desc.vertex.entry_point, "vs_5_1");
-        defer _ = vertex_shader.lpVtbl.*.Release.?(vertex_shader);
-
-        var opt_pixel_shader: ?*c.ID3DBlob = null;
-        if (desc.fragment) |frag| {
-            const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
-            opt_pixel_shader = try frag_module.compile(frag.entry_point, "ps_5_1");
-        }
-        defer if (opt_pixel_shader) |pixel_shader| {
-            _ = pixel_shader.lpVtbl.*.Release.?(pixel_shader);
-        };
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
@@ -2145,6 +2132,19 @@ pub const RenderPipeline = struct {
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
         errdefer layout.manager.release();
+
+        // Shaders
+        const vertex_shader = try vertex_module.compile(desc.vertex.entry_point, "vs_5_1");
+        defer _ = vertex_shader.lpVtbl.*.Release.?(vertex_shader);
+
+        var opt_pixel_shader: ?*c.ID3DBlob = null;
+        if (desc.fragment) |frag| {
+            const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
+            opt_pixel_shader = try frag_module.compile(frag.entry_point, "ps_5_1");
+        }
+        defer if (opt_pixel_shader) |pixel_shader| {
+            _ = pixel_shader.lpVtbl.*.Release.?(pixel_shader);
+        };
 
         // PSO
         var input_elements = std.BoundedArray(c.D3D12_INPUT_ELEMENT_DESC, limits.max_vertex_buffers){};

@@ -29,8 +29,8 @@ pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
     debug_enabled = options.debug_enabled;
 }
 
-const BindingPoint = struct { group: u32, binding: u32 };
-const BindingTable = std.AutoHashMapUnmanaged(BindingPoint, u32);
+const BindingPoint = shader.CodeGen.BindingPoint;
+const BindingTable = shader.CodeGen.BindingTable;
 
 const MapCallback = struct {
     buffer: *Buffer,
@@ -997,6 +997,7 @@ pub const BindGroup = struct {
 pub const PipelineLayout = struct {
     manager: utils.Manager(PipelineLayout) = .{},
     group_layouts: []*BindGroupLayout,
+    bindings: BindingTable,
 
     pub fn init(device: *Device, desc: *const sysgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         _ = device;
@@ -1010,9 +1011,34 @@ pub const PipelineLayout = struct {
             group_layouts[i] = layout;
         }
 
+        var bindings: BindingTable = .{};
+        errdefer bindings.deinit(allocator);
+
+        var buffer_index: u32 = 0;
+        var texture_index: u32 = 0;
+        var sampler_index: u32 = 0;
+
+        for (group_layouts, 0..) |group_layout, group| {
+            for (group_layout.entries) |entry| {
+                const key = BindingPoint{ .group = @intCast(group), .binding = entry.binding };
+
+                if (entry.buffer.type != .undefined) {
+                    try bindings.put(allocator, key, buffer_index);
+                    buffer_index += 1;
+                } else if (entry.sampler.type != .undefined) {
+                    try bindings.put(allocator, key, sampler_index);
+                    sampler_index += 1;
+                } else if (entry.texture.sample_type != .undefined or entry.storage_texture.format != .undefined) {
+                    try bindings.put(allocator, key, texture_index);
+                    texture_index += 1;
+                }
+            }
+        }
+
         var layout = try allocator.create(PipelineLayout);
         layout.* = .{
             .group_layouts = group_layouts,
+            .bindings = bindings,
         };
         return layout;
     }
@@ -1041,6 +1067,7 @@ pub const PipelineLayout = struct {
 
     pub fn deinit(layout: *PipelineLayout) void {
         for (layout.group_layouts) |group_layout| group_layout.manager.release();
+        layout.bindings.deinit(allocator);
 
         allocator.free(layout.group_layouts);
         allocator.destroy(layout);
@@ -1067,21 +1094,40 @@ pub const ShaderModule = struct {
         allocator.destroy(shader_module);
     }
 
-    pub fn compile(module: *ShaderModule, entrypoint: [*:0]const u8, shader_type: c.GLenum) !c.GLuint {
+    pub fn compile(
+        module: *ShaderModule,
+        entrypoint: [*:0]const u8,
+        shader_type: c.GLenum,
+        bindings: *const BindingTable,
+    ) !c.GLuint {
         const gl = &module.device.gl;
 
-        const code_span = try shader.CodeGen.generate(allocator, module.air, .glsl, .{ .emit_source_file = "" }, entrypoint);
-        defer allocator.free(code_span);
-        const code_ptr = try allocator.dupeZ(u8, code_span);
-        defer allocator.free(code_ptr);
+        const stage = switch (shader_type) {
+            c.GL_VERTEX_SHADER => shader.CodeGen.Stage.vertex,
+            c.GL_FRAGMENT_SHADER => shader.CodeGen.Stage.fragment,
+            c.GL_COMPUTE_SHADER => shader.CodeGen.Stage.compute,
+            else => unreachable,
+        };
 
-        //std.debug.print("{s}\n", .{code_span});
+        const code = try shader.CodeGen.generate(
+            allocator,
+            module.air,
+            .glsl,
+            .{ .emit_source_file = "" },
+            .{ .name = entrypoint, .stage = stage },
+            bindings,
+        );
+        defer allocator.free(code);
+        const code_z = try allocator.dupeZ(u8, code);
+        defer allocator.free(code_z);
+
+        std.debug.print("{s}\n", .{code});
 
         const gl_shader = gl.createShader(shader_type);
         if (gl_shader == 0)
             return error.CreateShaderFailed;
 
-        gl.shaderSource(gl_shader, 1, @ptrCast(&code_ptr), null);
+        gl.shaderSource(gl_shader, 1, @ptrCast(&code_z), null);
         gl.compileShader(gl_shader);
 
         var success: c.GLint = undefined;
@@ -1095,47 +1141,6 @@ pub const ShaderModule = struct {
 
         return gl_shader;
     }
-
-    // Internal
-    pub fn addBindings(
-        shader_module: *ShaderModule,
-        bindings: *BindingTable,
-    ) !void {
-        const air = shader_module.air;
-        var buffer_index: u32 = 0;
-        var texture_index: u32 = 0;
-        var sampler_index: u32 = 0;
-
-        for (air.refToList(air.globals_index)) |inst_idx| {
-            switch (air.getInst(inst_idx)) {
-                .@"var" => |var_inst| {
-                    if (var_inst.addr_space == .workgroup)
-                        continue;
-
-                    const var_type = air.getInst(var_inst.type);
-                    const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.constExpr);
-                    const binding: u32 = @intCast(air.resolveInt(var_inst.binding) orelse return error.constExpr);
-                    const key = .{ .group = group, .binding = binding };
-
-                    switch (var_type) {
-                        .sampler_type, .comparison_sampler_type => {
-                            try bindings.put(allocator, key, sampler_index);
-                            sampler_index += 1;
-                        },
-                        .texture_type => {
-                            try bindings.put(allocator, key, texture_index);
-                            texture_index += 1;
-                        },
-                        else => {
-                            try bindings.put(allocator, key, buffer_index);
-                            buffer_index += 1;
-                        },
-                    }
-                },
-                else => {},
-            }
-        }
-    }
 };
 
 pub const ComputePipeline = struct {
@@ -1143,21 +1148,13 @@ pub const ComputePipeline = struct {
     device: *Device,
     layout: *PipelineLayout,
     program: c.GLuint,
-    bindings: BindingTable,
 
     pub fn init(device: *Device, desc: *const sysgpu.ComputePipeline.Descriptor) !*ComputePipeline {
         const gl = &device.gl;
         var ctx = ActiveContext.init(device.hdc, device.hglrc);
         defer ctx.deinit();
 
-        // Shaders
-        var bindings: BindingTable = .{};
-        errdefer bindings.deinit(allocator);
-
         const compute_module: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
-        try compute_module.addBindings(&bindings);
-        const compute_shader = try compute_module.compile(desc.compute.entry_point, c.GL_COMPUTE_SHADER);
-        defer gl.deleteShader(compute_shader);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
@@ -1172,6 +1169,10 @@ pub const ComputePipeline = struct {
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
         errdefer layout.manager.release();
+
+        // Shaders
+        const compute_shader = try compute_module.compile(desc.compute.entry_point, c.GL_COMPUTE_SHADER, &layout.bindings);
+        defer gl.deleteShader(compute_shader);
 
         // Program
         const program = gl.createProgram();
@@ -1195,7 +1196,6 @@ pub const ComputePipeline = struct {
             .device = device,
             .layout = layout,
             .program = program,
-            .bindings = bindings,
         };
         return pipeline;
     }
@@ -1208,7 +1208,6 @@ pub const ComputePipeline = struct {
 
         gl.deleteProgram(pipeline.program);
 
-        pipeline.bindings.deinit(allocator);
         pipeline.layout.manager.release();
         allocator.destroy(pipeline);
     }
@@ -1246,7 +1245,6 @@ pub const RenderPipeline = struct {
     device: *Device,
     layout: *PipelineLayout,
     program: c.GLuint,
-    bindings: BindingTable,
     vao: c.GLuint,
     attributes: []Attribute,
     buffer_attributes: [][]Attribute,
@@ -1283,22 +1281,7 @@ pub const RenderPipeline = struct {
         var ctx = ActiveContext.init(device.hdc, device.hglrc);
         defer ctx.deinit();
 
-        // Shaders
-        var bindings: BindingTable = .{};
-        errdefer bindings.deinit(allocator);
-
         const vertex_module: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
-        try vertex_module.addBindings(&bindings);
-        const vertex_shader = try vertex_module.compile(desc.vertex.entry_point, c.GL_VERTEX_SHADER);
-        defer gl.deleteShader(vertex_shader);
-
-        var opt_fragment_shader: ?c.GLuint = null;
-        if (desc.fragment) |frag| {
-            const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
-            try frag_module.addBindings(&bindings);
-            opt_fragment_shader = try frag_module.compile(frag.entry_point, c.GL_FRAGMENT_SHADER);
-        }
-        defer if (opt_fragment_shader) |fragment_shader| gl.deleteShader(fragment_shader);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
@@ -1317,6 +1300,17 @@ pub const RenderPipeline = struct {
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
         errdefer layout.manager.release();
+
+        // Shaders
+        const vertex_shader = try vertex_module.compile(desc.vertex.entry_point, c.GL_VERTEX_SHADER, &layout.bindings);
+        defer gl.deleteShader(vertex_shader);
+
+        var opt_fragment_shader: ?c.GLuint = null;
+        if (desc.fragment) |frag| {
+            const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
+            opt_fragment_shader = try frag_module.compile(frag.entry_point, c.GL_FRAGMENT_SHADER, &layout.bindings);
+        }
+        defer if (opt_fragment_shader) |fragment_shader| gl.deleteShader(fragment_shader);
 
         // Vertex State
         var vao: c.GLuint = undefined;
@@ -1468,7 +1462,6 @@ pub const RenderPipeline = struct {
             .device = device,
             .layout = layout,
             .program = 0,
-            .bindings = bindings,
             .vao = vao,
             .attributes = attributes,
             .buffer_attributes = buffer_attributes,
@@ -1536,7 +1529,6 @@ pub const RenderPipeline = struct {
         gl.deleteVertexArrays(1, &pipeline.vao);
         gl.deleteProgram(pipeline.program);
 
-        pipeline.bindings.deinit(allocator);
         pipeline.layout.manager.release();
         allocator.free(pipeline.color_targets);
         allocator.free(pipeline.attributes);
@@ -2012,7 +2004,7 @@ pub const CommandBuffer = struct {
                     for (group.entries) |entry| {
                         const key = BindingPoint{ .group = cmd.group_index, .binding = entry.binding };
 
-                        if (compute_pipeline.?.bindings.get(key)) |slot| {
+                        if (compute_pipeline.?.layout.bindings.get(key)) |slot| {
                             switch (entry.kind) {
                                 .buffer => {
                                     var offset = entry.offset;
@@ -2035,7 +2027,7 @@ pub const CommandBuffer = struct {
                     for (group.entries) |entry| {
                         const key = BindingPoint{ .group = cmd.group_index, .binding = entry.binding };
 
-                        if (render_pipeline.?.bindings.get(key)) |slot| {
+                        if (render_pipeline.?.layout.bindings.get(key)) |slot| {
                             switch (entry.kind) {
                                 .buffer => {
                                     var offset = entry.offset;

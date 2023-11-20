@@ -1,6 +1,9 @@
 const std = @import("std");
 const Air = @import("../Air.zig");
 const DebugInfo = @import("../CodeGen.zig").DebugInfo;
+const Entrypoint = @import("../CodeGen.zig").Entrypoint;
+const BindingPoint = @import("../CodeGen.zig").BindingPoint;
+const BindingTable = @import("../CodeGen.zig").BindingTable;
 const Inst = Air.Inst;
 const InstIndex = Air.InstIndex;
 const Builtin = Air.Inst.Builtin;
@@ -14,15 +17,19 @@ air: *const Air,
 allocator: std.mem.Allocator,
 storage: std.ArrayListUnmanaged(u8),
 writer: std.ArrayListUnmanaged(u8).Writer,
+bindings: *const BindingTable,
 indent: u32 = 0,
 stage: Inst.Fn.Stage = .none,
 has_stage_in: bool = false,
-buffer_index: u32 = 0,
-texture_index: u32 = 0,
-sampler_index: u32 = 0,
 frag_result_inst_idx: InstIndex = .none,
 
-pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo) ![]const u8 {
+pub fn gen(
+    allocator: std.mem.Allocator,
+    air: *const Air,
+    debug_info: DebugInfo,
+    entrypoint: Entrypoint,
+    bindings: *const BindingTable,
+) ![]const u8 {
     _ = debug_info;
 
     var storage = std.ArrayListUnmanaged(u8){};
@@ -31,6 +38,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         .allocator = allocator,
         .storage = storage,
         .writer = storage.writer(allocator),
+        .bindings = bindings,
     };
     defer {
         msl.storage.deinit(allocator);
@@ -56,9 +64,15 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
         }
     }
 
+    const entrypoint_name = std.mem.span(entrypoint.name);
+
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
-            .@"fn" => |inst| try msl.emitFn(inst),
+            .@"fn" => |inst| {
+                const name = msl.air.getStr(inst.name);
+                if (inst.stage == .none or std.mem.eql(u8, entrypoint_name, name))
+                    try msl.emitFn(inst);
+            },
             .@"struct" => |inst| try msl.emitStruct(inst_idx, inst),
             .@"const" => |inst| try msl.emitGlobalConst(inst),
             .@"var" => {},
@@ -259,11 +273,6 @@ fn hasStageInType(msl: *Msl, inst: Inst.Fn) bool {
 fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
     msl.stage = inst.stage;
     msl.has_stage_in = msl.hasStageInType(inst);
-    // TODO - caller should provide a remapping table based on the pipeline layout, currently mach examples
-    // rebind all groups on pipeline changes so this isn't needed yet.
-    msl.buffer_index = 0;
-    msl.texture_index = 0;
-    msl.sampler_index = 0;
 
     try msl.emitStageInType(inst);
 
@@ -375,16 +384,21 @@ fn emitStageInType(msl: *Msl, inst: Inst.Fn) !void {
 
 fn emitFnGlobalVar(msl: *Msl, inst_idx: InstIndex) !void {
     const inst = msl.air.getInst(inst_idx).@"var";
-    const type_inst = msl.air.getInst(inst.type);
 
+    const group = msl.air.resolveInt(inst.group) orelse return error.constExpr;
+    const binding = msl.air.resolveInt(inst.binding) orelse return error.constExpr;
+    const key = BindingPoint{ .group = @intCast(group), .binding = @intCast(binding) };
+    const slot = msl.bindings.get(key) orelse 0;
+
+    const type_inst = msl.air.getInst(inst.type);
     switch (type_inst) {
-        .texture_type => |texture| try msl.emitFnTexture(inst, texture),
-        .sampler_type, .comparison_sampler_type => try msl.emitFnSampler(inst),
-        else => try msl.emitFnBuffer(inst),
+        .texture_type => |texture| try msl.emitFnTexture(inst, texture, slot),
+        .sampler_type, .comparison_sampler_type => try msl.emitFnSampler(inst, slot),
+        else => try msl.emitFnBuffer(inst, slot),
     }
 }
 
-fn emitFnTexture(msl: *Msl, inst: Inst.Var, texture: Inst.TextureType) !void {
+fn emitFnTexture(msl: *Msl, inst: Inst.Var, texture: Inst.TextureType, slot: u32) !void {
     try msl.writeAll(switch (texture.kind) {
         .sampled_1d => "texture1d",
         .sampled_2d => "texture2d",
@@ -454,20 +468,20 @@ fn emitFnTexture(msl: *Msl, inst: Inst.Var, texture: Inst.TextureType) !void {
     try msl.writeAll("> ");
     try msl.writeName(inst.name);
 
-    try msl.print(" [[texture({})]]", .{msl.texture_index});
-    msl.texture_index += 1;
+    if (msl.stage != .none)
+        try msl.print(" [[texture({})]]", .{slot});
 }
 
-fn emitFnSampler(msl: *Msl, inst: Inst.Var) !void {
+fn emitFnSampler(msl: *Msl, inst: Inst.Var, slot: u32) !void {
     try msl.writeAll("sampler");
     try msl.writeAll(" ");
     try msl.writeName(inst.name);
 
-    try msl.print(" [[sampler({})]]", .{msl.sampler_index});
-    msl.sampler_index += 1;
+    if (msl.stage != .none)
+        try msl.print(" [[sampler({})]]", .{slot});
 }
 
-fn emitFnBuffer(msl: *Msl, inst: Inst.Var) !void {
+fn emitFnBuffer(msl: *Msl, inst: Inst.Var, slot: u32) !void {
     try msl.writeAll(switch (inst.addr_space) {
         .uniform => "constant",
         else => "device",
@@ -479,8 +493,8 @@ fn emitFnBuffer(msl: *Msl, inst: Inst.Var) !void {
     try msl.writeName(inst.name);
     //try msl.emitTypeSuffix(inst.type);    handled by emitTypeAsPointer
 
-    try msl.print(" [[buffer({})]]", .{msl.buffer_index});
-    msl.buffer_index += 1;
+    if (msl.stage != .none)
+        try msl.print(" [[buffer({})]]", .{slot});
 }
 
 fn emitFnParam(msl: *Msl, inst_idx: InstIndex) !void {

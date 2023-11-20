@@ -1,6 +1,9 @@
 const std = @import("std");
 const Air = @import("../Air.zig");
 const DebugInfo = @import("../CodeGen.zig").DebugInfo;
+const Entrypoint = @import("../CodeGen.zig").Entrypoint;
+const BindingPoint = @import("../CodeGen.zig").BindingPoint;
+const BindingTable = @import("../CodeGen.zig").BindingTable;
 const Inst = Air.Inst;
 const InstIndex = Air.InstIndex;
 const Builtin = Air.Inst.Builtin;
@@ -11,13 +14,17 @@ air: *const Air,
 allocator: std.mem.Allocator,
 storage: std.ArrayListUnmanaged(u8),
 writer: std.ArrayListUnmanaged(u8).Writer,
+bindings: *const BindingTable,
 entrypoint_inst: ?Inst.Fn = null,
-buffer_index: u32 = 0,
-texture_index: u32 = 0,
-sampler_index: u32 = 0,
 indent: u32 = 0,
 
-pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo, entrypoint: [*:0]const u8) ![]const u8 {
+pub fn gen(
+    allocator: std.mem.Allocator,
+    air: *const Air,
+    debug_info: DebugInfo,
+    entrypoint: Entrypoint,
+    bindings: *const BindingTable,
+) ![]const u8 {
     _ = debug_info;
 
     var storage = std.ArrayListUnmanaged(u8){};
@@ -26,6 +33,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo,
         .allocator = allocator,
         .storage = storage,
         .writer = storage.writer(allocator),
+        .bindings = bindings,
     };
     defer {
         glsl.storage.deinit(allocator);
@@ -40,10 +48,16 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo,
         }
     }
 
+    const entrypoint_name = std.mem.span(entrypoint.name);
+
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
             .@"var" => |inst| try glsl.emitGlobalVar(inst),
-            .@"fn" => |inst| try glsl.emitFn(inst, entrypoint),
+            .@"fn" => |inst| {
+                const name = glsl.air.getStr(inst.name);
+                if (std.mem.eql(u8, entrypoint_name, name))
+                    try glsl.emitFn(inst);
+            },
             .@"struct" => {},
             else => |inst| try glsl.print("TopLevel: {}\n", .{inst}), // TODO
         }
@@ -215,16 +229,18 @@ fn emitBuiltin(glsl: *Glsl, builtin: Builtin) !void {
 }
 
 fn emitGlobalVar(glsl: *Glsl, inst: Inst.Var) !void {
-    const binding = glsl.buffer_index;
-    glsl.buffer_index += 1;
+    const group = glsl.air.resolveInt(inst.group) orelse return error.constExpr;
+    const binding = glsl.air.resolveInt(inst.binding) orelse return error.constExpr;
+    const key = BindingPoint{ .group = @intCast(group), .binding = @intCast(binding) };
+    const slot = glsl.bindings.get(key) orelse return error.noBinding;
 
-    try glsl.print("layout(binding = {}, ", .{binding});
+    try glsl.print("layout(binding = {}, ", .{slot});
     try glsl.writeAll(if (inst.addr_space == .uniform) "std140" else "std430");
     try glsl.writeAll(") ");
     if (inst.access_mode == .read)
         try glsl.writeAll("readonly ");
     try glsl.writeAll(if (inst.addr_space == .uniform) "uniform" else "buffer");
-    try glsl.print(" Block{}", .{binding});
+    try glsl.print(" Block{}", .{slot});
     const var_type = glsl.air.getInst(inst.type);
     switch (var_type) {
         .@"struct" => |struct_inst| {
@@ -298,21 +314,9 @@ fn emitGlobalScalarOutput(glsl: *Glsl, inst: Inst.Fn) !void {
     }
 }
 
-fn emitFn(glsl: *Glsl, inst: Inst.Fn, entrypoint_ptr: [*:0]const u8) !void {
+fn emitFn(glsl: *Glsl, inst: Inst.Fn) !void {
     if (inst.stage != .none) {
         glsl.entrypoint_inst = inst;
-        // TODO - caller should provide a remapping table based on the pipeline layout, currently mach examples
-        // rebind all groups on pipeline changes so this isn't needed yet.
-        // TODO - remapping table will also be needed for programs that use vertex and fragment bindings of
-        // the same type
-        glsl.buffer_index = 0;
-        glsl.texture_index = 0;
-        glsl.sampler_index = 0;
-
-        const entrypoint = std.mem.span(entrypoint_ptr);
-        const name = glsl.air.getStr(inst.name);
-        if (!std.mem.eql(u8, entrypoint, name))
-            return;
 
         if (inst.params != .none) {
             const param_list = glsl.air.refToList(inst.params);
@@ -457,6 +461,7 @@ fn emitReturn(glsl: *Glsl, inst_idx: InstIndex) !void {
                 .@"struct" => |struct_inst| try glsl.emitGlobalStructReturn(struct_inst, inst_idx),
                 else => try glsl.emitGlobalScalarReturn(fn_inst, inst_idx),
             }
+            try glsl.writeIndent();
         }
         try glsl.writeAll("return;\n");
     } else {
@@ -557,7 +562,6 @@ fn emitExpr(glsl: *Glsl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .swizzle_access => |inst| try glsl.emitSwizzleAccess(inst),
         .index_access => |inst| try glsl.emitIndexAccess(inst),
         //.call => |inst| try glsl.emitCall(inst),
-        //.call => |inst| glsl.emitCall(inst),
         //.struct_construct: StructConstruct,
         //.bitcast: Bitcast,
         //.texture_sample => |inst| try glsl.emitTextureSample(inst),

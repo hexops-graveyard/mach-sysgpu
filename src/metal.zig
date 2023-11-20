@@ -61,8 +61,8 @@ const MapCallback = struct {
     userdata: ?*anyopaque,
 };
 
-const BindingPoint = struct { group: u32, binding: u32 };
-const BindingTable = std.AutoHashMapUnmanaged(BindingPoint, u32);
+const BindingPoint = shader.CodeGen.BindingPoint;
+const BindingTable = shader.CodeGen.BindingTable;
 
 pub const Instance = struct {
     manager: utils.Manager(Instance) = .{},
@@ -851,6 +851,9 @@ pub const BindGroup = struct {
 pub const PipelineLayout = struct {
     manager: utils.Manager(PipelineLayout) = .{},
     group_layouts: []*BindGroupLayout,
+    vertex_bindings: BindingTable,
+    fragment_bindings: BindingTable,
+    compute_bindings: BindingTable,
 
     pub fn init(device: *Device, desc: *const sysgpu.PipelineLayout.Descriptor) !*PipelineLayout {
         _ = device;
@@ -864,11 +867,57 @@ pub const PipelineLayout = struct {
             group_layouts[i] = layout;
         }
 
+        var vertex_bindings = try buildBindings(group_layouts, .{ .vertex = true });
+        errdefer vertex_bindings.deinit(allocator);
+
+        var fragment_bindings = try buildBindings(group_layouts, .{ .fragment = true });
+        errdefer fragment_bindings.deinit(allocator);
+
+        var compute_bindings = try buildBindings(group_layouts, .{ .compute = true });
+        errdefer compute_bindings.deinit(allocator);
+
         var layout = try allocator.create(PipelineLayout);
         layout.* = .{
             .group_layouts = group_layouts,
+            .vertex_bindings = vertex_bindings,
+            .fragment_bindings = fragment_bindings,
+            .compute_bindings = compute_bindings,
         };
         return layout;
+    }
+
+    pub fn buildBindings(
+        group_layouts: []*BindGroupLayout,
+        visibility: sysgpu.ShaderStageFlags,
+    ) !BindingTable {
+        var bindings: BindingTable = .{};
+        var buffer_index: u32 = 0;
+        var sampler_index: u32 = 0;
+        var texture_index: u32 = 0;
+
+        for (group_layouts, 0..) |group_layout, group| {
+            for (group_layout.entries) |entry| {
+                const key = BindingPoint{ .group = @intCast(group), .binding = entry.binding };
+
+                if ((visibility.vertex and entry.visibility.vertex) or
+                    (visibility.fragment and entry.visibility.fragment) or
+                    (visibility.compute and entry.visibility.compute))
+                {
+                    if (entry.buffer.type != .undefined) {
+                        try bindings.put(allocator, key, buffer_index);
+                        buffer_index += 1;
+                    } else if (entry.sampler.type != .undefined) {
+                        try bindings.put(allocator, key, sampler_index);
+                        sampler_index += 1;
+                    } else if (entry.texture.sample_type != .undefined or entry.storage_texture.format != .undefined) {
+                        try bindings.put(allocator, key, texture_index);
+                        texture_index += 1;
+                    }
+                }
+            }
+        }
+
+        return bindings;
     }
 
     pub fn initDefault(device: *Device, default_pipeline_layout: utils.DefaultPipelineLayoutDescriptor) !*PipelineLayout {
@@ -895,6 +944,10 @@ pub const PipelineLayout = struct {
 
     pub fn deinit(layout: *PipelineLayout) void {
         for (layout.group_layouts) |group_layout| group_layout.manager.release();
+        layout.vertex_bindings.deinit(allocator);
+        layout.fragment_bindings.deinit(allocator);
+        layout.compute_bindings.deinit(allocator);
+
         allocator.free(layout.group_layouts);
         allocator.destroy(layout);
     }
@@ -902,84 +955,67 @@ pub const PipelineLayout = struct {
 
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
+    device: *Device,
     air: *shader.Air,
-    library: *mtl.Library,
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
-        const mtl_device = device.mtl_device;
+        var module = try allocator.create(ShaderModule);
+        module.* = .{
+            .device = device,
+            .air = air,
+        };
+        return module;
+    }
 
-        const code = try shader.CodeGen.generate(allocator, air, .msl, .{ .emit_source_file = "" }, null);
+    pub fn deinit(module: *ShaderModule) void {
+        module.air.deinit(allocator);
+        allocator.destroy(module.air);
+        allocator.destroy(module);
+    }
+
+    // Internal
+    pub fn compile(
+        module: *ShaderModule,
+        entrypoint: [*:0]const u8,
+        stage: shader.CodeGen.Stage,
+        bindings: *const BindingTable,
+    ) !*mtl.Function {
+        const pool = objc.autoreleasePoolPush();
+        defer objc.autoreleasePoolPop(pool);
+
+        const mtl_device = module.device.mtl_device;
+
+        const code = try shader.CodeGen.generate(
+            allocator,
+            module.air,
+            .msl,
+            .{ .emit_source_file = "" },
+            .{ .name = entrypoint, .stage = stage },
+            bindings,
+        );
         defer allocator.free(code);
 
-        const source = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
+        //std.debug.print("{s}\n", .{code});
+
+        const ns_code = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
             @constCast(code.ptr),
             code.len,
             ns.UTF8StringEncoding,
             false,
         );
-        defer source.release();
+        defer ns_code.release();
 
         var err: ?*ns.Error = undefined;
-        const library = mtl_device.newLibraryWithSource_options_error(source, null, &err) orelse {
+        const library = mtl_device.newLibraryWithSource_options_error(ns_code, null, &err) orelse {
             std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
             return error.newLibraryFailed;
         };
-        errdefer library.release();
+        defer library.release();
 
-        var module = try allocator.create(ShaderModule);
-        module.* = .{
-            .air = air,
-            .library = library,
+        const mtl_entrypoint = entrypointString(entrypoint);
+        return library.newFunctionWithName(ns.String.stringWithUTF8String(mtl_entrypoint)) orelse {
+            return error.newFunctionFailed;
         };
-        return module;
-    }
-
-    pub fn deinit(shader_module: *ShaderModule) void {
-        shader_module.air.deinit(allocator);
-        shader_module.library.release();
-        allocator.destroy(shader_module.air);
-        allocator.destroy(shader_module);
-    }
-
-    // Internal
-    pub fn buildBindingTable(
-        shader_module: *ShaderModule,
-        entry_point: [*:0]const u8,
-    ) !BindingTable {
-        var bindings = BindingTable{};
-        const air = shader_module.air;
-        if (air.findFunction(std.mem.span(entry_point))) |fn_inst| {
-            var buffer_index: u32 = 0;
-            var texture_index: u32 = 0;
-            var sampler_index: u32 = 0;
-
-            for (air.refToList(fn_inst.global_var_refs)) |global_var_inst_idx| {
-                const var_inst = air.getInst(global_var_inst_idx).@"var";
-                if (var_inst.addr_space == .workgroup)
-                    continue;
-
-                const var_type = air.getInst(var_inst.type);
-                const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.constExpr);
-                const binding: u32 = @intCast(air.resolveInt(var_inst.binding) orelse return error.constExpr);
-                const key = .{ .group = group, .binding = binding };
-
-                switch (var_type) {
-                    .sampler_type, .comparison_sampler_type => {
-                        try bindings.put(allocator, key, sampler_index);
-                        sampler_index += 1;
-                    },
-                    .texture_type => {
-                        try bindings.put(allocator, key, texture_index);
-                        texture_index += 1;
-                    },
-                    else => {
-                        try bindings.put(allocator, key, buffer_index);
-                        buffer_index += 1;
-                    },
-                }
-            }
-        }
-        return bindings;
     }
 
     pub fn getThreadgroupSize(shader_module: *ShaderModule, entry_point: [*:0]const u8) !mtl.Size {
@@ -1005,7 +1041,6 @@ pub const ComputePipeline = struct {
     manager: utils.Manager(ComputePipeline) = .{},
     mtl_pipeline: *mtl.ComputePipelineState,
     layout: *PipelineLayout,
-    bindings: BindingTable,
     threadgroup_size: mtl.Size,
 
     pub fn init(device: *Device, desc: *const sysgpu.ComputePipeline.Descriptor) !*ComputePipeline {
@@ -1021,19 +1056,7 @@ pub const ComputePipeline = struct {
             mtl_desc.setLabel(ns.String.stringWithUTF8String(label));
         }
 
-        // Shaders
         const compute_module: *ShaderModule = @ptrCast(@alignCast(desc.compute.module));
-        const entrypoint = entrypointString(desc.compute.entry_point);
-        const compute_fn = compute_module.library.newFunctionWithName(ns.String.stringWithUTF8String(entrypoint)) orelse {
-            return error.newFunctionFailed;
-        };
-        defer compute_fn.release();
-        mtl_desc.setComputeFunction(compute_fn);
-
-        var bindings = try compute_module.buildBindingTable(desc.compute.entry_point);
-        errdefer bindings.deinit(allocator);
-
-        const threadgroup_size = try compute_module.getThreadgroupSize(desc.compute.entry_point);
 
         // Pipeline Layout
         var layout: *PipelineLayout = undefined;
@@ -1048,6 +1071,14 @@ pub const ComputePipeline = struct {
             layout = try PipelineLayout.initDefault(device, layout_desc);
         }
         errdefer layout.manager.release();
+
+        // Shaders
+        const compute_fn = try compute_module.compile(desc.compute.entry_point, .compute, &layout.compute_bindings);
+        defer compute_fn.release();
+
+        mtl_desc.setComputeFunction(compute_fn);
+
+        const threadgroup_size = try compute_module.getThreadgroupSize(desc.compute.entry_point);
 
         // PSO
         var err: ?*ns.Error = undefined;
@@ -1068,14 +1099,12 @@ pub const ComputePipeline = struct {
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
             .layout = layout,
-            .bindings = bindings,
             .threadgroup_size = threadgroup_size,
         };
         return pipeline;
     }
 
     pub fn deinit(pipeline: *ComputePipeline) void {
-        pipeline.bindings.deinit(allocator);
         pipeline.mtl_pipeline.release();
         pipeline.layout.manager.release();
         allocator.destroy(pipeline);
@@ -1090,8 +1119,6 @@ pub const RenderPipeline = struct {
     manager: utils.Manager(RenderPipeline) = .{},
     mtl_pipeline: *mtl.RenderPipelineState,
     layout: *PipelineLayout,
-    vertex_bindings: BindingTable,
-    fragment_bindings: BindingTable,
     primitive_type: mtl.PrimitiveType,
     winding: mtl.Winding,
     cull_mode: mtl.CullMode,
@@ -1113,19 +1140,33 @@ pub const RenderPipeline = struct {
             mtl_desc.setLabel(ns.String.stringWithUTF8String(label));
         }
 
-        // vertex
         const vertex_module: *ShaderModule = @ptrCast(@alignCast(desc.vertex.module));
-        const vertex_entry_point = entrypointString(desc.vertex.entry_point);
-        const vertex_fn = vertex_module.library.newFunctionWithName(ns.String.stringWithUTF8String(vertex_entry_point)) orelse {
-            return error.newFunctionFailed;
-        };
+
+        // Pipeline Layout
+        var layout: *PipelineLayout = undefined;
+        if (desc.layout) |layout_raw| {
+            layout = @ptrCast(@alignCast(layout_raw));
+            layout.manager.reference();
+        } else {
+            var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
+            defer layout_desc.deinit();
+
+            try layout_desc.addFunction(vertex_module.air, .{ .vertex = true }, desc.vertex.entry_point);
+            if (desc.fragment) |frag| {
+                const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
+                try layout_desc.addFunction(frag_module.air, .{ .fragment = true }, frag.entry_point);
+            }
+            layout = try PipelineLayout.initDefault(device, layout_desc);
+        }
+        errdefer layout.manager.release();
+
+        // vertex
+        const vertex_fn = try vertex_module.compile(desc.vertex.entry_point, .vertex, &layout.vertex_bindings);
         defer vertex_fn.release();
         mtl_desc.setVertexFunction(vertex_fn);
 
-        var vertex_bindings = try vertex_module.buildBindingTable(desc.vertex.entry_point);
-        errdefer vertex_bindings.deinit(allocator);
-
         // vertex constants - TODO
+
         if (desc.vertex.buffer_count > 0) {
             const mtl_vertex_descriptor = mtl.VertexDescriptor.vertexDescriptor();
             const mtl_layouts = mtl_vertex_descriptor.layouts();
@@ -1207,19 +1248,12 @@ pub const RenderPipeline = struct {
         mtl_desc.setAlphaToCoverageEnabled(desc.multisample.alpha_to_coverage_enabled == .true);
 
         // fragment
-        var fragment_bindings: BindingTable = .{};
-        errdefer fragment_bindings.deinit(allocator);
-
         if (desc.fragment) |frag| {
             const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
-            const frag_entry_point = entrypointString(frag.entry_point);
-            const frag_fn = frag_module.library.newFunctionWithName(ns.String.stringWithUTF8String(frag_entry_point)) orelse {
-                return error.newFunctionFailed;
-            };
+
+            const frag_fn = try frag_module.compile(frag.entry_point, .fragment, &layout.fragment_bindings);
             defer frag_fn.release();
             mtl_desc.setFragmentFunction(frag_fn);
-
-            fragment_bindings = try frag_module.buildBindingTable(frag.entry_point);
         }
 
         // attachments
@@ -1248,24 +1282,6 @@ pub const RenderPipeline = struct {
                 mtl_desc.setStencilAttachmentPixelFormat(format);
         }
 
-        // Pipeline Layout
-        var layout: *PipelineLayout = undefined;
-        if (desc.layout) |layout_raw| {
-            layout = @ptrCast(@alignCast(layout_raw));
-            layout.manager.reference();
-        } else {
-            var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
-            defer layout_desc.deinit();
-
-            try layout_desc.addFunction(vertex_module.air, .{ .vertex = true }, desc.vertex.entry_point);
-            if (desc.fragment) |frag| {
-                const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
-                try layout_desc.addFunction(frag_module.air, .{ .fragment = true }, frag.entry_point);
-            }
-            layout = try PipelineLayout.initDefault(device, layout_desc);
-        }
-        errdefer layout.manager.release();
-
         // PSO
         var err: ?*ns.Error = undefined;
         const mtl_pipeline = mtl_device.newRenderPipelineStateWithDescriptor_error(mtl_desc, &err) orelse {
@@ -1280,8 +1296,6 @@ pub const RenderPipeline = struct {
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
             .layout = layout,
-            .vertex_bindings = vertex_bindings,
-            .fragment_bindings = fragment_bindings,
             .primitive_type = primitive_type,
             .winding = winding,
             .cull_mode = cull_mode,
@@ -1294,8 +1308,6 @@ pub const RenderPipeline = struct {
     }
 
     pub fn deinit(pipeline: *RenderPipeline) void {
-        pipeline.vertex_bindings.deinit(allocator);
-        pipeline.fragment_bindings.deinit(allocator);
         pipeline.mtl_pipeline.release();
         if (pipeline.depth_stencil_state) |ds| ds.release();
         pipeline.layout.manager.release();
@@ -1725,8 +1737,6 @@ pub const ComputePassEncoder = struct {
         try encoder.reference_tracker.referenceBindGroup(group);
 
         for (group.entries) |entry| {
-            // NOTE - this does not work yet for applications that expect bind groups to stay valid after pipeline
-            // changes.  For that we will need to defer MSL compilation until layout is known.
             const key = BindingPoint{ .group = group_index, .binding = entry.binding };
 
             if (encoder.bindings.get(key)) |slot| {
@@ -1752,7 +1762,7 @@ pub const ComputePassEncoder = struct {
 
         if (encoder.pipeline) |old_pipeline| old_pipeline.manager.release();
         encoder.pipeline = pipeline;
-        encoder.bindings = &pipeline.bindings;
+        encoder.bindings = &pipeline.layout.compute_bindings;
         encoder.threadgroup_size = pipeline.threadgroup_size;
         pipeline.manager.reference();
     }
@@ -1927,8 +1937,6 @@ pub const RenderPassEncoder = struct {
         try encoder.reference_tracker.referenceBindGroup(group);
 
         for (group.entries) |entry| {
-            // NOTE - this does not work yet for applications that expect bind groups to stay valid after pipeline
-            // changes.  For that we will need to defer MSL compilation until layout is known.
             const key = BindingPoint{ .group = group_index, .binding = entry.binding };
             switch (entry.kind) {
                 .buffer => {
@@ -1951,7 +1959,8 @@ pub const RenderPassEncoder = struct {
                         if (encoder.vertex_bindings.get(key)) |slot| {
                             mtl_encoder.setVertexSamplerState_atIndex(entry.sampler, slot);
                         }
-                    } else {
+                    }
+                    if (entry.visibility.fragment) {
                         if (encoder.fragment_bindings.get(key)) |slot| {
                             mtl_encoder.setFragmentSamplerState_atIndex(entry.sampler, slot);
                         }
@@ -1962,7 +1971,8 @@ pub const RenderPassEncoder = struct {
                         if (encoder.vertex_bindings.get(key)) |slot| {
                             mtl_encoder.setVertexTexture_atIndex(entry.texture, slot);
                         }
-                    } else {
+                    }
+                    if (entry.visibility.fragment) {
                         if (encoder.fragment_bindings.get(key)) |slot| {
                             mtl_encoder.setFragmentTexture_atIndex(entry.texture, slot);
                         }
@@ -2001,8 +2011,8 @@ pub const RenderPassEncoder = struct {
 
         if (encoder.pipeline) |old_pipeline| old_pipeline.manager.release();
         encoder.pipeline = pipeline;
-        encoder.vertex_bindings = &pipeline.vertex_bindings;
-        encoder.fragment_bindings = &pipeline.fragment_bindings;
+        encoder.vertex_bindings = &pipeline.layout.vertex_bindings;
+        encoder.fragment_bindings = &pipeline.layout.fragment_bindings;
         encoder.primitive_type = pipeline.primitive_type;
         pipeline.manager.reference();
     }
