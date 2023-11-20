@@ -69,6 +69,15 @@ pub fn build(b: *std.Build) !void {
 pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
     // TODO - how to get the build option here?
 
+    step.linkLibrary(b.dependency("spirv_cross", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("spirv-cross"));
+    step.linkLibrary(b.dependency("spirv_tools", .{
+        .target = step.target,
+        .optimize = step.optimize,
+    }).artifact("spirv-opt"));
+
     if (step.target.isDarwin()) {
         @import("xcode_frameworks").addPaths(step);
         step.linkFramework("AppKit");

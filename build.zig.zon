@@ -37,5 +37,13 @@
             .url = "https://pkg.machengine.org/xcode-frameworks/8a920385383cc4c0a2a4f55b084d402a9400a5a8.tar.gz",
             .hash = "122051b3c616c62d55a82207c1cb76e2264b26e8378f56b1e5376d7684bd13616589",
         },
+        .spirv_cross = .{
+            .url = "https://pkg.machengine.org/SPIRV-Cross/a2b361bd832848dbca869067fb827a79ee468e3f.tar.gz",
+            .hash = "12201c9d01be33e76a292b3fc706b71e8b6ad4e3f79e743adf9b9b3d95cae518b782",
+        },
+        .spirv_tools = .{
+            .url = "https://pkg.machengine.org/SPIRV-Tools/19df669a85e7d2ca75792ad7d2210efdbcfb4f6c.tar.gz",
+            .hash = "12200f4f837d272dc9fea6db658d75aef3bbe11753817f203a44832e595ce5a049ba",
+        },
     },
 }
