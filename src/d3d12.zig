@@ -1031,6 +1031,8 @@ pub const MemoryAllocator = struct {
         if (resource.allocation) |allocation| {
             try self.free(allocation);
         }
+        const d3d_resource = resource.d3d_resource;
+        _ = d3d_resource.lpVtbl.*.Release.?(d3d_resource);
     }
 };
 
@@ -1260,7 +1262,7 @@ const CommandManager = struct {
 
 pub const StreamingManager = struct {
     device: *Device,
-    free_buffers: std.ArrayListUnmanaged(*c.ID3D12Resource) = .{},
+    free_buffers: std.ArrayListUnmanaged(Resource) = .{},
 
     pub fn init(device: *Device) !StreamingManager {
         return .{
@@ -1269,13 +1271,13 @@ pub const StreamingManager = struct {
     }
 
     pub fn deinit(manager: *StreamingManager) void {
-        for (manager.free_buffers.items) |d3d_resource| {
-            _ = d3d_resource.lpVtbl.*.Release.?(d3d_resource);
+        for (manager.free_buffers.items) |*d3d_resource| {
+            d3d_resource.deinit();
         }
         manager.free_buffers.deinit(allocator);
     }
 
-    pub fn acquire(manager: *StreamingManager) !*c.ID3D12Resource {
+    pub fn acquire(manager: *StreamingManager) !Resource {
         const device = manager.device;
 
         // Recycle finished buffers
@@ -1289,15 +1291,15 @@ pub const StreamingManager = struct {
             errdefer _ = resource.deinit();
 
             setDebugName(@ptrCast(resource.d3d_resource), "upload");
-            try manager.free_buffers.append(allocator, resource.d3d_resource);
+            try manager.free_buffers.append(allocator, resource);
         }
 
         // Result
         return manager.free_buffers.pop();
     }
 
-    pub fn release(manager: *StreamingManager, d3d_resource: *c.ID3D12Resource) void {
-        manager.free_buffers.append(allocator, d3d_resource) catch {
+    pub fn release(manager: *StreamingManager, resource: Resource) void {
+        manager.free_buffers.append(allocator, resource) catch {
             std.debug.panic("OutOfMemory", .{});
         };
     }
@@ -2747,9 +2749,10 @@ pub const CommandBuffer = struct {
             var hr: c.HRESULT = undefined;
 
             std.debug.assert(size <= upload_page_size); // TODO - support large uploads
-            const d3d_resource = try streaming_manager.acquire();
+            const resource = try streaming_manager.acquire(size);
+            const d3d_resource = resource.d3d_resource;
 
-            try command_buffer.reference_tracker.referenceUploadPage(d3d_resource);
+            try command_buffer.reference_tracker.referenceUploadPage(resource);
             command_buffer.upload_buffer = d3d_resource;
 
             var map: ?*anyopaque = null;
@@ -2809,7 +2812,7 @@ pub const ReferenceTracker = struct {
     render_pipelines: std.ArrayListUnmanaged(*RenderPipeline) = .{},
     rtv_descriptor_blocks: std.ArrayListUnmanaged(DescriptorAllocation) = .{},
     dsv_descriptor_blocks: std.ArrayListUnmanaged(DescriptorAllocation) = .{},
-    upload_pages: std.ArrayListUnmanaged(*c.ID3D12Resource) = .{},
+    upload_pages: std.ArrayListUnmanaged(Resource) = .{},
 
     pub fn init(device: *Device, command_allocator: *c.ID3D12CommandAllocator) !*ReferenceTracker {
         var tracker = try allocator.create(ReferenceTracker);
@@ -2855,8 +2858,8 @@ pub const ReferenceTracker = struct {
             device.dsv_heap.free(block);
         }
 
-        for (tracker.upload_pages.items) |d3d_resource| {
-            device.streaming_manager.release(d3d_resource);
+        for (tracker.upload_pages.items) |resource| {
+            device.streaming_manager.release(resource);
         }
 
         tracker.buffers.deinit(allocator);
@@ -2903,7 +2906,7 @@ pub const ReferenceTracker = struct {
         try tracker.dsv_descriptor_blocks.append(allocator, block);
     }
 
-    pub fn referenceUploadPage(tracker: *ReferenceTracker, upload_page: *c.ID3D12Resource) !void {
+    pub fn referenceUploadPage(tracker: *ReferenceTracker, upload_page: Resource) !void {
         try tracker.upload_pages.append(allocator, upload_page);
     }
 
