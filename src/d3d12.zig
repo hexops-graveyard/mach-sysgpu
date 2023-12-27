@@ -550,11 +550,12 @@ pub const Device = struct {
         const initial_state = conv.d3d12ResourceStatesInitial(heap_type, read_state);
 
         const create_desc = ResourceCreateDescriptor{
-            .location = switch (heap_type) {
-                c.D3D12_HEAP_TYPE_UPLOAD => .gpu_to_cpu,
-                c.D3D12_HEAP_TYPE_READBACK => .cpu_to_gpu,
-                else => .gpu_only,
-            },
+            .location = if (usage.map_write)
+                .gpu_to_cpu
+            else if (usage.map_read)
+                .cpu_to_gpu
+            else
+                .gpu_only,
             .resource_desc = &resource_desc,
             .clear_value = null,
             .resource_category = .buffer,
@@ -588,18 +589,61 @@ pub const HeapCategory = enum {
 };
 
 pub const AllocationCreateDescriptor = struct {
-    location: gpu_allocator.MemoryLocation,
+    location: MemoryLocation,
     size: u64,
     alignment: u64,
     resource_category: ResourceCategory,
 };
 
 pub const ResourceCreateDescriptor = struct {
-    location: gpu_allocator.MemoryLocation,
+    location: MemoryLocation,
     resource_category: ResourceCategory,
     resource_desc: *const c.D3D12_RESOURCE_DESC,
     clear_value: ?*const c.D3D12_CLEAR_VALUE,
     initial_state: c.D3D12_RESOURCE_STATES,
+};
+
+pub const MemoryLocation = enum {
+    unknown,
+    gpu_only,
+    cpu_to_gpu,
+    gpu_to_cpu,
+};
+
+pub const AllocationSizes = struct {
+    device_memblock_size: u64 = 256 * 1024 * 1024,
+    host_memblock_size: u64 = 64 * 1024 * 1024,
+
+    const four_mb = 4 * 1024 * 1024;
+    const two_hundred_fifty_six_mb = 256 * 1024 * 1024;
+
+    pub fn init(
+        device_memblock_size: u64,
+        host_memblock_size: u64,
+    ) AllocationSizes {
+        var use_device_memblock_size = std.math.clamp(
+            device_memblock_size,
+            four_mb,
+            two_hundred_fifty_six_mb,
+        );
+        var use_host_memblock_size = std.math.clamp(
+            host_memblock_size,
+            four_mb,
+            two_hundred_fifty_six_mb,
+        );
+
+        if (use_device_memblock_size % four_mb != 0) {
+            use_device_memblock_size = four_mb * (@divFloor(use_device_memblock_size, four_mb) + 1);
+        }
+        if (use_host_memblock_size % four_mb != 0) {
+            use_host_memblock_size = four_mb * (@divFloor(use_host_memblock_size, four_mb) + 1);
+        }
+
+        return .{
+            .device_memblock_size = use_device_memblock_size,
+            .host_memblock_size = use_host_memblock_size,
+        };
+    }
 };
 
 /// Stores a group of heaps
@@ -608,7 +652,7 @@ pub const MemoryAllocator = struct {
     device: *Device,
 
     memory_groups: std.BoundedArray(MemoryGroup, max_memory_groups),
-    allocation_sizes: gpu_allocator.AllocationSizes,
+    allocation_sizes: AllocationSizes,
 
     /// a single heap,
     /// use the gpu_allocator field to allocate chunks of memory
@@ -638,8 +682,9 @@ pub const MemoryAllocator = struct {
                 };
 
                 var heap: ?*c.ID3D12Heap = null;
-                const hr = group.owning_pool.device.d3d_device.lpVtbl.*.CreateHeap.?(
-                    group.owning_pool.device.d3d_device,
+                const d3d_device = group.owning_pool.device.d3d_device;
+                const hr = d3d_device.lpVtbl.*.CreateHeap.?(
+                    d3d_device,
                     &desc,
                     &c.IID_ID3D12Heap,
                     @ptrCast(&heap),
@@ -671,7 +716,7 @@ pub const MemoryAllocator = struct {
     pub const MemoryGroup = struct {
         owning_pool: *MemoryAllocator,
 
-        memory_location: gpu_allocator.MemoryLocation,
+        memory_location: MemoryLocation,
         heap_category: HeapCategory,
         heap_properties: c.D3D12_HEAP_PROPERTIES,
 
@@ -685,7 +730,7 @@ pub const MemoryAllocator = struct {
 
         pub fn init(
             owner: *MemoryAllocator,
-            memory_location: gpu_allocator.MemoryLocation,
+            memory_location: MemoryLocation,
             category: HeapCategory,
             properties: c.D3D12_HEAP_PROPERTIES,
         ) MemoryGroup {
@@ -802,7 +847,7 @@ pub const MemoryAllocator = struct {
 
     pub fn init(self: *MemoryAllocator, device: *Device) !void {
         const HeapType = struct {
-            location: gpu_allocator.MemoryLocation,
+            location: MemoryLocation,
             properties: c.D3D12_HEAP_PROPERTIES,
         };
         const heap_types = [_]HeapType{ .{
@@ -939,10 +984,11 @@ pub const MemoryAllocator = struct {
     }
 
     pub fn createResource(self: *MemoryAllocator, desc: *const ResourceCreateDescriptor) gpu_allocator.Error!Resource {
+        const d3d_device = self.device.d3d_device;
         const allocation_desc = blk: {
             var _out_allocation_info: c.D3D12_RESOURCE_ALLOCATION_INFO = undefined;
-            const allocation_info = self.device.d3d_device.lpVtbl.*.GetResourceAllocationInfo.?(
-                self.device.d3d_device,
+            const allocation_info = d3d_device.lpVtbl.*.GetResourceAllocationInfo.?(
+                d3d_device,
                 &_out_allocation_info,
                 0,
                 1,
@@ -959,8 +1005,8 @@ pub const MemoryAllocator = struct {
         const allocation = try self.allocate(&allocation_desc);
 
         var d3d_resource: ?*c.ID3D12Resource = null;
-        const hr = self.device.d3d_device.lpVtbl.*.CreatePlacedResource.?(
-            self.device.d3d_device,
+        const hr = d3d_device.lpVtbl.*.CreatePlacedResource.?(
+            d3d_device,
             allocation.heap.heap,
             allocation.allocation.offset,
             desc.resource_desc,
@@ -1411,7 +1457,7 @@ pub const Resource = struct {
     read_state: c.D3D12_RESOURCE_STATES,
     allocation: ?MemoryAllocator.Allocation = null,
     d3d_resource: *c.ID3D12Resource,
-    memory_location: gpu_allocator.MemoryLocation = .unknown,
+    memory_location: MemoryLocation = .unknown,
     size: u64 = 0,
 
     pub fn init(
@@ -1427,9 +1473,6 @@ pub const Resource = struct {
     pub fn deinit(resource: *Resource) void {
         if (resource.mem_allocator) |mem_allocator| {
             mem_allocator.destroyResource(resource.*) catch {};
-        } else {
-            // if this is a committed resource (no allocation), we can just free it
-            _ = resource.d3d_resource.lpVtbl.*.Release.?(resource.d3d_resource);
         }
     }
 };
