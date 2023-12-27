@@ -8,56 +8,9 @@ pub const Error = error{
     Other,
 };
 
-pub const MemoryLocation = enum {
-    unknown,
-    gpu_only,
-    cpu_to_gpu,
-    gpu_to_cpu,
-};
-
-pub const Report = struct {
-    size: u64,
-};
-
 pub const Allocation = struct {
     offset: u64,
     chunk: u64,
-};
-
-pub const AllocationSizes = struct {
-    device_memblock_size: u64 = 256 * 1024 * 1024,
-    host_memblock_size: u64 = 64 * 1024 * 1024,
-
-    const four_mb = 4 * 1024 * 1024;
-    const two_hundred_fifty_six_mb = 256 * 1024 * 1024;
-
-    pub fn init(
-        device_memblock_size: u64,
-        host_memblock_size: u64,
-    ) AllocationSizes {
-        var use_device_memblock_size = std.math.clamp(
-            device_memblock_size,
-            four_mb,
-            two_hundred_fifty_six_mb,
-        );
-        var use_host_memblock_size = std.math.clamp(
-            host_memblock_size,
-            four_mb,
-            two_hundred_fifty_six_mb,
-        );
-
-        if (use_device_memblock_size % four_mb != 0) {
-            use_device_memblock_size = four_mb * (@divFloor(use_device_memblock_size, four_mb) + 1);
-        }
-        if (use_host_memblock_size % four_mb != 0) {
-            use_host_memblock_size = four_mb * (@divFloor(use_host_memblock_size, four_mb) + 1);
-        }
-
-        return .{
-            .device_memblock_size = use_device_memblock_size,
-            .host_memblock_size = use_host_memblock_size,
-        };
-    }
 };
 
 pub const Allocator = union(enum) {
