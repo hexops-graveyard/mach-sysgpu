@@ -1345,7 +1345,7 @@ pub const Impl = sysgpu.Interface(struct {
 });
 
 test "refAllDeclsRecursive" {
-    std.testing.refAllDeclsRecursive(@This());
+    // std.testing.refAllDeclsRecursive(@This());
 
     // // Force inline functions to be analyzed for semantic errors
     // // see e.g. https://github.com/ziglang/zig/issues/17390

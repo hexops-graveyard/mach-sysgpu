@@ -29,6 +29,8 @@ pub fn build(b: *std.Build) !void {
     build_options.addOption(Backend, "backend", backend);
 
     const module = b.addModule("mach-sysgpu", .{
+        .target = target,
+        .optimize = optimize,
         .root_source_file = .{ .path = "src/main.zig" },
         .imports = &.{
             .{ .name = "vulkan", .module = vulkan_dep.module("vulkan-zig-generated") },
@@ -37,6 +39,7 @@ pub fn build(b: *std.Build) !void {
             .{ .name = "build-options", .module = build_options.createModule() },
         },
     });
+    link(b, module);
 
     const lib = b.addStaticLibrary(.{
         .name = "mach-sysgpu",
@@ -44,7 +47,12 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    link(b, lib);
+    var iter = module.import_table.iterator();
+    while (iter.next()) |e| {
+        lib.root_module.addImport(e.key_ptr.*, e.value_ptr.*);
+    }
+    link(b, &lib.root_module);
+    addPaths(lib);
     b.installArtifact(lib);
 
     const test_step = b.step("test", "Run library tests");
@@ -54,53 +62,54 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-
-    var iter = module.import_table.iterator();
+    iter = module.import_table.iterator();
     while (iter.next()) |e| {
         main_tests.root_module.addImport(e.key_ptr.*, e.value_ptr.*);
     }
-    main_tests.linkLibrary(lib);
-    link(b, main_tests);
+    link(b, &main_tests.root_module);
+    addPaths(main_tests);
     b.installArtifact(main_tests);
 
     test_step.dependOn(&b.addRunArtifact(main_tests).step);
 }
 
-pub fn link(b: *std.Build, step: *std.Build.Step.Compile) void {
-    const target = step.rootModuleTarget();
+fn link(b: *std.Build, module: *std.Build.Module) void {
+    module.link_libc = true;
+
+    const target = module.resolved_target.?.result;
     if (target.isDarwin()) {
-        @import("xcode_frameworks").addPaths(step);
-        step.linkFramework("AppKit");
-        step.linkFramework("CoreGraphics");
-        step.linkFramework("Foundation");
-        step.linkFramework("Metal");
-        step.linkFramework("QuartzCore");
+        module.linkSystemLibrary("objc", .{});
+        module.linkFramework("AppKit", .{});
+        module.linkFramework("CoreGraphics", .{});
+        module.linkFramework("Foundation", .{});
+        module.linkFramework("Metal", .{});
+        module.linkFramework("QuartzCore", .{});
     }
-
     if (target.os.tag == .windows) {
-        step.linkLibC();
-
-        step.linkLibrary(b.dependency("direct3d_headers", .{
-            .target = step.root_module.resolved_target orelse b.host,
-            .optimize = step.root_module.optimize.?,
+        module.linkSystemLibrary("d3d12", .{});
+        module.linkSystemLibrary("d3dcompiler_47", .{});
+        module.linkSystemLibrary("opengl32", .{});
+        module.linkLibrary(b.dependency("direct3d_headers", .{
+            .target = module.resolved_target orelse b.host,
+            .optimize = module.optimize.?,
         }).artifact("direct3d-headers"));
-        @import("direct3d_headers").addLibraryPath(step);
-        step.linkSystemLibrary("d3d12");
-        step.linkSystemLibrary("d3dcompiler_47");
-
-        step.linkLibrary(b.dependency("opengl_headers", .{
-            .target = step.root_module.resolved_target orelse b.host,
-            .optimize = step.root_module.optimize.?,
+        @import("direct3d_headers").addLibraryPathToModule(module);
+        module.linkLibrary(b.dependency("opengl_headers", .{
+            .target = module.resolved_target orelse b.host,
+            .optimize = module.optimize.?,
         }).artifact("opengl-headers"));
-        step.linkSystemLibrary("opengl32");
     }
 
-    step.linkLibrary(b.dependency("spirv_cross", .{
-        .target = step.root_module.resolved_target orelse b.host,
-        .optimize = step.root_module.optimize.?,
+    module.linkLibrary(b.dependency("spirv_cross", .{
+        .target = module.resolved_target orelse b.host,
+        .optimize = module.optimize.?,
     }).artifact("spirv-cross"));
-    step.linkLibrary(b.dependency("spirv_tools", .{
-        .target = step.root_module.resolved_target orelse b.host,
-        .optimize = step.root_module.optimize.?,
+    module.linkLibrary(b.dependency("spirv_tools", .{
+        .target = module.resolved_target orelse b.host,
+        .optimize = module.optimize.?,
     }).artifact("spirv-opt"));
+}
+
+pub fn addPaths(step: *std.Build.Step.Compile) void {
+    if (step.rootModuleTarget().isDarwin()) @import("xcode_frameworks").addPaths(step);
 }

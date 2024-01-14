@@ -1035,7 +1035,7 @@ pub const PipelineLayout = struct {
             }
         }
 
-        var layout = try allocator.create(PipelineLayout);
+        const layout = try allocator.create(PipelineLayout);
         layout.* = .{
             .group_layouts = group_layouts,
             .bindings = bindings,

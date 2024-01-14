@@ -1637,17 +1637,28 @@ pub const Texture = struct {
 
         const clear_value = c.D3D12_CLEAR_VALUE{ .Format = resource_desc.Format };
 
+        // TODO: the code below was terribly broken, I rewrote it, Is it correct?
+        // const create_desc = ResourceCreateDescriptor{
+        //     .location = .gpu_only,
+        //     .resource_desc = if (utils.formatHasDepthOrStencil(desc.format) or desc.usage.render_attachment)
+        //         &clear_value
+        //     else
+        //         null,
+        //     .clear_value = null,
+        //     .resource_category = .buffer,
+        //     .initial_state = initial_state,
+        // };
         const create_desc = ResourceCreateDescriptor{
             .location = .gpu_only,
-            .resource_desc = if (utils.formatHasDepthOrStencil(desc.format) or desc.usage.render_attachment)
+            .resource_desc = &resource_desc,
+            .clear_value = if (utils.formatHasDepthOrStencil(desc.format) or desc.usage.render_attachment)
                 &clear_value
             else
                 null,
-            .clear_value = null,
             .resource_category = .buffer,
             .initial_state = initial_state,
         };
-        var resource = device.mem_allocator.createResource(&create_desc) catch
+        const resource = device.mem_allocator.createResource(&create_desc) catch
             return error.CreateTextureFailed;
 
         if (desc.label) |label|
@@ -2430,7 +2441,6 @@ pub const ShaderModule = struct {
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         _ = device;
-        _ = tracker;
         const module = try allocator.create(ShaderModule);
         module.* = .{
             .air = air,
@@ -2749,7 +2759,7 @@ pub const CommandBuffer = struct {
             var hr: c.HRESULT = undefined;
 
             std.debug.assert(size <= upload_page_size); // TODO - support large uploads
-            const resource = try streaming_manager.acquire(size);
+            const resource = try streaming_manager.acquire();
             const d3d_resource = resource.d3d_resource;
 
             try command_buffer.reference_tracker.referenceUploadPage(resource);

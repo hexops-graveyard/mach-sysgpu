@@ -876,7 +876,7 @@ pub const PipelineLayout = struct {
         var compute_bindings = try buildBindings(group_layouts, .{ .compute = true });
         errdefer compute_bindings.deinit(allocator);
 
-        var layout = try allocator.create(PipelineLayout);
+        const layout = try allocator.create(PipelineLayout);
         layout.* = .{
             .group_layouts = group_layouts,
             .vertex_bindings = vertex_bindings,
@@ -959,7 +959,7 @@ pub const ShaderModule = struct {
     air: *shader.Air,
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
-        var module = try allocator.create(ShaderModule);
+        const module = try allocator.create(ShaderModule);
         module.* = .{
             .device = device,
             .air = air,
