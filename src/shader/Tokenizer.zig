@@ -51,7 +51,7 @@ pub fn peek(self: *Tokenizer) Token {
     };
 
     while (true) : (index += 1) {
-        var c = self.source[index];
+        const c = self.source[index];
         switch (state) {
             .start => switch (c) {
                 0 => {

@@ -1436,7 +1436,7 @@ fn emitSwizzleAccess(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) !
 
 fn extractSwizzle(spv: *SpirV, section: *Section, inst: Inst.SwizzleAccess) ![]const IdRef {
     const base = try spv.emitExpr(section, inst.base);
-    var swizzles = try spv.allocator.alloc(IdRef, @intFromEnum(inst.size));
+    const swizzles = try spv.allocator.alloc(IdRef, @intFromEnum(inst.size));
     for (swizzles, 0..) |*id, i| {
         id.* = spv.allocId();
         try section.emit(.OpCompositeExtract, .{

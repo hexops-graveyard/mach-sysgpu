@@ -125,7 +125,7 @@ pub const Instance = struct {
         }
 
         // Result
-        var instance = try allocator.create(Instance);
+        const instance = try allocator.create(Instance);
         instance.* = .{
             .dxgi_factory = dxgi_factory,
             .allow_tearing = allow_tearing == c.TRUE,
@@ -206,7 +206,7 @@ pub const Adapter = struct {
             if (hr == c.S_OK) {
                 _ = dxgi_adapter.lpVtbl.*.AddRef.?(dxgi_adapter);
 
-                var adapter = try allocator.create(Adapter);
+                const adapter = try allocator.create(Adapter);
                 adapter.* = .{
                     .instance = instance,
                     .dxgi_adapter = dxgi_adapter,
@@ -261,7 +261,7 @@ pub const Surface = struct {
             var hwnd: c.HWND = undefined;
             @memcpy(std.mem.asBytes(&hwnd), std.mem.asBytes(&win_desc.hwnd));
 
-            var surface = try allocator.create(Surface);
+            const surface = try allocator.create(Surface);
             surface.* = .{ .hwnd = hwnd };
             return surface;
         } else {
@@ -1389,7 +1389,7 @@ pub const SwapChain = struct {
         }
 
         // Result
-        var swapchain = try allocator.create(SwapChain);
+        const swapchain = try allocator.create(SwapChain);
         swapchain.* = .{
             .device = device,
             .surface = surface,
@@ -1522,7 +1522,7 @@ pub const Buffer = struct {
         }
 
         // Result
-        var buffer = try allocator.create(Buffer);
+        const buffer = try allocator.create(Buffer);
         buffer.* = .{
             .device = device,
             .resource = resource,
@@ -1654,7 +1654,7 @@ pub const Texture = struct {
             setDebugName(@ptrCast(resource.d3d_resource), label);
 
         // Result
-        var texture = try allocator.create(Texture);
+        const texture = try allocator.create(Texture);
         texture.* = .{
             .device = device,
             .resource = resource,
@@ -1671,7 +1671,7 @@ pub const Texture = struct {
     pub fn initForSwapChain(device: *Device, desc: *const sysgpu.SwapChain.Descriptor, d3d_resource: *c.ID3D12Resource) !*Texture {
         const read_state = c.D3D12_RESOURCE_STATE_PRESENT;
 
-        var texture = try allocator.create(Texture);
+        const texture = try allocator.create(Texture);
         texture.* = .{
             .device = device,
             .resource = Resource.init(d3d_resource, read_state),
@@ -1721,7 +1721,7 @@ pub const TextureView = struct {
             .dimension_3d => .dimension_3d,
         };
 
-        var view = try allocator.create(TextureView);
+        const view = try allocator.create(TextureView);
         view.* = .{
             .texture = texture,
             .format = if (desc.format != .undefined) desc.format else texture.format,
@@ -1851,7 +1851,7 @@ pub const Sampler = struct {
             .MaxLOD = desc.lod_max_clamp,
         };
 
-        var sampler = try allocator.create(Sampler);
+        const sampler = try allocator.create(Sampler);
         sampler.* = .{
             .d3d_desc = d3d_desc,
         };
@@ -1928,7 +1928,7 @@ pub const BindGroupLayout = struct {
             });
         }
 
-        var layout = try allocator.create(BindGroupLayout);
+        const layout = try allocator.create(BindGroupLayout);
         layout.* = .{
             .entries = entries,
             .dynamic_entries = dynamic_entries,
@@ -1997,7 +1997,7 @@ pub const BindGroup = struct {
                     continue;
 
                 if (layout_entry.table_index) |table_index| {
-                    var dest_descriptor = device.general_heap.cpuDescriptor(allocation.index + table_index);
+                    const dest_descriptor = device.general_heap.cpuDescriptor(allocation.index + table_index);
 
                     if (layout_entry.buffer.type != .undefined) {
                         const buffer: *Buffer = @ptrCast(@alignCast(entry.buffer.?));
@@ -2111,7 +2111,7 @@ pub const BindGroup = struct {
                     continue;
 
                 if (layout_entry.table_index) |table_index| {
-                    var dest_descriptor = device.sampler_heap.cpuDescriptor(allocation.index + table_index);
+                    const dest_descriptor = device.sampler_heap.cpuDescriptor(allocation.index + table_index);
 
                     const sampler: *Sampler = @ptrCast(@alignCast(entry.sampler.?));
 
@@ -2177,7 +2177,7 @@ pub const BindGroup = struct {
             }
         }
 
-        var group = try allocator.create(BindGroup);
+        const group = try allocator.create(BindGroup);
         group.* = .{
             .device = device,
             .general_allocation = general_allocation,
@@ -2385,7 +2385,7 @@ pub const PipelineLayout = struct {
         errdefer _ = root_signature.lpVtbl.*.Release.?(root_signature);
 
         // Result
-        var layout = try allocator.create(PipelineLayout);
+        const layout = try allocator.create(PipelineLayout);
         layout.* = .{
             .root_signature = root_signature,
             .group_layouts = group_layouts,
@@ -2430,8 +2430,8 @@ pub const ShaderModule = struct {
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         _ = device;
-
-        var module = try allocator.create(ShaderModule);
+        _ = tracker;
+        const module = try allocator.create(ShaderModule);
         module.* = .{
             .air = air,
         };
@@ -2536,7 +2536,7 @@ pub const ComputePipeline = struct {
             setDebugName(@ptrCast(d3d_pipeline), label);
 
         // Result
-        var pipeline = try allocator.create(ComputePipeline);
+        const pipeline = try allocator.create(ComputePipeline);
         pipeline.* = .{
             .device = device,
             .d3d_pipeline = d3d_pipeline,
@@ -2666,7 +2666,7 @@ pub const RenderPipeline = struct {
             setDebugName(@ptrCast(d3d_pipeline), label);
 
         // Result
-        var pipeline = try allocator.create(RenderPipeline);
+        const pipeline = try allocator.create(RenderPipeline);
         pipeline.* = .{
             .d3d_pipeline = d3d_pipeline,
             .device = device,
@@ -2725,7 +2725,7 @@ pub const CommandBuffer = struct {
         const reference_tracker = try ReferenceTracker.init(device, command_allocator);
         errdefer reference_tracker.deinit();
 
-        var command_buffer = try allocator.create(CommandBuffer);
+        const command_buffer = try allocator.create(CommandBuffer);
         command_buffer.* = .{
             .device = device,
             .command_allocator = command_allocator,
@@ -2815,7 +2815,7 @@ pub const ReferenceTracker = struct {
     upload_pages: std.ArrayListUnmanaged(Resource) = .{},
 
     pub fn init(device: *Device, command_allocator: *c.ID3D12CommandAllocator) !*ReferenceTracker {
-        var tracker = try allocator.create(ReferenceTracker);
+        const tracker = try allocator.create(ReferenceTracker);
         tracker.* = .{
             .device = device,
             .command_allocator = command_allocator,
@@ -3290,7 +3290,7 @@ pub const ComputePassEncoder = struct {
         _ = desc;
         const command_list = cmd_encoder.command_buffer.command_list;
 
-        var encoder = try allocator.create(ComputePassEncoder);
+        const encoder = try allocator.create(ComputePassEncoder);
         encoder.* = .{
             .command_list = command_list,
             .reference_tracker = cmd_encoder.reference_tracker,
@@ -3432,7 +3432,7 @@ pub const RenderPassEncoder = struct {
         var height: u32 = 0;
         var color_attachments: std.BoundedArray(sysgpu.RenderPassColorAttachment, limits.max_color_attachments) = .{};
         var rtv_handles = try cmd_encoder.command_buffer.allocateRtvDescriptors(desc.color_attachment_count);
-        var descriptor_size = cmd_encoder.device.rtv_heap.descriptor_size;
+        const descriptor_size = cmd_encoder.device.rtv_heap.descriptor_size;
 
         var rtv_handle = rtv_handles;
         for (0..desc.color_attachment_count) |i| {
@@ -3567,7 +3567,7 @@ pub const RenderPassEncoder = struct {
         command_list.lpVtbl.*.RSSetScissorRects.?(command_list, 1, &scissor_rect);
 
         // Result
-        var encoder = try allocator.create(RenderPassEncoder);
+        const encoder = try allocator.create(RenderPassEncoder);
         encoder.* = .{
             .command_list = command_list,
             .color_attachments = color_attachments,
@@ -3900,7 +3900,7 @@ pub const Queue = struct {
         errdefer _ = fence.lpVtbl.*.Release.?(fence);
 
         // Fence Event
-        var fence_event = c.CreateEventW(null, c.FALSE, c.FALSE, null);
+        const fence_event = c.CreateEventW(null, c.FALSE, c.FALSE, null);
         if (fence_event == null) {
             return error.CreateEventFailed;
         }

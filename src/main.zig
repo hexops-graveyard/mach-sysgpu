@@ -535,7 +535,7 @@ pub const Impl = sysgpu.Interface(struct {
             };
             defer ast.deinit(allocator);
 
-            var air = allocator.create(shader.Air) catch @panic("api error");
+            const air = allocator.create(shader.Air) catch @panic("api error");
             air.* = shader.Air.generate(allocator, &ast, &errors, null) catch |err| switch (err) {
                 error.AnalysisFail => {
                     errors.print(source, null) catch @panic("api error");

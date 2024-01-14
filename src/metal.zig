@@ -75,7 +75,7 @@ pub const Instance = struct {
         ca.init();
         mtl.init();
 
-        var instance = try allocator.create(Instance);
+        const instance = try allocator.create(Instance);
         instance.* = .{};
         return instance;
     }
@@ -103,7 +103,7 @@ pub const Adapter = struct {
         };
         errdefer mtl_device.release();
 
-        var adapter = try allocator.create(Adapter);
+        const adapter = try allocator.create(Adapter);
         adapter.* = .{ .mtl_device = mtl_device };
         return adapter;
     }
@@ -141,7 +141,7 @@ pub const Surface = struct {
         _ = instance;
 
         if (utils.findChained(sysgpu.Surface.DescriptorFromMetalLayer, desc.next_in_chain.generic)) |mtl_desc| {
-            var surface = try allocator.create(Surface);
+            const surface = try allocator.create(Surface);
             surface.* = .{ .layer = @ptrCast(mtl_desc.layer) };
             return surface;
         } else {
@@ -428,7 +428,7 @@ pub const SwapChain = struct {
         layer.setMaximumDrawableCount(if (desc.present_mode == .mailbox) 3 else 2);
         layer.setDisplaySyncEnabled(desc.present_mode != .immediate);
 
-        var swapchain = try allocator.create(SwapChain);
+        const swapchain = try allocator.create(SwapChain);
         swapchain.* = .{ .device = device, .surface = surface };
         return swapchain;
     }
@@ -498,7 +498,7 @@ pub const Buffer = struct {
             mtl_buffer.setLabel(ns.String.stringWithUTF8String(label));
         }
 
-        var buffer = try allocator.create(Buffer);
+        const buffer = try allocator.create(Buffer);
         buffer.* = .{
             .device = device,
             .mtl_buffer = mtl_buffer,
@@ -602,7 +602,7 @@ pub const Texture = struct {
             mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
         }
 
-        var texture = try allocator.create(Texture);
+        const texture = try allocator.create(Texture);
         texture.* = .{
             .mtl_texture = mtl_texture,
         };
@@ -656,7 +656,7 @@ pub const TextureView = struct {
             _ = mtl_texture.retain();
         }
 
-        var view = try allocator.create(TextureView);
+        const view = try allocator.create(TextureView);
         view.* = .{
             .mtl_texture = mtl_texture,
         };
@@ -664,7 +664,7 @@ pub const TextureView = struct {
     }
 
     pub fn initFromMtlTexture(mtl_texture: *mtl.Texture) !*TextureView {
-        var view = try allocator.create(TextureView);
+        const view = try allocator.create(TextureView);
         view.* = .{
             .mtl_texture = mtl_texture.retain(),
         };
@@ -709,7 +709,7 @@ pub const Sampler = struct {
         };
         errdefer mtl_sampler.release();
 
-        var sampler = try allocator.create(Sampler);
+        const sampler = try allocator.create(Sampler);
         sampler.* = .{
             .mtl_sampler = mtl_sampler,
         };
@@ -736,7 +736,7 @@ pub const BindGroupLayout = struct {
             entries = &[_]sysgpu.BindGroupLayout.Entry{};
         }
 
-        var layout = try allocator.create(BindGroupLayout);
+        const layout = try allocator.create(BindGroupLayout);
         layout.* = .{
             .entries = entries,
         };
@@ -832,7 +832,7 @@ pub const BindGroup = struct {
             }
         }
 
-        var group = try allocator.create(BindGroup);
+        const group = try allocator.create(BindGroup);
         group.* = .{ .entries = mtl_entries };
         return group;
     }
@@ -1095,7 +1095,7 @@ pub const ComputePipeline = struct {
         errdefer mtl_pipeline.release();
 
         // Result
-        var pipeline = try allocator.create(ComputePipeline);
+        const pipeline = try allocator.create(ComputePipeline);
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
             .layout = layout,
@@ -1292,7 +1292,7 @@ pub const RenderPipeline = struct {
         errdefer mtl_pipeline.release();
 
         // Result
-        var pipeline = try allocator.create(RenderPipeline);
+        const pipeline = try allocator.create(RenderPipeline);
         pipeline.* = .{
             .mtl_pipeline = mtl_pipeline,
             .layout = layout,
@@ -1348,7 +1348,7 @@ pub const CommandBuffer = struct {
         const reference_tracker = try ReferenceTracker.init(device);
         errdefer reference_tracker.deinit();
 
-        var command_buffer = try allocator.create(CommandBuffer);
+        const command_buffer = try allocator.create(CommandBuffer);
         command_buffer.* = .{
             .device = device,
             .mtl_command_buffer = mtl_command_buffer.retain(),
@@ -1394,7 +1394,7 @@ pub const ReferenceTracker = struct {
     upload_pages: std.ArrayListUnmanaged(*mtl.Buffer) = .{},
 
     pub fn init(device: *Device) !*ReferenceTracker {
-        var tracker = try allocator.create(ReferenceTracker);
+        const tracker = try allocator.create(ReferenceTracker);
         tracker.* = .{
             .device = device,
         };
@@ -1477,7 +1477,7 @@ pub const CommandEncoder = struct {
 
         const command_buffer = try CommandBuffer.init(device);
 
-        var encoder = try allocator.create(CommandEncoder);
+        const encoder = try allocator.create(CommandEncoder);
         encoder.* = .{
             .device = device,
             .command_buffer = command_buffer,
@@ -1698,7 +1698,7 @@ pub const ComputePassEncoder = struct {
         const lengths_buffer = try LengthsBuffer.init(cmd_encoder.device);
         mtl_encoder.setBuffer_offset_atIndex(lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
 
-        var encoder = try allocator.create(ComputePassEncoder);
+        const encoder = try allocator.create(ComputePassEncoder);
         encoder.* = .{
             .mtl_encoder = mtl_encoder.retain(),
             .lengths_buffer = lengths_buffer,
@@ -1866,7 +1866,7 @@ pub const RenderPassEncoder = struct {
         mtl_encoder.setVertexBuffer_offset_atIndex(vertex_lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
         mtl_encoder.setFragmentBuffer_offset_atIndex(fragment_lengths_buffer.mtl_buffer, 0, slot_buffer_lengths);
 
-        var encoder = try allocator.create(RenderPassEncoder);
+        const encoder = try allocator.create(RenderPassEncoder);
         encoder.* = .{
             .mtl_encoder = mtl_encoder.retain(),
             .vertex_lengths_buffer = vertex_lengths_buffer,
@@ -2069,7 +2069,7 @@ pub const Queue = struct {
         };
         errdefer command_queue.release();
 
-        var queue = try allocator.create(Queue);
+        const queue = try allocator.create(Queue);
         queue.* = .{
             .device = device,
             .command_queue = command_queue,

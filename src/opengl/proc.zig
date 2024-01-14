@@ -11,7 +11,7 @@ fn removeOptional(comptime T: type) type {
 }
 
 fn getProcAddress(name_ptr: [*:0]const u8) c.PROC {
-    var name = std.mem.span(name_ptr);
+    const name = std.mem.span(name_ptr);
     return libgl.lookup(removeOptional(c.PROC), name);
 }
 

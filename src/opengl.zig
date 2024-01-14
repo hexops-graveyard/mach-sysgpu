@@ -189,7 +189,7 @@ pub const Instance = struct {
         wgl.load();
 
         // Result
-        var instance = try allocator.create(Instance);
+        const instance = try allocator.create(Instance);
         instance.* = .{
             .wgl = wgl,
         };
@@ -264,7 +264,7 @@ pub const Adapter = struct {
         const version = gl.getString(c.GL_VERSION);
 
         // Result
-        var adapter = try allocator.create(Adapter);
+        const adapter = try allocator.create(Adapter);
         adapter.* = .{
             .hwnd = if (options.compatible_surface == null) hwnd else null,
             .hdc = hdc,
@@ -317,7 +317,7 @@ pub const Surface = struct {
 
             const pixel_format = try setPixelFormat(wgl, hwnd);
 
-            var surface = try allocator.create(Surface);
+            const surface = try allocator.create(Surface);
             surface.* = .{
                 .hwnd = hwnd,
                 .pixel_format = pixel_format,
@@ -584,7 +584,7 @@ pub const SwapChain = struct {
     views: [max_back_buffer_count]*TextureView,
 
     pub fn init(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {
-        var swapchain = try allocator.create(SwapChain);
+        const swapchain = try allocator.create(SwapChain);
 
         const back_buffer_count: u32 = if (desc.present_mode == .mailbox) 3 else 2;
 
@@ -675,7 +675,7 @@ pub const Buffer = struct {
             map = gl.mapBufferRange(target, 0, @intCast(desc.size), access);
         }
 
-        var buffer = try allocator.create(Buffer);
+        const buffer = try allocator.create(Buffer);
         buffer.* = .{
             .device = device,
             .target = target,
@@ -772,7 +772,7 @@ pub const Texture = struct {
     pub fn init(device: *Device, desc: *const sysgpu.Texture.Descriptor) !*Texture {
         _ = device;
 
-        var texture = try allocator.create(Texture);
+        const texture = try allocator.create(Texture);
         texture.* = .{
             .handle = 0,
             .swapchain = null,
@@ -789,7 +789,7 @@ pub const Texture = struct {
     pub fn initForSwapChain(device: *Device, desc: *const sysgpu.SwapChain.Descriptor, swapchain: *SwapChain) !*Texture {
         _ = device;
 
-        var texture = try allocator.create(Texture);
+        const texture = try allocator.create(Texture);
         texture.* = .{
             .handle = 0,
             .swapchain = swapchain,
@@ -832,7 +832,7 @@ pub const TextureView = struct {
             .dimension_3d => .dimension_3d,
         };
 
-        var view = try allocator.create(TextureView);
+        const view = try allocator.create(TextureView);
         view.* = .{
             .texture = texture,
             .format = if (desc.format != .undefined) desc.format else texture.format,
@@ -868,7 +868,7 @@ pub const Sampler = struct {
         _ = desc;
         _ = device;
 
-        var sampler = try allocator.create(Sampler);
+        const sampler = try allocator.create(Sampler);
         sampler.* = .{};
         return sampler;
     }
@@ -892,7 +892,7 @@ pub const BindGroupLayout = struct {
             entries = &[_]sysgpu.BindGroupLayout.Entry{};
         }
 
-        var layout = try allocator.create(BindGroupLayout);
+        const layout = try allocator.create(BindGroupLayout);
         layout.* = .{
             .entries = entries,
         };
@@ -978,7 +978,7 @@ pub const BindGroup = struct {
             }
         }
 
-        var group = try allocator.create(BindGroup);
+        const group = try allocator.create(BindGroup);
         group.* = .{
             .entries = entries,
         };
@@ -1080,7 +1080,7 @@ pub const ShaderModule = struct {
     air: *shader.Air,
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
-        var module = try allocator.create(ShaderModule);
+        const module = try allocator.create(ShaderModule);
         module.* = .{
             .device = device,
             .air = air,
@@ -1191,7 +1191,7 @@ pub const ComputePipeline = struct {
         }
 
         // Result
-        var pipeline = try allocator.create(ComputePipeline);
+        const pipeline = try allocator.create(ComputePipeline);
         pipeline.* = .{
             .device = device,
             .layout = layout,
@@ -1426,10 +1426,10 @@ pub const RenderPipeline = struct {
                 var dst_color_blend: c.GLenum = c.GL_ZERO;
                 var src_alpha_blend: c.GLenum = c.GL_ONE;
                 var dst_alpha_blend: c.GLenum = c.GL_ZERO;
-                var write_red: c.GLboolean = if (target.write_mask.red) c.GL_TRUE else c.GL_FALSE;
-                var write_green: c.GLboolean = if (target.write_mask.green) c.GL_TRUE else c.GL_FALSE;
-                var write_blue: c.GLboolean = if (target.write_mask.blue) c.GL_TRUE else c.GL_FALSE;
-                var write_alpha: c.GLboolean = if (target.write_mask.alpha) c.GL_TRUE else c.GL_FALSE;
+                const write_red: c.GLboolean = if (target.write_mask.red) c.GL_TRUE else c.GL_FALSE;
+                const write_green: c.GLboolean = if (target.write_mask.green) c.GL_TRUE else c.GL_FALSE;
+                const write_blue: c.GLboolean = if (target.write_mask.blue) c.GL_TRUE else c.GL_FALSE;
+                const write_alpha: c.GLboolean = if (target.write_mask.alpha) c.GL_TRUE else c.GL_FALSE;
                 if (target.blend) |blend| {
                     blend_enabled = true;
                     color_op = conv.glBlendOp(blend.color.operation);
@@ -1727,7 +1727,7 @@ pub const CommandBuffer = struct {
         const reference_tracker = try ReferenceTracker.init(device);
         errdefer reference_tracker.deinit();
 
-        var command_buffer = try allocator.create(CommandBuffer);
+        const command_buffer = try allocator.create(CommandBuffer);
         command_buffer.* = .{
             .device = device,
             .reference_tracker = reference_tracker,
@@ -1751,7 +1751,7 @@ pub const CommandBuffer = struct {
         var compute_pipeline: ?*ComputePipeline = null;
         var render_pass_fbo: ?c.GLuint = null;
         var render_pipeline: ?*RenderPipeline = null;
-        var stencil_ref: c.GLint = 0;
+        const stencil_ref: c.GLint = 0;
         var index_type: c.GLenum = undefined;
         var index_element_size: usize = undefined;
         var index_buffer: ?*Buffer = null;
@@ -1980,7 +1980,7 @@ pub const CommandBuffer = struct {
                     );
                 },
                 .set_index_buffer => |cmd| {
-                    var buffer = cmd.buffer;
+                    const buffer = cmd.buffer;
                     gl.bindBuffer(c.GL_ELEMENT_ARRAY_BUFFER, buffer.handle);
                     index_type = conv.glIndexType(cmd.format);
                     index_element_size = conv.glIndexElementSize(cmd.format);
@@ -1990,7 +1990,7 @@ pub const CommandBuffer = struct {
                     index_buffer = buffer;
                 },
                 .set_compute_pipeline => |cmd| {
-                    var pipeline = cmd.pipeline;
+                    const pipeline = cmd.pipeline;
                     gl.useProgram(pipeline.program);
 
                     if (compute_pipeline) |old_pipeline| old_pipeline.manager.release();
@@ -2054,7 +2054,7 @@ pub const CommandBuffer = struct {
                     gl.scissor(cmd.x, cmd.y, cmd.width, cmd.height);
                 },
                 .set_vertex_buffer => |cmd| {
-                    var buffer = cmd.buffer;
+                    const buffer = cmd.buffer;
                     vertex_state.buffers[cmd.slot] = buffer;
                     vertex_state.buffer_offsets[cmd.slot] = cmd.offset;
                     vertex_state.apply_count = @max(vertex_state.apply_count, cmd.slot + 1);
@@ -2118,7 +2118,7 @@ pub const ReferenceTracker = struct {
     upload_pages: std.ArrayListUnmanaged(*Buffer) = .{},
 
     pub fn init(device: *Device) !*ReferenceTracker {
-        var tracker = try allocator.create(ReferenceTracker);
+        const tracker = try allocator.create(ReferenceTracker);
         tracker.* = .{
             .device = device,
         };
@@ -2204,7 +2204,7 @@ pub const CommandEncoder = struct {
 
         const command_buffer = try CommandBuffer.init(device);
 
-        var encoder = try allocator.create(CommandEncoder);
+        const encoder = try allocator.create(CommandEncoder);
         encoder.* = .{
             .device = device,
             .command_buffer = command_buffer,
@@ -2342,7 +2342,7 @@ pub const ComputePassEncoder = struct {
     pub fn init(cmd_encoder: *CommandEncoder, desc: *const sysgpu.ComputePassDescriptor) !*ComputePassEncoder {
         _ = desc;
 
-        var encoder = try allocator.create(ComputePassEncoder);
+        const encoder = try allocator.create(ComputePassEncoder);
         encoder.* = .{
             .commands = &cmd_encoder.command_buffer.commands,
             .reference_tracker = cmd_encoder.reference_tracker,

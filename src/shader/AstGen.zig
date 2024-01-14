@@ -523,7 +523,7 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    var scope = try astgen.scope_pool.create();
+    const scope = try astgen.scope_pool.create();
     scope.* = .{
         .tag = .{
             .@"fn" = .{
@@ -865,7 +865,7 @@ fn genStatement(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .@"switch" => try astgen.genSwitch(scope, node),
         .loop => try astgen.genLoop(scope, node),
         .block => blk: {
-            var inner_scope = try astgen.scope_pool.create();
+            const inner_scope = try astgen.scope_pool.create();
             inner_scope.* = .{ .tag = .block, .parent = scope };
             const inner_block = try astgen.genBlock(inner_scope, node);
             break :blk inner_block;
@@ -896,7 +896,7 @@ fn genStatement(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
 }
 
 fn genLoop(astgen: *AstGen, parent_scope: *Scope, node: NodeIndex) !InstIndex {
-    var scope = try astgen.scope_pool.create();
+    const scope = try astgen.scope_pool.create();
     scope.* = .{ .tag = .loop, .parent = parent_scope };
 
     const block = try astgen.genBlock(scope, astgen.tree.nodeLHS(node));
@@ -904,7 +904,7 @@ fn genLoop(astgen: *AstGen, parent_scope: *Scope, node: NodeIndex) !InstIndex {
 }
 
 fn genContinuing(astgen: *AstGen, parent_scope: *Scope, node: NodeIndex) !InstIndex {
-    var scope = try astgen.scope_pool.create();
+    const scope = try astgen.scope_pool.create();
     scope.* = .{ .tag = .continuing, .parent = parent_scope };
 
     const block = try astgen.genBlock(scope, astgen.tree.nodeLHS(node));
@@ -928,7 +928,7 @@ fn genIf(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    var body_scope = try astgen.scope_pool.create();
+    const body_scope = try astgen.scope_pool.create();
     body_scope.* = .{ .tag = .@"if", .parent = scope };
     const block = try astgen.genBlock(body_scope, node_rhs);
 
@@ -945,11 +945,11 @@ fn genIfElse(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const if_node = astgen.tree.nodeLHS(node);
     const cond = try astgen.genExpr(scope, astgen.tree.nodeLHS(if_node));
 
-    var if_body_scope = try astgen.scope_pool.create();
+    const if_body_scope = try astgen.scope_pool.create();
     if_body_scope.* = .{ .tag = .@"if", .parent = scope };
     const if_block = try astgen.genBlock(if_body_scope, astgen.tree.nodeRHS(if_node));
 
-    var else_body_scope = try astgen.scope_pool.create();
+    const else_body_scope = try astgen.scope_pool.create();
     else_body_scope.* = .{ .tag = .@"if", .parent = scope };
     const else_block = try astgen.genBlock(else_body_scope, astgen.tree.nodeRHS(node));
 
@@ -1055,12 +1055,12 @@ fn genSwitch(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     for (cases_nodes) |cases_node| {
         const cases_node_tag = astgen.tree.nodeTag(cases_node);
 
-        var cases_scope = try astgen.scope_pool.create();
+        const cases_scope = try astgen.scope_pool.create();
         cases_scope.* = .{ .tag = .switch_case, .parent = scope };
 
         var cases = RefIndex.none;
         const body = try astgen.genBlock(cases_scope, astgen.tree.nodeRHS(cases_node));
-        var default = cases_node_tag == .switch_default or cases_node_tag == .switch_case_default;
+        const default = cases_node_tag == .switch_default or cases_node_tag == .switch_case_default;
 
         switch (cases_node_tag) {
             .switch_case, .switch_case_default => {

@@ -978,7 +978,7 @@ fn switchStatement(p: *Parser) !?NodeIndex {
         } else if (p.eatToken(.k_case)) |case_token| {
             const cases_scratch_top = p.scratch.items.len;
 
-            var has_default = false;
+            const has_default = false;
             while (true) {
                 const case_expr = try p.expression() orelse {
                     if (p.eatToken(.k_default)) |_| continue;

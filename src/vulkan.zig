@@ -39,7 +39,7 @@ pub fn init(alloc: std.mem.Allocator, options: InitOptions) !void {
 }
 
 pub fn libVulkanBaseLoader(_: vk.Instance, name_ptr: [*:0]const u8) vk.PfnVoidFunction {
-    var name = std.mem.span(name_ptr);
+    const name = std.mem.span(name_ptr);
     return libvulkan.?.lookup(vk.PfnVoidFunction, name) orelse null;
 }
 
@@ -60,7 +60,7 @@ pub const Instance = struct {
         var count: u32 = 0;
         _ = try vkb.enumerateInstanceLayerProperties(&count, null);
 
-        var available_layers = try allocator.alloc(vk.LayerProperties, count);
+        const available_layers = try allocator.alloc(vk.LayerProperties, count);
         defer allocator.free(available_layers);
         _ = try vkb.enumerateInstanceLayerProperties(&count, available_layers.ptr);
 
@@ -81,7 +81,7 @@ pub const Instance = struct {
         // Query extensions
         _ = try vkb.enumerateInstanceExtensionProperties(null, &count, null);
 
-        var available_extensions = try allocator.alloc(vk.ExtensionProperties, count);
+        const available_extensions = try allocator.alloc(vk.ExtensionProperties, count);
         defer allocator.free(available_extensions);
         _ = try vkb.enumerateInstanceExtensionProperties(null, &count, available_extensions.ptr);
 
@@ -121,7 +121,7 @@ pub const Instance = struct {
         // Load instance functions
         vki = try proc.loadInstance(vk_instance, vkb.dispatch.vkGetInstanceProcAddr);
 
-        var instance = try allocator.create(Instance);
+        const instance = try allocator.create(Instance);
         instance.* = .{ .vk_instance = vk_instance };
         return instance;
     }
@@ -229,7 +229,7 @@ pub const Adapter = struct {
 
         if (physical_device_info) |info| {
             _ = try vki.enumerateDeviceExtensionProperties(info.physical_device, null, &count, null);
-            var extensions = try allocator.alloc(vk.ExtensionProperties, count);
+            const extensions = try allocator.alloc(vk.ExtensionProperties, count);
             errdefer allocator.free(extensions);
             _ = try vki.enumerateDeviceExtensionProperties(info.physical_device, null, &count, extensions.ptr);
 
@@ -243,7 +243,7 @@ pub const Adapter = struct {
                 },
             );
 
-            var adapter = try allocator.create(Adapter);
+            const adapter = try allocator.create(Adapter);
             adapter.* = .{
                 .instance = instance,
                 .physical_device = info.physical_device,
@@ -334,7 +334,7 @@ pub const Adapter = struct {
         var count: u32 = 0;
         _ = vki.getPhysicalDeviceQueueFamilyProperties(device, &count, null);
 
-        var queue_families = try allocator.alloc(vk.QueueFamilyProperties, count);
+        const queue_families = try allocator.alloc(vk.QueueFamilyProperties, count);
         defer allocator.free(queue_families);
         _ = vki.getPhysicalDeviceQueueFamilyProperties(device, &count, queue_families.ptr);
 
@@ -432,7 +432,7 @@ pub const Surface = struct {
             else => @compileError("unsupported platform"),
         };
 
-        var surface = try allocator.create(Surface);
+        const surface = try allocator.create(Surface);
         surface.* = .{
             .instance = instance,
             .vk_surface = vk_surface,
@@ -503,7 +503,7 @@ pub const Device = struct {
         var count: u32 = 0;
         _ = try vki.enumerateDeviceLayerProperties(adapter.physical_device, &count, null);
 
-        var available_layers = try allocator.alloc(vk.LayerProperties, count);
+        const available_layers = try allocator.alloc(vk.LayerProperties, count);
         defer allocator.free(available_layers);
         _ = try vki.enumerateDeviceLayerProperties(adapter.physical_device, &count, available_layers.ptr);
 
@@ -524,7 +524,7 @@ pub const Device = struct {
         // Query extensions
         _ = try vki.enumerateDeviceExtensionProperties(adapter.physical_device, null, &count, null);
 
-        var available_extensions = try allocator.alloc(vk.ExtensionProperties, count);
+        const available_extensions = try allocator.alloc(vk.ExtensionProperties, count);
         defer allocator.free(available_extensions);
         _ = try vki.enumerateDeviceExtensionProperties(adapter.physical_device, null, &count, available_extensions.ptr);
 
@@ -947,7 +947,7 @@ pub const SwapChain = struct {
     pub fn init(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {
         const vk_device = device.vk_device;
 
-        var sc = try allocator.create(SwapChain);
+        const sc = try allocator.create(SwapChain);
 
         const capabilities = try vki.getPhysicalDeviceSurfaceCapabilitiesKHR(
             device.adapter.physical_device,
@@ -1014,7 +1014,7 @@ pub const SwapChain = struct {
 
         var images_len: u32 = 0;
         _ = try vkd.getSwapchainImagesKHR(vk_device, vk_swapchain, &images_len, null);
-        var images = try allocator.alloc(vk.Image, images_len);
+        const images = try allocator.alloc(vk.Image, images_len);
         defer allocator.free(images);
         _ = try vkd.getSwapchainImagesKHR(vk_device, vk_swapchain, &images_len, images.ptr);
 
@@ -1180,7 +1180,7 @@ pub const Buffer = struct {
         }
 
         // Result
-        var buffer = try allocator.create(Buffer);
+        const buffer = try allocator.create(Buffer);
         buffer.* = .{
             .device = device,
             .vk_buffer = vk_buffer,
@@ -1264,7 +1264,7 @@ pub const Buffer = struct {
     pub fn executeMapAsync(buffer: *Buffer, map_callback: MapCallback) void {
         const vk_device = buffer.device.vk_device;
 
-        var map = vkd.mapMemory(vk_device, buffer.memory, 0, buffer.size, .{}) catch {
+        const map = vkd.mapMemory(vk_device, buffer.memory, 0, buffer.size, .{}) catch {
             map_callback.callback(.unknown, map_callback.userdata);
             return;
         };
@@ -1449,7 +1449,7 @@ pub const TextureView = struct {
             },
         }, null);
 
-        var view = try allocator.create(TextureView);
+        const view = try allocator.create(TextureView);
         view.* = .{
             .device = texture.device,
             .texture = texture,
@@ -1497,7 +1497,7 @@ pub const Sampler = struct {
         }, null);
 
         // Result
-        var sampler = try allocator.create(Sampler);
+        const sampler = try allocator.create(Sampler);
         sampler.* = .{
             .device = device,
             .vk_sampler = vk_sampler,
@@ -1588,7 +1588,7 @@ pub const BindGroupLayout = struct {
         }, null);
 
         // Result
-        var layout = try allocator.create(BindGroupLayout);
+        const layout = try allocator.create(BindGroupLayout);
         layout.* = .{
             .device = device,
             .vk_layout = vk_layout,
@@ -1757,7 +1757,7 @@ pub const BindGroup = struct {
         }
 
         // Result
-        var bind_group = try allocator.create(BindGroup);
+        const bind_group = try allocator.create(BindGroup);
         bind_group.* = .{
             .device = device,
             .layout = layout,
@@ -1812,7 +1812,7 @@ pub const PipelineLayout = struct {
             .p_set_layouts = set_layouts.ptr,
         }, null);
 
-        var layout = try allocator.create(PipelineLayout);
+        const layout = try allocator.create(PipelineLayout);
         layout.* = .{
             .device = device,
             .vk_layout = vk_layout,
@@ -1867,7 +1867,7 @@ pub const ShaderModule = struct {
             .p_code = @ptrCast(@alignCast(code.ptr)),
         }, null);
 
-        var module = try allocator.create(ShaderModule);
+        const module = try allocator.create(ShaderModule);
         module.* = .{
             .device = device,
             .vk_shader_module = vk_shader_module,
@@ -1928,7 +1928,7 @@ pub const ComputePipeline = struct {
         }}, null, @ptrCast(&vk_pipeline));
 
         // Result
-        var pipeline = try allocator.create(ComputePipeline);
+        const pipeline = try allocator.create(ComputePipeline);
         pipeline.* = .{
             .device = device,
             .vk_pipeline = vk_pipeline,
@@ -2204,7 +2204,7 @@ pub const RenderPipeline = struct {
             .base_pipeline_index = -1,
         }}, null, @ptrCast(&vk_pipeline));
 
-        var pipeline = try allocator.create(RenderPipeline);
+        const pipeline = try allocator.create(RenderPipeline);
         pipeline.* = .{
             .device = device,
             .vk_pipeline = vk_pipeline,
@@ -2263,7 +2263,7 @@ pub const CommandBuffer = struct {
         const reference_tracker = try ReferenceTracker.init(device, vk_command_buffer);
         errdefer reference_tracker.deinit();
 
-        var command_buffer = try allocator.create(CommandBuffer);
+        const command_buffer = try allocator.create(CommandBuffer);
         command_buffer.* = .{
             .device = device,
             .vk_command_buffer = vk_command_buffer,
@@ -2317,7 +2317,7 @@ pub const ReferenceTracker = struct {
     framebuffers: std.ArrayListUnmanaged(vk.Framebuffer) = .{},
 
     pub fn init(device: *Device, vk_command_buffer: vk.CommandBuffer) !*ReferenceTracker {
-        var tracker = try allocator.create(ReferenceTracker);
+        const tracker = try allocator.create(ReferenceTracker);
         tracker.* = .{
             .device = device,
             .vk_command_buffer = vk_command_buffer,
@@ -2431,7 +2431,7 @@ pub const CommandEncoder = struct {
 
         const command_buffer = try CommandBuffer.init(device);
 
-        var cmd_encoder = try allocator.create(CommandEncoder);
+        const cmd_encoder = try allocator.create(CommandEncoder);
         cmd_encoder.* = .{
             .device = device,
             .command_buffer = command_buffer,
@@ -2986,7 +2986,7 @@ pub const ComputePassEncoder = struct {
         _ = desc;
         const vk_command_buffer = cmd_encoder.command_buffer.vk_command_buffer;
 
-        var encoder = try allocator.create(ComputePassEncoder);
+        const encoder = try allocator.create(ComputePassEncoder);
         encoder.* = .{
             .vk_command_buffer = vk_command_buffer,
             .reference_tracker = cmd_encoder.reference_tracker,
@@ -3211,7 +3211,7 @@ pub const RenderPassEncoder = struct {
         vkd.cmdSetStencilReference(vk_command_buffer, .{ .front_bit = true, .back_bit = true }, 0);
 
         // Result
-        var rpe = try allocator.create(RenderPassEncoder);
+        const rpe = try allocator.create(RenderPassEncoder);
         errdefer allocator.destroy(rpe);
         rpe.* = .{
             .device = device,
