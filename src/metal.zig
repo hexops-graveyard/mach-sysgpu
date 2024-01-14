@@ -2058,7 +2058,7 @@ pub const Queue = struct {
     device: *Device,
     command_queue: *mtl.CommandQueue,
     fence_value: u64 = 0,
-    completed_value: std.atomic.Atomic(u64) = std.atomic.Atomic(u64).init(0),
+    completed_value: std.atomic.Value(u64) = std.atomic.Value(u64).init(0),
     command_encoder: ?*CommandEncoder = null,
 
     pub fn init(device: *Device) !*Queue {

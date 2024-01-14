@@ -29,8 +29,8 @@ pub fn build(b: *std.Build) !void {
     build_options.addOption(Backend, "backend", backend);
 
     const module = b.addModule("mach-sysgpu", .{
-        .source_file = .{ .path = "src/main.zig" },
-        .dependencies = &.{
+        .root_source_file = .{ .path = "src/main.zig" },
+        .imports = &.{
             .{ .name = "vulkan", .module = vulkan_dep.module("vulkan-zig-generated") },
             .{ .name = "gpu", .module = mach_gpu_dep.module("mach-gpu") },
             .{ .name = "objc", .module = mach_objc_dep.module("mach-objc") },
@@ -55,9 +55,9 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    var iter = module.dependencies.iterator();
+    var iter = module.import_table.iterator();
     while (iter.next()) |e| {
-        main_tests.addModule(e.key_ptr.*, e.value_ptr.*);
+        main_tests.root_module.addImport(e.key_ptr.*, e.value_ptr.*);
     }
     main_tests.linkLibrary(lib);
     link(b, main_tests);
@@ -66,19 +66,9 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&b.addRunArtifact(main_tests).step);
 }
 
-pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
-    // TODO - how to get the build option here?
-
-    step.linkLibrary(b.dependency("spirv_cross", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    }).artifact("spirv-cross"));
-    step.linkLibrary(b.dependency("spirv_tools", .{
-        .target = step.target,
-        .optimize = step.optimize,
-    }).artifact("spirv-opt"));
-
-    if (step.target.isDarwin()) {
+pub fn link(b: *std.Build, step: *std.Build.Step.Compile) void {
+    const target = step.rootModuleTarget();
+    if (target.isDarwin()) {
         @import("xcode_frameworks").addPaths(step);
         step.linkFramework("AppKit");
         step.linkFramework("CoreGraphics");
@@ -87,21 +77,30 @@ pub fn link(b: *std.Build, step: *std.build.CompileStep) void {
         step.linkFramework("QuartzCore");
     }
 
-    if (step.target.isWindows()) {
+    if (target.os.tag == .windows) {
         step.linkLibC();
 
         step.linkLibrary(b.dependency("direct3d_headers", .{
-            .target = step.target,
-            .optimize = step.optimize,
+            .target = step.root_module.resolved_target orelse b.host,
+            .optimize = step.root_module.optimize.?,
         }).artifact("direct3d-headers"));
         @import("direct3d_headers").addLibraryPath(step);
         step.linkSystemLibrary("d3d12");
         step.linkSystemLibrary("d3dcompiler_47");
 
         step.linkLibrary(b.dependency("opengl_headers", .{
-            .target = step.target,
-            .optimize = step.optimize,
+            .target = step.root_module.resolved_target orelse b.host,
+            .optimize = step.root_module.optimize.?,
         }).artifact("opengl-headers"));
         step.linkSystemLibrary("opengl32");
     }
+
+    step.linkLibrary(b.dependency("spirv_cross", .{
+        .target = step.root_module.resolved_target orelse b.host,
+        .optimize = step.root_module.optimize.?,
+    }).artifact("spirv-cross"));
+    step.linkLibrary(b.dependency("spirv_tools", .{
+        .target = step.root_module.resolved_target orelse b.host,
+        .optimize = step.root_module.optimize.?,
+    }).artifact("spirv-opt"));
 }
