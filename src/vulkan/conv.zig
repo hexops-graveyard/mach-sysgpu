@@ -203,7 +203,7 @@ pub fn vulkanFormat(device: *const vulkan.Device, format: sysgpu.Texture.Format)
             return vulkanFormat(device, .depth24_plus_stencil8);
         },
         .depth16_unorm => .d16_unorm,
-        .depth24_plus => .x8_d24_unorm_pack32,
+        .depth24_plus => .d32_sfloat,
         .depth24_plus_stencil8 => if (device.supported_ds_formats.get(.d24_unorm_s8_uint) != null) {
             return .d24_unorm_s8_uint;
         } else {
