@@ -1,5 +1,6 @@
 const vk = @import("vulkan");
 const sysgpu = @import("../sysgpu/main.zig");
+const vulkan = @import("../vulkan.zig");
 const utils = @import("../utils.zig");
 
 pub fn stencilEnable(stencil: sysgpu.StencilFaceState) bool {
@@ -158,7 +159,7 @@ pub fn vulkanFilter(filter: sysgpu.FilterMode) vk.Filter {
     };
 }
 
-pub fn vulkanFormat(format: sysgpu.Texture.Format) vk.Format {
+pub fn vulkanFormat(device: *const vulkan.Device, format: sysgpu.Texture.Format) vk.Format {
     return switch (format) {
         .r8_unorm => .r8_unorm,
         .r8_snorm => .r8_snorm,
@@ -196,10 +197,18 @@ pub fn vulkanFormat(format: sysgpu.Texture.Format) vk.Format {
         .rgba32_float => .r32g32b32a32_sfloat,
         .rgba32_uint => .r32g32b32a32_uint,
         .rgba32_sint => .r32g32b32a32_sint,
-        .stencil8 => .s8_uint,
+        .stencil8 => if (device.supported_ds_formats.get(.s8_uint) != null) {
+            return .s8_uint;
+        } else {
+            return vulkanFormat(device, .depth24_plus_stencil8);
+        },
         .depth16_unorm => .d16_unorm,
         .depth24_plus => .x8_d24_unorm_pack32,
-        .depth24_plus_stencil8 => .d24_unorm_s8_uint,
+        .depth24_plus_stencil8 => if (device.supported_ds_formats.get(.d24_unorm_s8_uint) != null) {
+            return .d24_unorm_s8_uint;
+        } else {
+            return .d32_sfloat_s8_uint;
+        },
         .depth32_float => .d32_sfloat,
         .depth32_float_stencil8 => .d32_sfloat_s8_uint,
         .bc1_rgba_unorm => .bc1_rgba_unorm_block,

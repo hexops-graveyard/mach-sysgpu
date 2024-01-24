@@ -22,6 +22,7 @@ pub const InstanceFunctions = vk.InstanceWrapper(.{
     .enumeratePhysicalDevices = true,
     .getDeviceProcAddr = true,
     .getPhysicalDeviceFeatures = true,
+    .getPhysicalDeviceFormatProperties = true,
     .getPhysicalDeviceProperties = true,
     .getPhysicalDeviceMemoryProperties = true,
     .getPhysicalDeviceQueueFamilyProperties = true,
