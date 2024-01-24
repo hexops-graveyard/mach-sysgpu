@@ -989,7 +989,7 @@ pub const ShaderModule = struct {
             allocator,
             module.air,
             .msl,
-            .false,
+            false,
             .{ .emit_source_file = "" },
             .{ .name = entrypoint, .stage = stage },
             bindings,
