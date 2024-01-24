@@ -254,8 +254,8 @@ fn emitGlobalVar(hlsl: *Hlsl, inst: Inst.Var) !void {
     }
 
     const type_inst = hlsl.air.getInst(inst.type);
-    const binding = hlsl.air.resolveInt(inst.binding) orelse return error.constExpr;
-    const group = hlsl.air.resolveInt(inst.group) orelse return error.constExpr;
+    const binding = hlsl.air.resolveInt(inst.binding) orelse return error.ConstExpr;
+    const group = hlsl.air.resolveInt(inst.group) orelse return error.ConstExpr;
     var binding_space: []const u8 = undefined;
 
     switch (type_inst) {
@@ -657,7 +657,7 @@ fn exprType(hlsl: *Hlsl, inst_idx: InstIndex) InstIndex {
 fn emitExpr(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
     switch (hlsl.air.getInst(inst_idx)) {
         .var_ref => |inst| try hlsl.emitVarRef(inst),
-        //.bool => |inst| hlsl.emitBool(inst),
+        .bool => |inst| try hlsl.emitBool(inst),
         .int => |inst| try hlsl.emitInt(inst),
         .float => |inst| try hlsl.emitFloat(inst),
         .vector => |inst| try hlsl.emitVector(inst),
@@ -698,6 +698,13 @@ fn emitVarRef(hlsl: *Hlsl, inst_idx: InstIndex) !void {
             try hlsl.writeName(p.name);
         },
         else => |x| std.debug.panic("VarRef: {}", .{x}), // TODO
+    }
+}
+
+fn emitBool(hlsl: *Hlsl, inst: Inst.Bool) !void {
+    switch (inst.value.?) {
+        .literal => |lit| try hlsl.print("{}", .{lit}),
+        .cast => @panic("TODO: bool cast"),
     }
 }
 

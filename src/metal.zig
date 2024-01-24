@@ -989,13 +989,12 @@ pub const ShaderModule = struct {
             allocator,
             module.air,
             .msl,
+            .false,
             .{ .emit_source_file = "" },
             .{ .name = entrypoint, .stage = stage },
             bindings,
         );
         defer allocator.free(code);
-
-        //std.debug.print("{s}\n", .{code});
 
         const ns_code = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
             @constCast(code.ptr),

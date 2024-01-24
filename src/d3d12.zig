@@ -2459,7 +2459,7 @@ pub const ShaderModule = struct {
     pub fn compile(module: *ShaderModule, entrypoint: [*:0]const u8, target: [*:0]const u8) !*c.ID3DBlob {
         var hr: c.HRESULT = undefined;
 
-        const code = try shader.CodeGen.generate(allocator, module.air, .hlsl, .{ .emit_source_file = "" }, null, null);
+        const code = try shader.CodeGen.generate(allocator, module.air, .hlsl, false, .{ .emit_source_file = "" }, null, null);
         defer allocator.free(code);
 
         var flags: u32 = 0;

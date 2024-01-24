@@ -22,8 +22,8 @@ pub fn gen(
     allocator: std.mem.Allocator,
     air: *const Air,
     debug_info: DebugInfo,
-    entrypoint: Entrypoint,
-    bindings: *const BindingTable,
+    entrypoint: ?Entrypoint,
+    bindings: ?*const BindingTable,
 ) ![]const u8 {
     _ = debug_info;
 
@@ -33,7 +33,7 @@ pub fn gen(
         .allocator = allocator,
         .storage = storage,
         .writer = storage.writer(allocator),
-        .bindings = bindings,
+        .bindings = bindings orelse &.{},
     };
     defer {
         glsl.storage.deinit(allocator);
@@ -48,15 +48,34 @@ pub fn gen(
         }
     }
 
-    const entrypoint_name = std.mem.span(entrypoint.name);
+    // GLSL deosn't support multiple entrypoints so we only generate
+    // when `entrypoint` is specified OR there's only one entrypoint
+    var entrypoint_name: ?[]const u8 = null;
+
+    if (entrypoint != null) {
+        entrypoint_name = std.mem.span(entrypoint.?.name);
+    } else {
+        const has_multiple_entrypoints = @intFromBool(air.vertex_stage == .none) &
+            @intFromBool(air.fragment_stage == .none) &
+            @intFromBool(air.compute_stage == .none);
+
+        if (has_multiple_entrypoints == 1) {
+            return error.MultipleEntrypoints;
+        }
+    }
 
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
             .@"var" => |inst| try glsl.emitGlobalVar(inst),
             .@"fn" => |inst| {
                 const name = glsl.air.getStr(inst.name);
-                if (std.mem.eql(u8, entrypoint_name, name))
+                if (entrypoint_name) |_| {
+                    if (std.mem.eql(u8, entrypoint_name.?, name)) {
+                        try glsl.emitFn(inst);
+                    }
+                } else if (inst.stage != .none) {
                     try glsl.emitFn(inst);
+                }
             },
             .@"struct" => {},
             else => |inst| try glsl.print("TopLevel: {}\n", .{inst}), // TODO
@@ -229,10 +248,10 @@ fn emitBuiltin(glsl: *Glsl, builtin: Builtin) !void {
 }
 
 fn emitGlobalVar(glsl: *Glsl, inst: Inst.Var) !void {
-    const group = glsl.air.resolveInt(inst.group) orelse return error.constExpr;
-    const binding = glsl.air.resolveInt(inst.binding) orelse return error.constExpr;
+    const group = glsl.air.resolveInt(inst.group) orelse return error.ConstExpr;
+    const binding = glsl.air.resolveInt(inst.binding) orelse return error.ConstExpr;
     const key = BindingPoint{ .group = @intCast(group), .binding = @intCast(binding) };
-    const slot = glsl.bindings.get(key) orelse return error.noBinding;
+    const slot = glsl.bindings.get(key) orelse return error.NoBinding;
 
     try glsl.print("layout(binding = {}, ", .{slot});
     try glsl.writeAll(if (inst.addr_space == .uniform) "std140" else "std430");
@@ -545,7 +564,7 @@ fn emitFor(glsl: *Glsl, inst: Inst.For) !void {
 fn emitExpr(glsl: *Glsl, inst_idx: InstIndex) error{OutOfMemory}!void {
     switch (glsl.air.getInst(inst_idx)) {
         .var_ref => |inst| try glsl.emitVarRef(inst),
-        //.bool => |inst| glsl.emitBool(inst),
+        .bool => |inst| try glsl.emitBool(inst),
         .int => |inst| try glsl.emitInt(inst),
         .float => |inst| try glsl.emitFloat(inst),
         .vector => |inst| try glsl.emitVector(inst),
@@ -585,6 +604,13 @@ fn emitVarRef(glsl: *Glsl, inst_idx: InstIndex) !void {
             }
         },
         else => |x| std.debug.panic("VarRef: {}", .{x}), // TODO
+    }
+}
+
+fn emitBool(glsl: *Glsl, inst: Inst.Bool) !void {
+    switch (inst.value.?) {
+        .literal => |lit| try glsl.print("{}", .{lit}),
+        .cast => @panic("TODO"),
     }
 }
 

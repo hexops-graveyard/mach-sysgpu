@@ -1346,6 +1346,7 @@ pub const Impl = sysgpu.Interface(struct {
 
 test "refAllDeclsRecursive" {
     // std.testing.refAllDeclsRecursive(@This());
+    _ = @import("shader/test.zig");
 
     // // Force inline functions to be analyzed for semantic errors
     // // see e.g. https://github.com/ziglang/zig/issues/17390

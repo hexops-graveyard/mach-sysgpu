@@ -17,6 +17,7 @@ air: *const Air,
 allocator: std.mem.Allocator,
 storage: std.ArrayListUnmanaged(u8),
 writer: std.ArrayListUnmanaged(u8).Writer,
+fn_emit_list: std.AutoHashMapUnmanaged(InstIndex, bool) = .{},
 bindings: *const BindingTable,
 indent: u32 = 0,
 stage: Inst.Fn.Stage = .none,
@@ -27,8 +28,7 @@ pub fn gen(
     allocator: std.mem.Allocator,
     air: *const Air,
     debug_info: DebugInfo,
-    entrypoint: Entrypoint,
-    bindings: *const BindingTable,
+    bindings: ?*const BindingTable,
 ) ![]const u8 {
     _ = debug_info;
 
@@ -38,10 +38,11 @@ pub fn gen(
         .allocator = allocator,
         .storage = storage,
         .writer = storage.writer(allocator),
-        .bindings = bindings,
+        .bindings = bindings orelse &.{},
     };
     defer {
         msl.storage.deinit(allocator);
+        msl.fn_emit_list.deinit(allocator);
     }
 
     try msl.writeAll("#include <metal_stdlib>\n");
@@ -64,15 +65,9 @@ pub fn gen(
         }
     }
 
-    const entrypoint_name = std.mem.span(entrypoint.name);
-
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
-            .@"fn" => |inst| {
-                const name = msl.air.getStr(inst.name);
-                if (inst.stage == .none or std.mem.eql(u8, entrypoint_name, name))
-                    try msl.emitFn(inst);
-            },
+            .@"fn" => |inst| if (inst.stage != .none) try msl.emitFn(inst),
             .@"struct" => |inst| try msl.emitStruct(inst_idx, inst),
             .@"const" => |inst| try msl.emitGlobalConst(inst),
             .@"var" => {},
@@ -359,6 +354,14 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
     }
     try msl.writeIndent();
     try msl.writeAll("}\n");
+
+    var fn_emit_iter = msl.fn_emit_list.iterator();
+    while (fn_emit_iter.next()) |fn_emition| {
+        if (fn_emition.value_ptr.* == false) {
+            fn_emition.value_ptr.* = true;
+            try msl.emitFn(msl.air.getInst(fn_emition.key_ptr.*).@"fn");
+        }
+    }
 }
 
 fn emitStageInType(msl: *Msl, inst: Inst.Fn) !void {
@@ -385,8 +388,8 @@ fn emitStageInType(msl: *Msl, inst: Inst.Fn) !void {
 fn emitFnGlobalVar(msl: *Msl, inst_idx: InstIndex) !void {
     const inst = msl.air.getInst(inst_idx).@"var";
 
-    const group = msl.air.resolveInt(inst.group) orelse return error.constExpr;
-    const binding = msl.air.resolveInt(inst.binding) orelse return error.constExpr;
+    const group = msl.air.resolveInt(inst.group) orelse return error.ConstExpr;
+    const binding = msl.air.resolveInt(inst.binding) orelse return error.ConstExpr;
     const key = BindingPoint{ .group = @intCast(group), .binding = @intCast(binding) };
     const slot = msl.bindings.get(key) orelse 0;
 
@@ -514,7 +517,7 @@ fn emitFnParam(msl: *Msl, inst_idx: InstIndex) !void {
     }
 }
 
-fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
+fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{ OutOfMemory, ConstExpr }!void {
     try msl.writeIndent();
     switch (msl.air.getInst(inst_idx)) {
         .@"var" => |inst| try msl.emitVar(inst),
@@ -531,7 +534,7 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
         .discard => try msl.emitDiscard(),
         // .@"break" => try msl.emitBreak(),
         .@"continue" => try msl.writeAll("continue;\n"),
-        // .call => |inst| try msl.emitCall(inst),
+        .call => |inst| try msl.emitCall(inst),
         .assign,
         .nil_intrinsic,
         .texture_store,
@@ -633,7 +636,7 @@ fn emitDiscard(msl: *Msl) !void {
     try msl.writeAll("discard_fragment();\n");
 }
 
-fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
+fn emitExpr(msl: *Msl, inst_idx: InstIndex) error{ OutOfMemory, ConstExpr }!void {
     switch (msl.air.getInst(inst_idx)) {
         .var_ref => |inst| try msl.emitVarRef(inst),
         //.bool => |inst| msl.emitBool(inst),
@@ -990,6 +993,10 @@ fn emitIndexAccess(msl: *Msl, inst: Inst.IndexAccess) !void {
 
 fn emitCall(msl: *Msl, inst: Inst.FnCall) !void {
     const fn_inst = msl.air.getInst(inst.@"fn").@"fn";
+
+    if (msl.fn_emit_list.get(inst.@"fn") == null) {
+        try msl.fn_emit_list.put(msl.allocator, inst.@"fn", false);
+    }
 
     try msl.writeName(fn_inst.name);
     try msl.writeAll("(");

@@ -579,11 +579,30 @@ fn genFn(astgen: *AstGen, root_scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
+    // only one kind of entry point per file
     switch (stage) {
         .none => {},
-        .compute => astgen.compute_stage = inst,
-        .vertex => astgen.vertex_stage = inst,
-        .fragment => astgen.fragment_stage = inst,
+        .compute => {
+            if (astgen.compute_stage != .none) {
+                try astgen.errors.add(node_loc, "multiple compute entry point found", .{}, null);
+                return error.AnalysisFail;
+            }
+            astgen.compute_stage = inst;
+        },
+        .vertex => {
+            if (astgen.vertex_stage != .none) {
+                try astgen.errors.add(node_loc, "multiple vertex entry point found", .{}, null);
+                return error.AnalysisFail;
+            }
+            astgen.vertex_stage = inst;
+        },
+        .fragment => {
+            if (astgen.fragment_stage != .none) {
+                try astgen.errors.add(node_loc, "multiple fragment entry point found", .{}, null);
+                return error.AnalysisFail;
+            }
+            astgen.fragment_stage = inst;
+        },
     }
 
     return inst;
