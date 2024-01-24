@@ -546,7 +546,10 @@ fn emitFnVars(spv: *SpirV, section: *Section, statements: RefIndex) !void {
                     try spv.emitFnVars(section, if_body);
                     if (@"if".@"else" != .none) {
                         switch (spv.air.getInst(@"if".@"else")) {
-                            .@"if" => if_idx = @"if".@"else",
+                            .@"if" => {
+                                if_idx = @"if".@"else";
+                                continue;
+                            },
                             .block => |block| return spv.emitFnVars(section, block),
                             else => unreachable,
                         }
@@ -1751,6 +1754,17 @@ fn emitBinary(
 
 fn emitUnary(spv: *SpirV, section: *Section, unary: Inst.Unary) !IdRef {
     switch (unary.op) {
+        .not => {
+            const id = spv.allocId();
+            const expr = try spv.emitExpr(section, unary.expr);
+            const result_type = try spv.emitType(unary.result_type);
+            try section.emit(.OpNot, .{
+                .id_result_type = result_type,
+                .id_result = id,
+                .operand = expr,
+            });
+            return id;
+        },
         .negate => {
             const id = spv.allocId();
             const expr = try spv.emitExpr(section, unary.expr);

@@ -1113,6 +1113,7 @@ pub const ShaderModule = struct {
             allocator,
             module.air,
             .glsl,
+            true,
             .{ .emit_source_file = "" },
             .{ .name = entrypoint, .stage = stage },
             bindings,

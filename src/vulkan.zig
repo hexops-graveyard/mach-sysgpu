@@ -1871,7 +1871,7 @@ pub const ShaderModule = struct {
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const vk_device = device.vk_device;
 
-        const code = try shader.CodeGen.generate(allocator, air, .spirv, .{ .emit_source_file = "" }, null, null);
+        const code = try shader.CodeGen.generate(allocator, air, .spirv, true, .{ .emit_source_file = "" }, null, null);
         defer allocator.free(code);
 
         const vk_shader_module = try vkd.createShaderModule(vk_device, &vk.ShaderModuleCreateInfo{

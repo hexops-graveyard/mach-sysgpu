@@ -251,8 +251,8 @@ pub const DefaultPipelineLayoutDescriptor = struct {
                     continue;
 
                 const var_type = air.getInst(var_inst.type);
-                const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.constExpr);
-                const binding: u32 = @intCast(air.resolveInt(var_inst.binding) orelse return error.constExpr);
+                const group: u32 = @intCast(air.resolveInt(var_inst.group) orelse return error.ConstExpr);
+                const binding: u32 = @intCast(air.resolveInt(var_inst.binding) orelse return error.ConstExpr);
 
                 var entry: sysgpu.BindGroupLayout.Entry = .{ .binding = binding, .visibility = stage };
                 switch (var_type) {
