@@ -459,6 +459,8 @@ pub const Device = struct {
     streaming_manager: StreamingManager = undefined,
     submit_objects: std.ArrayListUnmanaged(SubmitObject) = .{},
     map_callbacks: std.ArrayListUnmanaged(MapCallback) = .{},
+    /// Supported Depth-Stencil formats
+    supported_ds_formats: std.AutoHashMapUnmanaged(vk.Format, void),
 
     lost_cb: ?sysgpu.Device.LostCallback = null,
     lost_cb_userdata: ?*anyopaque = null,
@@ -561,6 +563,14 @@ pub const Device = struct {
         const vk_device = try vki.createDevice(adapter.physical_device, &create_info, null);
         vkd = try proc.loadDevice(vk_device, vki.dispatch.vkGetDeviceProcAddr);
 
+        var supported_ds_formats = std.AutoHashMapUnmanaged(vk.Format, void){};
+        for ([_]vk.Format{ .d24_unorm_s8_uint, .s8_uint }) |format| {
+            const properties = vki.getPhysicalDeviceFormatProperties(adapter.physical_device, format);
+            if (properties.optimal_tiling_features.depth_stencil_attachment_bit) {
+                try supported_ds_formats.put(allocator, format, {});
+            }
+        }
+
         const cmd_pool = try vkd.createCommandPool(vk_device, &.{
             .queue_family_index = adapter.queue_family,
             .flags = .{ .reset_command_buffer_bit = true },
@@ -574,6 +584,7 @@ pub const Device = struct {
             .vk_device = vk_device,
             .cmd_pool = cmd_pool,
             .memory_allocator = memory_allocator,
+            .supported_ds_formats = supported_ds_formats,
         };
         device.streaming_manager = try StreamingManager.init(device);
         errdefer device.streaming_manager.deinit();
@@ -599,6 +610,7 @@ pub const Device = struct {
             vkd.destroyRenderPass(vk_device, render_pass.*, null);
         }
         device.render_passes.deinit(allocator);
+        device.supported_ds_formats.deinit(allocator);
 
         vkd.destroyCommandPool(vk_device, device.cmd_pool, null);
         if (device.queue) |*queue| queue.manager.release();
@@ -972,7 +984,7 @@ pub const SwapChain = struct {
             break :blk vk.CompositeAlphaFlagsKHR{};
         };
         const image_count = @max(capabilities.min_image_count + 1, capabilities.max_image_count);
-        const format = conv.vulkanFormat(desc.format);
+        const format = conv.vulkanFormat(device, desc.format);
         const extent = vk.Extent2D{
             .width = std.math.clamp(
                 desc.width,
@@ -1306,7 +1318,7 @@ pub const Texture = struct {
         const vk_image = try vkd.createImage(vk_device, &.{
             .flags = conv.vulkanImageCreateFlags(cube_compatible, desc.view_format_count),
             .image_type = conv.vulkanImageType(desc.dimension),
-            .format = conv.vulkanFormat(desc.format),
+            .format = conv.vulkanFormat(device, desc.format),
             .extent = .{ .width = extent.width, .height = extent.height, .depth = extent.depth },
             .mip_levels = desc.mip_level_count,
             .array_layers = extent.array_count,
@@ -1428,7 +1440,7 @@ pub const TextureView = struct {
         const format = if (desc.format != .undefined) desc.format else texture.format;
         const dimension = if (desc.dimension != .dimension_undefined) desc.dimension else texture_dimension;
 
-        const vk_format = conv.vulkanFormat(format);
+        const vk_format = conv.vulkanFormat(texture.device, format);
 
         const vk_view = try vkd.createImageView(vk_device, &.{
             .image = texture.image,
@@ -2093,7 +2105,7 @@ pub const RenderPipeline = struct {
                     },
                 };
                 rp_key.colors.appendAssumeCapacity(.{
-                    .format = conv.vulkanFormat(target.format),
+                    .format = conv.vulkanFormat(device, target.format),
                     .samples = desc.multisample.count,
                     .load_op = .clear,
                     .store_op = .store,
@@ -2156,7 +2168,7 @@ pub const RenderPipeline = struct {
             };
 
             rp_key.depth_stencil = .{
-                .format = conv.vulkanFormat(ds.format),
+                .format = conv.vulkanFormat(device, ds.format),
                 .samples = desc.multisample.count,
                 .depth_load_op = .load,
                 .depth_store_op = .store,
