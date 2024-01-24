@@ -3502,9 +3502,9 @@ const MemoryAllocator = struct {
             const heap_size = mem_heaps[mem_type.heap_index].size;
             const candidate = switch (mem_kind) {
                 .lazily_allocated => flags.lazily_allocated_bit,
-                .linear_write_mappable => flags.host_visible_bit and flags.host_coherent_bit,
+                .linear_write_mappable => flags.host_visible_bit and flags.host_coherent_bit and !flags.device_coherent_bit_amd,
                 .linear_read_mappable => blk: {
-                    if (flags.host_visible_bit and flags.host_coherent_bit) {
+                    if (flags.host_visible_bit and flags.host_coherent_bit and !flags.device_coherent_bit_amd) {
                         if (best_type) |best| {
                             if (mem_types[best].property_flags.host_cached_bit) {
                                 if (flags.host_cached_bit) {
@@ -3526,7 +3526,7 @@ const MemoryAllocator = struct {
                 .linear => blk: {
                     if (best_type) |best| {
                         if (mem_types[best].property_flags.device_local_bit) {
-                            if (flags.device_local_bit) {
+                            if (flags.device_local_bit and !flags.device_coherent_bit_amd) {
                                 const best_heap_size = mem_heaps[mem_types[best].heap_index].size;
                                 if (heap_size > best_heap_size or flags.host_visible_bit) {
                                     break :blk true;
