@@ -44,26 +44,6 @@ struct ObjectParams {
     return output;
 }
 
-@fragment fn frag_main(
-     @location(0) position : vec3<f32>,
-     @location(1) normal: vec3<f32> 
-) -> @location(0) vec4<f32> {
-    var N : vec3<f32> = normalize(normal);
-    var V : vec3<f32> = normalize(ubo.camPos - position);
-    var Lo = vec3<f32>(0.0);
-    // Specular contribution
-    for(var i: i32 = 0; i < 4; i++) {
-        var L : vec3<f32> = normalize(uboParams.lights[i].xyz - position);
-        Lo += BRDF(L, V, N, material.metallic, material.roughness);
-    }
-    // Combine with ambient
-    var color : vec3<f32> = material_color() * 0.02;
-    color += Lo;
-    // Gamma correct
-    color = pow(color, vec3<f32>(0.4545));
-    return vec4<f32>(color, 1.0);
-}
-
 const PI : f32 = 3.14159265359;
 
 fn material_color() -> vec3<f32> {
@@ -115,4 +95,25 @@ fn BRDF(L : vec3<f32>, V : vec3<f32>, N : vec3<f32>, metallic : f32, roughness :
         color += spec * dotNL * lightColor;
     }
     return color;
+}
+
+// TODO - global variable declaration order
+@fragment fn frag_main(
+     @location(0) position : vec3<f32>,
+     @location(1) normal: vec3<f32> 
+) -> @location(0) vec4<f32> {
+    var N : vec3<f32> = normalize(normal);
+    var V : vec3<f32> = normalize(ubo.camPos - position);
+    var Lo = vec3<f32>(0.0);
+    // Specular contribution
+    for(var i: i32 = 0; i < 4; i++) {
+        var L : vec3<f32> = normalize(uboParams.lights[i].xyz - position);
+        Lo += BRDF(L, V, N, material.metallic, material.roughness);
+    }
+    // Combine with ambient
+    var color : vec3<f32> = material_color() * 0.02;
+    color += Lo;
+    // Gamma correct
+    color = pow(color, vec3<f32>(0.4545));
+    return vec4<f32>(color, 1.0);
 }

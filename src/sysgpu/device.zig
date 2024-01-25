@@ -201,11 +201,55 @@ pub const Device = opaque {
     pub inline fn createShaderModuleWGSL(
         device: *Device,
         label: ?[*:0]const u8,
-        wgsl_code: [*:0]const u8,
+        code: [*:0]const u8,
     ) *ShaderModule {
         return device.createShaderModule(&ShaderModule.Descriptor{
-            .next_in_chain = .{ .wgsl_descriptor = &.{
-                .code = wgsl_code,
+            .next_in_chain = .{ .wgsl_descriptor = &.{ .code = code } },
+            .label = label,
+        });
+    }
+
+    /// Helper to make createShaderModule invocations slightly nicer.
+    pub inline fn createShaderModuleSpirV(
+        device: *Device,
+        label: ?[*:0]const u8,
+        code: [*]const u32,
+        code_size: u32,
+    ) *ShaderModule {
+        return device.createShaderModule(&ShaderModule.Descriptor{
+            .next_in_chain = .{ .spirv_descriptor = &.{
+                .code_size = code_size,
+                .code = code,
+            } },
+            .label = label,
+        });
+    }
+
+    /// Helper to make createShaderModule invocations slightly nicer.
+    pub inline fn createShaderModuleHLSL(
+        device: *Device,
+        label: ?[*:0]const u8,
+        code: []const u8,
+    ) *ShaderModule {
+        return device.createShaderModule(&ShaderModule.Descriptor{
+            .next_in_chain = .{ .hlsl_descriptor = &.{
+                .code = code.ptr,
+                .code_size = code.len,
+            } },
+            .label = label,
+        });
+    }
+
+    /// Helper to make createShaderModule invocations slightly nicer.
+    pub inline fn createShaderModuleMSL(
+        device: *Device,
+        label: ?[*:0]const u8,
+        code: []const u8,
+    ) *ShaderModule {
+        return device.createShaderModule(&ShaderModule.Descriptor{
+            .next_in_chain = .{ .msl_descriptor = &.{
+                .code = code.ptr,
+                .code_size = code.len,
             } },
             .label = label,
         });

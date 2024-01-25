@@ -237,7 +237,23 @@ pub const Device = struct {
         return ShaderModule.initAir(device, air);
     }
 
-    pub fn createShaderModuleSpirv(device: *Device, code: []const u8) !*ShaderModule {
+    pub fn createShaderModuleSpirv(device: *Device, code: [*]const u32, code_size: u32) !*ShaderModule {
+        _ = code;
+        _ = code_size;
+        _ = device;
+        return error.unsupported;
+    }
+
+    pub fn createShaderModuleHLSL(device: *Device, code: []const u8) !*ShaderModule {
+        const module = try allocator.create(ShaderModule);
+        module.* = .{
+            .device = device,
+            .code = .{ .code = code },
+        };
+        return module;
+    }
+
+    pub fn createShaderModuleMSL(device: *Device, code: []const u8) !*ShaderModule {
         _ = code;
         _ = device;
         return error.unsupported;
@@ -956,20 +972,25 @@ pub const PipelineLayout = struct {
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     device: *Device,
-    air: *shader.Air,
+    code: union(enum) {
+        code: []const u8,
+        air: *shader.Air,
+    },
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const module = try allocator.create(ShaderModule);
         module.* = .{
             .device = device,
-            .air = air,
+            .code = .{ .air = air },
         };
         return module;
     }
 
     pub fn deinit(module: *ShaderModule) void {
-        module.air.deinit(allocator);
-        allocator.destroy(module.air);
+        if (module.code == .air) {
+            module.code.air.deinit(allocator);
+            allocator.destroy(module.code.air);
+        }
         allocator.destroy(module);
     }
 
@@ -985,16 +1006,19 @@ pub const ShaderModule = struct {
 
         const mtl_device = module.device.mtl_device;
 
-        const code = try shader.CodeGen.generate(
-            allocator,
-            module.air,
-            .msl,
-            false,
-            .{ .emit_source_file = "" },
-            .{ .name = entrypoint, .stage = stage },
-            bindings,
-        );
-        defer allocator.free(code);
+        const code = switch (module.code) {
+            .air => |air| try shader.CodeGen.generate(
+                allocator,
+                air,
+                .msl,
+                false,
+                .{ .emit_source_file = "" },
+                .{ .name = entrypoint, .stage = stage },
+                bindings,
+            ),
+            .code => |code| code,
+        };
+        defer if (module.code == .air) allocator.free(code);
 
         const ns_code = ns.String.alloc().initWithBytesNoCopy_length_encoding_freeWhenDone(
             @constCast(code.ptr),
@@ -1018,7 +1042,10 @@ pub const ShaderModule = struct {
     }
 
     pub fn getThreadgroupSize(shader_module: *ShaderModule, entry_point: [*:0]const u8) !mtl.Size {
-        const air = shader_module.air;
+        // TODO
+        if (shader_module.code != .air) return mtl.Size.init(@intCast(1), @intCast(1), @intCast(1));
+
+        const air = shader_module.code.air;
         if (air.findFunction(std.mem.span(entry_point))) |fn_inst| {
             switch (fn_inst.stage) {
                 .compute => |workgroup_size| {
@@ -1062,12 +1089,17 @@ pub const ComputePipeline = struct {
         if (desc.layout) |layout_raw| {
             layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
-        } else {
+        } else if (compute_module.code == .air) {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
             defer layout_desc.deinit();
 
-            try layout_desc.addFunction(compute_module.air, .{ .compute = true }, desc.compute.entry_point);
+            try layout_desc.addFunction(compute_module.code.air, .{ .compute = true }, desc.compute.entry_point);
             layout = try PipelineLayout.initDefault(device, layout_desc);
+        } else {
+            @panic(
+                \\Cannot create pipeline descriptor autoamtically.
+                \\Please provide it yourself or write the shader in WGSL.
+            );
         }
         errdefer layout.manager.release();
 
@@ -1146,16 +1178,28 @@ pub const RenderPipeline = struct {
         if (desc.layout) |layout_raw| {
             layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
-        } else {
+        } else if (vertex_module.code == .air) {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
             defer layout_desc.deinit();
 
-            try layout_desc.addFunction(vertex_module.air, .{ .vertex = true }, desc.vertex.entry_point);
+            try layout_desc.addFunction(vertex_module.code.air, .{ .vertex = true }, desc.vertex.entry_point);
             if (desc.fragment) |frag| {
                 const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
-                try layout_desc.addFunction(frag_module.air, .{ .fragment = true }, frag.entry_point);
+                if (frag_module.code == .air) {
+                    try layout_desc.addFunction(frag_module.code.air, .{ .fragment = true }, frag.entry_point);
+                } else {
+                    @panic(
+                        \\Cannot create pipeline descriptor autoamtically.
+                        \\Please provide it yourself or write the shader in WGSL.
+                    );
+                }
             }
             layout = try PipelineLayout.initDefault(device, layout_desc);
+        } else {
+            @panic(
+                \\Cannot create pipeline descriptor autoamtically.
+                \\Please provide it yourself or write the shader in WGSL.
+            );
         }
         errdefer layout.manager.release();
 
