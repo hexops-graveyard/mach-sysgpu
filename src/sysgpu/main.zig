@@ -470,6 +470,8 @@ pub const SType = enum(u32) {
     shared_fence_dxgi_shared_handle_export_info = 0x000004BB,
     shared_fence_mtl_shared_event_descriptor = 0x000004BC,
     shared_fence_mtl_shared_event_export_info = 0x000004BD,
+    shader_module_hlsl_descriptor = 0x000004BE,
+    shader_module_msl_descriptor = 0x000004BF,
 };
 
 pub const StencilOperation = enum(u32) {

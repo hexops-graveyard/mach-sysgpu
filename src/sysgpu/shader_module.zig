@@ -11,6 +11,8 @@ pub const ShaderModule = opaque {
             generic: ?*const ChainedStruct,
             spirv_descriptor: ?*const SPIRVDescriptor,
             wgsl_descriptor: ?*const WGSLDescriptor,
+            hlsl_descriptor: ?*const HLSLDescriptor,
+            msl_descriptor: ?*const MSLDescriptor,
             dawn_shader_module_spirv_options_descriptor: ?*const dawn.ShaderModuleSPIRVOptionsDescriptor,
         };
 
@@ -27,6 +29,18 @@ pub const ShaderModule = opaque {
     pub const WGSLDescriptor = extern struct {
         chain: ChainedStruct = .{ .next = null, .s_type = .shader_module_wgsl_descriptor },
         code: [*:0]const u8,
+    };
+
+    pub const HLSLDescriptor = extern struct {
+        chain: ChainedStruct = .{ .next = null, .s_type = .shader_module_hlsl_descriptor },
+        code: [*]const u8,
+        code_size: u32,
+    };
+
+    pub const MSLDescriptor = extern struct {
+        chain: ChainedStruct = .{ .next = null, .s_type = .shader_module_msl_descriptor },
+        code: [*]const u8,
+        code_size: u32,
     };
 
     pub inline fn getCompilationInfo(

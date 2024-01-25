@@ -547,8 +547,13 @@ pub const Impl = sysgpu.Interface(struct {
             const shader_module = device.createShaderModuleAir(air) catch @panic("api error");
             return @ptrCast(shader_module);
         } else if (utils.findChained(sysgpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
-            const output = std.mem.sliceAsBytes(spirv_descriptor.code[0..spirv_descriptor.code_size]);
-            const shader_module = device.createShaderModuleSpirv(output) catch @panic("api error");
+            const shader_module = device.createShaderModuleSpirv(spirv_descriptor.code, spirv_descriptor.code_size) catch @panic("api error");
+            return @ptrCast(shader_module);
+        } else if (utils.findChained(sysgpu.ShaderModule.HLSLDescriptor, descriptor.next_in_chain.generic)) |hlsl_descriptor| {
+            const shader_module = device.createShaderModuleHLSL(hlsl_descriptor.code[0..hlsl_descriptor.code_size]) catch @panic("api error");
+            return @ptrCast(shader_module);
+        } else if (utils.findChained(sysgpu.ShaderModule.MSLDescriptor, descriptor.next_in_chain.generic)) |msl_descriptor| {
+            const shader_module = device.createShaderModuleMSL(msl_descriptor.code[0..msl_descriptor.code_size]) catch @panic("api error");
             return @ptrCast(shader_module);
         }
 

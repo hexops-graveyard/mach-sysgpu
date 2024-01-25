@@ -658,8 +658,27 @@ pub const Device = struct {
         return ShaderModule.initAir(device, air);
     }
 
-    pub fn createShaderModuleSpirv(device: *Device, code: []const u8) !*ShaderModule {
-        // default layouts currently need AIR
+    pub fn createShaderModuleSpirv(device: *Device, code: [*]const u32, code_size: u32) !*ShaderModule {
+        const vk_shader_module = try vkd.createShaderModule(device.vk_device, &vk.ShaderModuleCreateInfo{
+            .code_size = code_size,
+            .p_code = code,
+        }, null);
+
+        const module = try allocator.create(ShaderModule);
+        module.* = .{
+            .device = device,
+            .vk_shader_module = vk_shader_module,
+        };
+        return module;
+    }
+
+    pub fn createShaderModuleHLSL(device: *Device, code: []const u8) !*ShaderModule {
+        _ = code;
+        _ = device;
+        return error.unsupported;
+    }
+
+    pub fn createShaderModuleMSL(device: *Device, code: []const u8) !*ShaderModule {
         _ = code;
         _ = device;
         return error.unsupported;
@@ -1866,7 +1885,7 @@ pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     device: *Device,
     vk_shader_module: vk.ShaderModule,
-    air: *shader.Air,
+    air: ?*shader.Air = null,
 
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const vk_device = device.vk_device;
@@ -1893,8 +1912,10 @@ pub const ShaderModule = struct {
         const vk_device = module.device.vk_device;
 
         vkd.destroyShaderModule(vk_device, module.vk_shader_module, null);
-        module.air.deinit(allocator);
-        allocator.destroy(module.air);
+        if (module.air) |air| {
+            air.deinit(allocator);
+            allocator.destroy(air);
+        }
         allocator.destroy(module);
     }
 };
@@ -1916,12 +1937,17 @@ pub const ComputePipeline = struct {
         if (desc.layout) |layout_raw| {
             layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
-        } else {
+        } else if (compute_module.air) |air| {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
             defer layout_desc.deinit();
 
-            try layout_desc.addFunction(compute_module.air, .{ .compute = true }, desc.compute.entry_point);
+            try layout_desc.addFunction(air, .{ .compute = true }, desc.compute.entry_point);
             layout = try PipelineLayout.initDefault(device, layout_desc);
+        } else {
+            @panic(
+                \\Cannot create pipeline descriptor autoamtically.
+                \\Please provide it yourself or write the shader in WGSL.
+            );
         }
         errdefer layout.manager.release();
 
@@ -2065,17 +2091,30 @@ pub const RenderPipeline = struct {
         if (desc.layout) |layout_raw| {
             layout = @ptrCast(@alignCast(layout_raw));
             layout.manager.reference();
-        } else {
+        } else if (vertex_module.air) |vertex_air| {
             var layout_desc = utils.DefaultPipelineLayoutDescriptor.init(allocator);
             defer layout_desc.deinit();
 
-            try layout_desc.addFunction(vertex_module.air, .{ .vertex = true }, desc.vertex.entry_point);
+            try layout_desc.addFunction(vertex_air, .{ .vertex = true }, desc.vertex.entry_point);
             if (desc.fragment) |frag| {
                 const frag_module: *ShaderModule = @ptrCast(@alignCast(frag.module));
-                try layout_desc.addFunction(frag_module.air, .{ .fragment = true }, frag.entry_point);
+                if (frag_module.air) |frag_air| {
+                    try layout_desc.addFunction(frag_air, .{ .fragment = true }, frag.entry_point);
+                } else {
+                    @panic(
+                        \\Cannot create pipeline descriptor autoamtically.
+                        \\Please provide it yourself or write the shader in WGSL.
+                    );
+                }
             }
             layout = try PipelineLayout.initDefault(device, layout_desc);
+        } else {
+            @panic(
+                \\Cannot create pipeline descriptor autoamtically.
+                \\Please provide it yourself or write the shader in WGSL.
+            );
         }
+
         errdefer layout.manager.release();
 
         var blend_attachments: []vk.PipelineColorBlendAttachmentState = &.{};
