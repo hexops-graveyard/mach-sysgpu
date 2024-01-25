@@ -420,8 +420,6 @@ pub const Device = struct {
         device.queue.waitUntil(device.queue.fence_value);
         device.processQueuedOperations();
 
-        device.mem_allocator.deinit();
-
         device.map_callbacks.deinit(allocator);
         device.reference_trackers.deinit(allocator);
         device.streaming_manager.deinit();
@@ -431,6 +429,9 @@ pub const Device = struct {
         device.sampler_heap.deinit();
         device.general_heap.deinit();
         device.queue.manager.release();
+
+        device.mem_allocator.deinit();
+
         allocator.destroy(device.queue);
         allocator.destroy(device);
     }
