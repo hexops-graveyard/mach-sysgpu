@@ -289,7 +289,7 @@ fn expectCodegen(
         const out = try CodeGen.generate(allocator, &ir, lang, .{}, entry_point, &empty_bindings);
         defer allocator.free(out);
 
-        try std.fs.cwd().writeFile("zig-out/shader/" ++ entry_point.name ++ "-" ++ file_name, out);
+        try std.fs.cwd().writeFile("zig-out/shader/" ++ @tagName(entry_point.stage) ++ "-" ++ file_name, out);
     }
     if (entry_points.len == 0) {
         const out = try CodeGen.generate(allocator, &ir, lang, .{}, null, null);
