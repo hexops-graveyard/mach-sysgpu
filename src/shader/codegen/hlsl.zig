@@ -395,8 +395,11 @@ fn emitFragmentReturnType(hlsl: *Hlsl, inst_idx: InstIndex) !void {
 }
 
 fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
-    if (inst.stage == .fragment)
-        try hlsl.emitFragmentReturnStruct(inst.return_type);
+    if (inst.return_type != .none) {
+        if (inst.stage == .fragment) {
+            try hlsl.emitFragmentReturnStruct(inst.return_type);
+        }
+    }
 
     switch (inst.stage) {
         .compute => |workgroup_size| {
@@ -409,11 +412,16 @@ fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
         else => {},
     }
 
-    if (inst.stage == .fragment) {
-        try hlsl.emitFragmentReturnType(inst.return_type);
+    if (inst.return_type != .none) {
+        if (inst.stage == .fragment) {
+            try hlsl.emitFragmentReturnType(inst.return_type);
+        } else {
+            try hlsl.emitType(inst.return_type);
+        }
     } else {
-        try hlsl.emitType(inst.return_type);
+        try hlsl.writeAll("void");
     }
+
     try hlsl.writeAll(" ");
     if (inst.stage != .none) {
         try hlsl.writeEntrypoint(inst.name);
@@ -1066,17 +1074,28 @@ fn emitCall(hlsl: *Hlsl, inst: Inst.FnCall) !void {
 
 fn emitTextureSample(hlsl: *Hlsl, inst: Inst.TextureSample) !void {
     try hlsl.emitExpr(inst.texture);
-    if (inst.level != .none) {
-        try hlsl.writeAll(".SampleLevel(");
-    } else {
-        try hlsl.writeAll(".Sample("); // TODO
+
+    switch (inst.operands) {
+        .none => try hlsl.writeAll(".Sample("), // TODO
+        .level => try hlsl.writeAll(".SampleLevel("),
+        .grad => try hlsl.writeAll(".SampleGrad("),
     }
+
     try hlsl.emitExpr(inst.sampler);
     try hlsl.writeAll(", ");
     try hlsl.emitExpr(inst.coords);
-    if (inst.level != .none) {
-        try hlsl.writeAll(", ");
-        try hlsl.emitExpr(inst.level);
+    switch (inst.operands) {
+        .none => {},
+        .level => |level| {
+            try hlsl.writeAll(", ");
+            try hlsl.emitExpr(level);
+        },
+        .grad => |grad| {
+            try hlsl.writeAll(", ");
+            try hlsl.emitExpr(grad.dpdx);
+            try hlsl.writeAll(", ");
+            try hlsl.emitExpr(grad.dpdy);
+        },
     }
     try hlsl.writeAll(")");
 
