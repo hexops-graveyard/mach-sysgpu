@@ -41,7 +41,10 @@ pub const ShaderModule = opaque {
         chain: ChainedStruct = .{ .next = null, .s_type = .shader_module_msl_descriptor },
         code: [*]const u8,
         code_size: u32,
+        workgroup_size: WorkgroupSize,
     };
+
+    pub const WorkgroupSize = extern struct { x: u32 = 1, y: u32 = 1, z: u32 = 1 };
 
     pub inline fn getCompilationInfo(
         shader_module: *ShaderModule,

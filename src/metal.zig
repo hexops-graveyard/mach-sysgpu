@@ -245,18 +245,22 @@ pub const Device = struct {
     }
 
     pub fn createShaderModuleHLSL(device: *Device, code: []const u8) !*ShaderModule {
-        const module = try allocator.create(ShaderModule);
-        module.* = .{
-            .device = device,
-            .code = .{ .code = code },
-        };
-        return module;
-    }
-
-    pub fn createShaderModuleMSL(device: *Device, code: []const u8) !*ShaderModule {
         _ = code;
         _ = device;
         return error.unsupported;
+    }
+
+    pub fn createShaderModuleMSL(
+        device: *Device,
+        code: []const u8,
+        workgroup_size: sysgpu.ShaderModule.WorkgroupSize,
+    ) !*ShaderModule {
+        const module = try allocator.create(ShaderModule);
+        module.* = .{
+            .device = device,
+            .code = .{ .metal = .{ .code = code, .workgroup_size = workgroup_size } },
+        };
+        return module;
     }
 
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {
@@ -973,7 +977,10 @@ pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     device: *Device,
     code: union(enum) {
-        code: []const u8,
+        metal: struct {
+            code: []const u8,
+            workgroup_size: sysgpu.ShaderModule.WorkgroupSize,
+        },
         air: *shader.Air,
     },
 
@@ -1016,7 +1023,7 @@ pub const ShaderModule = struct {
                 .{ .name = entrypoint, .stage = stage },
                 bindings,
             ),
-            .code => |code| code,
+            .metal => |metal| metal.code,
         };
         defer if (module.code == .air) allocator.free(code);
 
@@ -1042,24 +1049,29 @@ pub const ShaderModule = struct {
     }
 
     pub fn getThreadgroupSize(shader_module: *ShaderModule, entry_point: [*:0]const u8) !mtl.Size {
-        // TODO
-        if (shader_module.code != .air) return mtl.Size.init(@intCast(1), @intCast(1), @intCast(1));
+        switch (shader_module.code) {
+            .metal => |metal| return mtl.Size.init(
+                metal.workgroup_size.x,
+                metal.workgroup_size.y,
+                metal.workgroup_size.z,
+            ),
+            .air => |air| {
+                if (air.findFunction(std.mem.span(entry_point))) |fn_inst| {
+                    switch (fn_inst.stage) {
+                        .compute => |workgroup_size| {
+                            return mtl.Size.init(
+                                @intCast(air.resolveInt(workgroup_size.x) orelse 1),
+                                @intCast(air.resolveInt(workgroup_size.y) orelse 1),
+                                @intCast(air.resolveInt(workgroup_size.z) orelse 1),
+                            );
+                        },
+                        else => {},
+                    }
+                }
 
-        const air = shader_module.code.air;
-        if (air.findFunction(std.mem.span(entry_point))) |fn_inst| {
-            switch (fn_inst.stage) {
-                .compute => |workgroup_size| {
-                    return mtl.Size.init(
-                        @intCast(air.resolveInt(workgroup_size.x) orelse 1),
-                        @intCast(air.resolveInt(workgroup_size.y) orelse 1),
-                        @intCast(air.resolveInt(workgroup_size.z) orelse 1),
-                    );
-                },
-                else => {},
-            }
+                return error.UnknownThreadgroupSize;
+            },
         }
-
-        return error.unknownThreadgroupSize;
     }
 };
 
