@@ -76,7 +76,7 @@ pub fn generate(
         );
         switch (res) {
             c.SPV_SUCCESS => {},
-            else => return error.spvOptimizerFailed,
+            else => return error.SpvOptimizerFailed,
         }
 
         if (out_lang == .spirv) {
