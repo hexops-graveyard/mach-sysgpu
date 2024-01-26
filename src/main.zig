@@ -553,7 +553,10 @@ pub const Impl = sysgpu.Interface(struct {
             const shader_module = device.createShaderModuleHLSL(hlsl_descriptor.code[0..hlsl_descriptor.code_size]) catch @panic("api error");
             return @ptrCast(shader_module);
         } else if (utils.findChained(sysgpu.ShaderModule.MSLDescriptor, descriptor.next_in_chain.generic)) |msl_descriptor| {
-            const shader_module = device.createShaderModuleMSL(msl_descriptor.code[0..msl_descriptor.code_size]) catch @panic("api error");
+            const shader_module = device.createShaderModuleMSL(
+                msl_descriptor.code[0..msl_descriptor.code_size],
+                msl_descriptor.workgroup_size,
+            ) catch @panic("api error");
             return @ptrCast(shader_module);
         }
 

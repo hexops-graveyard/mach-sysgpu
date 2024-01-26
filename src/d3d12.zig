@@ -486,9 +486,14 @@ pub const Device = struct {
         return module;
     }
 
-    pub fn createShaderModuleMSL(device: *Device, code: []const u8) !*ShaderModule {
+    pub fn createShaderModuleMSL(
+        device: *Device,
+        code: []const u8,
+        workgroup_size: sysgpu.ShaderModule.WorkgroupSize,
+    ) !*ShaderModule {
         _ = code;
         _ = device;
+        _ = workgroup_size;
         return error.unsupported;
     }
 
