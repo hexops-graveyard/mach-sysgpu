@@ -346,7 +346,7 @@ pub fn resolveConstExpr(air: Air, inst_idx: InstIndex) ?ConstExpr {
             return lhs;
         },
         .var_ref => |var_ref| return air.resolveConstExpr(var_ref),
-        .@"const" => |@"const"| return air.resolveConstExpr(@"const".expr).?,
+        .@"const" => |@"const"| return air.resolveConstExpr(@"const".init).?,
         inline .index_access, .field_access, .swizzle_access => |access| return air.resolveConstExpr(access.base),
         else => return null,
     }
@@ -446,7 +446,7 @@ pub const Inst = union(enum) {
     pub const Var = struct {
         name: StringIndex,
         type: InstIndex,
-        expr: InstIndex, // TODO: rename to `init`
+        init: InstIndex,
         addr_space: PointerType.AddressSpace,
         access_mode: PointerType.AccessMode,
         binding: InstIndex = .none,
@@ -457,7 +457,7 @@ pub const Inst = union(enum) {
     pub const Const = struct {
         name: StringIndex,
         type: InstIndex,
-        expr: InstIndex, // TODO: rename to `init`
+        init: InstIndex,
     };
 
     pub const Fn = struct {
@@ -568,7 +568,7 @@ pub const Inst = union(enum) {
         };
 
         pub const Value = union(enum) {
-            literal: i64, // TODO: make this i33 once https://github.com/ziglang/zig/issues/16390 is fixed
+            literal: i33,
             cast: ScalarCast,
         };
     };

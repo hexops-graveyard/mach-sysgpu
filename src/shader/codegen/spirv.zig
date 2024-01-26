@@ -863,7 +863,7 @@ fn emitConst(spv: *SpirV, section: *Section, inst_idx: InstIndex) !IdRef {
     if (spv.decl_map.get(inst_idx)) |decl| return decl.id;
 
     const inst = spv.air.getInst(inst_idx).@"const";
-    const id = try spv.emitExpr(section, inst.expr);
+    const id = try spv.emitExpr(section, inst.init);
     const type_id = try spv.emitType(inst.type);
     try spv.debugName(id, spv.air.getStr(inst.name));
 
@@ -965,10 +965,10 @@ fn emitStatement(spv: *SpirV, section: *Section, inst_idx: InstIndex) error{OutO
     switch (spv.air.getInst(inst_idx)) {
         inline .@"var", .@"const" => |@"var"| {
             const var_id = spv.decl_map.get(inst_idx).?.id;
-            if (@"var".expr != .none) {
+            if (@"var".init != .none) {
                 try section.emit(.OpStore, .{
                     .pointer = var_id,
-                    .object = try spv.emitExpr(section, @"var".expr),
+                    .object = try spv.emitExpr(section, @"var".init),
                 });
             }
         },
@@ -2475,7 +2475,7 @@ const Key = union(enum) {
 
     const Int = struct {
         type: Inst.Int.Type,
-        value: i64,
+        value: i33,
     };
 
     const Float = struct {

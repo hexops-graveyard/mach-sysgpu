@@ -68,7 +68,7 @@ pub fn gen(
             .@"struct" => |inst| try msl.emitStruct(inst_idx, inst),
             .@"const" => |inst| try msl.emitGlobalConst(inst),
             .@"var" => {},
-            else => |inst| try msl.print("TopLevel: {}\n", .{inst}), // TODO
+            else => unreachable,
         }
     }
 
@@ -232,14 +232,14 @@ fn emitBuiltin(msl: *Msl, builtin: Builtin) !void {
 }
 
 fn emitGlobalConst(msl: *Msl, inst: Inst.Const) !void {
-    const t = if (inst.type != .none) inst.type else inst.expr;
+    const t = if (inst.type != .none) inst.type else inst.init;
     try msl.writeAll("constant ");
     try msl.emitType(t);
     try msl.writeAll(" ");
     try msl.writeName(inst.name);
     try msl.emitTypeSuffix(inst.type);
     try msl.writeAll(" = ");
-    try msl.emitExpr(inst.expr);
+    try msl.emitExpr(inst.init);
     try msl.writeAll(";\n");
 }
 
@@ -549,27 +549,27 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{ OutOfMemory, ConstExpr }
 }
 
 fn emitVar(msl: *Msl, inst: Inst.Var) !void {
-    const t = if (inst.type != .none) inst.type else inst.expr;
+    const t = if (inst.type != .none) inst.type else inst.init;
     try msl.emitType(t);
     try msl.writeAll(" ");
     try msl.writeName(inst.name);
     try msl.emitTypeSuffix(t);
-    if (inst.expr != .none) {
+    if (inst.init != .none) {
         try msl.writeAll(" = ");
-        try msl.emitExpr(inst.expr);
+        try msl.emitExpr(inst.init);
     }
     try msl.writeAll(";\n");
 }
 
 fn emitConst(msl: *Msl, inst: Inst.Const) !void {
-    const t = if (inst.type != .none) inst.type else inst.expr;
+    const t = if (inst.type != .none) inst.type else inst.init;
     try msl.writeAll("const ");
     try msl.emitType(t);
     try msl.writeAll(" ");
     try msl.writeName(inst.name);
     try msl.emitTypeSuffix(inst.type);
     try msl.writeAll(" = ");
-    try msl.emitExpr(inst.expr);
+    try msl.emitExpr(inst.init);
     try msl.writeAll(";\n");
 }
 
