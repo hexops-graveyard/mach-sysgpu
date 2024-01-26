@@ -174,10 +174,10 @@ pub const Instance = struct {
         if (c.SetPixelFormat(hdc, pixel_format, &pfd) == c.FALSE)
             return error.SetPixelFormatFailed;
 
-        const hglrc = c.wglCreateContext(hdc);
+        const hglrc = c.WGLCreateContext(hdc);
         if (hglrc == null)
-            return error.wglCreateContextFailed;
-        defer _ = c.wglDeleteContext(hglrc);
+            return error.WGLCreateContextFailed;
+        defer _ = c.WGLDeleteContext(hglrc);
 
         // Extension procs
         try proc.init();
@@ -251,7 +251,7 @@ pub const Adapter = struct {
 
         const hglrc = wgl.createContextAttribsARB(hdc, null, &context_attribs);
         if (hglrc == null)
-            return error.wglCreateContextFailed;
+            return error.WGLCreateContextFailed;
 
         var ctx = ActiveContext.init(hdc, hglrc);
         defer ctx.deinit();
@@ -451,7 +451,7 @@ pub const Device = struct {
     pub fn createShaderModuleSpirv(device: *Device, code: []const u8) !*ShaderModule {
         _ = code;
         _ = device;
-        return error.unsupported;
+        return error.Unsupported;
     }
 
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {
@@ -1775,7 +1775,7 @@ pub const CommandBuffer = struct {
                                 default_framebuffer = true;
                                 if (swapchain.hdc != device.hdc) {
                                     if (c.wglMakeCurrent(swapchain.hdc, device.hglrc) == c.FALSE)
-                                        return error.wglMakeCurrentFailed;
+                                        return error.WGLMakeCurrentFailed;
                                 }
                             }
                         }

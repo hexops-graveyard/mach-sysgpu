@@ -241,13 +241,13 @@ pub const Device = struct {
         _ = code;
         _ = code_size;
         _ = device;
-        return error.unsupported;
+        return error.Unsupported;
     }
 
     pub fn createShaderModuleHLSL(device: *Device, code: []const u8) !*ShaderModule {
         _ = code;
         _ = device;
-        return error.unsupported;
+        return error.Unsupported;
     }
 
     pub fn createShaderModuleMSL(
@@ -350,7 +350,7 @@ pub const StreamingManager = struct {
             const mtl_device = manager.device.mtl_device;
 
             const mtl_buffer = mtl_device.newBufferWithLength_options(upload_page_size, mtl.ResourceCPUCacheModeWriteCombined) orelse {
-                return error.newBufferFailed;
+                return error.NewBufferFailed;
             };
 
             mtl_buffer.setLabel(ns.String.stringWithUTF8String("upload"));
@@ -385,7 +385,7 @@ pub const LengthsBuffer = struct {
             mtl_buffer = device.free_lengths_buffers.pop();
         } else {
             mtl_buffer = mtl_device.newBufferWithLength_options(max_buffers_per_stage * @sizeOf(u32), 0) orelse {
-                return error.newBufferFailed;
+                return error.NewBufferFailed;
             };
             mtl_buffer.setLabel(ns.String.stringWithUTF8String("buffer lengths"));
         }
@@ -483,7 +483,7 @@ pub const SwapChain = struct {
         if (swapchain.current_drawable) |_| {
             const queue = try swapchain.device.getQueue();
             const command_buffer = queue.command_queue.commandBuffer() orelse {
-                return error.newCommandBufferFailed;
+                return error.NewCommandBufferFailed;
             };
             command_buffer.presentDrawable(@ptrCast(swapchain.current_drawable)); // TODO - objc casting?
             command_buffer.commit();
@@ -510,7 +510,7 @@ pub const Buffer = struct {
             desc.size,
             conv.metalResourceOptionsForBuffer(desc.usage),
         ) orelse {
-            return error.newBufferFailed;
+            return error.NewBufferFailed;
         };
         errdefer mtl_buffer.release();
 
@@ -614,7 +614,7 @@ pub const Texture = struct {
         mtl_desc.setUsage(conv.metalTextureUsage(desc.usage, desc.view_format_count));
 
         const mtl_texture = mtl_device.newTextureWithDescriptor(mtl_desc) orelse {
-            return error.newTextureFailed;
+            return error.NewTextureFailed;
         };
         errdefer mtl_texture.release();
 
@@ -667,7 +667,7 @@ pub const TextureView = struct {
                 ns.Range.init(view_base_mip_level, view_mip_level_count),
                 ns.Range.init(view_base_array_layer, view_array_layer_count),
             ) orelse {
-                return error.newTextureViewFailed;
+                return error.NewTextureViewFailed;
             };
             if (desc.label) |label| {
                 mtl_texture.setLabel(ns.String.stringWithUTF8String(label));
@@ -725,7 +725,7 @@ pub const Sampler = struct {
             mtl_desc.setLabel(ns.String.stringWithUTF8String(label));
 
         const mtl_sampler = mtl_device.newSamplerStateWithDescriptor(mtl_desc) orelse {
-            return error.newSamplerFailed;
+            return error.NewSamplerFailed;
         };
         errdefer mtl_sampler.release();
 
@@ -1038,13 +1038,13 @@ pub const ShaderModule = struct {
         var err: ?*ns.Error = undefined;
         const library = mtl_device.newLibraryWithSource_options_error(ns_code, null, &err) orelse {
             std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
-            return error.newLibraryFailed;
+            return error.NewLibraryFailed;
         };
         defer library.release();
 
         const mtl_entrypoint = entrypointString(entrypoint);
         return library.newFunctionWithName(ns.String.stringWithUTF8String(mtl_entrypoint)) orelse {
-            return error.newFunctionFailed;
+            return error.NewFunctionFailed;
         };
     }
 
@@ -1133,7 +1133,7 @@ pub const ComputePipeline = struct {
         ) orelse {
             // TODO
             std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
-            return error.newComputePipelineStateFailed;
+            return error.NewComputePipelineStateFailed;
         };
         errdefer mtl_pipeline.release();
 
@@ -1342,7 +1342,7 @@ pub const RenderPipeline = struct {
         const mtl_pipeline = mtl_device.newRenderPipelineStateWithDescriptor_error(mtl_desc, &err) orelse {
             // TODO
             std.log.err("{s}", .{err.?.localizedDescription().UTF8String()});
-            return error.newRenderPipelineStateFailed;
+            return error.NewRenderPipelineStateFailed;
         };
         errdefer mtl_pipeline.release();
 
@@ -1396,7 +1396,7 @@ pub const CommandBuffer = struct {
         const queue = try device.getQueue();
 
         const mtl_command_buffer = queue.command_queue.commandBuffer() orelse {
-            return error.newCommandBufferFailed;
+            return error.NewCommandBufferFailed;
         };
         errdefer mtl_command_buffer.release();
 
@@ -1706,7 +1706,7 @@ pub const CommandEncoder = struct {
         defer mtl_desc.release();
 
         const mtl_encoder = mtl_command_buffer.blitCommandEncoderWithDescriptor(mtl_desc) orelse {
-            return error.blitCommandEncoderFailed;
+            return error.BlitCommandEncoderFailed;
         };
 
         encoder.mtl_encoder = mtl_encoder.retain();
@@ -1742,7 +1742,7 @@ pub const ComputePassEncoder = struct {
         defer mtl_desc.release();
 
         const mtl_encoder = mtl_command_buffer.computeCommandEncoderWithDescriptor(mtl_desc) orelse {
-            return error.computeCommandEncoderFailed;
+            return error.ComputeCommandEncoderFailed;
         };
         errdefer mtl_encoder.release();
 
@@ -1907,7 +1907,7 @@ pub const RenderPassEncoder = struct {
         // timestamps - TODO
 
         const mtl_encoder = mtl_command_buffer.renderCommandEncoderWithDescriptor(mtl_desc) orelse {
-            return error.renderCommandEncoderFailed;
+            return error.RenderCommandEncoderFailed;
         };
         errdefer mtl_encoder.release();
 
@@ -2120,7 +2120,7 @@ pub const Queue = struct {
         const mtl_device = device.mtl_device;
 
         const command_queue = mtl_device.newCommandQueue() orelse {
-            return error.newCommandQueueFailed;
+            return error.NewCommandQueueFailed;
         };
         errdefer command_queue.release();
 

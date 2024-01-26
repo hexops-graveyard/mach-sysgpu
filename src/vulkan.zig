@@ -675,7 +675,7 @@ pub const Device = struct {
     pub fn createShaderModuleHLSL(device: *Device, code: []const u8) !*ShaderModule {
         _ = code;
         _ = device;
-        return error.unsupported;
+        return error.Unsupported;
     }
 
     pub fn createShaderModuleMSL(
@@ -686,7 +686,7 @@ pub const Device = struct {
         _ = code;
         _ = device;
         _ = workgroup_size;
-        return error.unsupported;
+        return error.Unsupported;
     }
 
     pub fn createSwapChain(device: *Device, surface: *Surface, desc: *const sysgpu.SwapChain.Descriptor) !*SwapChain {

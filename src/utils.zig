@@ -400,7 +400,7 @@ pub const DefaultPipelineLayoutDescriptor = struct {
                             } else if (previous_entry.texture.sample_type == .float and entry.texture.sample_type == .unfilterable_float) {
                                 // ignore
                             } else {
-                                return error.incompatibleEntries;
+                                return error.IncompatibleEntries;
                             }
                         }
 
