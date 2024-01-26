@@ -679,6 +679,30 @@ pub const Inst = union(enum) {
             depth_2d_array,
             depth_cube,
             depth_cube_array,
+
+            pub const Dimension = enum {
+                @"1d",
+                @"2d",
+                @"3d",
+                cube,
+            };
+
+            pub fn dimension(k: Kind) Dimension {
+                return switch (k) {
+                    .sampled_1d, .storage_1d => .@"1d",
+                    .sampled_2d,
+                    .sampled_2d_array,
+                    .multisampled_2d,
+                    .multisampled_depth_2d,
+                    .storage_2d,
+                    .storage_2d_array,
+                    .depth_2d,
+                    .depth_2d_array,
+                    => .@"2d",
+                    .sampled_3d, .storage_3d => .@"3d",
+                    .sampled_cube, .sampled_cube_array, .depth_cube, .depth_cube_array => .cube,
+                };
+            }
         };
 
         pub const TexelFormat = enum {
@@ -924,10 +948,16 @@ pub const Inst = union(enum) {
         texture: InstIndex,
         sampler: InstIndex,
         coords: InstIndex,
-        offset: InstIndex = InstIndex.none,
-        level: InstIndex = InstIndex.none,
-        array_index: InstIndex = InstIndex.none,
         result_type: InstIndex,
+        offset: InstIndex = .none,
+        array_index: InstIndex = .none,
+        operands: Operands = .none,
+
+        pub const Operands = union(enum) {
+            none,
+            level: InstIndex,
+            grad: struct { dpdx: InstIndex, dpdy: InstIndex },
+        };
     };
 
     pub const TextureDimension = struct {

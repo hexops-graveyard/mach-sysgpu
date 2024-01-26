@@ -8,6 +8,15 @@ const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const allocator = std.testing.allocator;
 
+test "builtins" {
+    const builtins = @embedFile("test/builtins.wgsl");
+    try expectCodegen(builtins, "builtins.spv", .spirv, false);
+    try expectCodegen(builtins, "builtins.hlsl", .hlsl, false);
+    try expectCodegen(builtins, "builtins.msl", .msl, false);
+    try expectCodegen(builtins, "builtins-spirvcross.glsl", .glsl, true);
+    // try expectCodegen(if_else, "if-else.glsl", .glsl, false);
+}
+
 test "if-else" {
     const if_else = @embedFile("test/if-else.wgsl");
     try expectCodegen(if_else, "if-else.spv", .spirv, false);

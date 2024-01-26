@@ -1941,6 +1941,7 @@ fn genCall(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .arrayLength => return astgen.genArrayLengthBuiltin(scope, node),
             .textureSample => return astgen.genTextureSampleBuiltin(scope, node),
             .textureSampleLevel => return astgen.genTextureSampleLevelBuiltin(scope, node),
+            .textureSampleGrad => return astgen.genTextureSampleGradBuiltin(scope, node),
             .textureDimensions => return astgen.genTextureDimensionsBuiltin(scope, node),
             .textureLoad => return astgen.genTextureLoadBuiltin(scope, node),
             .textureStore => return astgen.genTextureStoreBuiltin(scope, node),
@@ -2774,6 +2775,17 @@ fn genDerivativeBuiltin(
     comptime op: Inst.UnaryIntrinsic.Op,
 ) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
+
+    if (astgen.current_fn_scope.tag.@"fn".stage != .fragment) {
+        try astgen.errors.add(
+            node_loc,
+            "invalid builtin in {s} stage",
+            .{@tagName(astgen.current_fn_scope.tag.@"fn".stage)},
+            null,
+        );
+        return error.AnalysisFail;
+    }
+
     const node_lhs = astgen.tree.nodeLHS(node);
     if (node_lhs == .none) {
         return astgen.failArgCountMismatch(node_loc, 1, 0);
@@ -3385,13 +3397,17 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
                 offset = a5;
 
                 switch (a1_inst.texture_type.kind) {
-                    .sampled_cube_array, .depth_cube_array => if (a5_inst != .vector or a5_inst.vector.size != .three) {
-                        try astgen.errors.add(a5_node_loc, "expected a vec3<i32>", .{}, null);
-                        return error.AnalysisFail;
+                    .sampled_cube_array, .depth_cube_array => {
+                        if (a5_inst != .vector or a5_inst.vector.size != .three) {
+                            try astgen.errors.add(a5_node_loc, "expected a vec3<i32>", .{}, null);
+                            return error.AnalysisFail;
+                        }
                     },
-                    .sampled_2d_array, .depth_2d_array => if (a5_inst != .vector or a5_inst.vector.size != .two) {
-                        try astgen.errors.add(a5_node_loc, "expected a vec2<i32>", .{}, null);
-                        return error.AnalysisFail;
+                    .sampled_2d_array, .depth_2d_array => {
+                        if (a5_inst != .vector or a5_inst.vector.size != .two) {
+                            try astgen.errors.add(a5_node_loc, "expected a vec2<i32>", .{}, null);
+                            return error.AnalysisFail;
+                        }
                     },
                     else => unreachable,
                 }
@@ -3401,7 +3417,11 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
     }
 
     const result_type = switch (a1_inst.texture_type.kind) {
-        .depth_2d, .depth_2d_array, .depth_cube, .depth_cube_array => try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),
+        .depth_2d,
+        .depth_2d_array,
+        .depth_cube,
+        .depth_cube_array,
+        => try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),
         else => try astgen.addInst(.{ .vector = .{
             .elem_type = try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),
             .size = .four,
@@ -3420,6 +3440,7 @@ fn genTextureSampleBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !Ins
     } });
 }
 
+// TODO: Partial implementation
 fn genTextureSampleLevelBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_loc = astgen.tree.nodeLoc(node);
     const node_lhs = astgen.tree.nodeLHS(node);
@@ -3495,8 +3516,108 @@ fn genTextureSampleLevelBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex)
         .texture = a1,
         .sampler = a2,
         .coords = a3,
-        .level = a4,
         .result_type = result_type,
+        .operands = .{ .level = a4 },
+    } });
+}
+
+fn genTextureSampleGradBuiltin(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
+    const node_loc = astgen.tree.nodeLoc(node);
+    const node_lhs = astgen.tree.nodeLHS(node);
+    if (node_lhs == .none) {
+        return astgen.failArgCountMismatch(node_loc, 4, 0);
+    }
+
+    const arg_nodes = astgen.tree.spanToList(node_lhs);
+    if (arg_nodes.len < 4) {
+        return astgen.failArgCountMismatch(node_loc, 4, arg_nodes.len);
+    }
+
+    const a1_node = arg_nodes[0];
+    const a1_node_loc = astgen.tree.nodeLoc(a1_node);
+    const a1 = try astgen.genExpr(scope, a1_node);
+    const a1_res = try astgen.resolve(a1);
+    const a1_inst = astgen.getInst(a1_res);
+
+    const a2_node = arg_nodes[1];
+    const a2_node_loc = astgen.tree.nodeLoc(a2_node);
+    const a2 = try astgen.genExpr(scope, a2_node);
+    const a2_res = try astgen.resolve(a2);
+    const a2_inst = astgen.getInst(a2_res);
+
+    const a3_node = arg_nodes[2];
+    const a3_node_loc = astgen.tree.nodeLoc(a3_node);
+    const a3 = try astgen.genExpr(scope, a3_node);
+    const a3_res = try astgen.resolve(a3);
+    const a3_inst = astgen.getInst(a3_res);
+
+    const a4_node = arg_nodes[3];
+    const a4_node_loc = astgen.tree.nodeLoc(a4_node);
+    const a4 = try astgen.genExpr(scope, a4_node);
+    const a4_res = try astgen.resolve(a4);
+    const a4_inst = astgen.getInst(a4_res);
+
+    const a5_node = arg_nodes[3];
+    const a5_node_loc = astgen.tree.nodeLoc(a5_node);
+    const a5 = try astgen.genExpr(scope, a5_node);
+    const a5_res = try astgen.resolve(a5);
+    const a5_inst = astgen.getInst(a5_res);
+
+    if (a1_inst != .texture_type) {
+        try astgen.errors.add(a1_node_loc, "expected a texture type", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    switch (a1_inst.texture_type.kind) {
+        .sampled_2d => {},
+        else => {
+            try astgen.errors.add(a1_node_loc, "invalid texture", .{}, null);
+            return error.AnalysisFail;
+        },
+    }
+
+    if (a2_inst != .sampler_type) {
+        try astgen.errors.add(a2_node_loc, "expected a sampler", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    if (a3_inst != .vector or
+        astgen.getInst(a4_inst.vector.elem_type) != .float or
+        a3_inst.vector.size != .two)
+    {
+        try astgen.errors.add(a3_node_loc, "expected a vec2<f32>", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    if (a4_inst != .vector or
+        astgen.getInst(a4_inst.vector.elem_type) != .float or
+        a4_inst.vector.size != .two)
+    {
+        try astgen.errors.add(a4_node_loc, "expected vec2<f32>", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    if (a5_inst != .vector or
+        astgen.getInst(a5_inst.vector.elem_type) != .float or
+        a5_inst.vector.size != .two)
+    {
+        try astgen.errors.add(a5_node_loc, "expected vec2<f32>", .{}, null);
+        return error.AnalysisFail;
+    }
+
+    const result_type = try astgen.addInst(.{ .vector = .{
+        .elem_type = try astgen.addInst(.{ .float = .{ .type = .f32, .value = null } }),
+        .size = .four,
+        .value = null,
+    } });
+    return astgen.addInst(.{ .texture_sample = .{
+        .kind = a1_inst.texture_type.kind,
+        .texture_type = a1_res,
+        .texture = a1,
+        .sampler = a2,
+        .coords = a3,
+        .result_type = result_type,
+        .operands = .{ .grad = .{ .dpdx = a4, .dpdy = a5 } },
     } });
 }
 

@@ -52,12 +52,9 @@ pub fn gen(
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
             .@"fn" => |fn_inst| {
-                if (fn_inst.stage == .fragment) {
-                    switch (air.getInst(fn_inst.return_type)) {
-                        .@"struct" => |_| {
-                            msl.frag_result_inst_idx = fn_inst.return_type;
-                        },
-                        else => {},
+                if (fn_inst.return_type != .none and fn_inst.stage == .fragment) {
+                    if (air.getInst(fn_inst.return_type) == .@"struct") {
+                        msl.frag_result_inst_idx = fn_inst.return_type;
                     }
                 }
             },
@@ -274,7 +271,11 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
     if (inst.stage != .none) {
         try msl.print("{s} ", .{stringFromStage(inst.stage)});
     }
-    try msl.emitType(inst.return_type);
+    if (inst.return_type != .none) {
+        try msl.emitType(inst.return_type);
+    } else {
+        try msl.writeAll("void");
+    }
     try msl.writeAll(" ");
     if (inst.stage != .none) {
         try msl.writeEntrypoint(inst.name);
@@ -1024,6 +1025,26 @@ fn emitTextureSample(msl: *Msl, inst: Inst.TextureSample) !void {
     try msl.emitExpr(inst.sampler);
     try msl.writeAll(", ");
     try msl.emitExpr(inst.coords);
+    switch (inst.operands) {
+        .none => {},
+        .level => |level| {
+            try msl.writeAll("level(");
+            try msl.emitExpr(level);
+            try msl.writeAll(")");
+        },
+        .grad => |grad| {
+            switch (inst.kind.dimension()) {
+                .@"1d" => unreachable,
+                .@"2d" => try msl.writeAll("gradient2d("),
+                .@"3d" => try msl.writeAll("gradient3d("),
+                .cube => try msl.writeAll("gradientcube("),
+            }
+            try msl.emitExpr(grad.dpdx);
+            try msl.writeAll(", ");
+            try msl.emitExpr(grad.dpdy);
+            try msl.writeAll(")");
+        },
+    }
     try msl.writeAll(")");
 }
 

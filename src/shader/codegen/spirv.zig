@@ -1844,6 +1844,30 @@ fn emitUnaryIntrinsic(spv: *SpirV, section: *Section, unary: Inst.UnaryIntrinsic
             });
             return id;
         },
+        .dpdx => {
+            try section.emit(.OpDPdx, .{
+                .id_result = id,
+                .id_result_type = result_type,
+                .p = expr,
+            });
+            return id;
+        },
+        .dpdy => {
+            try section.emit(.OpDPdy, .{
+                .id_result = id,
+                .id_result_type = result_type,
+                .p = expr,
+            });
+            return id;
+        },
+        .fwidth => {
+            try section.emit(.OpFwidth, .{
+                .id_result = id,
+                .id_result_type = result_type,
+                .p = expr,
+            });
+            return id;
+        },
         else => std.debug.panic("TODO: implement Unary Intrinsic {s}", .{@tagName(unary.op)}),
     };
 
@@ -1910,30 +1934,19 @@ fn emitBinaryIntrinsic(spv: *SpirV, section: *Section, bin: Inst.BinaryIntrinsic
     return id;
 }
 
-fn emitTripleIntrinsic(spv: *SpirV, section: *Section, bin: Inst.TripleIntrinsic) !IdRef {
+fn emitTripleIntrinsic(spv: *SpirV, section: *Section, triple: Inst.TripleIntrinsic) !IdRef {
     const id = spv.allocId();
-    const a1 = try spv.emitExpr(section, bin.a1);
-    const a2 = try spv.emitExpr(section, bin.a2);
-    var a3 = try spv.emitExpr(section, bin.a3);
-    const result_type = try spv.emitType(bin.result_type);
-    const result_type_inst = switch (spv.air.getInst(bin.result_type)) {
+    const a1 = try spv.emitExpr(section, triple.a1);
+    const a2 = try spv.emitExpr(section, triple.a2);
+    const a3 = try spv.emitExpr(section, triple.a3);
+    const result_type = try spv.emitType(triple.result_type);
+    const result_type_inst = switch (spv.air.getInst(triple.result_type)) {
         .vector => |vec| spv.air.getInst(vec.elem_type),
         else => |ty| ty,
     };
 
-    const instruction: Word = switch (bin.op) {
-        .mix => blk: {
-            const value = try spv.allocator.alloc(IdRef, @intFromEnum(spv.air.getInst(bin.result_type).vector.size));
-            defer spv.allocator.free(value);
-            @memset(value, a3);
-            a3 = spv.allocId();
-            try section.emit(.OpCompositeConstruct, .{
-                .id_result_type = result_type,
-                .id_result = a3,
-                .constituents = value,
-            });
-            break :blk 46;
-        },
+    const instruction: Word = switch (triple.op) {
+        .mix => 46,
         .clamp => switch (result_type_inst) {
             .float => 43,
             .int => |int| switch (int.type) {
@@ -1985,14 +1998,23 @@ fn emitTextureSample(spv: *SpirV, section: *Section, ts: Inst.TextureSample) !Id
         });
     }
 
-    if (ts.level != .none) {
-        const level = try spv.emitExpr(section, ts.level);
+    if (ts.operands != .none) {
+        const image_operands: spec.ImageOperands.Extended = switch (ts.operands) {
+            .none => unreachable,
+            .level => |level| .{ .Lod = .{
+                .id_ref = try spv.emitExpr(section, level),
+            } },
+            .grad => |grad| .{ .Grad = .{
+                .id_ref_0 = try spv.emitExpr(section, grad.dpdx),
+                .id_ref_1 = try spv.emitExpr(section, grad.dpdy),
+            } },
+        };
         try section.emit(.OpImageSampleExplicitLod, .{
             .id_result_type = final_result_type,
             .id_result = loaded_image_id,
             .sampled_image = image_id,
             .coordinate = coords,
-            .image_operands = .{ .Lod = .{ .id_ref = level } },
+            .image_operands = image_operands,
         });
     } else {
         try section.emit(.OpImageSampleImplicitLod, .{
