@@ -535,7 +535,7 @@ fn emitStatement(msl: *Msl, inst_idx: InstIndex) error{ OutOfMemory, ConstExpr }
         .discard => try msl.emitDiscard(),
         // .@"break" => try msl.emitBreak(),
         .@"continue" => try msl.writeAll("continue;\n"),
-        .call => |inst| try msl.emitCall(inst),
+        .call,
         .assign,
         .nil_intrinsic,
         .texture_store,
