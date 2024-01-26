@@ -39,8 +39,8 @@ pub fn init(source: [:0]const u8) Tokenizer {
     return Tokenizer{ .source = source[src_start..] };
 }
 
-pub fn peek(self: *Tokenizer) Token {
-    var index = self.index;
+pub fn peek(tokenizer: *Tokenizer) Token {
+    var index = tokenizer.index;
     var state: State = .start;
     var result = Token{
         .tag = .eof,
@@ -51,11 +51,11 @@ pub fn peek(self: *Tokenizer) Token {
     };
 
     while (true) : (index += 1) {
-        const c = self.source[index];
+        const c = tokenizer.source[index];
         switch (state) {
             .start => switch (c) {
                 0 => {
-                    if (index != self.source.len) {
+                    if (index != tokenizer.source.len) {
                         result.tag = .invalid;
                         index += 1;
                     }
@@ -146,9 +146,9 @@ pub fn peek(self: *Tokenizer) Token {
                 'a'...'z', 'A'...'Z', '0'...'9', '_' => {},
                 else => {
                     result.tag = .ident;
-                    if (Token.keywords.get(self.source[result.loc.start..index])) |tag| {
+                    if (Token.keywords.get(tokenizer.source[result.loc.start..index])) |tag| {
                         result.tag = tag;
-                    } else if (Token.reserved.get(self.source[result.loc.start..index])) |_| {
+                    } else if (Token.reserved.get(tokenizer.source[result.loc.start..index])) |_| {
                         result.tag = .invalid;
                     }
                     break;
@@ -305,7 +305,7 @@ pub fn peek(self: *Tokenizer) Token {
                     // workaround for x-1 being tokenized as [x] [-1]
                     // TODO: maybe it's user fault? :^)
                     // duplicated at .plus too
-                    if (index >= 2 and std.ascii.isAlphabetic(self.source[index - 2])) {
+                    if (index >= 2 and std.ascii.isAlphabetic(tokenizer.source[index - 2])) {
                         result.tag = .minus;
                         break;
                     }
@@ -362,7 +362,7 @@ pub fn peek(self: *Tokenizer) Token {
                     break;
                 },
                 '0'...'9' => {
-                    if (index >= 2 and std.ascii.isAlphabetic(self.source[index - 2])) {
+                    if (index >= 2 and std.ascii.isAlphabetic(tokenizer.source[index - 2])) {
                         result.tag = .plus;
                         break;
                     }
@@ -414,9 +414,9 @@ pub fn peek(self: *Tokenizer) Token {
     return result;
 }
 
-pub fn next(self: *Tokenizer) Token {
-    const tok = self.peek();
-    self.index = tok.loc.end;
+pub fn next(tokenizer: *Tokenizer) Token {
+    const tok = tokenizer.peek();
+    tokenizer.index = tok.loc.end;
     return tok;
 }
 

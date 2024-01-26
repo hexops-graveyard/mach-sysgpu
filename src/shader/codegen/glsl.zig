@@ -447,14 +447,14 @@ fn emitStatement(glsl: *Glsl, inst_idx: InstIndex) error{OutOfMemory}!void {
 }
 
 fn emitVar(glsl: *Glsl, inst: Inst.Var) !void {
-    const t = if (inst.type != .none) inst.type else inst.expr;
+    const t = if (inst.type != .none) inst.type else inst.init;
     try glsl.emitType(t);
     try glsl.writeAll(" ");
     try glsl.writeName(inst.name);
     try glsl.emitTypeSuffix(t);
-    if (inst.expr != .none) {
+    if (inst.init != .none) {
         try glsl.writeAll(" = ");
-        try glsl.emitExpr(inst.expr);
+        try glsl.emitExpr(inst.init);
     }
     try glsl.writeAll(";\n");
 }

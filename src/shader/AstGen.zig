@@ -232,9 +232,9 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         return error.AnalysisFail;
     }
 
-    var expr = InstIndex.none;
+    var init = InstIndex.none;
     if (node_rhs != .none) {
-        expr = try astgen.genExpr(scope, node_rhs);
+        init = try astgen.genExpr(scope, node_rhs);
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
@@ -246,7 +246,7 @@ fn genGlobalVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .access_mode = access_mode,
             .binding = binding,
             .group = group,
-            .expr = expr,
+            .init = init,
         },
     });
 }
@@ -279,9 +279,9 @@ fn genOverride(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         }
     }
 
-    var expr = InstIndex.none;
+    var init = InstIndex.none;
     if (node_rhs != .none) {
-        expr = try astgen.genExpr(scope, node_rhs);
+        init = try astgen.genExpr(scope, node_rhs);
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
@@ -289,7 +289,7 @@ fn genOverride(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         .@"var" = .{
             .name = name,
             .type = override_type,
-            .expr = expr,
+            .init = init,
             .addr_space = .private,
             .access_mode = .read,
             .id = id,
@@ -1248,9 +1248,9 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
         };
     }
 
-    var expr = InstIndex.none;
+    var init = InstIndex.none;
     if (node_rhs != .none) {
-        expr = try astgen.genExpr(scope, node_rhs);
+        init = try astgen.genExpr(scope, node_rhs);
     }
 
     var var_type = InstIndex.none;
@@ -1268,15 +1268,15 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             else => {},
         }
 
-        if (expr != .none) {
-            const expr_res = try astgen.resolve(expr);
-            if (!try astgen.coerce(expr_res, var_type)) {
+        if (init != .none) {
+            const init_res = try astgen.resolve(init);
+            if (!try astgen.coerce(init_res, var_type)) {
                 try astgen.errors.add(astgen.tree.nodeLoc(node_rhs), "type mismatch", .{}, null);
                 return error.AnalysisFail;
             }
         }
     } else {
-        var_type = try astgen.resolve(expr);
+        var_type = try astgen.resolve(init);
     }
 
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
@@ -1286,7 +1286,7 @@ fn genVar(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
             .type = var_type,
             .addr_space = addr_space,
             .access_mode = access_mode,
-            .expr = expr,
+            .init = init,
         },
     });
 }
@@ -1295,19 +1295,19 @@ fn genConst(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_lhs = astgen.tree.nodeLHS(node);
     const node_rhs = astgen.tree.nodeRHS(node);
     const name_loc = astgen.tree.declNameLoc(node).?;
-    const expr = try astgen.genExpr(scope, node_rhs);
+    const init = try astgen.genExpr(scope, node_rhs);
     var var_type = InstIndex.none;
     if (node_lhs != .none) {
         var_type = try astgen.genType(scope, node_lhs);
     } else {
-        var_type = try astgen.resolve(expr);
+        var_type = try astgen.resolve(init);
     }
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
     return astgen.addInst(.{
         .@"const" = .{
             .name = name,
             .type = var_type,
-            .expr = expr,
+            .init = init,
         },
     });
 }
@@ -1317,21 +1317,21 @@ fn genLet(astgen: *AstGen, scope: *Scope, node: NodeIndex) !InstIndex {
     const node_rhs = astgen.tree.nodeRHS(node);
     const name_loc = astgen.tree.declNameLoc(node).?;
 
-    const expr = try astgen.genExpr(scope, node_rhs);
+    const init = try astgen.genExpr(scope, node_rhs);
     const name = try astgen.addString(name_loc.slice(astgen.tree.source));
 
     var var_type = InstIndex.none;
     if (node_lhs != .none) {
         var_type = try astgen.genType(scope, node_lhs);
     } else {
-        var_type = try astgen.resolve(expr);
+        var_type = try astgen.resolve(init);
     }
 
     return astgen.addInst(.{
         .@"var" = .{
             .name = name,
             .type = var_type,
-            .expr = expr,
+            .init = init,
             .addr_space = .function,
             .access_mode = .read,
         },
@@ -4319,7 +4319,7 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
                 std.debug.assert(index != idx);
 
                 const decl_type = decl.type;
-                const decl_expr = decl.expr;
+                const decl_expr = decl.init;
                 if (decl_type != .none) return decl_type;
                 idx = decl_expr;
             },
@@ -4354,10 +4354,6 @@ fn resolve(astgen: *AstGen, index: InstIndex) !InstIndex {
             => unreachable,
         }
     }
-}
-
-fn selectType(cands: []const InstIndex) InstIndex {
-    return cands[0]; // TODO
 }
 
 fn eql(astgen: *AstGen, a_idx: InstIndex, b_idx: InstIndex) bool {
