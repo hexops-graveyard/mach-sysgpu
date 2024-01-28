@@ -24,13 +24,9 @@ struct FragmentOutput {
     @location(0) pixel_color: vec4<f32>
 };
 
-@fragment fn frag_main(
-    // TODO - struct input
-    @builtin(position) position: vec4<f32>,
-    @location(0) normal: vec3<f32>,
-) -> FragmentOutput {
+@fragment fn frag_main(in: VertexOutput) -> FragmentOutput {
     var out : FragmentOutput;
 
-    out.pixel_color = vec4<f32>((normal + 1) / 2, 1.0);
+    out.pixel_color = vec4<f32>((in.normal + 1) / 2, 1.0);
     return out;
 }

@@ -19,12 +19,12 @@ strings: []const u8,
 values: []const u8,
 extensions: Extensions,
 
-pub fn deinit(self: *Air, allocator: std.mem.Allocator) void {
-    allocator.free(self.instructions);
-    allocator.free(self.refs);
-    allocator.free(self.strings);
-    allocator.free(self.values);
-    self.* = undefined;
+pub fn deinit(air: *Air, allocator: std.mem.Allocator) void {
+    allocator.free(air.instructions);
+    allocator.free(air.refs);
+    allocator.free(air.strings);
+    allocator.free(air.values);
+    air.* = undefined;
 }
 
 pub fn generate(
@@ -70,20 +70,33 @@ pub fn generate(
     };
 }
 
-pub fn refToList(self: Air, ref: RefIndex) []const InstIndex {
-    return std.mem.sliceTo(self.refs[@intFromEnum(ref)..], .none);
+pub fn refToList(air: Air, ref: RefIndex) []const InstIndex {
+    return std.mem.sliceTo(air.refs[@intFromEnum(ref)..], .none);
 }
 
-pub fn getInst(self: Air, index: InstIndex) Inst {
-    return self.instructions[@intFromEnum(index)];
+pub fn getInst(air: Air, index: InstIndex) Inst {
+    return air.instructions[@intFromEnum(index)];
 }
 
-pub fn getStr(self: Air, index: StringIndex) []const u8 {
-    return std.mem.sliceTo(self.strings[@intFromEnum(index)..], 0);
+pub fn getStr(air: Air, index: StringIndex) []const u8 {
+    return std.mem.sliceTo(air.strings[@intFromEnum(index)..], 0);
 }
 
-pub fn getValue(self: Air, comptime T: type, value: ValueIndex) T {
-    return std.mem.bytesAsValue(T, self.values[@intFromEnum(value)..][0..@sizeOf(T)]).*;
+pub fn getValue(air: Air, comptime T: type, value: ValueIndex) T {
+    return std.mem.bytesAsValue(T, air.values[@intFromEnum(value)..][0..@sizeOf(T)]).*;
+}
+
+pub fn typeSize(air: Air, index: InstIndex) ?u32 {
+    return switch (air.getInst(index)) {
+        inline .int, .float => |num| num.type.size(),
+        .vector => |vec| @as(u32, @intFromEnum(vec.size)),
+        .matrix => |mat| @as(u32, @intFromEnum(mat.cols)) * @as(u32, @intFromEnum(mat.rows)),
+        .array => |arr| {
+            if (arr.len == .none) return null;
+            return @intCast(air.resolveInt(arr.len) orelse return null);
+        },
+        else => unreachable,
+    };
 }
 
 pub const ConstExpr = union(enum) {
@@ -554,13 +567,18 @@ pub const Inst = union(enum) {
             u32,
             i32,
 
-            pub fn width(self: Type) u8 {
-                _ = self;
+            pub fn size(int: Type) u8 {
+                _ = int;
+                return 4;
+            }
+
+            pub fn sizeBits(int: Type) u8 {
+                _ = int;
                 return 32;
             }
 
-            pub fn signedness(self: Type) bool {
-                return switch (self) {
+            pub fn signedness(int: Type) bool {
+                return switch (int) {
                     .u32 => false,
                     .i32 => true,
                 };
@@ -581,8 +599,15 @@ pub const Inst = union(enum) {
             f32,
             f16,
 
-            pub fn width(self: Type) u8 {
-                return switch (self) {
+            pub fn size(float: Type) u8 {
+                return switch (float) {
+                    .f32 => 4,
+                    .f16 => 2,
+                };
+            }
+
+            pub fn sizeBits(float: Type) u8 {
+                return switch (float) {
                     .f32 => 32,
                     .f16 => 16,
                 };

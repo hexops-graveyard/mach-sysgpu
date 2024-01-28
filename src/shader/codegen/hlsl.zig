@@ -7,47 +7,44 @@ const Builtin = Air.Inst.Builtin;
 
 const Hlsl = @This();
 
+const Section = std.ArrayListUnmanaged(u8);
+
 air: *const Air,
 allocator: std.mem.Allocator,
-storage: std.ArrayListUnmanaged(u8),
-writer: std.ArrayListUnmanaged(u8).Writer,
+arena: std.heap.ArenaAllocator,
+emitted_decls: std.AutoArrayHashMapUnmanaged(InstIndex, []const u8) = .{},
+scratch: std.ArrayListUnmanaged(u8) = .{},
+output: std.ArrayListUnmanaged(u8) = .{},
 indent: u32 = 0,
 
 pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo) ![]const u8 {
     _ = debug_info;
 
-    var storage = std.ArrayListUnmanaged(u8){};
     var hlsl = Hlsl{
         .air = air,
         .allocator = allocator,
-        .storage = storage,
-        .writer = storage.writer(allocator),
+        .arena = std.heap.ArenaAllocator.init(allocator),
     };
     defer {
-        hlsl.storage.deinit(allocator);
+        hlsl.scratch.deinit(allocator);
+        hlsl.emitted_decls.deinit(allocator);
+        hlsl.output.deinit(allocator);
+        hlsl.arena.deinit();
     }
 
-    // matrices are transposed
-    try hlsl.writeAll("#pragma pack_matrix( row_major )\n");
+    try hlsl.output.appendSlice(allocator, "#pragma pack_matrix( row_major )\n");
 
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
-            .@"struct" => |inst| try hlsl.emitStruct(inst_idx, inst, false),
-            else => {},
-        }
-    }
-
-    for (air.refToList(air.globals_index)) |inst_idx| {
-        switch (air.getInst(inst_idx)) {
-            .@"var" => |inst| try hlsl.emitGlobalVar(inst),
-            .@"const" => |inst| try hlsl.emitGlobalConst(inst),
-            .@"fn" => |inst| try hlsl.emitFn(inst),
+            .@"var" => try hlsl.emitGlobalVar(inst_idx),
+            .@"const" => try hlsl.emitGlobalConst(inst_idx),
+            .@"fn" => try hlsl.emitFn(inst_idx),
             .@"struct" => {},
             else => unreachable,
         }
     }
 
-    return storage.toOwnedSlice(allocator);
+    return hlsl.output.toOwnedSlice(allocator);
 }
 
 fn emitType(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
@@ -61,7 +58,10 @@ fn emitType(hlsl: *Hlsl, inst_idx: InstIndex) error{OutOfMemory}!void {
             .vector => |inst| try hlsl.emitVectorType(inst),
             .matrix => |inst| try hlsl.emitMatrixType(inst),
             .array => |inst| try hlsl.emitType(inst.elem_type),
-            .@"struct" => |inst| try hlsl.writeName(inst.name),
+            .@"struct" => {
+                try hlsl.emitStruct(inst_idx, .normal);
+                try hlsl.writeAll(hlsl.emitted_decls.get(inst_idx).?);
+            },
             else => |inst| try hlsl.print("Type: {}", .{inst}), // TODO
         }
     }
@@ -151,14 +151,53 @@ fn structMemberLessThan(hlsl: *Hlsl, lhs: InstIndex, rhs: InstIndex) bool {
     return @intFromEnum(lhs_builtin) < @intFromEnum(rhs_builtin);
 }
 
-fn emitStruct(hlsl: *Hlsl, inst_idx: InstIndex, inst: Inst.Struct, is_fragment_stage: bool) !void {
-    try hlsl.writeAll("struct ");
-    if (is_fragment_stage) {
-        try hlsl.print("FragOut{}", .{@intFromEnum(inst_idx)});
-    } else {
-        try hlsl.writeName(inst.name);
-    }
-    try hlsl.writeAll(" {\n");
+fn fnParamLessThan(hlsl: *Hlsl, lhs: InstIndex, rhs: InstIndex) bool {
+    const lhs_param = hlsl.air.getInst(lhs).fn_param;
+    const rhs_param = hlsl.air.getInst(rhs).fn_param;
+
+    // Location
+    if (lhs_param.location != null and rhs_param.location == null) return true;
+    if (lhs_param.location == null and rhs_param.location != null) return false;
+
+    const lhs_location = lhs_param.location orelse 0;
+    const rhs_location = rhs_param.location orelse 0;
+
+    if (lhs_location < rhs_location) return true;
+    if (lhs_location > rhs_location) return false;
+
+    // Builtin
+    if (lhs_param.builtin == null and rhs_param.builtin != null) return true;
+    if (lhs_param.builtin != null and rhs_param.builtin == null) return false;
+
+    const lhs_builtin = lhs_param.builtin orelse .vertex_index;
+    const rhs_builtin = rhs_param.builtin orelse .vertex_index;
+
+    return @intFromEnum(lhs_builtin) < @intFromEnum(rhs_builtin);
+}
+
+const StructKind = enum {
+    normal,
+    frag_out,
+    vert_out,
+};
+
+fn emitStruct(hlsl: *Hlsl, inst_idx: InstIndex, kind: StructKind) !void {
+    if (hlsl.emitted_decls.get(inst_idx)) |_| return;
+
+    const scratch_top = hlsl.scratch.items.len;
+    defer hlsl.scratch.shrinkRetainingCapacity(scratch_top);
+
+    const inst = hlsl.air.getInst(inst_idx).@"struct";
+    const name = try std.fmt.allocPrint(
+        hlsl.arena.allocator(),
+        "{s}{d}",
+        .{
+            if (kind == .frag_out) "FragOut" else hlsl.air.getStr(inst.name),
+            @intFromEnum(inst_idx),
+        },
+    );
+
+    try hlsl.print("struct {s} {{\n", .{name});
 
     hlsl.enterScope();
     defer hlsl.exitScope();
@@ -173,6 +212,7 @@ fn emitStruct(hlsl: *Hlsl, inst_idx: InstIndex, inst: Inst.Struct, is_fragment_s
 
     std.sort.insertion(InstIndex, sorted_members.items, hlsl, structMemberLessThan);
 
+    var padding_index: u32 = 0;
     for (sorted_members.items) |member_index| {
         const member = hlsl.air.getInst(member_index).struct_member;
 
@@ -184,16 +224,29 @@ fn emitStruct(hlsl: *Hlsl, inst_idx: InstIndex, inst: Inst.Struct, is_fragment_s
         if (member.builtin) |builtin| {
             try hlsl.emitBuiltin(builtin);
         } else if (member.location) |location| {
-            if (is_fragment_stage) {
+            if (kind == .frag_out) {
                 try hlsl.print(" : SV_Target{}", .{location});
             } else {
                 try hlsl.print(" : ATTR{}", .{location});
             }
         }
         try hlsl.writeAll(";\n");
+
+        if (kind == .vert_out) {
+            const size = hlsl.air.typeSize(member.type) orelse continue;
+            const padding_size = if (size < 4) 4 - size else size % 4;
+            if (padding_size != 0) {
+                try hlsl.writeIndent();
+                try hlsl.print("float{} pad{} : PAD{};\n", .{ padding_size, padding_index, padding_index });
+                padding_index += 1;
+            }
+        }
     }
 
     try hlsl.writeAll("};\n");
+
+    try hlsl.output.appendSlice(hlsl.allocator, hlsl.scratch.items[scratch_top..]);
+    try hlsl.emitted_decls.put(hlsl.allocator, inst_idx, name);
 }
 
 fn emitBufferElemType(hlsl: *Hlsl, inst_idx: InstIndex) !void {
@@ -242,7 +295,13 @@ fn emitWrapperStruct(hlsl: *Hlsl, inst: Inst.Var) !void {
     try hlsl.writeAll("; };\n");
 }
 
-fn emitGlobalVar(hlsl: *Hlsl, inst: Inst.Var) !void {
+fn emitGlobalVar(hlsl: *Hlsl, inst_idx: InstIndex) !void {
+    if (hlsl.emitted_decls.get(inst_idx)) |_| return;
+
+    const scratch_top = hlsl.scratch.items.len;
+    defer hlsl.scratch.shrinkRetainingCapacity(scratch_top);
+    const inst = hlsl.air.getInst(inst_idx).@"var";
+
     if (inst.addr_space == .workgroup) {
         try hlsl.writeAll("groupshared ");
         try hlsl.emitType(inst.type);
@@ -366,9 +425,19 @@ fn emitGlobalVar(hlsl: *Hlsl, inst: Inst.Var) !void {
     try hlsl.writeAll(" ");
     try hlsl.writeName(inst.name);
     try hlsl.print(" : register({s}{}, space{});\n", .{ binding_space, binding, group });
+
+    try hlsl.output.appendSlice(hlsl.allocator, hlsl.scratch.items[scratch_top..]);
+    try hlsl.emitted_decls.put(hlsl.allocator, inst_idx, hlsl.air.getStr(inst.name));
 }
 
-fn emitGlobalConst(hlsl: *Hlsl, inst: Inst.Const) !void {
+fn emitGlobalConst(hlsl: *Hlsl, inst_idx: InstIndex) !void {
+    if (hlsl.emitted_decls.get(inst_idx)) |_| return;
+
+    const scratch_top = hlsl.scratch.items.len;
+    defer hlsl.scratch.shrinkRetainingCapacity(scratch_top);
+
+    const inst = hlsl.air.getInst(inst_idx).@"const";
+
     const t = if (inst.type != .none) inst.type else inst.init;
     try hlsl.writeAll("static const ");
     try hlsl.emitType(t);
@@ -378,28 +447,18 @@ fn emitGlobalConst(hlsl: *Hlsl, inst: Inst.Const) !void {
     try hlsl.writeAll(" = ");
     try hlsl.emitExpr(inst.init);
     try hlsl.writeAll(";\n");
+
+    try hlsl.output.appendSlice(hlsl.allocator, hlsl.scratch.items[scratch_top..]);
+    try hlsl.emitted_decls.put(hlsl.allocator, inst_idx, hlsl.air.getStr(inst.name));
 }
 
-fn emitFragmentReturnStruct(hlsl: *Hlsl, inst_idx: InstIndex) !void {
-    switch (hlsl.air.getInst(inst_idx)) {
-        .@"struct" => |inst| try hlsl.emitStruct(inst_idx, inst, true),
-        else => {},
-    }
-}
+fn emitFn(hlsl: *Hlsl, inst_idx: InstIndex) !void {
+    if (hlsl.emitted_decls.get(inst_idx)) |_| return;
 
-fn emitFragmentReturnType(hlsl: *Hlsl, inst_idx: InstIndex) !void {
-    switch (hlsl.air.getInst(inst_idx)) {
-        .@"struct" => try hlsl.print("FragOut{}", .{@intFromEnum(inst_idx)}),
-        else => try hlsl.emitType(inst_idx),
-    }
-}
+    const scratch_top = hlsl.scratch.items.len;
+    defer hlsl.scratch.shrinkRetainingCapacity(scratch_top);
 
-fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
-    if (inst.return_type != .none) {
-        if (inst.stage == .fragment) {
-            try hlsl.emitFragmentReturnStruct(inst.return_type);
-        }
-    }
+    const inst = hlsl.air.getInst(inst_idx).@"fn";
 
     switch (inst.stage) {
         .compute => |workgroup_size| {
@@ -413,8 +472,13 @@ fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
     }
 
     if (inst.return_type != .none) {
-        if (inst.stage == .fragment) {
-            try hlsl.emitFragmentReturnType(inst.return_type);
+        const return_type = hlsl.air.getInst(inst.return_type);
+        if (inst.stage == .fragment and return_type == .@"struct") {
+            try hlsl.emitStruct(inst.return_type, .frag_out);
+            try hlsl.writeAll(hlsl.emitted_decls.get(inst.return_type).?);
+        } else if (inst.stage == .vertex and return_type == .@"struct") {
+            try hlsl.emitStruct(inst.return_type, .vert_out);
+            try hlsl.writeAll(hlsl.emitted_decls.get(inst.return_type).?);
         } else {
             try hlsl.emitType(inst.return_type);
         }
@@ -434,10 +498,19 @@ fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
         hlsl.enterScope();
         defer hlsl.exitScope();
 
-        var add_comma = false;
-
         if (inst.params != .none) {
-            for (hlsl.air.refToList(inst.params)) |param_inst_idx| {
+            var fn_params = std.ArrayListUnmanaged(InstIndex){};
+            defer fn_params.deinit(hlsl.allocator);
+            for (hlsl.air.refToList(inst.params)) |param_index| {
+                try fn_params.append(hlsl.allocator, param_index);
+            }
+
+            if (inst.stage != .none) {
+                std.sort.insertion(InstIndex, fn_params.items, hlsl, fnParamLessThan);
+            }
+
+            var add_comma = false;
+            for (fn_params.items) |param_inst_idx| {
                 try hlsl.writeAll(if (add_comma) ",\n" else "\n");
                 add_comma = true;
                 try hlsl.writeIndent();
@@ -474,6 +547,9 @@ fn emitFn(hlsl: *Hlsl, inst: Inst.Fn) !void {
     }
     try hlsl.writeIndent();
     try hlsl.writeAll("}\n");
+
+    try hlsl.output.appendSlice(hlsl.allocator, hlsl.scratch.items[scratch_top..]);
+    try hlsl.emitted_decls.put(hlsl.allocator, inst_idx, hlsl.air.getStr(inst.name));
 }
 
 fn emitFnParam(hlsl: *Hlsl, inst_idx: InstIndex) !void {
@@ -1090,7 +1166,7 @@ fn exitScope(hlsl: *Hlsl) void {
 }
 
 fn writeIndent(hlsl: *Hlsl) !void {
-    try hlsl.writer.writeByteNTimes(' ', hlsl.indent);
+    try hlsl.scratch.writer(hlsl.allocator).writeByteNTimes(' ', hlsl.indent);
 }
 
 fn writeEntrypoint(hlsl: *Hlsl, name: Air.StringIndex) !void {
@@ -1105,9 +1181,9 @@ fn writeName(hlsl: *Hlsl, name: Air.StringIndex) !void {
 }
 
 fn writeAll(hlsl: *Hlsl, bytes: []const u8) !void {
-    try hlsl.writer.writeAll(bytes);
+    try hlsl.scratch.writer(hlsl.allocator).writeAll(bytes);
 }
 
 fn print(hlsl: *Hlsl, comptime format: []const u8, args: anytype) !void {
-    return std.fmt.format(hlsl.writer, format, args);
+    try hlsl.scratch.writer(hlsl.allocator).print(format, args);
 }

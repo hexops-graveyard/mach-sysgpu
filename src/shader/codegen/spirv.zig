@@ -829,7 +829,7 @@ fn emitStructStride(spv: *SpirV, inst: InstIndex, id: IdRef) !void {
 
 fn getStride(spv: *SpirV, inst: InstIndex, direct: bool) u8 {
     return switch (spv.air.getInst(inst)) {
-        inline .int, .float => |num| num.type.width() / 8,
+        inline .int, .float => |num| num.type.sizeBits() / 8,
         .array => |arr| spv.getStride(arr.elem_type, false),
         .vector => |vec| return spv.getStride(vec.elem_type, false) *
             if (direct) 1 else @as(u8, @intCast(@intFromEnum(vec.size))),
@@ -851,7 +851,7 @@ fn getStride(spv: *SpirV, inst: InstIndex, direct: bool) u8 {
 
 fn getSize(spv: *SpirV, inst: InstIndex) u8 {
     return switch (spv.air.getInst(inst)) {
-        inline .int, .float => |num| num.type.width() / 8,
+        inline .int, .float => |num| num.type.sizeBits() / 8,
         .array => |arr| return @intCast(spv.air.resolveInt(arr.len).? * spv.getSize(arr.elem_type)),
         .vector => |vec| return spv.getSize(vec.elem_type) * @intFromEnum(vec.size),
         .matrix => |mat| return @as(u8, @intCast(@intFromEnum(mat.cols))) * @intFromEnum(mat.rows) * spv.getSize(mat.elem_type),
@@ -2535,12 +2535,12 @@ pub fn resolve(spv: *SpirV, key: Key) !IdRef {
         .bool_type => try spv.global_section.emit(.OpTypeBool, .{ .id_result = id }),
         .int_type => |int| try spv.global_section.emit(.OpTypeInt, .{
             .id_result = id,
-            .width = int.width(),
+            .width = int.sizeBits(),
             .signedness = @intFromBool(int.signedness()),
         }),
         .float_type => |float| try spv.global_section.emit(.OpTypeFloat, .{
             .id_result = id,
-            .width = float.width(),
+            .width = float.sizeBits(),
         }),
         .vector_type => |vector| try spv.global_section.emit(.OpTypeVector, .{
             .id_result = id,
