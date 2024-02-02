@@ -52,7 +52,7 @@ pub fn build(b: *std.Build) !void {
         lib.root_module.addImport(e.key_ptr.*, e.value_ptr.*);
     }
     link(b, &lib.root_module);
-    addPaths(lib);
+    addPaths(&lib.root_module);
     b.installArtifact(lib);
 
     const test_step = b.step("test", "Run library tests");
@@ -67,7 +67,7 @@ pub fn build(b: *std.Build) !void {
         main_tests.root_module.addImport(e.key_ptr.*, e.value_ptr.*);
     }
     link(b, &main_tests.root_module);
-    addPaths(main_tests);
+    addPaths(&main_tests.root_module);
     b.installArtifact(main_tests);
 
     test_step.dependOn(&b.addRunArtifact(main_tests).step);
@@ -110,6 +110,6 @@ fn link(b: *std.Build, module: *std.Build.Module) void {
     }).artifact("spirv-opt"));
 }
 
-pub fn addPaths(step: *std.Build.Step.Compile) void {
-    if (step.rootModuleTarget().isDarwin()) @import("xcode_frameworks").addPaths(step);
+pub fn addPaths(mod: *std.Build.Module) void {
+    if (mod.resolved_target.?.result.isDarwin()) @import("xcode_frameworks").addPaths(mod);
 }
