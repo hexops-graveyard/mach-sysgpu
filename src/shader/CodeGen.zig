@@ -44,7 +44,7 @@ pub fn generate(
     entrypoint: ?Entrypoint,
     bindings: ?*const BindingTable,
 ) ![]const u8 {
-    if (use_spirv_cross) {
+    if (!use_spirv_cross) {
         const spirv_data = try genSpirv(allocator, air, .{});
         const spirv_data_z = try allocator.dupeZ(u8, spirv_data);
         defer allocator.free(spirv_data_z);

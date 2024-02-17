@@ -1061,14 +1061,21 @@ fn emitIf(spv: *SpirV, section: *Section, inst: Inst.If) !void {
     try section.emit(.OpLabel, .{ .id_result = false_label });
     if (inst.@"else" != .none) {
         switch (spv.air.getInst(inst.@"else")) {
-            .@"if" => |else_if| try spv.emitIf(section, else_if),
+            .@"if" => |else_if| {
+                try spv.emitIf(section, else_if);
+                try section.emit(.OpBranch, .{ .target_label = merge_label });
+            },
             .block => |else_body| if (else_body != .none) {
                 try spv.emitBlock(section, else_body);
+                if (spv.branched.get(else_body) == null) {
+                    try section.emit(.OpBranch, .{ .target_label = merge_label });
+                }
             },
             else => unreachable,
         }
+    } else {
+        try section.emit(.OpBranch, .{ .target_label = merge_label });
     }
-    try section.emit(.OpBranch, .{ .target_label = merge_label });
 
     try section.emit(.OpLabel, .{ .id_result = merge_label });
 }
@@ -1566,6 +1573,7 @@ fn emitBinaryAir(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
                     .div => spv.emitBinary(section, .OpSDiv, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     .mod => spv.emitBinary(section, .OpSMod, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     .less_than => spv.emitBinary(section, .OpSLessThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .less_than_equal => spv.emitBinary(section, .OpSLessThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     .greater_than => spv.emitBinary(section, .OpSGreaterThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     .greater_than_equal => spv.emitBinary(section, .OpSGreaterThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     else => unreachable,
@@ -1574,6 +1582,7 @@ fn emitBinaryAir(spv: *SpirV, section: *Section, binary: Inst.Binary) !IdRef {
                     .div => spv.emitBinary(section, .OpUDiv, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     .mod => spv.emitBinary(section, .OpUMod, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     .less_than => spv.emitBinary(section, .OpULessThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
+                    .less_than_equal => spv.emitBinary(section, .OpULessThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     .greater_than => spv.emitBinary(section, .OpUGreaterThan, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     .greater_than_equal => spv.emitBinary(section, .OpUGreaterThanEqual, result_ty, &lhs, &rhs, lhs_ty, rhs_ty),
                     else => unreachable,
@@ -1826,8 +1835,10 @@ fn emitUnaryIntrinsic(spv: *SpirV, section: *Section, unary: Inst.UnaryIntrinsic
             });
             return id;
         },
+        .radians => 11,
         .sin => 13,
         .cos => 14,
+        .tan => 15,
         .normalize => 69,
         .length => 66,
         .floor => 8,
@@ -1938,7 +1949,7 @@ fn emitTripleIntrinsic(spv: *SpirV, section: *Section, triple: Inst.TripleIntrin
     const id = spv.allocId();
     const a1 = try spv.emitExpr(section, triple.a1);
     const a2 = try spv.emitExpr(section, triple.a2);
-    const a3 = try spv.emitExpr(section, triple.a3);
+    var a3 = try spv.emitExpr(section, triple.a3);
     const result_type = try spv.emitType(triple.result_type);
     const result_type_inst = switch (spv.air.getInst(triple.result_type)) {
         .vector => |vec| spv.air.getInst(vec.elem_type),
@@ -1957,6 +1968,18 @@ fn emitTripleIntrinsic(spv: *SpirV, section: *Section, triple: Inst.TripleIntrin
         },
         .smoothstep => 49,
     };
+
+    if (triple.op == .mix) {
+        const vec_type_inst = spv.air.getInst(triple.result_type).vector;
+        var constituents = std.BoundedArray(IdRef, 4){};
+        constituents.appendNTimesAssumeCapacity(a3, @intFromEnum(vec_type_inst.size));
+        a3 = spv.allocId();
+        try section.emit(.OpCompositeConstruct, .{
+            .id_result_type = result_type,
+            .id_result = a3,
+            .constituents = constituents.slice(),
+        });
+    }
 
     try section.emit(.OpExtInst, .{
         .id_result_type = result_type,
