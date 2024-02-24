@@ -34,7 +34,6 @@ pub fn gen(
     label: [*:0]const u8,
 ) ![]const u8 {
     _ = debug_info;
-    _ = entrypoint;
 
     var storage = std.ArrayListUnmanaged(u8){};
     var msl = Msl{
@@ -69,7 +68,12 @@ pub fn gen(
 
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
-            .@"fn" => |inst| if (inst.stage != .none) try msl.emitFn(inst),
+            .@"fn" => |inst| switch (inst.stage) {
+                .vertex => if (entrypoint.?.stage == .vertex) try msl.emitFn(inst),
+                .fragment => if (entrypoint.?.stage == .fragment) try msl.emitFn(inst),
+                .compute => if (entrypoint.?.stage == .compute) try msl.emitFn(inst),
+                .none => {},
+            },
             .@"struct" => |inst| try msl.emitStruct(inst_idx, inst),
             .@"const" => |inst| try msl.emitGlobalConst(inst),
             .@"var" => {},
