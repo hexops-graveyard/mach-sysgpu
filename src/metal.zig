@@ -233,8 +233,8 @@ pub const Device = struct {
         return Sampler.init(device, desc);
     }
 
-    pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
-        return ShaderModule.initAir(device, air);
+    pub fn createShaderModuleAir(device: *Device, air: *shader.Air, label: [*:0]const u8) !*ShaderModule {
+        return ShaderModule.initAir(device, air, label);
     }
 
     pub fn createShaderModuleSpirv(device: *Device, code: [*]const u32, code_size: u32) !*ShaderModule {
@@ -252,12 +252,14 @@ pub const Device = struct {
 
     pub fn createShaderModuleMSL(
         device: *Device,
+        label: [*:0]const u8,
         code: []const u8,
         workgroup_size: sysgpu.ShaderModule.WorkgroupSize,
     ) !*ShaderModule {
         const module = try allocator.create(ShaderModule);
         module.* = .{
             .device = device,
+            .label = label,
             .code = .{ .metal = .{ .code = code, .workgroup_size = workgroup_size } },
         };
         return module;
@@ -976,6 +978,7 @@ pub const PipelineLayout = struct {
 pub const ShaderModule = struct {
     manager: utils.Manager(ShaderModule) = .{},
     device: *Device,
+    label: [*:0]const u8,
     code: union(enum) {
         metal: struct {
             code: []const u8,
@@ -984,11 +987,16 @@ pub const ShaderModule = struct {
         air: *shader.Air,
     },
 
-    pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
+    pub fn initAir(
+        device: *Device,
+        air: *shader.Air,
+        label: [*:0]const u8,
+    ) !*ShaderModule {
         const module = try allocator.create(ShaderModule);
         module.* = .{
             .device = device,
             .code = .{ .air = air },
+            .label = label,
         };
         return module;
     }
@@ -1022,6 +1030,7 @@ pub const ShaderModule = struct {
                 .{ .emit_source_file = "" },
                 .{ .name = entrypoint, .stage = stage },
                 bindings,
+                module.label,
             ),
             .metal => |metal| metal.code,
         };
@@ -1201,7 +1210,7 @@ pub const RenderPipeline = struct {
                     try layout_desc.addFunction(frag_module.code.air, .{ .fragment = true }, frag.entry_point);
                 } else {
                     @panic(
-                        \\Cannot create pipeline descriptor autoamtically.
+                        \\Cannot create pipeline descriptor automatically.
                         \\Please provide it yourself or write the shader in WGSL.
                     );
                 }
@@ -1209,7 +1218,7 @@ pub const RenderPipeline = struct {
             layout = try PipelineLayout.initDefault(device, layout_desc);
         } else {
             @panic(
-                \\Cannot create pipeline descriptor autoamtically.
+                \\Cannot create pipeline descriptor automatically.
                 \\Please provide it yourself or write the shader in WGSL.
             );
         }

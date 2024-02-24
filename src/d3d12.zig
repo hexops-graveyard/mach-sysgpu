@@ -468,7 +468,8 @@ pub const Device = struct {
         return Sampler.init(device, desc);
     }
 
-    pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
+    pub fn createShaderModuleAir(device: *Device, air: *shader.Air, label: [*:0]const u8) !*ShaderModule {
+        _ = label;
         return ShaderModule.initAir(device, air);
     }
 
@@ -488,9 +489,11 @@ pub const Device = struct {
 
     pub fn createShaderModuleMSL(
         device: *Device,
+        label: [*:0]const u8,
         code: []const u8,
         workgroup_size: sysgpu.ShaderModule.WorkgroupSize,
     ) !*ShaderModule {
+        _ = label;
         _ = code;
         _ = device;
         _ = workgroup_size;
@@ -2482,7 +2485,7 @@ pub const ShaderModule = struct {
         var hr: c.HRESULT = undefined;
 
         const code = switch (module.code) {
-            .air => |air| try shader.CodeGen.generate(allocator, air, .hlsl, false, .{ .emit_source_file = "" }, null, null),
+            .air => |air| try shader.CodeGen.generate(allocator, air, .hlsl, false, .{ .emit_source_file = "" }, null, null, null),
             .code => |code| code,
         };
         defer if (module.code == .air) allocator.free(code);

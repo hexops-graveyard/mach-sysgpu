@@ -654,7 +654,8 @@ pub const Device = struct {
         return Sampler.init(device, desc);
     }
 
-    pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
+    pub fn createShaderModuleAir(device: *Device, air: *shader.Air, label: [*:0]const u8) !*ShaderModule {
+        _ = label;
         return ShaderModule.initAir(device, air);
     }
 
@@ -680,9 +681,11 @@ pub const Device = struct {
 
     pub fn createShaderModuleMSL(
         device: *Device,
+        label: [*:0]const u8,
         code: []const u8,
         workgroup_size: sysgpu.ShaderModule.WorkgroupSize,
     ) !*ShaderModule {
+        _ = label;
         _ = code;
         _ = device;
         _ = workgroup_size;
@@ -1895,7 +1898,7 @@ pub const ShaderModule = struct {
     pub fn initAir(device: *Device, air: *shader.Air) !*ShaderModule {
         const vk_device = device.vk_device;
 
-        const code = try shader.CodeGen.generate(allocator, air, .spirv, true, .{ .emit_source_file = "" }, null, null);
+        const code = try shader.CodeGen.generate(allocator, air, .spirv, true, .{ .emit_source_file = "" }, null, null, null);
         defer allocator.free(code);
 
         const vk_shader_module = try vkd.createShaderModule(vk_device, &vk.ShaderModuleCreateInfo{

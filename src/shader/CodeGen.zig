@@ -43,6 +43,7 @@ pub fn generate(
     debug_info: DebugInfo,
     entrypoint: ?Entrypoint,
     bindings: ?*const BindingTable,
+    label: ?[*:0]const u8,
 ) ![]const u8 {
     _ = use_spirv_cross;
     // if (!use_spirv_cross) {
@@ -152,7 +153,7 @@ pub fn generate(
     return switch (out_lang) {
         .spirv => try genSpirv(allocator, air, debug_info),
         .hlsl => try genHlsl(allocator, air, debug_info),
-        .msl => try genMsl(allocator, air, debug_info, bindings),
+        .msl => try genMsl(allocator, air, debug_info, entrypoint, bindings, label orelse "<ShaderModule label not specified>"),
         .glsl => try genGlsl(allocator, air, debug_info, entrypoint, bindings),
     };
 }
