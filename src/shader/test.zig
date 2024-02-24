@@ -278,7 +278,7 @@ fn expectCodegen(
     };
     defer tree.deinit(allocator);
 
-    var ir = Air.generate(allocator, &tree, &errors, null) catch |err| {
+    var ir = Air.generate(allocator, &tree, &errors, null, null) catch |err| {
         if (err == error.AnalysisFail) {
             try errors.print(source, null);
         }
@@ -286,7 +286,7 @@ fn expectCodegen(
     };
     defer ir.deinit(allocator);
 
-    const out = try CodeGen.generate(allocator, &ir, lang, use_spirv_cross, .{}, null, null);
+    const out = try CodeGen.generate(allocator, &ir, lang, use_spirv_cross, .{}, null, null, null);
     defer allocator.free(out);
 
     try std.fs.cwd().makePath("zig-out/shader/");

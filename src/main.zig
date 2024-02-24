@@ -544,7 +544,7 @@ pub const Impl = sysgpu.Interface(struct {
                 else => @panic("api error"),
             };
 
-            const shader_module = device.createShaderModuleAir(air) catch @panic("api error");
+            const shader_module = device.createShaderModuleAir(air, descriptor.label orelse "<ShaderModule label not specified>") catch @panic("api error");
             return @ptrCast(shader_module);
         } else if (utils.findChained(sysgpu.ShaderModule.SPIRVDescriptor, descriptor.next_in_chain.generic)) |spirv_descriptor| {
             const shader_module = device.createShaderModuleSpirv(spirv_descriptor.code, spirv_descriptor.code_size) catch @panic("api error");
@@ -554,6 +554,7 @@ pub const Impl = sysgpu.Interface(struct {
             return @ptrCast(shader_module);
         } else if (utils.findChained(sysgpu.ShaderModule.MSLDescriptor, descriptor.next_in_chain.generic)) |msl_descriptor| {
             const shader_module = device.createShaderModuleMSL(
+                descriptor.label orelse "<ShaderModule label not specified>",
                 msl_descriptor.code[0..msl_descriptor.code_size],
                 msl_descriptor.workgroup_size,
             ) catch @panic("api error");

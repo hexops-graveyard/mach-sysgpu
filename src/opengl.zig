@@ -444,7 +444,8 @@ pub const Device = struct {
         return Sampler.init(device, desc);
     }
 
-    pub fn createShaderModuleAir(device: *Device, air: *shader.Air) !*ShaderModule {
+    pub fn createShaderModuleAir(device: *Device, air: *shader.Air, label: [*:0]const u8) !*ShaderModule {
+        _ = label;
         return ShaderModule.initAir(device, air);
     }
 
@@ -1117,6 +1118,7 @@ pub const ShaderModule = struct {
             .{ .emit_source_file = "" },
             .{ .name = entrypoint, .stage = stage },
             bindings,
+            null,
         );
         defer allocator.free(code);
         const code_z = try allocator.dupeZ(u8, code);
