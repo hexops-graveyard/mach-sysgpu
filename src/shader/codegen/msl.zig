@@ -23,14 +23,18 @@ indent: u32 = 0,
 stage: Inst.Fn.Stage = .none,
 has_stage_in: bool = false,
 frag_result_inst_idx: InstIndex = .none,
+label: [*:0]const u8,
 
 pub fn gen(
     allocator: std.mem.Allocator,
     air: *const Air,
     debug_info: DebugInfo,
+    entrypoint: ?Entrypoint,
     bindings: ?*const BindingTable,
+    label: [*:0]const u8,
 ) ![]const u8 {
     _ = debug_info;
+    _ = entrypoint;
 
     var storage = std.ArrayListUnmanaged(u8){};
     var msl = Msl{
@@ -39,6 +43,7 @@ pub fn gen(
         .storage = storage,
         .writer = storage.writer(allocator),
         .bindings = bindings orelse &.{},
+        .label = label,
     };
     defer {
         msl.storage.deinit(allocator);
@@ -392,7 +397,17 @@ fn emitFnGlobalVar(msl: *Msl, inst_idx: InstIndex) !void {
     const group = msl.air.resolveInt(inst.group) orelse return error.ConstExpr;
     const binding = msl.air.resolveInt(inst.binding) orelse return error.ConstExpr;
     const key = BindingPoint{ .group = @intCast(group), .binding = @intCast(binding) };
-    const slot = msl.bindings.get(key) orelse 0;
+
+    const slot = msl.bindings.get(key) orelse {
+        var iter = msl.bindings.iterator();
+        std.debug.print("sysgpu: Failed to find binding point for shader '{s}'. This is a bug.\n", .{msl.label});
+        std.debug.print("\n", .{});
+        std.debug.print("Found binding points:\n", .{});
+        while (iter.next()) |bp| {
+            std.debug.print("  @group({}) @binding({})\n", .{ bp.key_ptr.group, bp.key_ptr.binding });
+        }
+        std.debug.panic("Failed to find a match for: @group({}) @binding({})", .{ @as(usize, @intCast(group)), @as(usize, @intCast(binding)) });
+    };
 
     const type_inst = msl.air.getInst(inst.type);
     switch (type_inst) {
