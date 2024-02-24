@@ -278,7 +278,7 @@ fn expectCodegen(
     };
     defer tree.deinit(allocator);
 
-    var ir = Air.generate(allocator, &tree, &errors, null, null) catch |err| {
+    var ir = Air.generate(allocator, &tree, &errors, null) catch |err| {
         if (err == error.AnalysisFail) {
             try errors.print(source, null);
         }
