@@ -1061,7 +1061,7 @@ fn emitTextureSample(msl: *Msl, inst: Inst.TextureSample) !void {
     switch (inst.operands) {
         .none => {},
         .level => |level| {
-            try msl.writeAll("level(");
+            try msl.writeAll(", level(");
             try msl.emitExpr(level);
             try msl.writeAll(")");
         },
