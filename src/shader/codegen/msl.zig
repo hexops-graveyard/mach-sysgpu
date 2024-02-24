@@ -287,8 +287,9 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
         const slice = msl.fn_emit_list.entries.slice();
         const keys = slice.items(.key).ptr;
         const values = slice.items(.value).ptr;
-        var i: usize = 0;
-        while (i < slice.len) : (i += 1) {
+        var i: usize = slice.len;
+        while (i > 0) {
+            i -= 1;
             if (values[i] == false) {
                 values[i] = true;
                 try msl.emitFn(msl.air.getInst(keys[i]).@"fn");
