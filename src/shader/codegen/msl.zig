@@ -115,7 +115,9 @@ fn emitType(msl: *Msl, inst_idx: InstIndex) error{OutOfMemory}!void {
             .matrix => |inst| try msl.emitMatrixType(inst),
             .array => |inst| try msl.emitType(inst.elem_type),
             .@"struct" => |inst| try msl.writeName(inst.name),
-            else => |inst| try msl.print("Type: {}", .{inst}), // TODO
+            .texture_type => |inst| try msl.emitTextureType(inst),
+            .sampler_type => try msl.emitSamplerType(),
+            else => |inst| try msl.print("TODO: emitType: {}", .{inst}), // TODO
         }
     }
 }
@@ -1132,6 +1134,98 @@ fn writeEntrypoint(msl: *Msl, name: Air.StringIndex) !void {
     } else {
         try msl.writeAll(str);
     }
+}
+
+fn emitTextureType(msl: *Msl, inst: Inst.TextureType) !void {
+    // TODO: I think some of the access::sample cases are wrong, e.g. it is possible to use
+    // texture2d with access::read and access::write, but unsure how to translate those
+    // exactly. Does WGSL represent those or is it not allowed?
+    switch (inst.kind) {
+        .sampled_1d => {
+            try msl.writeAll("texture1d<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .sampled_2d => {
+            try msl.writeAll("texture2d<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .multisampled_2d => {
+            try msl.writeAll("texture2d_ms<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .sampled_3d => {
+            try msl.writeAll("texture3d<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .sampled_2d_array => {
+            try msl.writeAll("texture2d_array<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .sampled_cube => {
+            try msl.writeAll("texturecube<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .sampled_cube_array => {
+            try msl.writeAll("texturecube_array<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .storage_1d => {
+            try msl.writeAll("texture1d<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(if (inst.access_mode == .write) "access::write>" else "access::read>");
+        },
+        .storage_2d => {
+            try msl.writeAll("texture2d<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(if (inst.access_mode == .write) "access::write>" else "access::read>");
+        },
+        .storage_3d => {
+            try msl.writeAll("texture3d<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(if (inst.access_mode == .write) "access::write>" else "access::read>");
+        },
+        .storage_2d_array => {
+            try msl.writeAll("texture2d_array<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(if (inst.access_mode == .write) "access::write>" else "access::read>");
+        },
+        .depth_2d => {
+            try msl.writeAll("depth2d<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .multisampled_depth_2d => {
+            try msl.writeAll("depth2d_ms<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .depth_2d_array => {
+            try msl.writeAll("depth2d_array<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .depth_cube => {
+            try msl.writeAll("depthcube<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+        .depth_cube_array => {
+            try msl.writeAll("depthcube_array<");
+            try msl.emitType(inst.elem_type);
+            try msl.writeAll(", access::sample>");
+        },
+    }
+}
+
+fn emitSamplerType(msl: *Msl) !void {
+    try msl.writeAll("sampler");
 }
 
 fn writeName(msl: *Msl, name: Air.StringIndex) !void {
