@@ -128,9 +128,7 @@ pub fn gen(allocator: std.mem.Allocator, air: *const Air, debug_info: DebugInfo)
 
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (spv.air.getInst(inst_idx)) {
-            .@"fn" => |@"fn"| if (@"fn".stage != .none) {
-                _ = try spv.emitFn(inst_idx);
-            },
+            .@"fn" => _ = try spv.emitFn(inst_idx),
             .@"const" => _ = try spv.emitConst(&spv.global_section, inst_idx),
             .@"var" => _ = try spv.emitVarProto(&spv.global_section, inst_idx),
             .@"struct" => _ = try spv.emitStruct(inst_idx),
@@ -1358,8 +1356,11 @@ const PtrAccess = struct {
 
 fn emitVarAccess(spv: *SpirV, section: *Section, inst: InstIndex) !PtrAccess {
     const decl = spv.decl_map.get(inst) orelse blk: {
-        std.debug.assert(spv.air.getInst(inst) == .@"const");
-        _ = try spv.emitConst(section, inst);
+        switch (spv.air.getInst(inst)) {
+            .@"const" => _ = try spv.emitConst(&spv.global_section, inst),
+            .@"var" => _ = try spv.emitVarProto(&spv.global_section, inst),
+            else => unreachable,
+        }
         break :blk spv.decl_map.get(inst).?;
     };
 
@@ -1969,7 +1970,7 @@ fn emitTripleIntrinsic(spv: *SpirV, section: *Section, triple: Inst.TripleIntrin
         .smoothstep => 49,
     };
 
-    if (triple.op == .mix) {
+    if (triple.op == .mix and spv.air.getInst(triple.result_type) == .vector) {
         const vec_type_inst = spv.air.getInst(triple.result_type).vector;
         var constituents = std.BoundedArray(IdRef, 4){};
         constituents.appendNTimesAssumeCapacity(a3, @intFromEnum(vec_type_inst.size));

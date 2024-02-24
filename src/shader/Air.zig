@@ -44,6 +44,7 @@ pub fn generate(
     defer {
         astgen.instructions.deinit(allocator);
         astgen.scratch.deinit(allocator);
+        astgen.globals.deinit(allocator);
         astgen.global_var_refs.deinit(allocator);
         astgen.scope_pool.deinit();
         astgen.inst_arena.deinit();
