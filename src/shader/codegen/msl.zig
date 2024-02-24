@@ -17,7 +17,8 @@ air: *const Air,
 allocator: std.mem.Allocator,
 storage: std.ArrayListUnmanaged(u8),
 writer: std.ArrayListUnmanaged(u8).Writer,
-fn_emit_list: std.AutoHashMapUnmanaged(InstIndex, bool) = .{},
+writing: bool = true,
+fn_emit_list: std.AutoArrayHashMapUnmanaged(InstIndex, bool) = .{},
 bindings: *const BindingTable,
 indent: u32 = 0,
 stage: Inst.Fn.Stage = .none,
@@ -272,6 +273,27 @@ fn hasStageInType(msl: *Msl, inst: Inst.Fn) bool {
 }
 
 fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
+    if (msl.writing) {
+        // Emit all functions that this function depends on first.
+
+        // Collect all functions that this functiond depends on.
+        msl.writing = false;
+        try msl.emitFn(inst);
+        msl.writing = true;
+
+        // Emit all functions that this function depends on.
+        const slice = msl.fn_emit_list.entries.slice();
+        const keys = slice.items(.key).ptr;
+        const values = slice.items(.value).ptr;
+        var i: usize = 0;
+        while (i < slice.len) : (i += 1) {
+            if (values[i] == false) {
+                values[i] = true;
+                try msl.emitFn(msl.air.getInst(keys[i]).@"fn");
+            }
+        }
+    }
+
     msl.stage = inst.stage;
     msl.has_stage_in = msl.hasStageInType(inst);
 
@@ -364,14 +386,6 @@ fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
     }
     try msl.writeIndent();
     try msl.writeAll("}\n");
-
-    var fn_emit_iter = msl.fn_emit_list.iterator();
-    while (fn_emit_iter.next()) |fn_emition| {
-        if (fn_emition.value_ptr.* == false) {
-            fn_emition.value_ptr.* = true;
-            try msl.emitFn(msl.air.getInst(fn_emition.key_ptr.*).@"fn");
-        }
-    }
 }
 
 fn emitStageInType(msl: *Msl, inst: Inst.Fn) !void {
@@ -1108,7 +1122,7 @@ fn exitScope(msl: *Msl) void {
 }
 
 fn writeIndent(msl: *Msl) !void {
-    try msl.writer.writeByteNTimes(' ', msl.indent);
+    if (msl.writing) try msl.writer.writeByteNTimes(' ', msl.indent);
 }
 
 fn writeEntrypoint(msl: *Msl, name: Air.StringIndex) !void {
@@ -1127,9 +1141,10 @@ fn writeName(msl: *Msl, name: Air.StringIndex) !void {
 }
 
 fn writeAll(msl: *Msl, bytes: []const u8) !void {
-    try msl.writer.writeAll(bytes);
+    if (msl.writing) try msl.writer.writeAll(bytes);
 }
 
 fn print(msl: *Msl, comptime format: []const u8, args: anytype) !void {
+    if (!msl.writing) return;
     return std.fmt.format(msl.writer, format, args);
 }
