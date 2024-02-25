@@ -70,10 +70,6 @@ pub fn genTranslationUnit(astgen: *AstGen) !RefIndex {
         var global = root_scope.decls.get(node).? catch continue;
         global = switch (astgen.tree.nodeTag(node)) {
             .@"fn" => blk: {
-                // TODO(ali): with aftersun we hit this case, continue works here but unsure if that is correct.
-                // At the very least, the assert is wrong?
-                if (global != .none) continue;
-                // std.debug.assert(global == .none);
                 break :blk astgen.genFn(root_scope, node, false) catch |err| switch (err) {
                     error.Skiped => continue,
                     else => |e| e,
