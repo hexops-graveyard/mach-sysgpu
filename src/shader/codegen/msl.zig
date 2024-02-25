@@ -17,7 +17,6 @@ air: *const Air,
 allocator: std.mem.Allocator,
 storage: std.ArrayListUnmanaged(u8),
 writer: std.ArrayListUnmanaged(u8).Writer,
-writing: bool = true,
 fn_emit_list: std.AutoArrayHashMapUnmanaged(InstIndex, bool) = .{},
 bindings: *const BindingTable,
 indent: u32 = 0,
@@ -30,7 +29,7 @@ pub fn gen(
     allocator: std.mem.Allocator,
     air: *const Air,
     debug_info: DebugInfo,
-    entrypoint: ?Entrypoint,
+    entrypoint: Entrypoint,
     bindings: ?*const BindingTable,
     label: [*:0]const u8,
 ) ![]const u8 {
@@ -69,11 +68,14 @@ pub fn gen(
 
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
+            // Entrypoint functions should only be emitted if that is the entrypoint we are
+            // intending to emit.
             .@"fn" => |inst| switch (inst.stage) {
-                .vertex => if (entrypoint.?.stage == .vertex) try msl.emitFn(inst),
-                .fragment => if (entrypoint.?.stage == .fragment) try msl.emitFn(inst),
-                .compute => if (entrypoint.?.stage == .compute) try msl.emitFn(inst),
-                .none => {},
+                .vertex => if (entrypoint.stage == .vertex) try msl.emitFn(inst),
+                .fragment => if (entrypoint.stage == .fragment) try msl.emitFn(inst),
+                .compute => if (entrypoint
+                    .stage == .compute) try msl.emitFn(inst),
+                .none => try msl.emitFn(inst),
             },
             .@"struct" => |inst| try msl.emitStruct(inst_idx, inst),
             .@"const" => |inst| try msl.emitGlobalConst(inst),
@@ -275,28 +277,6 @@ fn hasStageInType(msl: *Msl, inst: Inst.Fn) bool {
 }
 
 fn emitFn(msl: *Msl, inst: Inst.Fn) !void {
-    if (msl.writing) {
-        // Emit all functions that this function depends on first.
-
-        // Collect all functions that this functiond depends on.
-        msl.writing = false;
-        try msl.emitFn(inst);
-        msl.writing = true;
-
-        // Emit all functions that this function depends on.
-        const slice = msl.fn_emit_list.entries.slice();
-        const keys = slice.items(.key).ptr;
-        const values = slice.items(.value).ptr;
-        var i: usize = slice.len;
-        while (i > 0) {
-            i -= 1;
-            if (values[i] == false) {
-                values[i] = true;
-                try msl.emitFn(msl.air.getInst(keys[i]).@"fn");
-            }
-        }
-    }
-
     msl.stage = inst.stage;
     msl.has_stage_in = msl.hasStageInType(inst);
 
@@ -419,16 +399,12 @@ fn emitFnGlobalVar(msl: *Msl, inst_idx: InstIndex) !void {
     const binding = msl.air.resolveInt(inst.binding) orelse return error.ConstExpr;
     const key = BindingPoint{ .group = @intCast(group), .binding = @intCast(binding) };
 
-    const slot = msl.bindings.get(key) orelse {
-        var iter = msl.bindings.iterator();
-        std.debug.print("sysgpu: Failed to find binding point for shader '{s}'. This is a bug.\n", .{msl.label});
-        std.debug.print("\n", .{});
-        std.debug.print("Found binding points:\n", .{});
-        while (iter.next()) |bp| {
-            std.debug.print("  @group({}) @binding({})\n", .{ bp.key_ptr.group, bp.key_ptr.binding });
-        }
-        std.debug.panic("Failed to find a match for: @group({}) @binding({})", .{ @as(usize, @intCast(group)), @as(usize, @intCast(binding)) });
-    };
+    // Note: a debug marker indicating we could not find the binding slot. This can
+    // genuinely happen because we e.g. vertex and fragment programs have different sets of
+    // bindings but we emitFn for all function declarations, rather than just those reachable
+    // from the vert/frag entrypoint. MSL dead code elimination means such bindings should
+    // never be accessed.
+    const slot = msl.bindings.get(key) orelse 1337;
 
     const type_inst = msl.air.getInst(inst.type);
     switch (type_inst) {
@@ -1125,7 +1101,7 @@ fn exitScope(msl: *Msl) void {
 }
 
 fn writeIndent(msl: *Msl) !void {
-    if (msl.writing) try msl.writer.writeByteNTimes(' ', msl.indent);
+    try msl.writer.writeByteNTimes(' ', msl.indent);
 }
 
 fn writeEntrypoint(msl: *Msl, name: Air.StringIndex) !void {
@@ -1236,10 +1212,9 @@ fn writeName(msl: *Msl, name: Air.StringIndex) !void {
 }
 
 fn writeAll(msl: *Msl, bytes: []const u8) !void {
-    if (msl.writing) try msl.writer.writeAll(bytes);
+    try msl.writer.writeAll(bytes);
 }
 
 fn print(msl: *Msl, comptime format: []const u8, args: anytype) !void {
-    if (!msl.writing) return;
     return std.fmt.format(msl.writer, format, args);
 }

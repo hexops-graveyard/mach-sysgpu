@@ -153,7 +153,7 @@ pub fn generate(
     return switch (out_lang) {
         .spirv => try genSpirv(allocator, air, debug_info),
         .hlsl => try genHlsl(allocator, air, debug_info),
-        .msl => try genMsl(allocator, air, debug_info, entrypoint, bindings, label orelse "<ShaderModule label not specified>"),
+        .msl => try genMsl(allocator, air, debug_info, entrypoint.?, bindings, label orelse "<ShaderModule label not specified>"),
         .glsl => try genGlsl(allocator, air, debug_info, entrypoint, bindings),
     };
 }
