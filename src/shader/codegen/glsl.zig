@@ -36,7 +36,7 @@ pub fn gen(
         .bindings = bindings orelse &.{},
     };
     defer {
-        glsl.storage.deinit(allocator);
+        storage.deinit(allocator);
     }
 
     try glsl.writeAll("#version 450\n\n");

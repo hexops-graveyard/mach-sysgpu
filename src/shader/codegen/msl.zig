@@ -29,7 +29,7 @@ pub fn gen(
     allocator: std.mem.Allocator,
     air: *const Air,
     debug_info: DebugInfo,
-    entrypoint: Entrypoint,
+    entrypoint: ?Entrypoint,
     bindings: ?*const BindingTable,
     label: [*:0]const u8,
 ) ![]const u8 {
@@ -45,7 +45,7 @@ pub fn gen(
         .label = label,
     };
     defer {
-        msl.storage.deinit(allocator);
+        storage.deinit(allocator);
         msl.fn_emit_list.deinit(allocator);
     }
 
@@ -66,15 +66,15 @@ pub fn gen(
         }
     }
 
+    const is_test = entrypoint == null;
     for (air.refToList(air.globals_index)) |inst_idx| {
         switch (air.getInst(inst_idx)) {
             // Entrypoint functions should only be emitted if that is the entrypoint we are
             // intending to emit.
             .@"fn" => |inst| switch (inst.stage) {
-                .vertex => if (entrypoint.stage == .vertex) try msl.emitFn(inst),
-                .fragment => if (entrypoint.stage == .fragment) try msl.emitFn(inst),
-                .compute => if (entrypoint
-                    .stage == .compute) try msl.emitFn(inst),
+                .vertex => if (is_test or entrypoint.?.stage == .vertex) try msl.emitFn(inst),
+                .fragment => if (is_test or entrypoint.?.stage == .fragment) try msl.emitFn(inst),
+                .compute => if (is_test or entrypoint.?.stage == .compute) try msl.emitFn(inst),
                 .none => try msl.emitFn(inst),
             },
             .@"struct" => |inst| try msl.emitStruct(inst_idx, inst),
