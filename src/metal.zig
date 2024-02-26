@@ -197,7 +197,10 @@ pub const Device = struct {
         device.map_callbacks.deinit(allocator);
         device.reference_trackers.deinit(allocator);
         device.streaming_manager.deinit();
-        if (device.queue) |queue| queue.manager.release();
+        if (device.queue) |queue| {
+            queue.manager.release();
+            queue.deinit();
+        }
         allocator.destroy(device);
     }
 
